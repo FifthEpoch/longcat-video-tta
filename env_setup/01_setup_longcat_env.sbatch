@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=setup_longcat_env
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
@@ -21,11 +21,19 @@
 #   - transformers 4.41.0, diffusers 0.35.1
 #   - NO colossalai, mmengine, xformers, liger-kernel
 #
-# Requires GPU node for flash-attn compilation (~15-20 min).
+# Requires H200 GPU node to validate installation on target hardware.
 # ==============================================================================
 
 set -euo pipefail
 export PYTHONNOUSERSITE=1
+
+# ---------------------------------------------------------------------------
+# Fix cross-device link errors: pip cache and TMPDIR must be on the same
+# filesystem as the conda env (/scratch), NOT on /home.
+# ---------------------------------------------------------------------------
+export TMPDIR="/scratch/wc3013/tmp"
+export PIP_CACHE_DIR="/scratch/wc3013/pip-cache"
+mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}"
 
 echo "=============================================================================="
 echo "LongCat-Video Environment Setup"
@@ -256,7 +264,7 @@ print(f'  PyTorch:    {torch.__version__}')
 print(f'  CUDA:       {torch.version.cuda if torch.cuda.is_available() else \"NOT AVAILABLE\"}')
 if torch.cuda.is_available():
     print(f'  GPU:        {torch.cuda.get_device_name(0)}')
-    print(f'  GPU memory: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')
+    print(f'  GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
 print()
 
 # Flash attention
