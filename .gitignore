@@ -1,0 +1,32 @@
+# LongCat-Video is a cloned dependency - track separately
+LongCat-Video/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# SLURM logs
+slurm_log/
+*.out
+*.err
+
+# Results (large, track selectively)
+results/
+
+# Environment
+.env
+*.pt
+*.pth
+*.safetensors
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
