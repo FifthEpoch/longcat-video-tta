@@ -225,13 +225,30 @@ def load_metadata_from_hf(split: str = "train", max_rows: int = 50_000) -> list[
 
 
 def load_metadata_from_jsonl(path: Path) -> list[dict]:
-    """Load metadata from a local JSONL file."""
+    """Load metadata from a local JSONL file (plain text or gzipped)."""
+    import gzip
+
+    # Detect gzip by magic bytes
+    with open(path, "rb") as f:
+        magic = f.read(2)
+
+    if magic == b"\x1f\x8b":
+        print(f"Detected gzipped file: {path}")
+        opener = lambda: gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    else:
+        # Try utf-8, fall back to latin-1 (never fails)
+        opener = lambda: open(path, "r", encoding="utf-8", errors="replace")
+
     rows = []
-    with open(path, "r") as f:
+    with opener() as f:
         for line in f:
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue  # skip malformed lines
     print(f"Loaded {len(rows)} rows from {path}")
     return rows
 
@@ -274,9 +291,17 @@ def main():
     videos_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Load metadata ────────────────────────────────────────────────────
+    rows = []
     if args.meta_path and Path(args.meta_path).exists():
-        rows = load_metadata_from_jsonl(Path(args.meta_path))
-    else:
+        try:
+            rows = load_metadata_from_jsonl(Path(args.meta_path))
+        except Exception as e:
+            print(f"WARNING: Failed to load local metadata: {e}")
+            rows = []
+
+    # Fallback to HuggingFace if local metadata failed or was empty
+    if not rows:
+        print("Falling back to HuggingFace metadata...")
         rows = load_metadata_from_hf(split=args.hf_split,
                                      max_rows=args.hf_max_rows)
 
