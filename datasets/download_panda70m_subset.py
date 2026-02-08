@@ -312,6 +312,8 @@ def main():
     # ── Normalize rows ───────────────────────────────────────────────────
     normalized = []
     for r in rows:
+        if not isinstance(r, dict):
+            continue  # skip malformed entries (ints, strings, etc.)
         video_id = r.get("videoID", "")
         url = r.get("url", "") or r.get("video_url", "") or r.get("video", "")
 

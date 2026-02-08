@@ -122,11 +122,14 @@ CMD=(
     --download-timeout "${DOWNLOAD_TIMEOUT}"
 )
 
-# Use local metadata if available and HuggingFace isn't needed
-if [ -f "${OLD_META}" ]; then
-    echo "Found existing metadata at: ${OLD_META}"
-    echo "Using local metadata (faster than HuggingFace download)"
+# NOTE: The old Open-Sora metadata JSONL is malformed (mixed types).
+# Always use HuggingFace for a clean, large candidate pool.
+# To force local metadata (not recommended), set: USE_LOCAL_META=1
+if [ "${USE_LOCAL_META:-0}" = "1" ] && [ -f "${OLD_META}" ]; then
+    echo "Using local metadata at: ${OLD_META}"
     CMD+=(--meta-path "${OLD_META}")
+else
+    echo "Using HuggingFace metadata (iejMac/Panda-70M, ${HF_MAX_ROWS} rows)"
 fi
 
 # Resume support
