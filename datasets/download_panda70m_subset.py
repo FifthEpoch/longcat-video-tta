@@ -269,19 +269,29 @@ def load_metadata_from_local(path: Path) -> list[dict]:
 
 
 def load_metadata_from_hf(max_rows: int = 50_000) -> list[dict]:
-    """Try loading Panda-70M metadata from HuggingFace (multiple possible names)."""
+    """Load Panda-70M metadata from HuggingFace.
+
+    The canonical dataset is multimodalart/panda-70m.
+    Each row may contain MULTIPLE clips (timestamp/caption are lists),
+    so we flatten them into individual clip entries.
+
+    Splits:
+      - train_2m: ~800K rows (main data)
+      - validation: ~2K rows
+      - test: ~2K rows
+      - train: only 4 rows (index, not useful)
+    """
     try:
         from datasets import load_dataset
     except ImportError:
         print("  HuggingFace 'datasets' library not installed")
         return []
 
-    # Try multiple possible dataset names — Panda-70M has been mirrored
-    # under different orgs, and some may be gated or removed.
+    # Try datasets in order of reliability
     candidates = [
-        ("snap-research/Panda-70M", "train"),
-        ("iejMac/Panda-70M", "train"),
-        ("tsb0601/Panda-70M", "train"),
+        ("multimodalart/panda-70m", "train_2m"),   # canonical source
+        ("multimodalart/panda-70m", "validation"),  # fallback (smaller)
+        ("multimodalart/panda-70m", "test"),        # fallback (smaller)
     ]
 
     for name, split in candidates:
@@ -289,21 +299,127 @@ def load_metadata_from_hf(max_rows: int = 50_000) -> list[dict]:
             print(f"  Trying HuggingFace: {name} (split={split}) ...")
             ds = load_dataset(name, split=split, streaming=True)
             rows = []
-            for i, item in enumerate(ds):
-                if i >= max_rows:
+            raw_count = 0
+            for item in ds:
+                raw_count += 1
+                if len(rows) >= max_rows:
                     break
-                rows.append(dict(item))
-                if (i + 1) % 10_000 == 0:
-                    print(f"    Loaded {i + 1} rows...")
+                # Flatten: each row has lists of timestamps/captions
+                flattened = _flatten_panda70m_row(dict(item))
+                rows.extend(flattened)
+                if raw_count % 10_000 == 0:
+                    print(f"    Processed {raw_count} raw rows -> {len(rows)} clips...")
             if rows:
-                print(f"  Success: {len(rows)} rows from {name}")
-                return rows
+                print(f"  Success: {len(rows)} clips from {raw_count} rows ({name}/{split})")
+                return rows[:max_rows]
         except Exception as e:
-            print(f"  Failed: {name} — {e}")
+            print(f"  Failed: {name}/{split} — {e}")
             continue
 
     print("  All HuggingFace sources failed")
     return []
+
+
+def _flatten_panda70m_row(row: dict) -> list[dict]:
+    """Flatten a single Panda-70M row into individual clip entries.
+
+    In multimodalart/panda-70m, each row has:
+      - videoID: str (YouTube video ID)
+      - url: str (YouTube URL)
+      - timestamp: list of [start, end] pairs (as strings like '0:00:16.300')
+      - caption: list of caption strings (one per clip)
+      - matching_score: list of floats
+    """
+    video_id = row.get("videoID", "")
+    url = row.get("url", "")
+
+    if not video_id and url:
+        m = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
+        if m:
+            video_id = m.group(1)
+
+    if not video_id:
+        return []
+
+    timestamps = row.get("timestamp", [])
+    captions = row.get("caption", [])
+
+    # Parse timestamps/captions if they're strings (e.g., from CSV)
+    if isinstance(timestamps, str):
+        try:
+            timestamps = json.loads(timestamps.replace("'", '"'))
+        except (json.JSONDecodeError, ValueError):
+            timestamps = []
+    if isinstance(captions, str):
+        try:
+            captions = json.loads(captions.replace("'", '"'))
+        except (json.JSONDecodeError, ValueError):
+            captions = [captions] if captions else []
+
+    if not isinstance(timestamps, list):
+        timestamps = []
+    if not isinstance(captions, list):
+        captions = [captions] if captions else []
+
+    # If no timestamps, return a single entry with just the video
+    if not timestamps:
+        cap = captions[0] if captions else "video"
+        return [{"videoID": video_id, "url": url, "caption": cap,
+                 "start": None, "end": None}]
+
+    entries = []
+    for i, ts in enumerate(timestamps):
+        # Parse timestamp pair: ['0:00:16.300', '0:00:32.566']
+        start_sec, end_sec = None, None
+        if isinstance(ts, (list, tuple)) and len(ts) >= 2:
+            start_sec = _parse_timestamp(ts[0])
+            end_sec = _parse_timestamp(ts[1])
+
+        cap = captions[i] if i < len(captions) else "video"
+
+        entries.append({
+            "videoID": video_id,
+            "url": url,
+            "caption": cap,
+            "start": start_sec,
+            "end": end_sec,
+        })
+
+    return entries
+
+
+def _parse_timestamp(ts_str) -> Optional[float]:
+    """Parse a timestamp string like '0:00:16.300' into seconds."""
+    if ts_str is None:
+        return None
+    if isinstance(ts_str, (int, float)):
+        return float(ts_str)
+    ts_str = str(ts_str).strip()
+    try:
+        # Try direct float first
+        return float(ts_str)
+    except ValueError:
+        pass
+    # Parse H:MM:SS.mmm or MM:SS.mmm
+    parts = ts_str.split(":")
+    try:
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        elif len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _clip_duration(start, end) -> Optional[float]:
+    """Compute clip duration in seconds, or None if unknown."""
+    if start is None or end is None:
+        return None
+    try:
+        return float(end) - float(start)
+    except (ValueError, TypeError):
+        return None
 
 
 def download_metadata_from_gdrive(out_path: Path) -> list[dict]:
@@ -433,17 +549,40 @@ def main():
     print(f"\n✓ Loaded {len(rows)} metadata rows")
 
     # ── Normalize rows ───────────────────────────────────────────────────
+    # Rows from HuggingFace are already flattened (one clip per entry).
+    # Rows from local files may still need flattening.
     normalized = []
     for r in rows:
         if not isinstance(r, dict):
             continue  # skip malformed entries (ints, strings, etc.)
 
-        # Try multiple possible column names
+        # Check if this row has list-valued timestamps/captions (multi-clip)
+        # and needs flattening (e.g., from local CSV/JSONL)
+        ts_raw = r.get("timestamp")
+        cap_raw = r.get("caption")
+        if isinstance(ts_raw, list) and len(ts_raw) > 0 and isinstance(ts_raw[0], list):
+            # Multi-clip row — flatten it
+            flat = _flatten_panda70m_row(r)
+            for entry in flat:
+                clip_dur = _clip_duration(entry.get("start"), entry.get("end"))
+                if clip_dur is not None:
+                    if clip_dur < args.min_duration or clip_dur > args.max_duration:
+                        continue
+                caption = entry.get("caption", "video") or "video"
+                normalized.append({
+                    "videoID": entry["videoID"],
+                    "caption": caption,
+                    "start": entry.get("start"),
+                    "end": entry.get("end"),
+                    "category": categorize_caption(caption),
+                })
+            continue
+
+        # Single-clip row (already flattened, e.g., from HuggingFace loader)
         video_id = (r.get("videoID", "") or r.get("video_id", "")
                     or r.get("id", "") or r.get("youtube_id", ""))
         url = r.get("url", "") or r.get("video_url", "") or r.get("video", "")
 
-        # Extract video ID from YouTube URL if not provided
         if not video_id and url:
             m = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
             if m:
@@ -453,34 +592,14 @@ def main():
             continue
 
         caption = r.get("caption", "") or r.get("text", "") or "video"
-        timestamp = r.get("timestamp", {})
+        start = r.get("start")
+        end = r.get("end")
 
-        # Parse timestamp — could be a dict, string, or list
-        start, end = None, None
-        if isinstance(timestamp, dict):
-            start = timestamp.get("start")
-            end = timestamp.get("end")
-        elif isinstance(timestamp, str):
-            try:
-                ts = json.loads(timestamp.replace("'", '"'))
-                if isinstance(ts, dict):
-                    start = ts.get("start")
-                    end = ts.get("end")
-                elif isinstance(ts, list) and len(ts) == 2:
-                    start, end = ts[0], ts[1]
-            except (json.JSONDecodeError, ValueError):
-                pass
-        elif isinstance(timestamp, (list, tuple)) and len(timestamp) == 2:
-            start, end = timestamp[0], timestamp[1]
-
-        # Filter by timestamp duration if available
-        if start is not None and end is not None:
-            try:
-                clip_dur = float(end) - float(start)
-                if clip_dur < args.min_duration or clip_dur > args.max_duration:
-                    continue
-            except (ValueError, TypeError):
-                pass
+        # Filter by clip duration if available
+        clip_dur = _clip_duration(start, end)
+        if clip_dur is not None:
+            if clip_dur < args.min_duration or clip_dur > args.max_duration:
+                continue
 
         normalized.append({
             "videoID": video_id,

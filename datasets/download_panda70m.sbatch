@@ -16,7 +16,7 @@
 # Metadata sources (tried in order):
 #   1. Local file (if --meta-path provided or cached clean JSONL exists)
 #   2. Google Drive (official Panda-70M metadata, via gdown)
-#   3. HuggingFace datasets (multiple possible dataset names)
+#   3. HuggingFace: multimodalart/panda-70m (train_2m split, ~800K rows)
 #
 # No GPU needed — this is a CPU + network job.
 #
