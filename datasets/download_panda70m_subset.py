@@ -70,9 +70,20 @@ def categorize_caption(caption: str) -> str:
 
 # ── Video download & validation ──────────────────────────────────────────
 
+# Track failures globally so we can log details for first N
+_failure_count = 0
+_MAX_VERBOSE_FAILURES = 20  # Print full yt-dlp output for first 20 failures
+
+
 def download_youtube_video(video_id: str, start: float, end: float,
                            out_path: Path, timeout: int = 120) -> bool:
-    """Download a YouTube video clip using yt-dlp."""
+    """Download a YouTube video clip using yt-dlp.
+
+    For the first _MAX_VERBOSE_FAILURES failures, prints the full yt-dlp
+    stderr so we can diagnose systematic issues.
+    """
+    global _failure_count
+
     yt_dlp = shutil.which("yt-dlp")
     if not yt_dlp:
         print("ERROR: yt-dlp not found in PATH")
@@ -81,16 +92,24 @@ def download_youtube_video(video_id: str, start: float, end: float,
     url = f"https://www.youtube.com/watch?v={video_id}"
 
     # Build download section arg for trimming
+    # Panda-70M timestamps are in seconds (float), e.g. 16.3
     section_args = []
     if start is not None and end is not None:
-        section_args = [
-            "--download-sections", f"*{start}-{end}",
-            "--force-keyframes-at-cuts",
-        ]
+        try:
+            s, e = float(start), float(end)
+            section_args = [
+                "--download-sections", f"*{s:.3f}-{e:.3f}",
+                "--force-keyframes-at-cuts",
+            ]
+        except (ValueError, TypeError):
+            pass  # skip section args if timestamps are invalid
 
+    # Match the proven config from Open-Sora's successful download:
+    #   --js-runtimes node   (CRITICAL: YouTube needs JS execution)
+    #   player_client=android (works from server IPs)
     cmd = [
         yt_dlp,
-        "-f", "bv*[ext=mp4][height<=720]+ba[ext=m4a]/bv*[height<=720]+ba/b[height<=720]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
+        "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
         "--merge-output-format", "mp4",
         "--no-part",
         "--no-playlist",
@@ -98,7 +117,8 @@ def download_youtube_video(video_id: str, start: float, end: float,
         "--retries", "3",
         "--fragment-retries", "3",
         "--socket-timeout", "30",
-        "--extractor-args", "youtube:player_client=default,web",
+        "--js-runtimes", "node",
+        "--extractor-args", "youtube:player_client=android",
         "-o", str(out_path),
         *section_args,
         url,
@@ -110,17 +130,30 @@ def download_youtube_video(video_id: str, start: float, end: float,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         if result.returncode != 0:
+            _failure_count += 1
+            if _failure_count <= _MAX_VERBOSE_FAILURES:
+                # Print actual error so we can diagnose
+                stderr_lines = result.stderr.strip().split("\n") if result.stderr else []
+                stdout_lines = result.stdout.strip().split("\n") if result.stdout else []
+                err_summary = "\n    ".join(
+                    (stderr_lines or stdout_lines)[-5:]  # last 5 lines
+                )
+                print(f"  yt-dlp error (failure #{_failure_count}):\n    {err_summary}")
             # Clean up partial downloads
             for p in out_path.parent.glob(f"{out_path.stem}*"):
                 p.unlink(missing_ok=True)
             return False
         return out_path.exists() and out_path.stat().st_size > 10_000
     except subprocess.TimeoutExpired:
+        _failure_count += 1
+        if _failure_count <= _MAX_VERBOSE_FAILURES:
+            print(f"  yt-dlp TIMEOUT after {timeout}s (failure #{_failure_count})")
         for p in out_path.parent.glob(f"{out_path.stem}*"):
             p.unlink(missing_ok=True)
         return False
     except Exception as e:
-        print(f"  Download error: {e}")
+        _failure_count += 1
+        print(f"  Download exception: {e}")
         return False
 
 

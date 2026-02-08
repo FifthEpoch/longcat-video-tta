@@ -86,6 +86,13 @@ pip install yt-dlp --quiet --upgrade 2>/dev/null || true
 pip install gdown --quiet 2>/dev/null || true
 pip install datasets --quiet 2>/dev/null || true
 
+# CRITICAL: Node.js is required for yt-dlp to extract YouTube URLs.
+# yt-dlp uses --js-runtimes node to execute YouTube's obfuscated JS.
+if ! command -v node &>/dev/null; then
+    echo "Installing Node.js via conda..."
+    conda install -y -c conda-forge nodejs --quiet 2>/dev/null || true
+fi
+
 # Ensure ffmpeg/ffprobe are available
 if ! command -v ffprobe &>/dev/null; then
     echo "Installing ffmpeg via conda..."
@@ -95,6 +102,7 @@ fi
 # Verify tools
 echo "yt-dlp:  $(yt-dlp --version 2>/dev/null || echo 'NOT FOUND')"
 echo "ffprobe: $(ffprobe -version 2>/dev/null | head -1 || echo 'NOT FOUND')"
+echo "node:    $(node --version 2>/dev/null || echo 'NOT FOUND')"
 echo "gdown:   $(python -c 'import gdown; print(gdown.__version__)' 2>/dev/null || echo 'NOT FOUND')"
 
 # ==============================================================================
