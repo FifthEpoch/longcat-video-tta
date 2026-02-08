@@ -12,8 +12,11 @@
 # Download Panda-70M 100-video stratified subset for LongCat-Video TTA
 # ==============================================================================
 # Downloads videos via yt-dlp from YouTube using Panda-70M metadata.
-# Uses HuggingFace datasets library to get metadata, stratifies by
-# caption category, and retries aggressively (~15x candidate pool).
+#
+# Metadata sources (tried in order):
+#   1. Local file (if --meta-path provided or cached clean JSONL exists)
+#   2. Google Drive (official Panda-70M metadata, via gdown)
+#   3. HuggingFace datasets (multiple possible dataset names)
 #
 # No GPU needed — this is a CPU + network job.
 #
@@ -42,6 +45,11 @@ PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 ENV_PATH="${SCRATCH_BASE}/conda-envs/longcat"
 DATASET_DIR="${PROJECT_ROOT}/datasets/panda_100"
 
+# Temp dirs on scratch (avoid cross-device link issues)
+export TMPDIR="${SCRATCH_BASE}/tmp"
+export PIP_CACHE_DIR="${SCRATCH_BASE}/pip-cache"
+mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}"
+
 # Configurable via environment variables
 NUM_VIDEOS="${NUM_VIDEOS:-100}"
 SEED="${SEED:-42}"
@@ -52,10 +60,6 @@ HF_MAX_ROWS="${HF_MAX_ROWS:-50000}"
 CANDIDATE_MULT="${CANDIDATE_MULT:-15}"
 DOWNLOAD_TIMEOUT="${DOWNLOAD_TIMEOUT:-120}"
 RESUME="${RESUME:-0}"
-
-# Optional: use existing local metadata instead of HuggingFace
-# If the old Open-Sora workspace has a JSONL, we can use it as fallback
-OLD_META="${SCRATCH_BASE}/open-sora-v2.0-experiment/datasets/panda_100/panda70m_metadata.jsonl"
 
 # ==============================================================================
 # Setup environment
@@ -79,6 +83,7 @@ echo ""
 echo "Installing download tools..."
 
 pip install yt-dlp --quiet --upgrade 2>/dev/null || true
+pip install gdown --quiet 2>/dev/null || true
 pip install datasets --quiet 2>/dev/null || true
 
 # Ensure ffmpeg/ffprobe are available
@@ -90,6 +95,7 @@ fi
 # Verify tools
 echo "yt-dlp:  $(yt-dlp --version 2>/dev/null || echo 'NOT FOUND')"
 echo "ffprobe: $(ffprobe -version 2>/dev/null | head -1 || echo 'NOT FOUND')"
+echo "gdown:   $(python -c 'import gdown; print(gdown.__version__)' 2>/dev/null || echo 'NOT FOUND')"
 
 # ==============================================================================
 # Create output directories
@@ -108,7 +114,7 @@ echo "==========================================================================
 
 cd "${PROJECT_ROOT}"
 
-# Build command
+# Build command — the Python script handles all metadata source logic
 CMD=(
     python datasets/download_panda70m_subset.py
     --out-dir "${DATASET_DIR}"
@@ -121,16 +127,6 @@ CMD=(
     --candidate-multiplier "${CANDIDATE_MULT}"
     --download-timeout "${DOWNLOAD_TIMEOUT}"
 )
-
-# NOTE: The old Open-Sora metadata JSONL is malformed (mixed types).
-# Always use HuggingFace for a clean, large candidate pool.
-# To force local metadata (not recommended), set: USE_LOCAL_META=1
-if [ "${USE_LOCAL_META:-0}" = "1" ] && [ -f "${OLD_META}" ]; then
-    echo "Using local metadata at: ${OLD_META}"
-    CMD+=(--meta-path "${OLD_META}")
-else
-    echo "Using HuggingFace metadata (iejMac/Panda-70M, ${HF_MAX_ROWS} rows)"
-fi
 
 # Resume support
 if [ "${RESUME}" = "1" ]; then

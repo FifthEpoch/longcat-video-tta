@@ -3,20 +3,21 @@
 Download a stratified subset of Panda-70M videos for LongCat-Video TTA experiments.
 
 Strategy:
-  1. Load Panda-70M metadata from HuggingFace (iejMac/Panda-70M)
+  1. Load Panda-70M metadata (CSV/JSONL local file, Google Drive, or HuggingFace)
   2. Stratify by broad caption categories (action, nature, people, etc.)
   3. Download videos via yt-dlp with robust retry logic
   4. Validate each download (ffprobe check, min frames, min duration)
   5. Stop when we reach --num-videos successful downloads
 
 YouTube availability is ~20-40% for Panda-70M, so we sample a large
-candidate pool (10x target) and iterate until we hit the target count.
+candidate pool (15x target) and iterate until we hit the target count.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import json
 import os
 import random
@@ -199,58 +200,165 @@ def validate_video(path: Path, min_duration: float = 3.0,
 
 # ── Metadata loading ────────────────────────────────────────────────────
 
-def load_metadata_from_hf(split: str = "train", max_rows: int = 50_000) -> list[dict]:
-    """Load Panda-70M metadata from HuggingFace datasets library."""
-    try:
-        from datasets import load_dataset
-        print(f"Loading Panda-70M metadata from HuggingFace (split={split}, max_rows={max_rows})...")
-        ds = load_dataset("iejMac/Panda-70M", split=split, streaming=True)
-        rows = []
-        for i, item in enumerate(ds):
-            if i >= max_rows:
-                break
-            rows.append({
-                "videoID": item.get("videoID", ""),
-                "url": item.get("url", ""),
-                "caption": item.get("caption", ""),
-                "timestamp": item.get("timestamp", {}),
-            })
-            if (i + 1) % 10_000 == 0:
-                print(f"  Loaded {i + 1} metadata rows...")
-        print(f"  Total metadata rows loaded: {len(rows)}")
-        return rows
-    except Exception as e:
-        print(f"WARNING: Failed to load from HuggingFace: {e}")
+def load_metadata_from_local(path: Path) -> list[dict]:
+    """Load metadata from a local CSV or JSONL file (plain or gzipped).
+
+    Supports:
+      - .csv / .tsv  (with headers)
+      - .jsonl / .jsonl.gz  (one JSON object per line)
+      - .gz  (gzipped JSONL or CSV)
+    """
+    if not path.exists():
+        print(f"  Local file not found: {path}")
         return []
-
-
-def load_metadata_from_jsonl(path: Path) -> list[dict]:
-    """Load metadata from a local JSONL file (plain text or gzipped)."""
-    import gzip
 
     # Detect gzip by magic bytes
     with open(path, "rb") as f:
         magic = f.read(2)
 
-    if magic == b"\x1f\x8b":
-        print(f"Detected gzipped file: {path}")
-        opener = lambda: gzip.open(path, "rt", encoding="utf-8", errors="replace")
-    else:
-        # Try utf-8, fall back to latin-1 (never fails)
-        opener = lambda: open(path, "r", encoding="utf-8", errors="replace")
+    is_gz = (magic == b"\x1f\x8b")
+    suffix = path.suffix.lower()
 
     rows = []
-    with opener() as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue  # skip malformed lines
-    print(f"Loaded {len(rows)} rows from {path}")
-    return rows
+
+    # --- Try JSONL ---
+    if suffix in {".jsonl", ".json"} or (is_gz and ".jsonl" in path.name.lower()):
+        try:
+            if is_gz:
+                opener = lambda: gzip.open(path, "rt", encoding="utf-8", errors="replace")
+            else:
+                opener = lambda: open(path, "r", encoding="utf-8", errors="replace")
+            with opener() as f:
+                for i, line in enumerate(f):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        if isinstance(obj, dict):
+                            rows.append(obj)
+                    except json.JSONDecodeError:
+                        continue
+            if rows:
+                print(f"  Loaded {len(rows)} rows from JSONL: {path}")
+                return rows
+        except Exception as e:
+            print(f"  JSONL parse failed: {e}")
+
+    # --- Try CSV ---
+    if suffix in {".csv", ".tsv"} or (not rows):
+        try:
+            if is_gz:
+                opener = lambda: gzip.open(path, "rt", encoding="utf-8", errors="replace")
+            else:
+                opener = lambda: open(path, "r", encoding="utf-8", errors="replace")
+            with opener() as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    rows.append(dict(row))
+                    if len(rows) >= 200_000:  # cap for safety
+                        break
+            if rows:
+                print(f"  Loaded {len(rows)} rows from CSV: {path}")
+                return rows
+        except Exception as e:
+            print(f"  CSV parse failed: {e}")
+
+    print(f"  Failed to parse: {path}")
+    return []
+
+
+def load_metadata_from_hf(max_rows: int = 50_000) -> list[dict]:
+    """Try loading Panda-70M metadata from HuggingFace (multiple possible names)."""
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        print("  HuggingFace 'datasets' library not installed")
+        return []
+
+    # Try multiple possible dataset names — Panda-70M has been mirrored
+    # under different orgs, and some may be gated or removed.
+    candidates = [
+        ("snap-research/Panda-70M", "train"),
+        ("iejMac/Panda-70M", "train"),
+        ("tsb0601/Panda-70M", "train"),
+    ]
+
+    for name, split in candidates:
+        try:
+            print(f"  Trying HuggingFace: {name} (split={split}) ...")
+            ds = load_dataset(name, split=split, streaming=True)
+            rows = []
+            for i, item in enumerate(ds):
+                if i >= max_rows:
+                    break
+                rows.append(dict(item))
+                if (i + 1) % 10_000 == 0:
+                    print(f"    Loaded {i + 1} rows...")
+            if rows:
+                print(f"  Success: {len(rows)} rows from {name}")
+                return rows
+        except Exception as e:
+            print(f"  Failed: {name} — {e}")
+            continue
+
+    print("  All HuggingFace sources failed")
+    return []
+
+
+def download_metadata_from_gdrive(out_path: Path) -> list[dict]:
+    """Download official Panda-70M metadata CSV from Google Drive."""
+    # Official Panda-70M Google Drive file ID
+    # (the same one used in the Open-Sora-v2.0 setup)
+    GDRIVE_ID = "1k7NzU6wVNZYl6NxOhLXE7Hz7OrpzNLgB"
+
+    try:
+        import gdown
+    except ImportError:
+        print("  gdown not installed, trying pip install...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "gdown", "--quiet"],
+                           check=True, timeout=120)
+            import gdown
+        except Exception as e:
+            print(f"  Could not install gdown: {e}")
+            return []
+
+    tmp_path = out_path.parent / "panda70m_gdrive_download.tmp"
+    try:
+        print(f"  Downloading from Google Drive (id={GDRIVE_ID})...")
+        gdown.download(id=GDRIVE_ID, output=str(tmp_path), quiet=False, fuzzy=True)
+
+        if not tmp_path.exists() or tmp_path.stat().st_size < 1000:
+            print(f"  Download too small or failed")
+            return []
+
+        # Verify it's not an HTML error page
+        with open(tmp_path, "rb") as f:
+            head = f.read(100)
+        if b"<!DOCTYPE html" in head or b"<html" in head:
+            print(f"  Downloaded HTML instead of data (Google Drive quota exceeded?)")
+            tmp_path.unlink(missing_ok=True)
+            return []
+
+        # Try to parse the downloaded file
+        rows = load_metadata_from_local(tmp_path)
+        if rows:
+            # Save as clean JSONL for next time
+            with open(out_path, "w") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+            tmp_path.unlink(missing_ok=True)
+            print(f"  Saved clean metadata to {out_path}")
+            return rows
+        else:
+            tmp_path.unlink(missing_ok=True)
+            return []
+    except Exception as e:
+        print(f"  Google Drive download failed: {e}")
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        return []
 
 
 # ── Main download pipeline ──────────────────────────────────────────────
@@ -270,9 +378,7 @@ def parse_args():
     parser.add_argument("--min-frames", type=int, default=33,
                         help="Minimum number of frames (33 = enough for LongCat conditioning)")
     parser.add_argument("--meta-path", type=str, default=None,
-                        help="Local metadata JSONL path (skip HuggingFace)")
-    parser.add_argument("--hf-split", type=str, default="train",
-                        help="HuggingFace dataset split to use")
+                        help="Local metadata CSV/JSONL path (skip online sources)")
     parser.add_argument("--hf-max-rows", type=int, default=50_000,
                         help="Max metadata rows to load from HuggingFace")
     parser.add_argument("--candidate-multiplier", type=int, default=15,
@@ -290,31 +396,51 @@ def main():
     videos_dir = out_dir / "videos"
     videos_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Load metadata ────────────────────────────────────────────────────
+    # ── Load metadata (try multiple sources) ─────────────────────────────
     rows = []
-    if args.meta_path and Path(args.meta_path).exists():
-        try:
-            rows = load_metadata_from_jsonl(Path(args.meta_path))
-        except Exception as e:
-            print(f"WARNING: Failed to load local metadata: {e}")
-            rows = []
 
-    # Fallback to HuggingFace if local metadata failed or was empty
+    # Source 1: explicit local file
+    if args.meta_path:
+        meta_path = Path(args.meta_path)
+        print(f"\n[Source 1] Loading local metadata: {meta_path}")
+        rows = load_metadata_from_local(meta_path)
+
+    # Source 2: Google Drive (official Panda-70M metadata)
     if not rows:
-        print("Falling back to HuggingFace metadata...")
-        rows = load_metadata_from_hf(split=args.hf_split,
-                                     max_rows=args.hf_max_rows)
+        clean_meta = out_dir / "panda70m_metadata_clean.jsonl"
+        if clean_meta.exists() and clean_meta.stat().st_size > 1000:
+            print(f"\n[Source 2a] Loading cached clean metadata: {clean_meta}")
+            rows = load_metadata_from_local(clean_meta)
+        if not rows:
+            print(f"\n[Source 2b] Downloading from Google Drive...")
+            rows = download_metadata_from_gdrive(clean_meta)
+
+    # Source 3: HuggingFace datasets
+    if not rows:
+        print(f"\n[Source 3] Trying HuggingFace...")
+        rows = load_metadata_from_hf(max_rows=args.hf_max_rows)
 
     if not rows:
-        print("ERROR: No metadata loaded. Provide --meta-path or check HuggingFace.")
+        print("\nERROR: No metadata loaded from any source!")
+        print("Options:")
+        print("  1. Download the Panda-70M CSV from Google Drive manually:")
+        print("     https://drive.google.com/file/d/1k7NzU6wVNZYl6NxOhLXE7Hz7OrpzNLgB")
+        print(f"     Save to: {out_dir / 'panda70m_metadata_clean.jsonl'}")
+        print("  2. Provide --meta-path <path-to-csv-or-jsonl>")
+        print("  3. pip install datasets && check huggingface.co accessibility")
         sys.exit(1)
+
+    print(f"\n✓ Loaded {len(rows)} metadata rows")
 
     # ── Normalize rows ───────────────────────────────────────────────────
     normalized = []
     for r in rows:
         if not isinstance(r, dict):
             continue  # skip malformed entries (ints, strings, etc.)
-        video_id = r.get("videoID", "")
+
+        # Try multiple possible column names
+        video_id = (r.get("videoID", "") or r.get("video_id", "")
+                    or r.get("id", "") or r.get("youtube_id", ""))
         url = r.get("url", "") or r.get("video_url", "") or r.get("video", "")
 
         # Extract video ID from YouTube URL if not provided
@@ -328,8 +454,24 @@ def main():
 
         caption = r.get("caption", "") or r.get("text", "") or "video"
         timestamp = r.get("timestamp", {})
-        start = timestamp.get("start") if isinstance(timestamp, dict) else None
-        end = timestamp.get("end") if isinstance(timestamp, dict) else None
+
+        # Parse timestamp — could be a dict, string, or list
+        start, end = None, None
+        if isinstance(timestamp, dict):
+            start = timestamp.get("start")
+            end = timestamp.get("end")
+        elif isinstance(timestamp, str):
+            try:
+                ts = json.loads(timestamp.replace("'", '"'))
+                if isinstance(ts, dict):
+                    start = ts.get("start")
+                    end = ts.get("end")
+                elif isinstance(ts, list) and len(ts) == 2:
+                    start, end = ts[0], ts[1]
+            except (json.JSONDecodeError, ValueError):
+                pass
+        elif isinstance(timestamp, (list, tuple)) and len(timestamp) == 2:
+            start, end = timestamp[0], timestamp[1]
 
         # Filter by timestamp duration if available
         if start is not None and end is not None:
@@ -348,7 +490,15 @@ def main():
             "category": categorize_caption(caption),
         })
 
-    print(f"\nNormalized {len(normalized)} candidates after filtering")
+    print(f"Normalized {len(normalized)} candidates after filtering")
+
+    if not normalized:
+        print("ERROR: No valid candidates after normalization!")
+        print("The metadata might not have 'videoID'/'url' fields.")
+        # Show a sample of what we got
+        for r in rows[:5]:
+            print(f"  Sample row keys: {list(r.keys()) if isinstance(r, dict) else type(r)}")
+        sys.exit(1)
 
     # ── Stratified sampling ──────────────────────────────────────────────
     random.seed(args.seed)
@@ -383,8 +533,11 @@ def main():
         if manifest_path.exists():
             with open(manifest_path, "r") as f:
                 for line in f:
-                    entry = json.loads(line.strip())
-                    existing[entry["videoID"]] = entry
+                    try:
+                        entry = json.loads(line.strip())
+                        existing[entry["videoID"]] = entry
+                    except (json.JSONDecodeError, KeyError):
+                        continue
             print(f"\nResuming: found {len(existing)} existing downloads")
 
     # ── Download loop ────────────────────────────────────────────────────
