@@ -117,13 +117,20 @@ def download_youtube_video(video_id: str, start: float, end: float,
         except (ValueError, TypeError):
             pass  # skip section args if timestamps are invalid
 
-    # YouTube bot detection workaround:
-    #   --cookies <file>   authenticates as a real user (bypasses bot check)
-    #   --js-runtimes node (YouTube needs JS execution)
-    #   player_client=android (works better from server IPs)
+    # YouTube bot detection workarounds:
+    #   With cookies:  authenticate as a real user (bypass bot check).
+    #                  Must NOT use player_client=android (incompatible with cookies).
+    #   Without cookies: use player_client=android as a fallback.
     cookies_args = []
+    extractor_args = []
     if _cookies_file:
         cookies_args = ["--cookies", _cookies_file]
+        # Use default web-based clients which support cookies.
+        # Do NOT set player_client=android — it is skipped when cookies
+        # are present, causing yt-dlp to fall back to thumbnail-only results.
+    else:
+        # No cookies: android client avoids bot detection on server IPs
+        extractor_args = ["--extractor-args", "youtube:player_client=android"]
 
     cmd = [
         yt_dlp,
@@ -136,7 +143,7 @@ def download_youtube_video(video_id: str, start: float, end: float,
         "--fragment-retries", "3",
         "--socket-timeout", "30",
         "--js-runtimes", "node",
-        "--extractor-args", "youtube:player_client=android",
+        *extractor_args,
         *cookies_args,
         "-o", str(out_path),
         *section_args,
