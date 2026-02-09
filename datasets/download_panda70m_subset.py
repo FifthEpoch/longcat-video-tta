@@ -74,6 +74,19 @@ def categorize_caption(caption: str) -> str:
 _failure_count = 0
 _MAX_VERBOSE_FAILURES = 20  # Print full yt-dlp output for first 20 failures
 
+# Cookies file path — set via COOKIES_FILE env var or --cookies-file arg
+_cookies_file: Optional[str] = None
+
+
+def set_cookies_file(path: Optional[str]):
+    """Set the cookies file path for YouTube authentication."""
+    global _cookies_file
+    if path and Path(path).exists():
+        _cookies_file = path
+        print(f"Using YouTube cookies: {path}")
+    elif path:
+        print(f"WARNING: Cookies file not found: {path}")
+
 
 def download_youtube_video(video_id: str, start: float, end: float,
                            out_path: Path, timeout: int = 120) -> bool:
@@ -104,9 +117,14 @@ def download_youtube_video(video_id: str, start: float, end: float,
         except (ValueError, TypeError):
             pass  # skip section args if timestamps are invalid
 
-    # Match the proven config from Open-Sora's successful download:
-    #   --js-runtimes node   (CRITICAL: YouTube needs JS execution)
-    #   player_client=android (works from server IPs)
+    # YouTube bot detection workaround:
+    #   --cookies <file>   authenticates as a real user (bypasses bot check)
+    #   --js-runtimes node (YouTube needs JS execution)
+    #   player_client=android (works better from server IPs)
+    cookies_args = []
+    if _cookies_file:
+        cookies_args = ["--cookies", _cookies_file]
+
     cmd = [
         yt_dlp,
         "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
@@ -119,6 +137,7 @@ def download_youtube_video(video_id: str, start: float, end: float,
         "--socket-timeout", "30",
         "--js-runtimes", "node",
         "--extractor-args", "youtube:player_client=android",
+        *cookies_args,
         "-o", str(out_path),
         *section_args,
         url,
@@ -536,6 +555,9 @@ def parse_args():
                         help="Timeout per video download in seconds")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from existing partial download")
+    parser.add_argument("--cookies-file", type=str, default=None,
+                        help="Path to Netscape-format cookies.txt for YouTube auth "
+                             "(bypasses bot detection). Can also set COOKIES_FILE env var.")
     return parser.parse_args()
 
 
@@ -544,6 +566,28 @@ def main():
     out_dir = Path(args.out_dir)
     videos_dir = out_dir / "videos"
     videos_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Set up YouTube cookies (bypass bot detection) ────────────────────
+    cookies_path = args.cookies_file or os.environ.get("COOKIES_FILE")
+    if cookies_path:
+        set_cookies_file(cookies_path)
+    else:
+        # Auto-detect common locations
+        for candidate in [
+            out_dir / "cookies.txt",
+            Path(os.environ.get("PROJECT_ROOT", ".")) / "datasets" / "cookies.txt",
+            Path.home() / "cookies.txt",
+        ]:
+            if candidate.exists():
+                set_cookies_file(str(candidate))
+                break
+        else:
+            print("NOTE: No YouTube cookies file found.")
+            print("  If downloads fail with 'Sign in to confirm you're not a bot',")
+            print("  export cookies from your browser and place at:")
+            print(f"    {out_dir / 'cookies.txt'}")
+            print("  See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp")
+            print()
 
     # ── Load metadata (try multiple sources) ─────────────────────────────
     rows = []

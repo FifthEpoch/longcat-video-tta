@@ -122,6 +122,32 @@ echo "==========================================================================
 
 cd "${PROJECT_ROOT}"
 
+# ── YouTube cookies (bypass bot detection) ──────────────────────────
+# YouTube blocks downloads from data center IPs ("Sign in to confirm
+# you're not a bot"). To fix this, export cookies from your browser:
+#
+#   1. Install browser extension "Get cookies.txt LOCALLY"
+#      (Chrome: https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+#   2. Go to https://www.youtube.com and sign in
+#   3. Click the extension → "Export" → save as cookies.txt
+#   4. Upload to cluster:
+#        scp cookies.txt wc3013@greene.hpc.nyu.edu:/scratch/wc3013/longcat-video-tta/datasets/cookies.txt
+#
+# The script auto-detects cookies.txt in several locations.
+COOKIES_FILE="${COOKIES_FILE:-}"
+if [ -z "${COOKIES_FILE}" ]; then
+    for candidate in \
+        "${PROJECT_ROOT}/datasets/cookies.txt" \
+        "${DATASET_DIR}/cookies.txt" \
+        "${HOME}/cookies.txt"; do
+        if [ -f "${candidate}" ]; then
+            COOKIES_FILE="${candidate}"
+            echo "Found YouTube cookies: ${COOKIES_FILE}"
+            break
+        fi
+    done
+fi
+
 # Build command — the Python script handles all metadata source logic
 CMD=(
     python datasets/download_panda70m_subset.py
@@ -135,6 +161,11 @@ CMD=(
     --candidate-multiplier "${CANDIDATE_MULT}"
     --download-timeout "${DOWNLOAD_TIMEOUT}"
 )
+
+# Cookies support
+if [ -n "${COOKIES_FILE}" ]; then
+    CMD+=(--cookies-file "${COOKIES_FILE}")
+fi
 
 # Resume support
 if [ "${RESUME}" = "1" ]; then
