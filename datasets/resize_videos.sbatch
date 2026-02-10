@@ -11,9 +11,10 @@ set -euo pipefail
 SCRATCH="/scratch/wc3013"
 REPO="${SCRATCH}/longcat-video-tta"
 
-source "${SCRATCH}/miniconda3/etc/profile.d/conda.sh" 2>/dev/null \
-  || eval "$(conda shell.bash hook)" 2>/dev/null
-conda activate longcat
+module purge
+module load anaconda3/2025.06
+source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
+conda activate "${SCRATCH}/conda-envs/longcat"
 
 cd "${REPO}"
 mkdir -p datasets/slurm_log

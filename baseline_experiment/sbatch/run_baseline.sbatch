@@ -27,11 +27,11 @@ echo "Output     : ${OUTPUT_DIR}"
 echo "Start      : $(date)"
 echo "=============================================================="
 
-# Activate conda
-source /share/apps/NYUAD/miniconda/3-4.11.0/etc/profile.d/conda.sh 2>/dev/null \
-  || source "${SCRATCH}/miniconda3/etc/profile.d/conda.sh" 2>/dev/null \
-  || eval "$(conda shell.bash hook)" 2>/dev/null
-conda activate longcat
+# Activate conda (same method as working env setup script)
+module purge
+module load anaconda3/2025.06
+source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
+conda activate "${SCRATCH}/conda-envs/longcat"
 
 export TMPDIR="${SCRATCH}/tmp"
 mkdir -p "${TMPDIR}"
