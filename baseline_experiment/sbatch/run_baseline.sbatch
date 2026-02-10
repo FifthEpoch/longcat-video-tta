@@ -62,7 +62,8 @@ python baseline_experiment/scripts/run_baseline.py \
     --num-inference-steps 50 \
     --guidance-scale 4.0 \
     --seed 42 \
-    --max-videos 100
+    --max-videos 100 \
+    --save-videos
 
 echo ""
 echo "=============================================================="

@@ -21,6 +21,7 @@ import datetime
 import gc
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -150,6 +151,27 @@ def lpips_batch(pred_frames: np.ndarray, gt_frames: np.ndarray, device="cuda") -
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def slugify(text: str, max_len: int = 80) -> str:
+    """Convert text to a filesystem-safe slug."""
+    text = text.lower().strip()
+    text = re.sub(r"[^a-z0-9\s-]", "", text)
+    text = re.sub(r"[\s]+", "-", text)
+    text = re.sub(r"-+", "-", text).strip("-")
+    return text[:max_len]
+
+
+def save_video_mp4(frames_np: np.ndarray, path: Path, fps: int = 15):
+    """Save numpy frames (T, H, W, 3) float [0,1] as mp4."""
+    out_uint8 = (frames_np * 255).clip(0, 255).astype(np.uint8)
+    out_tensor = torch.from_numpy(out_uint8)
+    from torchvision.io import write_video
+    write_video(str(path), out_tensor, fps=fps,
+                video_codec="libx264", options={"crf": "18"})
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def parse_args():
@@ -171,12 +193,13 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--max-videos", type=int, default=100)
     p.add_argument("--save-videos", action="store_true",
-                   help="Save generated video frames as mp4")
+                   help="Save generated video frames as mp4 with descriptive names")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+    wall_start = time.time()
 
     # Directories
     data_dir = Path(args.data_dir)
@@ -199,7 +222,7 @@ def main():
 
     # ── Load model ────────────────────────────────────────────────────
     print(f"Loading LongCat-Video from {args.checkpoint_dir} ...")
-    t0 = time.time()
+    t_model_start = time.time()
 
     from transformers import AutoTokenizer, UMT5EncoderModel
     from longcat_video.modules.scheduling_flow_match_euler_discrete import (
@@ -226,7 +249,9 @@ def main():
     )
     pipe.to("cuda")
 
-    print(f"Model loaded in {time.time() - t0:.1f}s")
+    t_model_end = time.time()
+    model_load_time = t_model_end - t_model_start
+    print(f"Model loaded in {model_load_time:.1f}s")
     print(f"  GPU memory: {torch.cuda.memory_allocated() / 1e9:.1f} GB allocated")
 
     # ── Load video list ───────────────────────────────────────────────
@@ -262,12 +287,20 @@ def main():
         print("ERROR: No videos found!")
         sys.exit(1)
 
+    # Create video output dir if saving
+    if args.save_videos:
+        save_dir = output_dir / "generated_videos"
+        save_dir.mkdir(exist_ok=True)
+
     # ── Inference loop ────────────────────────────────────────────────
     generator = torch.Generator(device="cuda")
     generator.manual_seed(args.seed)
 
     results = []
     all_psnr, all_ssim, all_lpips = [], [], []
+    inference_times = []
+
+    t_inference_start = time.time()
 
     for vi, entry in enumerate(video_list):
         video_path = entry["path"]
@@ -297,6 +330,7 @@ def main():
                 offload_kv_cache=True,  # offload KV cache to CPU to save GPU mem
             )[0]  # numpy array (num_frames, H, W, 3) in [0, 1]
             elapsed = time.time() - t1
+            inference_times.append(elapsed)
 
             # Extract generated frames
             gen_frames = output[args.num_cond_frames:args.num_cond_frames + args.num_gen_frames]
@@ -325,11 +359,12 @@ def main():
             entry_result = {
                 "index": vi,
                 "filename": filename,
+                "caption": caption,
                 "psnr": round(vid_psnr, 4),
                 "ssim": round(vid_ssim, 4),
                 "lpips": round(vid_lpips, 4),
                 "resolution": f"{out_h}x{out_w}",
-                "time_s": round(elapsed, 1),
+                "inference_time_s": round(elapsed, 2),
             }
             results.append(entry_result)
 
@@ -340,25 +375,24 @@ def main():
                 peak = torch.cuda.max_memory_allocated() / 1e9
                 print(f"  *** Peak GPU memory after 1st video: {peak:.1f} GB ***")
 
-            # Optionally save generated video
+            # Save generated video with descriptive name
             if args.save_videos:
-                save_dir = output_dir / "generated_videos"
-                save_dir.mkdir(exist_ok=True)
-                out_uint8 = (gen_frames * 255).clip(0, 255).astype(np.uint8)
-                out_tensor = torch.from_numpy(out_uint8)
-                from torchvision.io import write_video
-                write_video(
-                    str(save_dir / filename),
-                    out_tensor, fps=15,
-                    video_codec="libx264", options={"crf": "18"},
+                prompt_slug = slugify(caption)
+                vid_name = (
+                    f"{vi:03d}_{prompt_slug}"
+                    f"_PSNR-{vid_psnr:.3f}"
+                    f"_SSIM-{vid_ssim:.3f}"
+                    f"_LPIPS-{vid_lpips:.3f}"
+                    f".mp4"
                 )
+                save_video_mp4(gen_frames, save_dir / vid_name)
 
         except Exception as e:
             print(f"  ERROR: {e}")
             import traceback
             traceback.print_exc()
             results.append({
-                "index": vi, "filename": filename,
+                "index": vi, "filename": filename, "caption": caption,
                 "psnr": None, "ssim": None, "lpips": None,
                 "error": str(e),
             })
@@ -367,11 +401,16 @@ def main():
         gc.collect()
         torch.cuda.empty_cache()
 
+    t_inference_end = time.time()
+    total_inference_time = t_inference_end - t_inference_start
+    wall_total = time.time() - wall_start
+
     # ── Save results ──────────────────────────────────────────────────
     # Per-video CSV
     csv_path = output_dir / "per_video_metrics.csv"
     with open(csv_path, "w", newline="") as f:
-        fieldnames = ["index", "filename", "psnr", "ssim", "lpips", "resolution", "time_s"]
+        fieldnames = ["index", "filename", "caption", "psnr", "ssim", "lpips",
+                      "resolution", "inference_time_s"]
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(results)
@@ -390,6 +429,17 @@ def main():
         "seed": args.seed,
         "num_videos": len(video_list),
         "num_successful": len(all_psnr),
+        "timing": {
+            "model_load_s": round(model_load_time, 2),
+            "total_inference_s": round(total_inference_time, 2),
+            "wall_total_s": round(wall_total, 2),
+            "per_video_inference_s": {
+                "mean": round(np.mean(inference_times), 2) if inference_times else None,
+                "std": round(np.std(inference_times), 2) if inference_times else None,
+                "min": round(min(inference_times), 2) if inference_times else None,
+                "max": round(max(inference_times), 2) if inference_times else None,
+            },
+        },
         "metrics": {
             "psnr": {"mean": round(np.mean(all_psnr), 4), "std": round(np.std(all_psnr), 4),
                      "min": round(min(all_psnr), 4), "max": round(max(all_psnr), 4)} if all_psnr else {},
@@ -407,12 +457,20 @@ def main():
     print("\n" + "=" * 60)
     print("BASELINE INFERENCE COMPLETE")
     print("=" * 60)
+    print(f"\n  Timing:")
+    print(f"    Model load:         {model_load_time:.1f}s")
+    print(f"    Total inference:    {total_inference_time:.1f}s")
+    if inference_times:
+        print(f"    Per-video avg:      {np.mean(inference_times):.1f}s ± {np.std(inference_times):.1f}s")
+    print(f"    Wall-clock total:   {wall_total:.1f}s")
     if all_psnr:
-        print(f"  Videos:  {len(all_psnr)}/{len(video_list)}")
-        print(f"  PSNR:    {np.mean(all_psnr):.2f} ± {np.std(all_psnr):.2f}")
-        print(f"  SSIM:    {np.mean(all_ssim):.4f} ± {np.std(all_ssim):.4f}")
-        print(f"  LPIPS:   {np.mean(all_lpips):.4f} ± {np.std(all_lpips):.4f}")
-    print(f"\n  CSV:     {csv_path}")
+        print(f"\n  Metrics ({len(all_psnr)}/{len(video_list)} videos):")
+        print(f"    PSNR:   {np.mean(all_psnr):.2f} ± {np.std(all_psnr):.2f}")
+        print(f"    SSIM:   {np.mean(all_ssim):.4f} ± {np.std(all_ssim):.4f}")
+        print(f"    LPIPS:  {np.mean(all_lpips):.4f} ± {np.std(all_lpips):.4f}")
+    if args.save_videos:
+        print(f"\n  Videos:  {save_dir}")
+    print(f"  CSV:     {csv_path}")
     print(f"  Summary: {summary_path}")
 
     # Cleanup distributed
