@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import io
 import json
 import os
 import random
@@ -26,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
@@ -271,12 +273,34 @@ def load_metadata_from_local(path: Path) -> list[dict]:
         print(f"  Local file not found: {path}")
         return []
 
-    # Detect gzip by magic bytes
+    # Detect file type by magic bytes
     with open(path, "rb") as f:
-        magic = f.read(2)
+        magic = f.read(4)
 
-    is_gz = (magic == b"\x1f\x8b")
+    is_gz = (magic[:2] == b"\x1f\x8b")
+    is_zip = (magic[:4] == b"PK\x03\x04")
     suffix = path.suffix.lower()
+
+    # --- Handle ZIP archives (e.g. Google Drive Panda-70M download) ---
+    if is_zip:
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                csv_names = [n for n in zf.namelist()
+                             if n.lower().endswith((".csv", ".tsv"))]
+                jsonl_names = [n for n in zf.namelist()
+                               if n.lower().endswith((".jsonl", ".json"))]
+                target = (csv_names + jsonl_names)[0] if (csv_names or jsonl_names) else None
+                if not target:
+                    print(f"  ZIP has no CSV/JSONL inside: {zf.namelist()[:5]}")
+                    return []
+                print(f"  Extracting '{target}' from ZIP...")
+                extracted = path.parent / target
+                zf.extract(target, path.parent)
+                rows = load_metadata_from_local(extracted)  # recurse on extracted file
+                return rows
+        except Exception as e:
+            print(f"  ZIP extraction failed: {e}")
+            return []
 
     rows = []
 

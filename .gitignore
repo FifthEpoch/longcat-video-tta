@@ -23,6 +23,11 @@ results/
 *.pth
 *.safetensors
 
+# Downloaded datasets (large)
+datasets/panda_100/videos/
+datasets/panda_100/*.csv
+datasets/panda_100/*.jsonl
+
 # OS
 .DS_Store
 Thumbs.db

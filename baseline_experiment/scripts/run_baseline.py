@@ -70,6 +70,7 @@ def load_video_frames_pil(
     video_path: str,
     num_frames: int = 17,
     target_fps: float = 15.0,
+    target_size: int | None = 640,
 ) -> list[Image.Image]:
     """Load video frames as PIL Images, subsampled to target_fps.
 
@@ -99,7 +100,16 @@ def load_video_frames_pil(
     while len(pil_frames) < num_frames:
         pil_frames.append(pil_frames[-1])
 
-    return pil_frames[:num_frames]
+    pil_frames = pil_frames[:num_frames]
+
+    # Resize to square to force smallest 480p bucket (608×640 = 6080 latent tokens).
+    # All 480p buckets have similar pixel counts (~390K), but square minimises max
+    # dimension.  The pipeline re-resizes to the bucket anyway, so this only
+    # affects which bucket is selected.
+    if target_size is not None:
+        pil_frames = [f.resize((target_size, target_size), Image.BICUBIC) for f in pil_frames]
+
+    return pil_frames
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +180,9 @@ def parse_args():
     p.add_argument("--guidance-scale", type=float, default=4.0)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--max-videos", type=int, default=100)
+    p.add_argument("--target-size", type=int, default=640,
+                   help="Resize input frames to this square size before pipeline "
+                        "(forces smallest 480p bucket). Set 0 to keep native aspect ratio.")
     p.add_argument("--save-videos", action="store_true",
                    help="Save generated video frames as mp4")
     return p.parse_args()
@@ -277,11 +290,18 @@ def main():
         print(f"\n[{vi+1}/{len(video_list)}] {filename}")
 
         try:
-            # Load frames: need num_frames for generation + GT comparison
-            pil_frames = load_video_frames_pil(video_path, num_frames=num_frames, target_fps=15.0)
+            # Load frames at native resolution (for GT) — no square resize
+            pil_frames_native = load_video_frames_pil(
+                video_path, num_frames=num_frames, target_fps=15.0, target_size=None,
+            )
+            gt_pil = pil_frames_native[args.num_cond_frames:args.num_cond_frames + args.num_gen_frames]
 
-            # Ground truth frames (at original resolution, will resize after)
-            gt_pil = pil_frames[args.num_cond_frames:args.num_cond_frames + args.num_gen_frames]
+            # Load frames resized to square for pipeline input
+            # (forces 480p bucket 608×640 = smallest token count)
+            sq = args.target_size if args.target_size > 0 else None
+            pil_frames = load_video_frames_pil(
+                video_path, num_frames=num_frames, target_fps=15.0, target_size=sq,
+            )
 
             # Run video continuation
             t1 = time.time()
@@ -295,7 +315,7 @@ def main():
                 guidance_scale=args.guidance_scale,
                 generator=generator,
                 use_kv_cache=True,
-                offload_kv_cache=False,
+                offload_kv_cache=True,  # offload KV cache to CPU to save GPU mem
             )[0]  # numpy array (num_frames, H, W, 3) in [0, 1]
             elapsed = time.time() - t1
 
@@ -336,6 +356,10 @@ def main():
 
             print(f"  PSNR={vid_psnr:.2f}  SSIM={vid_ssim:.4f}  LPIPS={vid_lpips:.4f}  "
                   f"({out_h}x{out_w}, {elapsed:.1f}s)")
+
+            if vi == 0:
+                peak = torch.cuda.max_memory_allocated() / 1e9
+                print(f"  *** Peak GPU memory after 1st video: {peak:.1f} GB ***")
 
             # Optionally save generated video
             if args.save_videos:
