@@ -13,7 +13,7 @@ set -euo pipefail
 SCRATCH="/scratch/wc3013"
 REPO="${SCRATCH}/longcat-video-tta"
 MODEL_DIR="${MODEL_DIR:-${SCRATCH}/longcat-video-checkpoints}"
-DATA_DIR="${DATA_DIR:-${REPO}/datasets/panda_100}"
+DATA_DIR="${DATA_DIR:-${REPO}/datasets/panda_100_480p}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO}/baseline_experiment/results/baseline_480p}"
 
 echo "=============================================================="
