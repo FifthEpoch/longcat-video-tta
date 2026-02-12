@@ -162,6 +162,51 @@ def slugify(text: str, max_len: int = 80) -> str:
     return text[:max_len]
 
 
+def _get_font(size: int):
+    """Try to load a TrueType font, fall back to default."""
+    from PIL import ImageFont
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",       # Linux
+        "/System/Library/Fonts/Helvetica.ttc",                          # macOS
+        "/System/Library/Fonts/SFNSMono.ttf",                          # macOS alt
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except (IOError, OSError):
+            continue
+    return ImageFont.load_default()
+
+
+def annotate_frame(
+    frame_uint8: np.ndarray,
+    label: str,
+    border_color: tuple[int, int, int] | None = None,
+    border_width: int = 3,
+) -> np.ndarray:
+    """Return a copy of *frame_uint8* (H,W,3 uint8) with a text label and
+    optional coloured border drawn on it."""
+    from PIL import ImageDraw
+    img = Image.fromarray(frame_uint8)
+    draw = ImageDraw.Draw(img)
+    h, w = frame_uint8.shape[:2]
+
+    # Border
+    if border_color is not None:
+        for i in range(border_width):
+            draw.rectangle([i, i, w - 1 - i, h - 1 - i], outline=border_color)
+
+    # Text
+    font_size = max(12, h // 25)
+    font = _get_font(font_size)
+    margin = (border_width + 4) if border_color else 6
+    bbox = draw.textbbox((margin, margin), label, font=font)
+    pad = 3
+    draw.rectangle([bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad],
+                    fill=(0, 0, 0))
+    draw.text((margin, margin), label, fill="white", font=font)
+    return np.array(img)
+
+
 def save_video_mp4(frames_np: np.ndarray, path: Path, fps: int = 15):
     """Save numpy frames (T, H, W, 3) float [0,1] as mp4."""
     out_uint8 = (frames_np * 255).clip(0, 255).astype(np.uint8)
@@ -375,7 +420,7 @@ def main():
                 peak = torch.cuda.max_memory_allocated() / 1e9
                 print(f"  *** Peak GPU memory after 1st video: {peak:.1f} GB ***")
 
-            # Save generated video with descriptive name
+            # Save annotated video (conditioning + generated) with descriptive name
             if args.save_videos:
                 prompt_slug = slugify(caption)
                 vid_name = (
@@ -385,7 +430,21 @@ def main():
                     f"_LPIPS-{vid_lpips:.3f}"
                     f".mp4"
                 )
-                save_video_mp4(gen_frames, save_dir / vid_name)
+                # Combine conditioning + generated frames with annotations
+                full_clip = output[:args.num_cond_frames + args.num_gen_frames]
+                full_uint8 = (full_clip * 255).clip(0, 255).astype(np.uint8)
+                annotated = []
+                for fi in range(len(full_uint8)):
+                    if fi < args.num_cond_frames:
+                        annotated.append(annotate_frame(
+                            full_uint8[fi], "CONDITIONING",
+                            border_color=(255, 0, 0), border_width=3))
+                    else:
+                        annotated.append(annotate_frame(
+                            full_uint8[fi], "GENERATED",
+                            border_color=(0, 255, 0), border_width=3))
+                annotated_np = np.stack(annotated).astype(np.float32) / 255.0
+                save_video_mp4(annotated_np, save_dir / vid_name)
 
         except Exception as e:
             print(f"  ERROR: {e}")
