@@ -2,20 +2,23 @@
 """
 Extract annotated ground-truth clips from original 480p videos.
 
-Cuts the first (num_cond + num_gen) frames from each video, annotates
-conditioning frames with a red border / "CONDITIONING" label and ground-truth
-frames with a blue border / "GROUND TRUTH" label.
+Uses the same fixed-anchor scheme as run_baseline.py:
+  Conditioning = video[anchor - num_cond : anchor]
+  GT           = video[anchor : anchor + num_gen]
+
+This ensures the GT clips match exactly what the generation pipeline is
+compared against, for every cond/gen config.
 
 Usage:
   python extract_gt_videos.py \
       --data-dir datasets/panda_100_480p \
       --out-dir baseline_experiment/results/gt_clips_panda \
-      --num-cond 28 --num-gen 14
+      --num-cond 28 --num-gen 14 --gen-start-frame 32
 
   python extract_gt_videos.py \
       --data-dir datasets/ucf101_100_480p \
       --out-dir baseline_experiment/results/gt_clips_ucf101 \
-      --num-cond 28 --num-gen 14
+      --num-cond 28 --num-gen 14 --gen-start-frame 32
 """
 from __future__ import annotations
 
@@ -131,6 +134,10 @@ def main():
                    help="Number of conditioning frames to show")
     p.add_argument("--num-gen", type=int, default=14,
                    help="Number of ground-truth (generated) frames to show")
+    p.add_argument("--gen-start-frame", type=int, default=32,
+                   help="Fixed anchor frame index where generation begins. "
+                        "Cond = video[anchor-cond : anchor], "
+                        "GT = video[anchor : anchor+gen].")
     p.add_argument("--max-videos", type=int, default=100)
     args = p.parse_args()
 
@@ -138,7 +145,12 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    total_frames = args.num_cond + args.num_gen
+    anchor = args.gen_start_frame
+    assert anchor >= args.num_cond, (
+        f"--gen-start-frame ({anchor}) must be >= --num-cond ({args.num_cond})"
+    )
+    # Need frames from (anchor - num_cond) to (anchor + num_gen - 1)
+    num_load = anchor + args.num_gen
 
     # Load video list from metadata.csv
     meta_csv = data_dir / "metadata.csv"
@@ -164,16 +176,24 @@ def main():
             video_list.append({"path": str(vp), "caption": "", "filename": vp.name})
 
     video_list = video_list[:args.max_videos]
-    print(f"Processing {len(video_list)} videos → {total_frames} frames each "
-          f"({args.num_cond} cond + {args.num_gen} GT)", flush=True)
+    cond_start = anchor - args.num_cond
+    print(f"Processing {len(video_list)} videos", flush=True)
+    print(f"  Anchor: frame {anchor}", flush=True)
+    print(f"  Cond:   frames [{cond_start}:{anchor}] ({args.num_cond} frames)", flush=True)
+    print(f"  GT:     frames [{anchor}:{anchor + args.num_gen}] ({args.num_gen} frames)", flush=True)
 
     ok = fail = 0
     for vi, entry in enumerate(video_list):
         try:
-            frames = load_frames(entry["path"], total_frames)
+            all_frames = load_frames(entry["path"], num_load)
+
+            # Slice conditioning and GT from the anchor point
+            cond_frames = all_frames[cond_start:anchor]
+            gt_frames = all_frames[anchor:anchor + args.num_gen]
+            clip_frames = cond_frames + gt_frames
 
             annotated = []
-            for fi, f in enumerate(frames):
+            for fi, f in enumerate(clip_frames):
                 if fi < args.num_cond:
                     annotated.append(annotate_frame(
                         f, "CONDITIONING",

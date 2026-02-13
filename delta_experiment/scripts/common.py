@@ -13,7 +13,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -103,19 +103,31 @@ def load_video_frames(
     num_frames: int,
     height: int = 480,
     width: int = 832,
+    start_frame: int = 0,
 ) -> torch.Tensor:
     """Load video frames as a tensor [1, C, T, H, W] in [-1, 1].
 
-    Uses PIL / decord / av depending on availability.
+    Args:
+        video_path: path to video file.
+        num_frames: how many frames to return.
+        height, width: target spatial resolution.
+        start_frame: skip this many decoded frames before collecting.
+                     Useful for the anchor-based scheme where conditioning
+                     starts at ``anchor - num_cond`` instead of frame 0.
     """
     import av
     container = av.open(video_path)
     frames = []
+    decoded = 0
     for frame in container.decode(video=0):
+        if decoded < start_frame:
+            decoded += 1
+            continue
         if len(frames) >= num_frames:
             break
         img = frame.to_ndarray(format="rgb24")
         frames.append(img)
+        decoded += 1
     container.close()
 
     if len(frames) == 0:
@@ -577,6 +589,240 @@ def load_panda70m_video_list(
     rng = np.random.RandomState(seed)
     rng.shuffle(video_entries)
     return video_entries[:max_videos]
+
+
+# ============================================================================
+# Data augmentation for TTA
+# ============================================================================
+
+def parse_speed_factors(raw: str) -> List[float]:
+    """Parse comma-separated speed factors string, e.g. '0.5,2.0'."""
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split(",")]
+    return [float(p) for p in parts if p]
+
+
+def _rotation_scale(h: int, w: int, degrees: float) -> float:
+    """Compute zoom scale needed to avoid black borders after rotation."""
+    rad = abs(degrees) * (3.141592653589793 / 180.0)
+    cos_a = abs(torch.cos(torch.tensor(rad)).item())
+    sin_a = abs(torch.sin(torch.tensor(rad)).item())
+    new_w = w * cos_a + h * sin_a
+    new_h = h * cos_a + w * sin_a
+    return max(new_w / w, new_h / h)
+
+
+def _rotate_clip(pixel_frames: torch.Tensor, degrees: float, zoom: bool = False) -> torch.Tensor:
+    """Rotate all frames of a clip by *degrees*.
+
+    Parameters
+    ----------
+    pixel_frames : [1, C, T, H, W]
+    degrees : rotation angle (can be negative)
+    zoom : if True, scale up so rotated content fills the canvas
+
+    Returns
+    -------
+    Rotated clip of same shape [1, C, T, H, W].
+    """
+    import torchvision.transforms.functional as TF
+    from torchvision.transforms.functional import InterpolationMode
+
+    clip = pixel_frames[0].permute(1, 0, 2, 3)  # [T, C, H, W]
+    h, w = int(clip.shape[-2]), int(clip.shape[-1])
+    scale = _rotation_scale(h, w, degrees) if zoom else 1.0
+    rotated = torch.stack(
+        [
+            TF.affine(
+                frame,
+                degrees,
+                translate=[0, 0],
+                scale=scale,
+                shear=[0.0, 0.0],
+                interpolation=InterpolationMode.BILINEAR,
+                fill=0.0,
+            )
+            for frame in clip
+        ],
+        dim=0,
+    )
+    return rotated.permute(1, 0, 2, 3).unsqueeze(0)
+
+
+def build_augmented_pixel_variants(
+    pixel_frames: torch.Tensor,
+    *,
+    enable_flip: bool = False,
+    rotate_deg: float = 0.0,
+    rotate_random_min: float = 5.0,
+    rotate_random_max: float = 15.0,
+    rotate_random_count: int = 2,
+    rotate_random_step: float = 1.0,
+    rotate_zoom: bool = True,
+    speed_factors: Optional[Iterable[float]] = None,
+) -> List[Dict[str, Any]]:
+    """Build augmented pixel variants from a conditioning clip.
+
+    Each variant is a dict with keys: pixel_frames, name.
+
+    Parameters
+    ----------
+    pixel_frames : [1, C, T, H, W] in [-1, 1]
+    enable_flip : include a horizontal-flip variant
+    rotate_deg : if > 0, add fixed ±deg rotations
+    rotate_random_min/max/count/step : random-rotation variants
+    rotate_zoom : zoom to fill canvas after rotating
+    speed_factors : temporal speed changes (e.g. 0.5 = slow, 2.0 = fast)
+
+    Returns
+    -------
+    List of variant dicts.  The first is always the original clip.
+    """
+    variants: List[Dict[str, Any]] = []
+    t_len = int(pixel_frames.shape[2])
+
+    # Original (always first)
+    variants.append({"pixel_frames": pixel_frames, "name": "orig"})
+
+    # Horizontal flip
+    if enable_flip:
+        variants.append({
+            "pixel_frames": pixel_frames.flip(dims=[4]),
+            "name": "flip_h",
+        })
+
+    # Fixed rotations
+    if rotate_deg and rotate_deg > 0:
+        for deg in (-rotate_deg, rotate_deg):
+            variants.append({
+                "pixel_frames": _rotate_clip(pixel_frames, deg, zoom=rotate_zoom),
+                "name": f"rotate_{deg:+.1f}",
+            })
+
+    # Random rotations
+    if rotate_random_count and rotate_random_count > 0:
+        rmin = rotate_random_min if rotate_random_min is not None else 0.0
+        rmax = rotate_random_max if rotate_random_max is not None else 0.0
+        if rmin > rmax:
+            rmin, rmax = rmax, rmin
+
+        if rotate_random_step and rotate_random_step > 0:
+            options = torch.arange(rmin, rmax + 1e-6, rotate_random_step)
+            if len(options) == 0:
+                options = torch.tensor([rmin])
+            idx = torch.randint(0, len(options), (rotate_random_count,))
+            angles = options[idx].tolist()
+        else:
+            angles = torch.empty(rotate_random_count).uniform_(rmin, rmax).tolist()
+
+        for deg in angles:
+            if abs(deg) < 1e-6:
+                continue
+            variants.append({
+                "pixel_frames": _rotate_clip(pixel_frames, float(deg), zoom=rotate_zoom),
+                "name": f"rotate_rand_{float(deg):+.1f}",
+            })
+
+    # Temporal speed changes
+    if speed_factors:
+        device = pixel_frames.device
+        for factor in speed_factors:
+            if factor == 1.0:
+                continue
+            if factor > 1.0:
+                stride = max(2, int(round(factor)))
+                idx = torch.arange(0, t_len, step=stride, device=device)
+                variants.append({
+                    "pixel_frames": pixel_frames[:, :, idx, :, :],
+                    "name": f"speed_{stride}x",
+                })
+            elif factor < 1.0:
+                repeat = max(2, int(round(1.0 / factor)))
+                idx = torch.arange(t_len, device=device).repeat_interleave(repeat)[:t_len]
+                variants.append({
+                    "pixel_frames": pixel_frames[:, :, idx, :, :],
+                    "name": f"slow_{repeat}x",
+                })
+
+    return variants
+
+
+def build_augmented_latent_variants(
+    pixel_frames: torch.Tensor,
+    base_latents: torch.Tensor,
+    vae: AutoencoderKLWan,
+    *,
+    enable_flip: bool = False,
+    rotate_deg: float = 0.0,
+    rotate_random_min: float = 5.0,
+    rotate_random_max: float = 15.0,
+    rotate_random_count: int = 2,
+    rotate_random_step: float = 1.0,
+    rotate_zoom: bool = True,
+    speed_factors: Optional[Iterable[float]] = None,
+) -> List[Dict[str, Any]]:
+    """Build augmented latent variants from a conditioning clip.
+
+    Augments at the pixel level, then encodes through the VAE.
+    The 'orig' variant reuses the already-encoded *base_latents*
+    to avoid redundant encoding.
+
+    Returns list of dicts with keys: latents, name.
+    """
+    pixel_variants = build_augmented_pixel_variants(
+        pixel_frames,
+        enable_flip=enable_flip,
+        rotate_deg=rotate_deg,
+        rotate_random_min=rotate_random_min,
+        rotate_random_max=rotate_random_max,
+        rotate_random_count=rotate_random_count,
+        rotate_random_step=rotate_random_step,
+        rotate_zoom=rotate_zoom,
+        speed_factors=speed_factors,
+    )
+
+    latent_variants: List[Dict[str, Any]] = []
+    for item in pixel_variants:
+        if item["name"] == "orig":
+            latents = base_latents
+        else:
+            latents = encode_video(vae, item["pixel_frames"], normalize=True)
+        latent_variants.append({
+            "latents": latents,
+            "name": item["name"],
+        })
+
+    return latent_variants
+
+
+def add_augmentation_args(parser):
+    """Add common augmentation CLI flags to an argparse parser."""
+    group = parser.add_argument_group("Data augmentation")
+    group.add_argument("--aug-enabled", action="store_true",
+                       help="Enable data augmentation during TTA")
+    group.add_argument("--aug-flip", action="store_true",
+                       help="Enable horizontal flip augmentation")
+    group.add_argument("--aug-rotate-deg", type=float, default=10.0,
+                       help="Fixed rotation degrees (applies ±deg)")
+    group.add_argument("--aug-rotate-random-min", type=float, default=5.0,
+                       help="Random rotation min degrees")
+    group.add_argument("--aug-rotate-random-max", type=float, default=15.0,
+                       help="Random rotation max degrees")
+    group.add_argument("--aug-rotate-random-count", type=int, default=2,
+                       help="Number of random rotation variants")
+    group.add_argument("--aug-rotate-random-step", type=float, default=1.0,
+                       help="Discrete step size for random rotations")
+    group.add_argument(
+        "--no-aug-rotate-zoom",
+        action="store_false",
+        dest="aug_rotate_zoom",
+        help="Disable zoom when rotating (may introduce black borders)",
+    )
+    parser.set_defaults(aug_rotate_zoom=True)
+    group.add_argument("--aug-speed-factors", type=str, default="",
+                       help="Comma-separated speed factors (e.g. 0.5,2.0)")
+    return parser
 
 
 # ============================================================================

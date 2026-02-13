@@ -2,11 +2,18 @@
 """
 Baseline inference for LongCat-Video on Panda-70M videos.
 
+Uses a fixed "generation anchor" (--gen-start-frame) so that generated /
+ground-truth frames always correspond to the same section of the source
+video regardless of how many conditioning or generation frames are used.
+
+  Conditioning = video[anchor - num_cond : anchor]
+  GT           = video[anchor : anchor + num_gen]
+
 For each video:
   1. Load frames at 15 fps
-  2. Use first 2 frames as conditioning
-  3. Generate 15 frames via video continuation (480p)
-  4. Compare 14 generated frames vs ground truth
+  2. Extract conditioning frames ending at the anchor
+  3. Generate continuation frames via video continuation (480p)
+  4. Compare generated frames vs GT (same frames for every config)
   5. Report PSNR, SSIM, LPIPS
 
 Requires single GPU (H200). No torchrun needed — sets up distributed
@@ -231,6 +238,11 @@ def parse_args():
                    help="Number of conditioning frames")
     p.add_argument("--num-gen-frames", type=int, default=14,
                    help="Number of frames to generate and evaluate")
+    p.add_argument("--gen-start-frame", type=int, default=32,
+                   help="Fixed anchor frame index where generation begins. "
+                        "Conditioning = frames[anchor-cond : anchor], "
+                        "GT = frames[anchor : anchor+gen]. "
+                        "Ensures fair comparison across configs.")
     p.add_argument("--resolution", type=str, default="480p",
                    choices=["480p", "720p"])
     p.add_argument("--num-inference-steps", type=int, default=50)
@@ -251,14 +263,30 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Total frames needed: cond + gen + 1 (because num_frames must satisfy (n-1)%4==0)
-    # For 2 cond + 14 gen = 16 → nearest valid = 17 (since (17-1)/4 = 4)
-    num_total = args.num_cond_frames + args.num_gen_frames
+    # ── Anchor-based frame layout ────────────────────────────────────
+    # gen_start_frame (anchor) is the fixed frame index where generation
+    # begins.  Conditioning frames are the *preceding* frames:
+    #   cond = video[anchor - num_cond : anchor]
+    #   GT   = video[anchor : anchor + num_gen]
+    # This ensures fair comparison across different cond/gen configs.
+    anchor = args.gen_start_frame
+    assert anchor >= args.num_cond_frames, (
+        f"--gen-start-frame ({anchor}) must be >= --num-cond-frames ({args.num_cond_frames})"
+    )
+
+    # Frames to load from source video: we need up to anchor + num_gen
+    num_load_from_video = anchor + args.num_gen_frames
+
+    # Pipeline frame count: cond + gen, rounded up for VAE temporal factor
+    num_pipeline_input = args.num_cond_frames + args.num_gen_frames
     vae_temporal_factor = 4
     # Round up to valid: (n-1) % vae_temporal_factor == 0
-    num_frames = ((num_total - 1 + vae_temporal_factor - 1) // vae_temporal_factor) * vae_temporal_factor + 1
+    num_frames = ((num_pipeline_input - 1 + vae_temporal_factor - 1) // vae_temporal_factor) * vae_temporal_factor + 1
     num_gen_actual = num_frames - args.num_cond_frames
-    print(f"Frame config: {args.num_cond_frames} cond + {num_gen_actual} gen = {num_frames} total")
+    print(f"Anchor frame: {anchor}")
+    print(f"  Conditioning: frames [{anchor - args.num_cond_frames}:{anchor}]")
+    print(f"  GT:           frames [{anchor}:{anchor + args.num_gen_frames}]")
+    print(f"  Pipeline:     {args.num_cond_frames} cond + {num_gen_actual} gen = {num_frames} total")
     print(f"  (evaluating first {args.num_gen_frames} of {num_gen_actual} generated frames)")
 
     # ── Init distributed ──────────────────────────────────────────────
@@ -355,15 +383,22 @@ def main():
         print(f"\n[{vi+1}/{len(video_list)}] {filename}")
 
         try:
-            # Load frames at native resolution (pipeline picks 480p bucket
-            # based on the video's natural aspect ratio)
-            pil_frames = load_video_frames_pil(video_path, num_frames=num_frames, target_fps=15.0)
-            gt_pil = pil_frames[args.num_cond_frames:args.num_cond_frames + args.num_gen_frames]
+            # Load enough frames from video to cover [anchor-cond, anchor+gen)
+            all_pil = load_video_frames_pil(video_path, num_frames=num_load_from_video, target_fps=15.0)
+
+            # Slice conditioning and GT based on fixed anchor
+            cond_start = anchor - args.num_cond_frames
+            cond_pil = all_pil[cond_start:anchor]                         # frames for pipeline input
+            gt_pil = all_pil[anchor:anchor + args.num_gen_frames]         # ground truth for metrics
+
+            # Build pipeline input: cond frames only (pipeline generates the rest)
+            # The pipeline expects num_frames total and uses first num_cond_frames as conditioning
+            pipeline_input = cond_pil  # list of PIL Images
 
             # Run video continuation
             t1 = time.time()
             output = pipe.generate_vc(
-                video=pil_frames,
+                video=pipeline_input,
                 prompt=caption,
                 resolution=args.resolution,
                 num_frames=num_frames,
@@ -482,6 +517,7 @@ def main():
         "resolution": args.resolution,
         "num_cond_frames": args.num_cond_frames,
         "num_gen_frames": args.num_gen_frames,
+        "gen_start_frame": anchor,
         "num_frames_total": num_frames,
         "num_inference_steps": args.num_inference_steps,
         "guidance_scale": args.guidance_scale,

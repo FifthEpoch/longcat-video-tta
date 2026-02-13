@@ -61,25 +61,37 @@ def evaluate_single_video(
     caption: str,
     num_cond_frames: int = 13,
     num_frames: int = 93,
+    gen_start_frame: int = 32,
     resolution: str = "480p",
     seed: int = 42,
     device: str = "cuda",
 ) -> Dict:
     """Evaluate a single video: generate continuation and compute metrics.
 
+    Uses anchor-based indexing:
+      Conditioning = video[anchor - num_cond : anchor]
+      GT           = video[anchor : anchor + num_gen]
+
     Returns a dict with PSNR, SSIM, LPIPS, and timing info.
     """
     vae = components["vae"]
     pipe = components["pipe"]
 
-    # Load ground truth video (full length)
-    gt_pixel = load_video_frames(
-        video_path, num_frames, height=480, width=832
+    num_gen = num_frames - num_cond_frames
+    anchor = gen_start_frame
+
+    # Load conditioning frames from [anchor - num_cond : anchor]
+    cond_start = anchor - num_cond_frames
+    cond_pixel = load_video_frames(
+        video_path, num_cond_frames, height=480, width=832,
+        start_frame=cond_start,
     ).to(device, torch.bfloat16)
 
-    # Split into conditioning and GT future
-    cond_pixel = gt_pixel[:, :, :num_cond_frames]
-    gt_future_pixel = gt_pixel[:, :, num_cond_frames:]
+    # Load GT future frames from [anchor : anchor + num_gen]
+    gt_future_pixel = load_video_frames(
+        video_path, num_gen, height=480, width=832,
+        start_frame=anchor,
+    ).to(device, torch.bfloat16)
 
     if gt_future_pixel.shape[2] == 0:
         return {"error": "No GT future frames available"}
@@ -159,6 +171,10 @@ def main():
     parser.add_argument("--max-videos", type=int, default=100)
     parser.add_argument("--num-cond-frames", type=int, default=13)
     parser.add_argument("--num-frames", type=int, default=93)
+    parser.add_argument("--gen-start-frame", type=int, default=32,
+                        help="Fixed anchor frame where generation starts. "
+                             "Cond = video[anchor-cond : anchor], "
+                             "GT = video[anchor : anchor+gen].")
     parser.add_argument("--resolution", type=str, default="480p")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda")
@@ -223,6 +239,7 @@ def main():
                 caption=caption,
                 num_cond_frames=args.num_cond_frames,
                 num_frames=args.num_frames,
+                gen_start_frame=args.gen_start_frame,
                 resolution=args.resolution,
                 seed=args.seed,
                 device=args.device,

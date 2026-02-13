@@ -61,6 +61,9 @@ from common import (
     compute_psnr,
     compute_ssim_batch,
     compute_lpips_batch,
+    build_augmented_latent_variants,
+    add_augmentation_args,
+    parse_speed_factors,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -253,6 +256,7 @@ def finetune_lora_on_conditioning(
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
+    latents_variants: Optional[List[Dict]] = None,
 ) -> Dict:
     """Fine-tune LoRA adapters on conditioning latents.
 
@@ -272,6 +276,10 @@ def finetune_lora_on_conditioning(
         eps=1e-8,
     )
 
+    # Build variant list (original only if no augmentation)
+    if latents_variants is None:
+        latents_variants = [{"latents": latents, "name": "orig"}]
+
     dit.train()
     losses = []
     train_start = time.time()
@@ -285,9 +293,13 @@ def finetune_lora_on_conditioning(
             for pg in optimizer.param_groups:
                 pg["lr"] = warmup_lr
 
+        # Randomly pick a variant
+        vi = torch.randint(0, len(latents_variants), (1,)).item()
+        step_latents = latents_variants[vi]["latents"]
+
         loss = compute_flow_matching_loss(
             dit=dit,
-            latents=latents,
+            latents=step_latents,
             prompt_embeds=prompt_embeds,
             prompt_mask=prompt_mask,
             device=device,
@@ -398,6 +410,10 @@ def main():
                         help="Number of conditioning frames from the input video")
     parser.add_argument("--num-frames", type=int, default=93,
                         help="Total number of frames to generate (including cond)")
+    parser.add_argument("--gen-start-frame", type=int, default=32,
+                        help="Fixed anchor frame where generation starts. "
+                             "Cond = video[anchor-cond : anchor]. "
+                             "Ensures fair comparison across configs.")
     parser.add_argument("--num-inference-steps", type=int, default=50,
                         help="Number of diffusion denoising steps for generation")
     parser.add_argument("--guidance-scale", type=float, default=4.0,
@@ -409,6 +425,7 @@ def main():
 
     # Early stopping
     add_early_stopping_args(parser)
+    add_augmentation_args(parser)
 
     args = parser.parse_args()
 
@@ -542,9 +559,11 @@ def main():
         print(f"\n[{idx + 1}/{len(videos)}] {video_name}: {caption}")
 
         try:
-            # Load and encode video
+            # Load conditioning frames using anchor-based indexing
+            cond_start = args.gen_start_frame - args.num_cond_frames
             pixel_frames = load_video_frames(
-                video_path, args.num_cond_frames, height=480, width=832
+                video_path, args.num_cond_frames, height=480, width=832,
+                start_frame=cond_start,
             ).to(args.device, torch.bfloat16)
 
             latents = encode_video(vae, pixel_frames, normalize=True)
@@ -554,6 +573,25 @@ def main():
                 tokenizer, text_encoder, caption,
                 device=args.device, dtype=torch.bfloat16,
             )
+
+            # Build augmented latent variants if enabled
+            latents_variants = None
+            if args.aug_enabled:
+                latents_variants = build_augmented_latent_variants(
+                    pixel_frames=pixel_frames,
+                    base_latents=latents,
+                    vae=vae,
+                    enable_flip=args.aug_flip,
+                    rotate_deg=args.aug_rotate_deg,
+                    rotate_random_min=args.aug_rotate_random_min,
+                    rotate_random_max=args.aug_rotate_random_max,
+                    rotate_random_count=args.aug_rotate_random_count,
+                    rotate_random_step=args.aug_rotate_random_step,
+                    rotate_zoom=args.aug_rotate_zoom,
+                    speed_factors=parse_speed_factors(args.aug_speed_factors),
+                )
+                print(f"  Augmentation: {len(latents_variants)} variants "
+                      f"({', '.join(v['name'] for v in latents_variants)})")
 
             # Reset LoRA weights before each video
             reset_lora_weights(lora_modules)
@@ -584,6 +622,7 @@ def main():
                 device=args.device,
                 dtype=torch.bfloat16,
                 early_stopper=early_stopper,
+                latents_variants=latents_variants,
             )
 
             result = {

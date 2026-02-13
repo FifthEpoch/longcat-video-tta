@@ -46,6 +46,9 @@ from common import (
     load_checkpoint,
     save_checkpoint,
     torch_gc,
+    build_augmented_latent_variants,
+    add_augmentation_args,
+    parse_speed_factors,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -161,9 +164,14 @@ def optimize_delta_c(
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
+    latents_variants: Optional[List[Dict]] = None,
 ) -> Dict:
     """Optimize the output correction delta."""
     optimizer = AdamW([wrapper.delta_out], lr=lr, betas=(0.9, 0.999), eps=1e-15)
+
+    # Build variant list (original only if no augmentation)
+    if latents_variants is None:
+        latents_variants = [{"latents": latents, "name": "orig"}]
 
     wrapper.train()
     losses = []
@@ -171,9 +179,13 @@ def optimize_delta_c(
     for step in range(num_steps):
         optimizer.zero_grad()
 
+        # Randomly pick a variant
+        vi = torch.randint(0, len(latents_variants), (1,)).item()
+        step_latents = latents_variants[vi]["latents"]
+
         loss = compute_flow_matching_loss(
             dit=wrapper,
-            latents=latents,
+            latents=step_latents,
             prompt_embeds=prompt_embeds,
             prompt_mask=prompt_mask,
             device=device,
@@ -223,6 +235,10 @@ def main():
                         choices=["per_channel"])
     parser.add_argument("--num-cond-frames", type=int, default=13)
     parser.add_argument("--num-frames", type=int, default=93)
+    parser.add_argument("--gen-start-frame", type=int, default=32,
+                        help="Fixed anchor frame where generation starts. "
+                             "Cond = video[anchor-cond : anchor]. "
+                             "Ensures fair comparison across configs.")
     parser.add_argument("--num-inference-steps", type=int, default=50)
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--resolution", type=str, default="480p")
@@ -231,6 +247,7 @@ def main():
     parser.add_argument("--skip-generation", action="store_true",
                         help="Skip video generation (only train delta)")
     add_early_stopping_args(parser)
+    add_augmentation_args(parser)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -250,6 +267,7 @@ def main():
     print(f"Mode           : {args.delta_mode}")
     print(f"Delta steps    : {args.delta_steps}")
     print(f"Delta LR       : {args.delta_lr}")
+    print(f"Augmentation   : {args.aug_enabled}")
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
 
@@ -285,8 +303,11 @@ def main():
         print(f"\n[{idx + 1}/{len(videos)}] {video_name}: {caption}")
 
         try:
+            # Load conditioning frames using anchor-based indexing
+            cond_start = args.gen_start_frame - args.num_cond_frames
             pixel_frames = load_video_frames(
-                video_path, args.num_cond_frames, height=480, width=832
+                video_path, args.num_cond_frames, height=480, width=832,
+                start_frame=cond_start,
             ).to(args.device, torch.bfloat16)
 
             latents = encode_video(vae, pixel_frames, normalize=True)
@@ -295,6 +316,25 @@ def main():
                 tokenizer, text_encoder, caption,
                 device=args.device, dtype=torch.bfloat16,
             )
+
+            # Build augmented latent variants if enabled
+            latents_variants = None
+            if args.aug_enabled:
+                latents_variants = build_augmented_latent_variants(
+                    pixel_frames=pixel_frames,
+                    base_latents=latents,
+                    vae=vae,
+                    enable_flip=args.aug_flip,
+                    rotate_deg=args.aug_rotate_deg,
+                    rotate_random_min=args.aug_rotate_random_min,
+                    rotate_random_max=args.aug_rotate_random_max,
+                    rotate_random_count=args.aug_rotate_random_count,
+                    rotate_random_step=args.aug_rotate_random_step,
+                    rotate_zoom=args.aug_rotate_zoom,
+                    speed_factors=parse_speed_factors(args.aug_speed_factors),
+                )
+                print(f"  Augmentation: {len(latents_variants)} variants "
+                      f"({', '.join(v['name'] for v in latents_variants)})")
 
             wrapper = DeltaCWrapper(
                 dit, mode=args.delta_mode,
@@ -327,6 +367,7 @@ def main():
                 device=args.device,
                 dtype=torch.bfloat16,
                 early_stopper=early_stopper,
+                latents_variants=latents_variants,
             )
             train_time = time.time() - t0
 

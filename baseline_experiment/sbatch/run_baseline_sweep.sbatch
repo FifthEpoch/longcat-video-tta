@@ -17,6 +17,7 @@ DATA_DIR="${DATA_DIR:-${REPO}/datasets/panda_100_480p}"
 # ── Parameterised frame counts ──
 NUM_COND="${NUM_COND:-2}"
 NUM_GEN="${NUM_GEN:-14}"
+GEN_START="${GEN_START:-32}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO}/baseline_experiment/results/cond${NUM_COND}_gen${NUM_GEN}}"
 
 echo "=============================================================="
@@ -25,7 +26,7 @@ echo "=============================================================="
 echo "Job ID     : ${SLURM_JOB_ID}"
 echo "Node       : $(hostname)"
 echo "GPU        : $(nvidia-smi --query-gpu=name --format=csv,noheader)"
-echo "Config     : ${NUM_COND} cond + ${NUM_GEN} gen frames"
+echo "Config     : ${NUM_COND} cond + ${NUM_GEN} gen frames (anchor=${GEN_START})"
 echo "Model      : ${MODEL_DIR}"
 echo "Data       : ${DATA_DIR}"
 echo "Output     : ${OUTPUT_DIR}"
@@ -63,6 +64,7 @@ python baseline_experiment/scripts/run_baseline.py \
     --output-dir "${OUTPUT_DIR}" \
     --num-cond-frames "${NUM_COND}" \
     --num-gen-frames "${NUM_GEN}" \
+    --gen-start-frame "${GEN_START}" \
     --resolution 480p \
     --num-inference-steps 50 \
     --guidance-scale 4.0 \
