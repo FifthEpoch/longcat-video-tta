@@ -245,6 +245,18 @@ def encode_prompt(
 # Flow-matching loss
 # ============================================================================
 
+def _get_model_config(dit):
+    """Get model config, handling both direct models and delta wrappers."""
+    if hasattr(dit, "config"):
+        return dit.config
+    if hasattr(dit, "dit") and hasattr(dit.dit, "config"):
+        return dit.dit.config
+    raise AttributeError(
+        f"Cannot find config on {type(dit).__name__}. "
+        "Ensure the model or its .dit attribute inherits from ConfigMixin."
+    )
+
+
 def compute_flow_matching_loss(
     dit: LongCatVideoTransformer3DModel,
     latents: torch.Tensor,
@@ -266,7 +278,7 @@ def compute_flow_matching_loss(
 
     Parameters
     ----------
-    dit : the DiT model
+    dit : the DiT model (or a delta wrapper with a .dit attribute)
     latents : clean latents [B, C, T, H, W]
     prompt_embeds : text embeddings [B, 1, N, C]
     prompt_mask : attention mask [B, N]
@@ -277,6 +289,7 @@ def compute_flow_matching_loss(
     -------
     loss : scalar MSE loss
     """
+    cfg = _get_model_config(dit)
     B, C, T_lat, H_lat, W_lat = latents.shape
 
     # Sample random sigma uniformly in [sigma_min, sigma_max]
@@ -291,7 +304,7 @@ def compute_flow_matching_loss(
     noisy_latents = (1.0 - sigma_expanded) * latents + sigma_expanded * noise
 
     # Timestep: [B, T_lat] - same sigma for all frames in a sample
-    patch_t = dit.config.patch_size[0]
+    patch_t = cfg.patch_size[0]
     N_t = T_lat // patch_t
     timestep = (sigma * num_train_timesteps).unsqueeze(1).expand(B, N_t).to(dtype)
 
@@ -337,11 +350,12 @@ def compute_flow_matching_loss_fixed(
     fixed_sigmas : list of sigma values to evaluate at
     noise_draws  : number of independent noise draws per sigma
     """
+    cfg = _get_model_config(dit)
     B, C, T_lat, H_lat, W_lat = latents.shape
     total_loss = 0.0
     count = 0
 
-    patch_t = dit.config.patch_size[0]
+    patch_t = cfg.patch_size[0]
     N_t = T_lat // patch_t
 
     for sigma_val in fixed_sigmas:
@@ -563,6 +577,19 @@ def load_panda70m_video_list(
     rng = np.random.RandomState(seed)
     rng.shuffle(video_entries)
     return video_entries[:max_videos]
+
+
+# ============================================================================
+# Video saving helper
+# ============================================================================
+
+def save_video_from_numpy(frames: np.ndarray, output_path: str, fps: int = 24):
+    """Save video from numpy array [N, H, W, 3] in [0, 1]."""
+    import imageio
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    frames_u8 = (np.clip(frames, 0, 1) * 255).astype(np.uint8)
+    imageio.mimwrite(output_path, frames_u8, fps=fps, codec="libx264", quality=9)
 
 
 # ============================================================================

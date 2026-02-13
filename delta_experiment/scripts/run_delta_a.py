@@ -46,6 +46,7 @@ from common import (
     compute_flow_matching_loss,
     generate_video_continuation,
     save_results,
+    save_video_from_numpy,
     load_checkpoint,
     save_checkpoint,
     torch_gc,
@@ -78,6 +79,34 @@ class DeltaAWrapper(nn.Module):
 
         # Learnable delta vector
         self.delta = nn.Parameter(torch.zeros(adaln_tembed_dim))
+
+        # Generation hooks (installed/removed around pipeline calls)
+        self._gen_hook = None
+
+    @property
+    def config(self):
+        """Proxy config to the inner DiT so callers like compute_flow_matching_loss work."""
+        return self.dit.config
+
+    # ------------------------------------------------------------------
+    # Hook-based injection for pipeline generation
+    # ------------------------------------------------------------------
+    def apply_to_dit(self):
+        """Install a forward hook on t_embedder so the pipeline's full
+        forward path (KV-cache, BSA, etc.) sees the delta."""
+        delta = self.delta
+
+        def _hook(_module, _input, output):
+            # t_embedder output: [B*T, C_t] — add delta broadcast
+            return output + delta.unsqueeze(0).to(output.dtype)
+
+        self._gen_hook = self.dit.t_embedder.register_forward_hook(_hook)
+
+    def remove_from_dit(self):
+        """Remove the generation hook."""
+        if self._gen_hook is not None:
+            self._gen_hook.remove()
+            self._gen_hook = None
 
     def forward(
         self,
@@ -232,10 +261,13 @@ def main():
     parser.add_argument("--delta-lr", type=float, default=1e-3)
     parser.add_argument("--num-cond-frames", type=int, default=13)
     parser.add_argument("--num-frames", type=int, default=93)
+    parser.add_argument("--num-inference-steps", type=int, default=50)
+    parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--resolution", type=str, default="480p")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--skip-generation", action="store_true")
+    parser.add_argument("--skip-generation", action="store_true",
+                        help="Skip video generation (only train delta)")
     add_early_stopping_args(parser)
     args = parser.parse_args()
 
@@ -286,6 +318,9 @@ def main():
 
     # Results
     all_results = []
+    videos_dir = os.path.join(args.output_dir, "videos")
+    if not args.skip_generation:
+        os.makedirs(videos_dir, exist_ok=True)
 
     for idx, entry in enumerate(videos):
         if idx < start_idx:
@@ -353,12 +388,53 @@ def main():
                 "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
                 "delta_norm": opt_result["delta_norm"],
                 "early_stopping_info": opt_result.get("early_stopping_info"),
+                "success": True,
             }
 
             print(f"  Train time: {train_time:.1f}s, "
                   f"Final loss: {result['final_loss']:.4f}, "
                   f"Delta norm: {result['delta_norm']:.4f}")
 
+            # ── Generation ──────────────────────────────────────────
+            gen_time = 0.0
+            if not args.skip_generation:
+                from PIL import Image
+
+                # Convert pixel frames to PIL images for the pipeline
+                pf = pixel_frames.squeeze(0)  # [C, T, H, W]
+                pf = ((pf + 1.0) / 2.0).clamp(0, 1)
+                cond_images = []
+                for t_idx in range(pf.shape[1]):
+                    frame_np = (pf[:, t_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                    cond_images.append(Image.fromarray(frame_np))
+
+                # Install delta hook so the pipeline sees the adapted model
+                wrapper.apply_to_dit()
+                try:
+                    gen_start = time.time()
+                    gen_frames = generate_video_continuation(
+                        pipe=pipe,
+                        video_frames=cond_images,
+                        prompt=caption,
+                        num_cond_frames=args.num_cond_frames,
+                        num_frames=args.num_frames,
+                        num_inference_steps=args.num_inference_steps,
+                        guidance_scale=args.guidance_scale,
+                        seed=args.seed + idx,
+                        resolution=args.resolution,
+                        device=args.device,
+                    )
+                    gen_time = time.time() - gen_start
+
+                    output_path = os.path.join(videos_dir, f"{video_name}_delta_a.mp4")
+                    save_video_from_numpy(gen_frames, output_path, fps=24)
+                    result["output_path"] = output_path
+                    result["gen_time"] = gen_time
+                    print(f"  Gen: {gen_time:.1f}s → {output_path}")
+                finally:
+                    wrapper.remove_from_dit()
+
+            result["total_time"] = train_time + gen_time
             all_results.append(result)
 
             # Cleanup per-video
@@ -366,27 +442,34 @@ def main():
             torch_gc()
 
         except Exception as e:
+            import traceback
             print(f"  ERROR: {e}")
+            traceback.print_exc()
             all_results.append({
                 "video_name": video_name,
+                "video_path": video_path,
                 "error": str(e),
+                "success": False,
             })
 
         # Save checkpoint
-        save_checkpoint({"next_idx": idx + 1}, ckpt_path)
+        save_checkpoint({"next_idx": idx + 1, "results": all_results}, ckpt_path)
 
     # Save final results
+    successful = [r for r in all_results if r.get("success", False)]
     summary = {
         "method": "delta_a",
         "delta_steps": args.delta_steps,
         "delta_lr": args.delta_lr,
         "num_videos": len(all_results),
-        "avg_train_time": np.mean([r.get("train_time", 0) for r in all_results if "train_time" in r]),
+        "num_successful": len(successful),
+        "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,
         "results": all_results,
     }
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
     print(f"\nResults saved to {args.output_dir}/summary.json")
-    print(f"Avg train time: {summary['avg_train_time']:.1f}s")
+    if successful:
+        print(f"Avg train time: {summary['avg_train_time']:.1f}s")
 
 
 if __name__ == "__main__":
