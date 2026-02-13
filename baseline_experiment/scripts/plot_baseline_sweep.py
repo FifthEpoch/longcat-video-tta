@@ -6,9 +6,13 @@ Plot baseline sweep results: 6 graphs comparing metrics across configs.
   Row 2: SSIM  — (a) vs conditioning frames, (b) vs generated frames
   Row 3: LPIPS — (a) vs conditioning frames, (b) vs generated frames
 
+Supports --prefix to select dataset subdirectories:
+  "panda" (default) reads from cond{N}_gen{M}/
+  "ucf101"          reads from ucf101_cond{N}_gen{M}/
+
 Usage:
   python plot_baseline_sweep.py --results-root baseline_experiment/results
-  python plot_baseline_sweep.py --results-root baseline_experiment/results --out-dir plots
+  python plot_baseline_sweep.py --results-root baseline_experiment/results --prefix ucf101
 """
 from __future__ import annotations
 
@@ -23,22 +27,29 @@ import numpy as np
 
 # ── Configuration ─────────────────────────────────────────────────────────
 
-# Varying conditioning frames (gen fixed at 14)
-COND_SWEEP = [
-    {"label": "2",  "dir": "cond2_gen14",  "cond": 2,  "gen": 14},
-    {"label": "14", "dir": "cond14_gen14", "cond": 14, "gen": 14},
-    {"label": "28", "dir": "cond28_gen14", "cond": 28, "gen": 14},
-]
-
-# Varying generated frames (cond fixed at 2)
-GEN_SWEEP = [
-    {"label": "7",  "dir": "cond2_gen7",  "cond": 2, "gen": 7},
-    {"label": "14", "dir": "cond2_gen14", "cond": 2, "gen": 14},
-    {"label": "28", "dir": "cond2_gen28", "cond": 2, "gen": 28},
-]
-
 METRICS = ["psnr", "ssim", "lpips"]
 METRIC_LABELS = {"psnr": "PSNR (dB)", "ssim": "SSIM", "lpips": "LPIPS"}
+
+DATASET_TITLES = {
+    "panda": "Panda-70M",
+    "ucf101": "UCF-101",
+}
+
+
+def build_sweeps(prefix: str):
+    """Return (cond_sweep, gen_sweep) lists with directory names."""
+    pfx = f"{prefix}_" if prefix != "panda" else ""
+    cond_sweep = [
+        {"label": "2",  "dir": f"{pfx}cond2_gen14",  "cond": 2,  "gen": 14},
+        {"label": "14", "dir": f"{pfx}cond14_gen14", "cond": 14, "gen": 14},
+        {"label": "28", "dir": f"{pfx}cond28_gen14", "cond": 28, "gen": 14},
+    ]
+    gen_sweep = [
+        {"label": "7",  "dir": f"{pfx}cond2_gen7",  "cond": 2, "gen": 7},
+        {"label": "14", "dir": f"{pfx}cond2_gen14", "cond": 2, "gen": 14},
+        {"label": "28", "dir": f"{pfx}cond2_gen28", "cond": 2, "gen": 28},
+    ]
+    return cond_sweep, gen_sweep
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -102,11 +113,17 @@ def main():
                    help="Path to baseline_experiment/results/")
     p.add_argument("--out-dir", type=str, default=None,
                    help="Directory to save plots (default: results-root)")
+    p.add_argument("--prefix", type=str, default="panda",
+                   choices=["panda", "ucf101"],
+                   help="Dataset prefix (panda → cond*_gen*, ucf101 → ucf101_cond*_gen*)")
     args = p.parse_args()
 
     results_root = Path(args.results_root)
     out_dir = Path(args.out_dir) if args.out_dir else results_root
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    COND_SWEEP, GEN_SWEEP = build_sweeps(args.prefix)
+    dataset_name = DATASET_TITLES.get(args.prefix, args.prefix)
 
     # Check that at least some results exist
     found = sum(1 for c in COND_SWEEP + GEN_SWEEP
@@ -117,17 +134,15 @@ def main():
     print(f"Found {found}/{len(COND_SWEEP) + len(GEN_SWEEP)} result directories")
 
     fig, axes = plt.subplots(3, 2, figsize=(12, 12))
-    fig.suptitle("Baseline Sweep: LongCat-Video Continuation on Panda-70M (480p)",
+    fig.suptitle(f"Baseline Sweep: LongCat-Video Continuation on {dataset_name} (480p)",
                  fontsize=14, fontweight="bold", y=0.98)
 
     for row, metric in enumerate(METRICS):
-        # Left column: varying conditioning frames
         plot_sweep(axes[row, 0], COND_SWEEP, results_root, metric,
                    "Conditioning Frames (gen=14 fixed)")
         axes[row, 0].set_title(f"{METRIC_LABELS[metric]} vs Conditioning Frames",
                                fontsize=11)
 
-        # Right column: varying generated frames
         plot_sweep(axes[row, 1], GEN_SWEEP, results_root, metric,
                    "Generated Frames (cond=2 fixed)")
         axes[row, 1].set_title(f"{METRIC_LABELS[metric]} vs Generated Frames",
@@ -135,11 +150,12 @@ def main():
 
     fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-    out_path = out_dir / "baseline_sweep_metrics.png"
+    file_prefix = f"{args.prefix}_" if args.prefix != "panda" else ""
+    out_path = out_dir / f"{file_prefix}baseline_sweep_metrics.png"
     fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
     print(f"\nSaved: {out_path}")
 
-    # Also save individual plots for flexibility
+    # Also save individual plots
     for row, metric in enumerate(METRICS):
         for col, (sweep, xlabel, suffix) in enumerate([
             (COND_SWEEP, "Conditioning Frames (gen=14 fixed)", "cond"),
@@ -147,10 +163,10 @@ def main():
         ]):
             fig_i, ax_i = plt.subplots(figsize=(6, 4))
             plot_sweep(ax_i, sweep, results_root, metric, xlabel)
-            ax_i.set_title(f"{METRIC_LABELS[metric]} vs {'Conditioning' if col == 0 else 'Generated'} Frames",
-                           fontsize=12)
+            ax_i.set_title(f"{METRIC_LABELS[metric]} vs {'Conditioning' if col == 0 else 'Generated'} Frames"
+                           f" ({dataset_name})", fontsize=12)
             fig_i.tight_layout()
-            ind_path = out_dir / f"{metric}_vs_{suffix}_frames.png"
+            ind_path = out_dir / f"{file_prefix}{metric}_vs_{suffix}_frames.png"
             fig_i.savefig(str(ind_path), dpi=150, bbox_inches="tight")
             plt.close(fig_i)
 
