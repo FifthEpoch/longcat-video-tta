@@ -21,6 +21,8 @@ import json
 import sys
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")  # headless backend for cluster
 import matplotlib.pyplot as plt
 import numpy as np
 
