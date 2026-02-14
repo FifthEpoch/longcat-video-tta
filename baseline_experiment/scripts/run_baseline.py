@@ -313,7 +313,8 @@ def main():
     vae = AutoencoderKLWan.from_pretrained(ckpt, subfolder="vae", torch_dtype=dtype)
     scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(ckpt, subfolder="scheduler", torch_dtype=dtype)
     dit = LongCatVideoTransformer3DModel.from_pretrained(
-        ckpt, subfolder="dit", cp_split_hw=[1, 1], torch_dtype=dtype
+        ckpt, subfolder="dit", cp_split_hw=[1, 1],
+        enable_flashattn2=True, torch_dtype=dtype,
     )
 
     pipe = LongCatVideoPipeline(

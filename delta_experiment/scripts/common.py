@@ -68,7 +68,8 @@ def load_longcat_components(
         checkpoint_dir, subfolder="scheduler", torch_dtype=dtype
     )
     dit = LongCatVideoTransformer3DModel.from_pretrained(
-        checkpoint_dir, subfolder="dit", cp_split_hw=cp_split_hw, torch_dtype=dtype
+        checkpoint_dir, subfolder="dit", cp_split_hw=cp_split_hw,
+        enable_flashattn2=True, torch_dtype=dtype,
     )
 
     pipe = LongCatVideoPipeline(
