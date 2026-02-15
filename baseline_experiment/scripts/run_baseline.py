@@ -52,13 +52,21 @@ sys.path.insert(0, str(_REPO_ROOT))
 # ---------------------------------------------------------------------------
 # Single-GPU distributed init (needed by LongCat-Video internals)
 # ---------------------------------------------------------------------------
+def _find_free_port():
+    """Find a free port on localhost."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
 def init_single_gpu():
     """Set up minimal distributed env for single-GPU inference."""
     os.environ.setdefault("RANK", "0")
     os.environ.setdefault("LOCAL_RANK", "0")
     os.environ.setdefault("WORLD_SIZE", "1")
     os.environ.setdefault("MASTER_ADDR", "localhost")
-    os.environ.setdefault("MASTER_PORT", "29500")
+    os.environ.setdefault("MASTER_PORT", str(_find_free_port()))
 
     if not dist.is_initialized():
         dist.init_process_group(backend="nccl", timeout=datetime.timedelta(hours=2))
