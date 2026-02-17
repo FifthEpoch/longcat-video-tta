@@ -407,6 +407,158 @@ def compute_flow_matching_loss_fixed(
 
 
 # ============================================================================
+# Conditioning-aware flow-matching loss
+# ============================================================================
+
+def compute_flow_matching_loss_conditioned(
+    dit,
+    cond_latents: torch.Tensor,
+    target_latents: torch.Tensor,
+    prompt_embeds: torch.Tensor,
+    prompt_mask: torch.Tensor,
+    num_train_timesteps: int = 1000,
+    sigma_min: float = 0.001,
+    sigma_max: float = 1.0,
+    device: str = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
+    forward_fn=None,
+) -> torch.Tensor:
+    """Conditioning-aware flow-matching loss matching LongCat inference.
+
+    During LongCat-Video inference, conditioning latent tokens receive
+    ``timestep=0`` while noise tokens receive ``timestep=sigma*1000``, and
+    ``num_cond_latents`` is passed to the DiT so that the attention module
+    treats them differently.
+
+    This function replicates that logic during TTA training:
+        hidden_states = cat([cond_latents (clean), target_latents (noised)])
+        timestep      = [0, ..., 0, sigma*1000, ..., sigma*1000]
+        pred = dit(hidden_states, timestep, ..., num_cond_latents=T_cond)
+        loss = MSE on target portion only
+
+    Parameters
+    ----------
+    cond_latents   : clean conditioning latents [B, C, T_cond, H, W]
+    target_latents : training target latents [B, C, T_target, H, W]
+    forward_fn     : optional custom forward; signature
+                     ``(hidden_states, timestep, num_cond_latents) -> pred``
+    """
+    cfg = _get_model_config(dit)
+    B, C, T_cond, H_lat, W_lat = cond_latents.shape
+    T_target = target_latents.shape[2]
+    T_total = T_cond + T_target
+
+    patch_t = cfg.patch_size[0]
+    N_cond = T_cond // patch_t
+    N_target = T_target // patch_t
+    N_total = T_total // patch_t
+
+    # Sample sigma
+    sigma = torch.rand(B, device=device, dtype=torch.float32) * (sigma_max - sigma_min) + sigma_min
+    sigma_expanded = sigma.view(B, 1, 1, 1, 1)
+
+    # Noise only the target portion
+    noise = torch.randn_like(target_latents)
+    noisy_target = (1.0 - sigma_expanded) * target_latents + sigma_expanded * noise
+
+    # Concatenate: [cond_clean, noisy_target]
+    hidden_states = torch.cat([cond_latents, noisy_target], dim=2).to(dtype)
+
+    # Build per-token timestep: cond=0, target=sigma*1000
+    timestep = torch.zeros(B, N_total, device=device, dtype=dtype)
+    timestep[:, N_cond:] = (sigma * num_train_timesteps).unsqueeze(1).expand(B, N_target).to(dtype)
+
+    # Forward
+    if forward_fn is not None:
+        pred = forward_fn(hidden_states, timestep, N_cond)
+    else:
+        pred = dit(
+            hidden_states=hidden_states,
+            timestep=timestep,
+            encoder_hidden_states=prompt_embeds,
+            encoder_attention_mask=prompt_mask,
+            num_cond_latents=N_cond,
+        )
+
+    # Loss only on target portion
+    pred_target = pred[:, :, T_cond:].to(torch.float32)
+    velocity_target = (noise - target_latents).to(torch.float32)
+
+    loss = F.mse_loss(pred_target, velocity_target)
+    return loss
+
+
+def compute_flow_matching_loss_conditioned_fixed(
+    dit,
+    cond_latents: torch.Tensor,
+    target_latents: torch.Tensor,
+    prompt_embeds: torch.Tensor,
+    prompt_mask: torch.Tensor,
+    fixed_sigmas: List[float],
+    fixed_noises: List[torch.Tensor],
+    num_train_timesteps: int = 1000,
+    device: str = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
+    forward_fn=None,
+) -> float:
+    """Conditioning-aware flow-matching loss at fixed sigmas/noises.
+
+    Used by the early stopper for deterministic anchor-val evaluation.
+    ``fixed_noises`` is a list of pre-generated noise tensors (one per draw)
+    with the same shape as ``target_latents``.
+
+    Parameters
+    ----------
+    fixed_sigmas  : list of sigma values to evaluate at
+    fixed_noises  : list of pre-drawn noise tensors [B, C, T_target, H, W]
+    forward_fn    : optional custom forward; signature
+                    ``(hidden_states, timestep, num_cond_latents) -> pred``
+    """
+    cfg = _get_model_config(dit)
+    B, C, T_cond, H_lat, W_lat = cond_latents.shape
+    T_target = target_latents.shape[2]
+    T_total = T_cond + T_target
+
+    patch_t = cfg.patch_size[0]
+    N_cond = T_cond // patch_t
+    N_target = T_target // patch_t
+    N_total = T_total // patch_t
+
+    total_loss = 0.0
+    count = 0
+
+    for sigma_val in fixed_sigmas:
+        sigma = torch.tensor([sigma_val], device=device, dtype=torch.float32)
+        sigma_expanded = sigma.view(1, 1, 1, 1, 1)
+
+        for noise in fixed_noises:
+            noisy_target = (1.0 - sigma_expanded) * target_latents + sigma_expanded * noise
+            hidden_states = torch.cat([cond_latents, noisy_target], dim=2).to(dtype)
+
+            timestep = torch.zeros(B, N_total, device=device, dtype=dtype)
+            timestep[:, N_cond:] = (sigma * num_train_timesteps).unsqueeze(1).expand(B, N_target).to(dtype)
+
+            with torch.no_grad():
+                if forward_fn is not None:
+                    pred = forward_fn(hidden_states, timestep, N_cond)
+                else:
+                    pred = dit(
+                        hidden_states=hidden_states,
+                        timestep=timestep,
+                        encoder_hidden_states=prompt_embeds,
+                        encoder_attention_mask=prompt_mask,
+                        num_cond_latents=N_cond,
+                    )
+
+            pred_target = pred[:, :, T_cond:].to(torch.float32)
+            velocity_target = (noise - target_latents).to(torch.float32)
+            total_loss += F.mse_loss(pred_target, velocity_target).item()
+            count += 1
+
+    return total_loss / max(count, 1)
+
+
+# ============================================================================
 # Video generation helper (using pipeline)
 # ============================================================================
 
@@ -795,6 +947,61 @@ def build_augmented_latent_variants(
         })
 
     return latent_variants
+
+
+def split_tta_latents(
+    latents: torch.Tensor,
+    num_context_latents: int,
+    holdout_fraction: float = 0.25,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Split latents into context / train / val along the temporal axis.
+
+    Parameters
+    ----------
+    latents : [B, C, T, H, W] – all conditioning-region latents
+    num_context_latents : number of leading latent frames to keep as clean
+                          context (these are never noised and always get
+                          ``timestep=0``).
+    holdout_fraction : fraction of the remaining frames held out for val.
+
+    Returns
+    -------
+    (cond_latents, train_latents, val_latents)
+        cond_latents  : [B, C, T_cond, H, W]  – clean context
+        train_latents : [B, C, T_train, H, W] – used for the flow-matching loss
+        val_latents   : [B, C, T_val, H, W]   – held out for early stopping
+    """
+    T_total = latents.shape[2]
+    T_cond = min(num_context_latents, T_total - 1)  # at least 1 non-cond
+    remainder = T_total - T_cond
+    T_val = max(1, int(remainder * holdout_fraction))
+    T_train = remainder - T_val
+
+    if T_train < 1:
+        # Not enough frames: use everything for training, no val
+        T_train = remainder
+        T_val = 0
+
+    cond = latents[:, :, :T_cond].contiguous()
+    train = latents[:, :, T_cond:T_cond + T_train].contiguous()
+    val = latents[:, :, T_cond + T_train:].contiguous() if T_val > 0 else None
+    return cond, train, val
+
+
+def add_tta_frame_args(parser):
+    """Add TTA-specific frame split CLI arguments."""
+    g = parser.add_argument_group("TTA frame split")
+    g.add_argument(
+        "--tta-total-frames", type=int, default=None,
+        help="Total pixel frames before the anchor to load for TTA "
+             "(default: same as --num-cond-frames, i.e. no separate train/val)."
+    )
+    g.add_argument(
+        "--tta-context-frames", type=int, default=10,
+        help="Number of leading pixel frames treated as clean context "
+             "(timestep=0). Remaining are split into train + val."
+    )
+    return parser
 
 
 def add_augmentation_args(parser):

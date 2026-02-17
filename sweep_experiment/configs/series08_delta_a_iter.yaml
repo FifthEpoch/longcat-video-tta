@@ -1,0 +1,35 @@
+# Series 8: Delta-A -- Iteration Sweep
+# Goal: Overfitting dynamics for 512-param method. Should converge very
+#        quickly or not at all.
+# Fixed: delta_lr=BEST_FROM_S7
+# Swept: delta_steps
+# NOTE: Update delta_lr after Series 7 completes.
+
+method: delta_a
+series: 8
+series_name: delta_a_iter_sweep
+description: "Delta-A iteration sweep at best LR"
+depends_on: [7]
+
+fixed:
+  delta_lr: 1.0e-2  # PLACEHOLDER -- update from Series 7 best
+  num_cond_frames: 2
+  num_frames: 16
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: DA6
+    delta_steps: 5
+  - run_id: DA7
+    delta_steps: 10
+  - run_id: DA8
+    delta_steps: 20
+  - run_id: DA9
+    delta_steps: 50
+  - run_id: DA10
+    delta_steps: 100

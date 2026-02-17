@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=12:00:00
-#SBATCH --mem=64G
+#SBATCH --mem=192G
 #SBATCH --gres=gpu:h200:1
 #SBATCH --output=delta_experiment/sbatch/slurm_log/delta_a_%j.out
 #SBATCH --error=delta_experiment/sbatch/slurm_log/delta_a_%j.err
@@ -24,8 +24,11 @@ export PYTHONNOUSERSITE=1
 NUM_VIDEOS="${NUM_VIDEOS:-100}"
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
-NUM_COND_FRAMES="${NUM_COND_FRAMES:-13}"
-NUM_FRAMES="${NUM_FRAMES:-93}"
+NUM_COND_FRAMES="${NUM_COND_FRAMES:-2}"
+NUM_FRAMES="${NUM_FRAMES:-16}"
+GEN_START_FRAME="${GEN_START_FRAME:-32}"
+NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-50}"
+GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
 
@@ -42,9 +45,9 @@ ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
 # Path Setup
 # ============================================================================
 SCRATCH_BASE="/scratch/wc3013"
-PROJECT_ROOT="${SCRATCH_BASE}/open-sora-v1.3-experiment"
+PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
-DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/env_setup/download_ucf101}"
+DATA_DIR="${DATA_DIR:-${SCRATCH_BASE}/longcat-video-tta/datasets/panda_100_480p}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/delta_experiment/results/delta_a}"
 
 echo "=============================================================================="
@@ -60,6 +63,9 @@ echo "  Delta steps    : ${DELTA_STEPS}"
 echo "  Delta LR       : ${DELTA_LR}"
 echo "  Cond frames    : ${NUM_COND_FRAMES}"
 echo "  Num frames     : ${NUM_FRAMES}"
+echo "  Gen start      : ${GEN_START_FRAME}"
+echo "  Infer steps    : ${NUM_INFERENCE_STEPS}"
+echo "  Guidance       : ${GUIDANCE_SCALE}"
 echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Data dir       : ${DATA_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
@@ -72,7 +78,7 @@ module purge
 module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 
-CONDA_ENV="${SCRATCH_BASE}/conda-envs/opensora13"
+CONDA_ENV="${SCRATCH_BASE}/conda-envs/longcat"
 if [ -d "$CONDA_ENV" ]; then
     conda activate "$CONDA_ENV"
     echo "✓ Activated conda environment: $CONDA_ENV"
@@ -107,7 +113,7 @@ if [ -n "${ES_DISABLE}" ]; then
 fi
 ES_FLAGS="${ES_FLAGS} --es-check-every ${ES_CHECK_EVERY}"
 ES_FLAGS="${ES_FLAGS} --es-patience ${ES_PATIENCE}"
-ES_FLAGS="${ES_FLAGS} --es-anchor-timesteps ${ES_ANCHOR_TIMESTEPS}"
+ES_FLAGS="${ES_FLAGS} --es-anchor-sigmas ${ES_ANCHOR_TIMESTEPS}"
 ES_FLAGS="${ES_FLAGS} --es-noise-draws ${ES_NOISE_DRAWS}"
 ES_FLAGS="${ES_FLAGS} --es-strategy ${ES_STRATEGY}"
 ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
@@ -126,6 +132,9 @@ python delta_experiment/scripts/run_delta_a.py \
     --delta-lr "${DELTA_LR}" \
     --num-cond-frames "${NUM_COND_FRAMES}" \
     --num-frames "${NUM_FRAMES}" \
+    --gen-start-frame "${GEN_START_FRAME}" \
+    --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+    --guidance-scale "${GUIDANCE_SCALE}" \
     --resolution "${RESOLUTION}" \
     --seed "${SEED}" \
     ${ES_FLAGS}

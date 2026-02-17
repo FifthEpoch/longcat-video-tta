@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import copy
 import gc
 import json
 import os
@@ -44,6 +45,7 @@ from common import (
     encode_video,
     encode_prompt,
     compute_flow_matching_loss,
+    compute_flow_matching_loss_conditioned,
     generate_video_continuation,
     save_results,
     save_video_from_numpy,
@@ -52,7 +54,9 @@ from common import (
     torch_gc,
     build_augmented_latent_variants,
     add_augmentation_args,
+    add_tta_frame_args,
     parse_speed_factors,
+    split_tta_latents,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -195,7 +199,8 @@ class DeltaAWrapper(nn.Module):
 
 def optimize_delta_a(
     wrapper: DeltaAWrapper,
-    latents: torch.Tensor,
+    cond_latents: torch.Tensor,
+    train_latents: torch.Tensor,
     prompt_embeds: torch.Tensor,
     prompt_mask: torch.Tensor,
     num_steps: int = 20,
@@ -203,14 +208,24 @@ def optimize_delta_a(
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
-    latents_variants: Optional[List[Dict]] = None,
+    train_latents_variants: Optional[List[Dict]] = None,
 ) -> Dict:
-    """Optimize the delta vector on conditioning latents."""
+    """Optimize the delta vector using conditioning-aware loss.
+
+    Parameters
+    ----------
+    cond_latents  : clean context latents [B, C, T_cond, H, W]
+    train_latents : target latents to noise and compute loss on [B, C, T_train, H, W]
+    train_latents_variants : optional augmented variants of train_latents
+    """
     optimizer = AdamW([wrapper.delta], lr=lr, betas=(0.9, 0.999), eps=1e-15)
 
     # Build variant list (original only if no augmentation)
-    if latents_variants is None:
-        latents_variants = [{"latents": latents, "name": "orig"}]
+    if train_latents_variants is None:
+        train_latents_variants = [{"latents": train_latents, "name": "orig"}]
+
+    def _save_fn():
+        return copy.deepcopy(wrapper.delta.data)
 
     wrapper.train()
     losses = []
@@ -219,12 +234,13 @@ def optimize_delta_a(
         optimizer.zero_grad()
 
         # Randomly pick a variant
-        vi = torch.randint(0, len(latents_variants), (1,)).item()
-        step_latents = latents_variants[vi]["latents"]
+        vi = torch.randint(0, len(train_latents_variants), (1,)).item()
+        step_train = train_latents_variants[vi]["latents"]
 
-        loss = compute_flow_matching_loss(
+        loss = compute_flow_matching_loss_conditioned(
             dit=wrapper,
-            latents=step_latents,
+            cond_latents=cond_latents,
+            target_latents=step_train,
             prompt_embeds=prompt_embeds,
             prompt_mask=prompt_mask,
             device=device,
@@ -239,7 +255,9 @@ def optimize_delta_a(
 
         # Early stopping check
         if early_stopper is not None:
-            should_stop, es_info = early_stopper.step(step + 1)
+            should_stop, es_info = early_stopper.step(
+                step + 1, save_fn=_save_fn,
+            )
             if should_stop:
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
@@ -248,7 +266,7 @@ def optimize_delta_a(
     es_state = None
     if early_stopper is not None:
         early_stopper.restore(
-            restore_fn=lambda sd: wrapper.load_state_dict(sd, strict=False)
+            restore_fn=lambda s: wrapper.delta.data.copy_(s)
         )
         es_state = early_stopper.state
 
@@ -271,8 +289,8 @@ def main():
     parser.add_argument("--max-videos", type=int, default=100)
     parser.add_argument("--delta-steps", type=int, default=20)
     parser.add_argument("--delta-lr", type=float, default=1e-3)
-    parser.add_argument("--num-cond-frames", type=int, default=13)
-    parser.add_argument("--num-frames", type=int, default=93)
+    parser.add_argument("--num-cond-frames", type=int, default=2)
+    parser.add_argument("--num-frames", type=int, default=16)
     parser.add_argument("--gen-start-frame", type=int, default=32,
                         help="Fixed anchor frame where generation starts. "
                              "Cond = video[anchor-cond : anchor]. "
@@ -286,7 +304,12 @@ def main():
                         help="Skip video generation (only train delta)")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
+    add_tta_frame_args(parser)
     args = parser.parse_args()
+
+    # Default tta_total_frames to num_cond_frames (backward compat)
+    if args.tta_total_frames is None:
+        args.tta_total_frames = args.num_cond_frames
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -351,15 +374,33 @@ def main():
         print(f"\n[{idx + 1}/{len(videos)}] {video_name}: {caption}")
 
         try:
-            # Load conditioning frames using anchor-based indexing
-            # Cond = video[anchor - num_cond : anchor]
-            cond_start = args.gen_start_frame - args.num_cond_frames
+            # ── Frame loading ─────────────────────────────────────────
+            # Load tta_total_frames ending at anchor for TTA
+            tta_start = args.gen_start_frame - args.tta_total_frames
             pixel_frames = load_video_frames(
-                video_path, args.num_cond_frames, height=480, width=832,
-                start_frame=cond_start,
+                video_path, args.tta_total_frames, height=480, width=832,
+                start_frame=max(0, tta_start),
             ).to(args.device, torch.bfloat16)
 
-            latents = encode_video(vae, pixel_frames, normalize=True)
+            all_latents = encode_video(vae, pixel_frames, normalize=True)
+
+            # Split into context / train / val
+            vae_t_scale = 4  # vae_scale_factor_temporal
+            num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
+            cond_latents, train_latents, val_latents = split_tta_latents(
+                all_latents, num_ctx_lat,
+                holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+            )
+            print(f"  Latent split: cond={cond_latents.shape[2]}, "
+                  f"train={train_latents.shape[2]}, "
+                  f"val={val_latents.shape[2] if val_latents is not None else 0}")
+
+            # Also keep the original num_cond_frames pixel clip for generation
+            gen_cond_start = args.gen_start_frame - args.num_cond_frames
+            gen_pixel_frames = load_video_frames(
+                video_path, args.num_cond_frames, height=480, width=832,
+                start_frame=max(0, gen_cond_start),
+            ).to(args.device, torch.bfloat16)
 
             # Encode text
             prompt_embeds, prompt_mask = encode_prompt(
@@ -367,13 +408,15 @@ def main():
                 device=args.device, dtype=torch.bfloat16,
             )
 
-            # Build augmented latent variants if enabled
-            latents_variants = None
+            # Build augmented train latent variants if enabled
+            train_latents_variants = None
             if args.aug_enabled:
-                latents_variants = build_augmented_latent_variants(
-                    pixel_frames=pixel_frames,
-                    base_latents=latents,
-                    vae=vae,
+                # Augment only the train portion at pixel level
+                # For simplicity, augment the full pixel clip and re-encode,
+                # then slice out the train portion
+                from common import build_augmented_pixel_variants
+                pix_variants = build_augmented_pixel_variants(
+                    pixel_frames,
                     enable_flip=args.aug_flip,
                     rotate_deg=args.aug_rotate_deg,
                     rotate_random_min=args.aug_rotate_random_min,
@@ -383,41 +426,62 @@ def main():
                     rotate_zoom=args.aug_rotate_zoom,
                     speed_factors=parse_speed_factors(args.aug_speed_factors),
                 )
-                print(f"  Augmentation: {len(latents_variants)} variants "
-                      f"({', '.join(v['name'] for v in latents_variants)})")
+                train_latents_variants = []
+                for pv in pix_variants:
+                    if pv["name"] == "orig":
+                        train_latents_variants.append({"latents": train_latents, "name": "orig"})
+                    else:
+                        aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
+                        # Slice out the train portion (same offsets)
+                        t_start = cond_latents.shape[2]
+                        t_end = t_start + train_latents.shape[2]
+                        train_latents_variants.append({
+                            "latents": aug_lat[:, :, t_start:t_end],
+                            "name": pv["name"],
+                        })
+                print(f"  Augmentation: {len(train_latents_variants)} variants "
+                      f"({', '.join(v['name'] for v in train_latents_variants)})")
 
             # Create wrapper with fresh delta
             wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
 
             # Setup early stopper
-            if early_stopper is not None:
+            if early_stopper is not None and val_latents is not None:
+                def _es_forward_fn(hs, ts, ncl):
+                    return wrapper(
+                        hidden_states=hs, timestep=ts,
+                        encoder_hidden_states=prompt_embeds,
+                        encoder_attention_mask=prompt_mask,
+                        num_cond_latents=ncl,
+                    )
+
                 early_stopper.setup(
                     model=wrapper,
-                    latents=latents,
+                    cond_latents=cond_latents,
+                    val_latents=val_latents,
                     prompt_embeds=prompt_embeds,
                     prompt_mask=prompt_mask,
                     device=args.device,
                     dtype=torch.bfloat16,
-                    forward_fn=lambda nl, ts: wrapper(
-                        hidden_states=nl, timestep=ts,
-                        encoder_hidden_states=prompt_embeds,
-                        encoder_attention_mask=prompt_mask,
-                    ),
+                    forward_fn=_es_forward_fn,
+                    video_id=video_name,
+                    save_fn=lambda: copy.deepcopy(wrapper.delta.data),
                 )
 
             # Optimize
             t0 = time.time()
             opt_result = optimize_delta_a(
                 wrapper=wrapper,
-                latents=latents,
+                cond_latents=cond_latents,
+                train_latents=train_latents,
                 prompt_embeds=prompt_embeds,
                 prompt_mask=prompt_mask,
                 num_steps=args.delta_steps,
                 lr=args.delta_lr,
                 device=args.device,
                 dtype=torch.bfloat16,
-                early_stopper=early_stopper,
-                latents_variants=latents_variants,
+                early_stopper=early_stopper if val_latents is not None else None,
+                train_latents_variants=train_latents_variants,
             )
             train_time = time.time() - t0
 
@@ -441,8 +505,8 @@ def main():
             if not args.skip_generation:
                 from PIL import Image
 
-                # Convert pixel frames to PIL images for the pipeline
-                pf = pixel_frames.squeeze(0)  # [C, T, H, W]
+                # Convert generation conditioning frames to PIL images
+                pf = gen_pixel_frames.squeeze(0)  # [C, T, H, W]
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
                 cond_images = []
                 for t_idx in range(pf.shape[1]):
@@ -479,7 +543,8 @@ def main():
             all_results.append(result)
 
             # Cleanup per-video
-            del wrapper, latents, pixel_frames, prompt_embeds, prompt_mask
+            del wrapper, all_latents, cond_latents, train_latents, val_latents
+            del pixel_frames, gen_pixel_frames, prompt_embeds, prompt_mask
             torch_gc()
 
         except Exception as e:

@@ -30,8 +30,9 @@ NUM_VIDEOS="${NUM_VIDEOS:-100}"
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_STEPS="${NUM_STEPS:-10}"
 WARMUP_STEPS="${WARMUP_STEPS:-2}"
-NUM_COND_FRAMES="${NUM_COND_FRAMES:-13}"
-NUM_FRAMES="${NUM_FRAMES:-93}"
+NUM_COND_FRAMES="${NUM_COND_FRAMES:-2}"
+NUM_FRAMES="${NUM_FRAMES:-16}"
+GEN_START_FRAME="${GEN_START_FRAME:-32}"
 NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-50}"
 GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
@@ -51,9 +52,9 @@ ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
 # Path Setup
 # ============================================================================
 SCRATCH_BASE="/scratch/wc3013"
-PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-experiment"
+PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
-DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/env_setup/download_ucf101}"
+DATA_DIR="${DATA_DIR:-${SCRATCH_BASE}/longcat-video-tta/datasets/panda_100_480p}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/lora_experiment/results/full_tta_lr${LEARNING_RATE}_${NUM_STEPS}steps}"
 
 echo "=============================================================================="
@@ -69,6 +70,7 @@ echo "  Learning rate     : ${LEARNING_RATE}"
 echo "  Num steps         : ${NUM_STEPS}"
 echo "  Num cond frames   : ${NUM_COND_FRAMES}"
 echo "  Num frames        : ${NUM_FRAMES}"
+echo "  Gen start         : ${GEN_START_FRAME}"
 echo "  Inference steps   : ${NUM_INFERENCE_STEPS}"
 echo "  Guidance scale    : ${GUIDANCE_SCALE}"
 echo "  Checkpoint dir    : ${CHECKPOINT_DIR}"
@@ -83,7 +85,7 @@ module purge
 module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 
-CONDA_ENV="${SCRATCH_BASE}/conda-envs/opensora13"
+CONDA_ENV="${SCRATCH_BASE}/conda-envs/longcat"
 if [ -d "$CONDA_ENV" ]; then
     conda activate "$CONDA_ENV"
     echo "✓ Activated conda environment: $CONDA_ENV"
@@ -124,7 +126,7 @@ if [ -n "${ES_DISABLE}" ]; then
 fi
 ES_FLAGS="${ES_FLAGS} --es-check-every ${ES_CHECK_EVERY}"
 ES_FLAGS="${ES_FLAGS} --es-patience ${ES_PATIENCE}"
-ES_FLAGS="${ES_FLAGS} --es-anchor-timesteps ${ES_ANCHOR_TIMESTEPS}"
+ES_FLAGS="${ES_FLAGS} --es-anchor-sigmas ${ES_ANCHOR_TIMESTEPS}"
 ES_FLAGS="${ES_FLAGS} --es-noise-draws ${ES_NOISE_DRAWS}"
 ES_FLAGS="${ES_FLAGS} --es-strategy ${ES_STRATEGY}"
 ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
@@ -144,6 +146,7 @@ python lora_experiment/scripts/run_full_tta.py \
     --warmup-steps "${WARMUP_STEPS}" \
     --num-cond-frames "${NUM_COND_FRAMES}" \
     --num-frames "${NUM_FRAMES}" \
+    --gen-start-frame "${GEN_START_FRAME}" \
     --num-inference-steps "${NUM_INFERENCE_STEPS}" \
     --guidance-scale "${GUIDANCE_SCALE}" \
     --resolution "${RESOLUTION}" \
