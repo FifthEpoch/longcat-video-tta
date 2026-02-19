@@ -317,6 +317,10 @@ def main():
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
 
+    # Enable gradient checkpointing to fit full backprop in GPU memory
+    dit.gradient_checkpointing = True
+    print("Gradient checkpointing: ENABLED")
+
     # Unfreeze all DiT parameters
     for p in dit.parameters():
         p.requires_grad = True

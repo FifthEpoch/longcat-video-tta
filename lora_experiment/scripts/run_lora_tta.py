@@ -494,6 +494,10 @@ def main():
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
 
+    # Enable gradient checkpointing to reduce activation memory during backprop
+    dit.gradient_checkpointing = True
+    print("Gradient checkpointing: ENABLED")
+
     # Freeze all DiT parameters
     for p in dit.parameters():
         p.requires_grad = False
