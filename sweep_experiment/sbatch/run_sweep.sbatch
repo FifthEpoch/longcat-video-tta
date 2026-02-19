@@ -69,6 +69,9 @@ WARMUP_STEPS="${WARMUP_STEPS:-3}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 
+# Full-model specific
+OPTIMIZER="${OPTIMIZER:-sgd}"
+
 # LoRA specific
 LORA_RANK="${LORA_RANK:-8}"
 LORA_ALPHA="${LORA_ALPHA:-16}"
@@ -179,6 +182,7 @@ case "${METHOD}" in
         --warmup-steps "${WARMUP_STEPS}" \
         --weight-decay "${WEIGHT_DECAY}" \
         --max-grad-norm "${MAX_GRAD_NORM}" \
+        --optimizer "${OPTIMIZER}" \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \

@@ -76,6 +76,8 @@ _KEY_TO_ENV = {
     "num_groups": "NUM_GROUPS",
     # Delta-C
     "delta_mode": "DELTA_MODE",
+    # Full-model specific
+    "optimizer": "OPTIMIZER",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
 }

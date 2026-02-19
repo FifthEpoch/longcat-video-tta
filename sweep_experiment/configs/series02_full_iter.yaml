@@ -15,6 +15,7 @@ fixed:
   learning_rate: 1.0e-5  # PLACEHOLDER -- update from Series 1 best
   weight_decay: 0.01
   max_grad_norm: 1.0
+  optimizer: sgd
   num_cond_frames: 2
   num_frames: 16
   gen_start_frame: 32

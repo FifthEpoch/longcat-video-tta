@@ -36,7 +36,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import AdamW
+from torch.optim import AdamW, SGD
 from tqdm import tqdm
 
 # Ensure common.py and early_stopping.py are importable from delta_experiment
@@ -64,6 +64,7 @@ from common import (
     add_tta_frame_args,
     parse_speed_factors,
     split_tta_latents,
+    evaluate_generation_metrics,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -91,6 +92,7 @@ def finetune_full_on_conditioning(
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
     train_latents_variants: Optional[List[Dict]] = None,
+    optimizer_type: str = "sgd",
 ) -> Dict:
     """Fine-tune all DiT parameters using conditioning-aware loss.
 
@@ -99,6 +101,7 @@ def finetune_full_on_conditioning(
     cond_latents  : clean context latents [B, C, T_cond, H, W]
     train_latents : target latents to noise and compute loss on [B, C, T_train, H, W]
     train_latents_variants : optional augmented variants of train_latents
+    optimizer_type : 'sgd' (default, no state — fits on single GPU) or 'adamw'
 
     Returns
     -------
@@ -108,13 +111,21 @@ def finetune_full_on_conditioning(
     if not params:
         raise ValueError("No trainable parameters found. Did you unfreeze the model?")
 
-    optimizer = AdamW(
-        params,
-        lr=lr,
-        betas=(0.9, 0.999),
-        weight_decay=weight_decay,
-        eps=1e-8,
-    )
+    if optimizer_type == "adamw":
+        optimizer = AdamW(
+            params,
+            lr=lr,
+            betas=(0.9, 0.999),
+            weight_decay=weight_decay,
+            eps=1e-8,
+        )
+    else:
+        optimizer = SGD(
+            params,
+            lr=lr,
+            momentum=0.0,
+            weight_decay=weight_decay,
+        )
 
     if train_latents_variants is None:
         train_latents_variants = [{"latents": train_latents, "name": "orig"}]
@@ -238,6 +249,10 @@ def main():
     parser.add_argument("--warmup-steps", type=int, default=2)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
+    parser.add_argument("--optimizer", type=str, default="sgd",
+                        choices=["sgd", "adamw"],
+                        help="Optimizer for full-model TTA. SGD uses no state "
+                             "(fits on single GPU); AdamW may OOM.")
 
     # Video continuation arguments
     parser.add_argument("--num-cond-frames", type=int, default=2)
@@ -471,6 +486,7 @@ def main():
                 dtype=torch.bfloat16,
                 early_stopper=early_stopper if val_latents is not None else None,
                 train_latents_variants=train_latents_variants,
+                optimizer_type=args.optimizer,
             )
 
             result = {
@@ -499,7 +515,7 @@ def main():
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
                 cond_images = []
                 for t_idx in range(pf.shape[1]):
-                    frame_np = (pf[:, t_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                    frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
                     cond_images.append(Image.fromarray(frame_np))
 
                 gen_start = time.time()
@@ -522,11 +538,23 @@ def main():
                 result["output_path"] = output_path
                 result["gen_time"] = gen_time
 
+                num_gen = args.num_frames - args.num_cond_frames
+                metrics = evaluate_generation_metrics(
+                    gen_output=gen_frames,
+                    video_path=video_path,
+                    num_cond_frames=args.num_cond_frames,
+                    num_gen_frames=num_gen,
+                    gen_start_frame=args.gen_start_frame,
+                    device=args.device,
+                )
+                result.update(metrics)
+
             result["total_time"] = train_result["train_time"] + gen_time
 
             print(f"  Train: {train_result['train_time']:.1f}s, "
                   f"Loss: {result['final_loss']:.4f}"
-                  + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else ""))
+                  + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else "")
+                  + (f", PSNR={result.get('psnr', 'N/A')}" if 'psnr' in result else ""))
 
             all_results.append(result)
 

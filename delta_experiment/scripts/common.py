@@ -653,6 +653,122 @@ def compute_lpips_batch(pred: torch.Tensor, target: torch.Tensor) -> float:
         return float("nan")
 
 
+def evaluate_generation_metrics(
+    gen_output: np.ndarray,
+    video_path: str,
+    num_cond_frames: int,
+    num_gen_frames: int,
+    gen_start_frame: int,
+    device: str = "cuda",
+) -> Dict[str, float]:
+    """Compute PSNR, SSIM, LPIPS between generated and ground truth frames.
+
+    Parameters
+    ----------
+    gen_output : np.ndarray
+        Full pipeline output of shape [N, H, W, 3] in [0, 1], where
+        N = num_cond_frames + num_generated.
+    video_path : str
+        Path to the source video for loading GT frames.
+    num_cond_frames : int
+        Number of conditioning frames at the start of gen_output.
+    num_gen_frames : int
+        Number of generated frames to evaluate (may be less than total gen).
+    gen_start_frame : int
+        Anchor frame index — GT starts at this frame in the source video.
+    device : str
+        Device for LPIPS computation.
+
+    Returns
+    -------
+    dict with keys: psnr, ssim, lpips
+    """
+    from PIL import Image
+    import av
+
+    gen_frames = gen_output[num_cond_frames:num_cond_frames + num_gen_frames]
+    out_h, out_w = gen_frames.shape[1], gen_frames.shape[2]
+
+    container = av.open(video_path)
+    gt_pil = []
+    decoded = 0
+    for frame in container.decode(video=0):
+        if decoded < gen_start_frame:
+            decoded += 1
+            continue
+        if len(gt_pil) >= num_gen_frames:
+            break
+        gt_pil.append(frame.to_image())
+        decoded += 1
+    container.close()
+
+    n_compare = min(len(gen_frames), len(gt_pil))
+    if n_compare == 0:
+        return {"psnr": float("nan"), "ssim": float("nan"), "lpips": float("nan")}
+
+    gt_np = np.stack([
+        np.array(img.resize((out_w, out_h), Image.LANCZOS)) / 255.0
+        for img in gt_pil[:n_compare]
+    ], axis=0).astype(np.float32)  # [T, H, W, 3]
+    gen_np = gen_frames[:n_compare].astype(np.float32)
+
+    # PSNR (per-frame, then average)
+    psnr_vals = []
+    for i in range(n_compare):
+        mse = np.mean((gen_np[i] - gt_np[i]) ** 2)
+        if mse < 1e-10:
+            psnr_vals.append(50.0)
+        else:
+            psnr_vals.append(float(10.0 * np.log10(1.0 / mse)))
+    psnr = float(np.mean(psnr_vals))
+
+    # SSIM (per-frame, then average)
+    ssim_vals = []
+    for i in range(n_compare):
+        p = torch.from_numpy(gen_np[i]).permute(2, 0, 1).unsqueeze(0).float()
+        g = torch.from_numpy(gt_np[i]).permute(2, 0, 1).unsqueeze(0).float()
+        ssim_vals.append(_ssim_single(p, g))
+    ssim = float(np.mean(ssim_vals))
+
+    # LPIPS
+    try:
+        import lpips as lpips_lib
+        loss_fn = lpips_lib.LPIPS(net="alex", verbose=False).to(device)
+        lpips_vals = []
+        for i in range(n_compare):
+            p = torch.from_numpy(gen_np[i]).permute(2, 0, 1).unsqueeze(0).float().to(device)
+            g = torch.from_numpy(gt_np[i]).permute(2, 0, 1).unsqueeze(0).float().to(device)
+            with torch.no_grad():
+                s = loss_fn(p * 2 - 1, g * 2 - 1)
+            lpips_vals.append(s.item())
+        del loss_fn
+        torch.cuda.empty_cache()
+        lpips_val = float(np.mean(lpips_vals))
+    except ImportError:
+        lpips_val = float("nan")
+
+    return {"psnr": psnr, "ssim": ssim, "lpips": lpips_val}
+
+
+def _ssim_single(pred: torch.Tensor, target: torch.Tensor) -> float:
+    """Compute SSIM for a single frame pair. Both [1, C, H, W] in [0, 1]."""
+    try:
+        from torchmetrics.image import StructuralSimilarityIndexMeasure
+        ssim_fn = StructuralSimilarityIndexMeasure(data_range=1.0)
+        return ssim_fn(pred, target).item()
+    except ImportError:
+        mu_p = pred.mean(dim=[2, 3], keepdim=True)
+        mu_g = target.mean(dim=[2, 3], keepdim=True)
+        sig_p = ((pred - mu_p) ** 2).mean(dim=[2, 3], keepdim=True)
+        sig_g = ((target - mu_g) ** 2).mean(dim=[2, 3], keepdim=True)
+        sig_pg = ((pred - mu_p) * (target - mu_g)).mean(dim=[2, 3], keepdim=True)
+        c1, c2 = 0.01 ** 2, 0.03 ** 2
+        ssim_map = ((2 * mu_p * mu_g + c1) * (2 * sig_pg + c2)) / (
+            (mu_p ** 2 + mu_g ** 2 + c1) * (sig_p + sig_g + c2)
+        )
+        return ssim_map.mean().item()
+
+
 # ============================================================================
 # Dataset helpers
 # ============================================================================

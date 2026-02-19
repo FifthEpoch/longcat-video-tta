@@ -68,6 +68,7 @@ from common import (
     add_tta_frame_args,
     parse_speed_factors,
     split_tta_latents,
+    evaluate_generation_metrics,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -713,7 +714,7 @@ def main():
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
                 cond_images = []
                 for t_idx in range(pf.shape[1]):
-                    frame_np = (pf[:, t_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                    frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
                     cond_images.append(Image.fromarray(frame_np))
 
                 gen_start = time.time()
@@ -736,6 +737,20 @@ def main():
                 save_video_from_numpy(gen_frames, output_path, fps=24)
                 result["output_path"] = output_path
                 result["gen_time"] = gen_time
+
+                num_gen = args.num_frames - args.num_cond_frames
+                metrics = evaluate_generation_metrics(
+                    gen_output=gen_frames,
+                    video_path=video_path,
+                    num_cond_frames=args.num_cond_frames,
+                    num_gen_frames=num_gen,
+                    gen_start_frame=args.gen_start_frame,
+                    device=args.device,
+                )
+                result.update(metrics)
+                print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
+                      f"SSIM={metrics['ssim']:.4f}, "
+                      f"LPIPS={metrics['lpips']:.4f}")
 
             result["total_time"] = train_result["train_time"] + gen_time
 

@@ -43,10 +43,21 @@ import numpy as np
 # These are approximate counts based on LongCat-Video's architecture:
 #   hidden_size=4096, depth=48, adaln_tembed_dim=512, out_channels=16
 
+_METHOD_NORMALIZE = {
+    "full_tta": "full",
+    "lora_tta": "lora",
+    "full": "full",
+    "lora": "lora",
+    "delta_a": "delta_a",
+    "delta_b": "delta_b",
+    "delta_c": "delta_c",
+}
+
+
 def estimate_params(method: str, config: dict) -> int:
     """Estimate the number of trainable parameters for a given method+config."""
     if method == "full":
-        return 13_600_000_000  # ~13.6B
+        return config.get("total_params", 13_600_000_000)
 
     elif method == "lora":
         rank = config.get("lora_rank", 8)
@@ -154,25 +165,47 @@ def collect_results(results_dir: Path, series_filter: Optional[List[str]] = None
                 print(f"  SKIP: {series_name}/{run_id} (invalid summary: {e})")
                 continue
 
-            # Extract method from summary or infer from series name
-            method = summary.get("method", "")
+            # Normalize method name (full_tta -> full, lora_tta -> lora)
+            raw_method = summary.get("method", "")
+            method = _METHOD_NORMALIZE.get(raw_method, raw_method)
             if not method:
-                if "full" in series_name:
-                    method = "full"
-                elif "lora" in series_name:
-                    method = "lora"
-                elif "delta_a" in series_name:
-                    method = "delta_a"
-                elif "delta_b" in series_name:
-                    method = "delta_b"
-                elif "delta_c" in series_name:
-                    method = "delta_c"
+                for candidate in ("full", "lora", "delta_a", "delta_b", "delta_c"):
+                    if candidate in series_name:
+                        method = candidate
+                        break
 
-            # Extract metrics
+            # The TTA scripts write a flat summary with per-video results
+            # in summary["results"]. Try to extract metrics from there.
+            per_video = summary.get("results", [])
+            successful = [r for r in per_video if r.get("success", False)]
+
+            # Try nested metrics format first, then compute from per-video
             metrics = summary.get("metrics", {})
+            if metrics and "psnr" in metrics:
+                psnr_mean = metrics["psnr"].get("mean", float("nan"))
+                psnr_std = metrics["psnr"].get("std", float("nan"))
+                ssim_mean = metrics["ssim"].get("mean", float("nan"))
+                ssim_std = metrics["ssim"].get("std", float("nan"))
+                lpips_mean = metrics["lpips"].get("mean", float("nan"))
+                lpips_std = metrics["lpips"].get("std", float("nan"))
+            else:
+                psnr_vals = [r["psnr"] for r in successful if "psnr" in r and r["psnr"] is not None]
+                ssim_vals = [r["ssim"] for r in successful if "ssim" in r and r["ssim"] is not None]
+                lpips_vals = [r["lpips"] for r in successful if "lpips" in r and r["lpips"] is not None]
+                psnr_mean = float(np.mean(psnr_vals)) if psnr_vals else float("nan")
+                psnr_std = float(np.std(psnr_vals)) if psnr_vals else float("nan")
+                ssim_mean = float(np.mean(ssim_vals)) if ssim_vals else float("nan")
+                ssim_std = float(np.std(ssim_vals)) if ssim_vals else float("nan")
+                lpips_mean = float(np.mean(lpips_vals)) if lpips_vals else float("nan")
+                lpips_std = float(np.std(lpips_vals)) if lpips_vals else float("nan")
+
+            # Extract config — TTA scripts use flat keys at the top level
             config = summary.get("config", summary)
 
-            # Build the row
+            # Count errors
+            errors = [r for r in per_video if not r.get("success", False)]
+            error_msgs = list({r.get("error", "unknown")[:80] for r in errors[:5]}) if errors else []
+
             row = {
                 "series": series_name,
                 "run_id": run_id,
@@ -182,24 +215,23 @@ def collect_results(results_dir: Path, series_filter: Optional[List[str]] = None
                                             config.get("delta_lr", 0)),
                 "num_steps": config.get("num_steps",
                                         config.get("delta_steps", 0)),
-                "psnr_mean": metrics.get("psnr", {}).get("mean", float("nan")),
-                "psnr_std": metrics.get("psnr", {}).get("std", float("nan")),
-                "ssim_mean": metrics.get("ssim", {}).get("mean", float("nan")),
-                "ssim_std": metrics.get("ssim", {}).get("std", float("nan")),
-                "lpips_mean": metrics.get("lpips", {}).get("mean", float("nan")),
-                "lpips_std": metrics.get("lpips", {}).get("std", float("nan")),
-                "avg_train_time": config.get("avg_train_time",
-                                             summary.get("avg_train_time", 0)),
-                "num_successful": config.get("num_successful",
-                                             summary.get("num_successful", 0)),
+                "psnr_mean": psnr_mean,
+                "psnr_std": psnr_std,
+                "ssim_mean": ssim_mean,
+                "ssim_std": ssim_std,
+                "lpips_mean": lpips_mean,
+                "lpips_std": lpips_std,
+                "avg_train_time": summary.get("avg_train_time", 0),
+                "num_successful": summary.get("num_successful", len(successful)),
+                "num_videos": summary.get("num_videos", len(per_video)),
+                "num_errors": len(errors),
+                "error_samples": error_msgs,
             }
 
-            # LoRA-specific fields
             if method == "lora":
                 row["lora_rank"] = config.get("lora_rank", 0)
                 row["target_ffn"] = config.get("target_ffn", False)
 
-            # Delta-B specific
             if method == "delta_b":
                 row["num_groups"] = config.get("num_groups", 0)
 
@@ -222,7 +254,7 @@ def write_csv(rows: List[dict], output_path: Path):
         "learning_rate", "num_steps",
         "psnr_mean", "psnr_std", "ssim_mean", "ssim_std",
         "lpips_mean", "lpips_std",
-        "avg_train_time", "num_successful",
+        "avg_train_time", "num_successful", "num_videos", "num_errors",
     ]
 
     # Add optional fields if present
@@ -251,21 +283,40 @@ def print_table(rows: List[dict]):
         print("No results found.")
         return
 
+    def _fmt(val, fmt_str):
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            return "   N/A"
+        return f"{val:{fmt_str}}"
+
     print()
     print(f"{'Series':<25} {'Run':>6} {'Method':<12} {'Params':>12} "
           f"{'LR':>10} {'Steps':>6} "
-          f"{'PSNR':>8} {'SSIM':>8} {'LPIPS':>8} {'Time(s)':>8}")
-    print("-" * 115)
+          f"{'PSNR':>8} {'SSIM':>8} {'LPIPS':>8} {'Time(s)':>8} "
+          f"{'OK/Tot':>8}")
+    print("-" * 130)
 
     for row in sorted(rows, key=lambda r: (r["method"], r["series"], r["run_id"])):
         params_str = _format_params(row["trainable_params"])
+        ok = row.get("num_successful", 0)
+        tot = row.get("num_videos", 0)
         print(f"{row['series']:<25} {row['run_id']:>6} {row['method']:<12} "
               f"{params_str:>12} {row['learning_rate']:>10.1e} "
               f"{row['num_steps']:>6} "
-              f"{row['psnr_mean']:>8.2f} {row['ssim_mean']:>8.4f} "
-              f"{row['lpips_mean']:>8.4f} {row['avg_train_time']:>8.1f}")
+              f"{_fmt(row['psnr_mean'], '>8.2f')} {_fmt(row['ssim_mean'], '>8.4f')} "
+              f"{_fmt(row['lpips_mean'], '>8.4f')} {row['avg_train_time']:>8.1f} "
+              f"{ok:>3}/{tot:<3}")
 
-    print("-" * 115)
+    print("-" * 130)
+
+    # Show error samples if any runs have errors
+    error_runs = [r for r in rows if r.get("num_errors", 0) > 0]
+    if error_runs:
+        print(f"\nRuns with errors ({len(error_runs)}):")
+        for r in error_runs[:10]:
+            msgs = r.get("error_samples", [])
+            msg_str = msgs[0] if msgs else "unknown"
+            print(f"  {r['series']}/{r['run_id']}: "
+                  f"{r['num_errors']} errors, e.g.: {msg_str}")
     print()
 
 
@@ -283,20 +334,34 @@ def _format_params(n: int) -> str:
 # ============================================================================
 # Plots
 # ============================================================================
+def _has_valid_data(rows: List[dict], metric_key: str = "psnr_mean") -> bool:
+    """Check if any row has a valid (non-NaN) metric value."""
+    return any(
+        not np.isnan(row.get(metric_key, float("nan")))
+        for row in rows
+    )
+
+
+def _filter_valid(rows: List[dict], metric_key: str = "psnr_mean") -> List[dict]:
+    """Return only rows with valid (non-NaN) values for a metric."""
+    return [r for r in rows if not np.isnan(r.get(metric_key, float("nan")))]
+
+
 def plot_pareto(rows: List[dict], output_dir: Path):
     """Plot PSNR vs. trainable parameters (Pareto frontier)."""
-    if not rows:
+    valid = _filter_valid(rows, "psnr_mean")
+    if not valid:
+        print("  SKIP plot_pareto: no valid PSNR data")
         return
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Group by method
     methods = {}
-    for row in rows:
+    for row in valid:
         m = row["method"]
         if m not in methods:
             methods[m] = {"params": [], "psnr": [], "labels": []}
-        methods[m]["params"].append(row["trainable_params"])
+        methods[m]["params"].append(max(row["trainable_params"], 1))
         methods[m]["psnr"].append(row["psnr_mean"])
         methods[m]["labels"].append(row["run_id"])
 
@@ -311,7 +376,6 @@ def plot_pareto(rows: List[dict], output_dir: Path):
             edgecolors="white", linewidths=0.5, zorder=5,
         )
 
-        # Annotate points
         for i, txt in enumerate(data["labels"]):
             ax.annotate(
                 txt, (data["params"][i], data["psnr"][i]),
@@ -335,20 +399,19 @@ def plot_pareto(rows: List[dict], output_dir: Path):
 
 def plot_lr_sensitivity(rows: List[dict], output_dir: Path):
     """Plot PSNR vs. learning rate for each method."""
-    if not rows:
+    valid = _filter_valid(rows, "psnr_mean")
+    if not valid:
+        print("  SKIP plot_lr_sensitivity: no valid PSNR data")
         return
 
-    # Group by method, keeping only LR sweep series
     lr_series = {}
-    for row in rows:
+    for row in valid:
         m = row["method"]
-        # Identify LR sweep runs (they vary LR at fixed steps)
-        key = m
-        if key not in lr_series:
-            lr_series[key] = {"lr": [], "psnr": [], "psnr_std": []}
-        lr_series[key]["lr"].append(row["learning_rate"])
-        lr_series[key]["psnr"].append(row["psnr_mean"])
-        lr_series[key]["psnr_std"].append(row["psnr_std"])
+        if m not in lr_series:
+            lr_series[m] = {"lr": [], "psnr": [], "psnr_std": []}
+        lr_series[m]["lr"].append(row["learning_rate"])
+        lr_series[m]["psnr"].append(row["psnr_mean"])
+        lr_series[m]["psnr_std"].append(row.get("psnr_std", 0))
 
     if not lr_series:
         return
@@ -359,11 +422,11 @@ def plot_lr_sensitivity(rows: List[dict], output_dir: Path):
         color = METHOD_COLORS.get(method, "#333333")
         label = METHOD_DISPLAY.get(method, method)
 
-        # Sort by LR
         sorted_idx = np.argsort(data["lr"])
         lrs = np.array(data["lr"])[sorted_idx]
         psnrs = np.array(data["psnr"])[sorted_idx]
         stds = np.array(data["psnr_std"])[sorted_idx]
+        stds = np.nan_to_num(stds, nan=0.0)
 
         ax.errorbar(
             lrs, psnrs, yerr=stds,
@@ -387,18 +450,19 @@ def plot_lr_sensitivity(rows: List[dict], output_dir: Path):
 
 def plot_iter_curves(rows: List[dict], output_dir: Path):
     """Plot PSNR vs. training steps for each method (overfitting curves)."""
-    if not rows:
+    valid = _filter_valid(rows, "psnr_mean")
+    if not valid:
+        print("  SKIP plot_iter_curves: no valid PSNR data")
         return
 
-    # Group by method
     iter_data = {}
-    for row in rows:
+    for row in valid:
         m = row["method"]
         if m not in iter_data:
             iter_data[m] = {"steps": [], "psnr": [], "psnr_std": []}
         iter_data[m]["steps"].append(row["num_steps"])
         iter_data[m]["psnr"].append(row["psnr_mean"])
-        iter_data[m]["psnr_std"].append(row["psnr_std"])
+        iter_data[m]["psnr_std"].append(row.get("psnr_std", 0))
 
     if not iter_data:
         return
@@ -412,7 +476,7 @@ def plot_iter_curves(rows: List[dict], output_dir: Path):
         sorted_idx = np.argsort(data["steps"])
         steps = np.array(data["steps"])[sorted_idx]
         psnrs = np.array(data["psnr"])[sorted_idx]
-        stds = np.array(data["psnr_std"])[sorted_idx]
+        stds = np.nan_to_num(np.array(data["psnr_std"])[sorted_idx], nan=0.0)
 
         ax.errorbar(
             steps, psnrs, yerr=stds,
@@ -435,18 +499,20 @@ def plot_iter_curves(rows: List[dict], output_dir: Path):
 
 def plot_capacity_curve(rows: List[dict], output_dir: Path):
     """Plot PSNR vs. capacity for Delta-B groups sweep and LoRA rank sweep."""
-    if not rows:
+    valid = _filter_valid(rows, "psnr_mean")
+    if not valid:
+        print("  SKIP plot_capacity_curve: no valid PSNR data")
         return
 
     capacity_data = {}
-    for row in rows:
+    for row in valid:
         m = row["method"]
         if m in ("delta_b", "lora", "delta_a", "delta_c"):
             if m not in capacity_data:
                 capacity_data[m] = {"params": [], "psnr": [], "psnr_std": [], "labels": []}
-            capacity_data[m]["params"].append(row["trainable_params"])
+            capacity_data[m]["params"].append(max(row["trainable_params"], 1))
             capacity_data[m]["psnr"].append(row["psnr_mean"])
-            capacity_data[m]["psnr_std"].append(row["psnr_std"])
+            capacity_data[m]["psnr_std"].append(row.get("psnr_std", 0))
             if m == "delta_b":
                 capacity_data[m]["labels"].append(f"g={row.get('num_groups', '?')}")
             elif m == "lora":
@@ -467,7 +533,7 @@ def plot_capacity_curve(rows: List[dict], output_dir: Path):
         sorted_idx = np.argsort(data["params"])
         params = np.array(data["params"])[sorted_idx]
         psnrs = np.array(data["psnr"])[sorted_idx]
-        stds = np.array(data["psnr_std"])[sorted_idx]
+        stds = np.nan_to_num(np.array(data["psnr_std"])[sorted_idx], nan=0.0)
         labels = np.array(data["labels"])[sorted_idx]
 
         ax.errorbar(
@@ -499,7 +565,12 @@ def plot_capacity_curve(rows: List[dict], output_dir: Path):
 
 def plot_all_metrics_pareto(rows: List[dict], output_dir: Path):
     """Create a 3-panel plot: PSNR, SSIM, LPIPS vs. trainable params."""
-    if not rows:
+    has_any = any(
+        _has_valid_data(rows, k)
+        for k in ("psnr_mean", "ssim_mean", "lpips_mean")
+    )
+    if not has_any:
+        print("  SKIP plot_all_metrics_pareto: no valid metric data")
         return
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -510,12 +581,19 @@ def plot_all_metrics_pareto(rows: List[dict], output_dir: Path):
     ]
 
     for ax, (metric_key, ylabel, direction) in zip(axes, metrics):
+        valid = _filter_valid(rows, metric_key)
+        if not valid:
+            ax.text(0.5, 0.5, "No data", ha="center", va="center",
+                    transform=ax.transAxes, fontsize=14, color="gray")
+            ax.set_title(f"{ylabel} ({direction})", fontsize=11)
+            continue
+
         methods = {}
-        for row in rows:
+        for row in valid:
             m = row["method"]
             if m not in methods:
                 methods[m] = {"params": [], "val": []}
-            methods[m]["params"].append(row["trainable_params"])
+            methods[m]["params"].append(max(row["trainable_params"], 1))
             methods[m]["val"].append(row[metric_key])
 
         for method, data in sorted(methods.items()):
