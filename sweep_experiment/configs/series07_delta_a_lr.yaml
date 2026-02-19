@@ -11,8 +11,8 @@ description: "Delta-A global vector LR sweep (512 params)"
 
 fixed:
   delta_steps: 20
-  num_cond_frames: 2
-  num_frames: 16
+  num_cond_frames: 14
+  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0

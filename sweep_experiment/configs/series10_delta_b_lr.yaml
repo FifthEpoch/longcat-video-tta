@@ -13,8 +13,8 @@ depends_on: [9]
 fixed:
   num_groups: 4      # PLACEHOLDER -- update from Series 9 best
   delta_steps: 20
-  num_cond_frames: 2
-  num_frames: 16
+  num_cond_frames: 14
+  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0

@@ -19,8 +19,8 @@ fixed:
   max_grad_norm: 1.0
   target_modules: "qkv,proj"
   target_ffn: false
-  num_cond_frames: 2
-  num_frames: 16
+  num_cond_frames: 14
+  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0

@@ -53,6 +53,8 @@ _KEY_TO_ENV = {
     "num_cond_frames": "NUM_COND_FRAMES",
     "num_frames": "NUM_FRAMES",
     "gen_start_frame": "GEN_START_FRAME",
+    "tta_total_frames": "TTA_TOTAL_FRAMES",
+    "tta_context_frames": "TTA_CONTEXT_FRAMES",
     "num_inference_steps": "NUM_INFERENCE_STEPS",
     "guidance_scale": "GUIDANCE_SCALE",
     "resolution": "RESOLUTION",

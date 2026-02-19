@@ -585,6 +585,12 @@ def generate_video_continuation(
     """
     from PIL import Image
 
+    vae_temporal_factor = 4
+    num_frames_valid = (
+        ((num_frames - 1 + vae_temporal_factor - 1) // vae_temporal_factor)
+        * vae_temporal_factor + 1
+    )
+
     generator = torch.Generator(device=device)
     generator.manual_seed(seed)
 
@@ -592,7 +598,7 @@ def generate_video_continuation(
         video=video_frames,
         prompt=prompt,
         resolution=resolution,
-        num_frames=num_frames,
+        num_frames=num_frames_valid,
         num_cond_frames=num_cond_frames,
         num_inference_steps=num_inference_steps,
         guidance_scale=guidance_scale,
@@ -1113,9 +1119,9 @@ def add_tta_frame_args(parser):
              "(default: same as --num-cond-frames, i.e. no separate train/val)."
     )
     g.add_argument(
-        "--tta-context-frames", type=int, default=10,
+        "--tta-context-frames", type=int, default=None,
         help="Number of leading pixel frames treated as clean context "
-             "(timestep=0). Remaining are split into train + val."
+             "(timestep=0). Defaults to --num-cond-frames."
     )
     return parser
 

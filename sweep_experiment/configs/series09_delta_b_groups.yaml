@@ -13,8 +13,8 @@ description: "Delta-B per-layer groups sweep (capacity axis)"
 fixed:
   delta_lr: 1.0e-2
   delta_steps: 20
-  num_cond_frames: 2
-  num_frames: 16
+  num_cond_frames: 14
+  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0

@@ -44,6 +44,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/results/${SERIES_NAME
 NUM_COND_FRAMES="${NUM_COND_FRAMES:-2}"
 NUM_FRAMES="${NUM_FRAMES:-16}"
 GEN_START_FRAME="${GEN_START_FRAME:-32}"
+TTA_TOTAL_FRAMES="${TTA_TOTAL_FRAMES:-${GEN_START_FRAME}}"
+TTA_CONTEXT_FRAMES="${TTA_CONTEXT_FRAMES:-${NUM_COND_FRAMES}}"
 NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-50}"
 GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
@@ -186,6 +188,8 @@ case "${METHOD}" in
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
         --num-inference-steps "${NUM_INFERENCE_STEPS}" \
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
@@ -229,6 +233,8 @@ case "${METHOD}" in
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
         --num-inference-steps "${NUM_INFERENCE_STEPS}" \
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
@@ -253,6 +259,8 @@ case "${METHOD}" in
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
         --num-inference-steps "${NUM_INFERENCE_STEPS}" \
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
@@ -278,6 +286,8 @@ case "${METHOD}" in
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
         --num-inference-steps "${NUM_INFERENCE_STEPS}" \
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
@@ -303,6 +313,8 @@ case "${METHOD}" in
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
         --num-inference-steps "${NUM_INFERENCE_STEPS}" \
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \

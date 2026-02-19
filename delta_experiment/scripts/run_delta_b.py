@@ -339,9 +339,12 @@ def main():
     add_tta_frame_args(parser)
     args = parser.parse_args()
 
-    # Default tta_total_frames to num_cond_frames (backward compat)
+    # Default tta_total_frames to gen_start_frame (all pre-anchor frames)
     if args.tta_total_frames is None:
-        args.tta_total_frames = args.num_cond_frames
+        args.tta_total_frames = args.gen_start_frame
+    # Default tta_context_frames to match generation conditioning
+    if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
+        args.tta_context_frames = args.num_cond_frames
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
