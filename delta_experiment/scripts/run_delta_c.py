@@ -298,6 +298,11 @@ def main():
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
 
+    from torch.utils.checkpoint import checkpoint as _ckpt_fn
+    dit.gradient_checkpointing = True
+    dit._gradient_checkpointing_func = _ckpt_fn
+    print("Gradient checkpointing: ENABLED")
+
     from common import load_ucf101_video_list
     videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
