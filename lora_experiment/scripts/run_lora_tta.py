@@ -495,7 +495,9 @@ def main():
     text_encoder = components["text_encoder"]
 
     # Enable gradient checkpointing to reduce activation memory during backprop
+    from torch.utils.checkpoint import checkpoint as _ckpt_fn
     dit.gradient_checkpointing = True
+    dit._gradient_checkpointing_func = _ckpt_fn
     print("Gradient checkpointing: ENABLED")
 
     # Freeze all DiT parameters
