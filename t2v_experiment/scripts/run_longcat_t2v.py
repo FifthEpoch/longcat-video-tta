@@ -19,8 +19,15 @@ import argparse
 import csv
 import json
 import os
+import sys
 import time
 from pathlib import Path
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parents[1]
+_LONGCAT_DIR = _REPO_ROOT / "LongCat-Video"
+sys.path.insert(0, str(_LONGCAT_DIR))
+sys.path.insert(0, str(_REPO_ROOT))
 
 import numpy as np
 import torch
