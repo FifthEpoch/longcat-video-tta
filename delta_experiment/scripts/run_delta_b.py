@@ -377,10 +377,11 @@ def main():
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
 
+    import functools
     from torch.utils.checkpoint import checkpoint as _ckpt_fn
     dit.gradient_checkpointing = True
-    dit._gradient_checkpointing_func = _ckpt_fn
-    print("Gradient checkpointing: ENABLED")
+    dit._gradient_checkpointing_func = functools.partial(_ckpt_fn, use_reentrant=False)
+    print("Gradient checkpointing: ENABLED (use_reentrant=False)")
 
     adaln_dim = dit.config.adaln_tembed_dim
 
