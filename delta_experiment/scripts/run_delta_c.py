@@ -414,6 +414,11 @@ def main():
                     save_fn=lambda: copy.deepcopy(wrapper.delta_out.data),
                 )
 
+            # Offload VAE + text encoder to CPU during training
+            vae.to("cpu")
+            text_encoder.to("cpu")
+            torch.cuda.empty_cache()
+
             t0 = time.time()
             opt_result = optimize_delta_c(
                 wrapper=wrapper,
@@ -446,6 +451,10 @@ def main():
                   f"δ_out norm: {result['delta_out_norm']:.6f}")
 
             # ── Generation ──────────────────────────────────────────
+            # Bring VAE + text encoder back to GPU for generation
+            vae.to(args.device)
+            text_encoder.to(args.device)
+
             gen_time = 0.0
             if not args.skip_generation:
                 from PIL import Image

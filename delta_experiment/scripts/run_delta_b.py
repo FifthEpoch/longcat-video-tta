@@ -206,21 +206,28 @@ class DeltaBWrapper(nn.Module):
                 1, -1, hidden_states.shape[-1]
             )
 
-        # Through transformer blocks with per-group delta injection
+        # Through transformer blocks with per-group delta injection (with gradient checkpointing)
+        import functools as _ft
+        from torch.utils.checkpoint import checkpoint as _ckpt_fn
+        _ckpt = _ft.partial(_ckpt_fn, use_reentrant=False)
+
         for i, block in enumerate(dit.blocks):
             group_idx = self.block_to_group[i]
             delta = self.deltas[group_idx]
-            # Inject delta into timestep embedding for this block
             t_modified = t_base + delta.unsqueeze(0).unsqueeze(0)
 
-            hidden_states = block(
-                hidden_states,
-                encoder_hidden_states,
-                t_modified,
-                y_seqlens,
-                (N_t, N_h, N_w),
-                num_cond_latents=num_cond_latents,
-            )
+            if torch.is_grad_enabled():
+                hidden_states = _ckpt(
+                    block, hidden_states, encoder_hidden_states, t_modified,
+                    y_seqlens, (N_t, N_h, N_w),
+                    num_cond_latents=num_cond_latents,
+                )
+            else:
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, t_modified,
+                    y_seqlens, (N_t, N_h, N_w),
+                    num_cond_latents=num_cond_latents,
+                )
 
         hidden_states = dit.final_layer(hidden_states, t_base, (N_t, N_h, N_w))
         hidden_states = dit.unpatchify(hidden_states, N_t, N_h, N_w)
@@ -497,6 +504,11 @@ def main():
                     save_fn=lambda: [copy.deepcopy(d.data) for d in wrapper.deltas],
                 )
 
+            # Offload VAE + text encoder to CPU during training
+            vae.to("cpu")
+            text_encoder.to("cpu")
+            torch.cuda.empty_cache()
+
             t0 = time.time()
             opt_result = optimize_delta_b(
                 wrapper=wrapper,
@@ -530,6 +542,10 @@ def main():
                   f"Norms: {opt_result['delta_norms']}")
 
             # ── Generation ──────────────────────────────────────────
+            # Bring VAE + text encoder back to GPU for generation
+            vae.to(args.device)
+            text_encoder.to(args.device)
+
             gen_time = 0.0
             if not args.skip_generation:
                 from PIL import Image

@@ -176,16 +176,24 @@ class DeltaAWrapper(nn.Module):
                 1, -1, hidden_states.shape[-1]
             )
 
-        # Through transformer blocks
+        # Through transformer blocks (with gradient checkpointing)
+        import functools as _ft
+        from torch.utils.checkpoint import checkpoint as _ckpt_fn
+        _ckpt = _ft.partial(_ckpt_fn, use_reentrant=False)
+
         for block in dit.blocks:
-            hidden_states = block(
-                hidden_states,
-                encoder_hidden_states,
-                t,
-                y_seqlens,
-                (N_t, N_h, N_w),
-                num_cond_latents=num_cond_latents,
-            )
+            if torch.is_grad_enabled():
+                hidden_states = _ckpt(
+                    block, hidden_states, encoder_hidden_states, t,
+                    y_seqlens, (N_t, N_h, N_w),
+                    num_cond_latents=num_cond_latents,
+                )
+            else:
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, t,
+                    y_seqlens, (N_t, N_h, N_w),
+                    num_cond_latents=num_cond_latents,
+                )
 
         hidden_states = dit.final_layer(hidden_states, t, (N_t, N_h, N_w))
         hidden_states = dit.unpatchify(hidden_states, N_t, N_h, N_w)
@@ -478,6 +486,11 @@ def main():
                     save_fn=lambda: copy.deepcopy(wrapper.delta.data),
                 )
 
+            # Offload VAE + text encoder to CPU during training
+            vae.to("cpu")
+            text_encoder.to("cpu")
+            torch.cuda.empty_cache()
+
             # Optimize
             t0 = time.time()
             opt_result = optimize_delta_a(
@@ -511,6 +524,10 @@ def main():
                   f"Delta norm: {result['delta_norm']:.4f}")
 
             # ── Generation ──────────────────────────────────────────
+            # Bring VAE + text encoder back to GPU for generation
+            vae.to(args.device)
+            text_encoder.to(args.device)
+
             gen_time = 0.0
             if not args.skip_generation:
                 from PIL import Image
