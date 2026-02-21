@@ -60,6 +60,7 @@ _KEY_TO_ENV = {
     "resolution": "RESOLUTION",
     "seed": "SEED",
     "max_videos": "MAX_VIDEOS",
+    "batch_videos": "BATCH_VIDEOS",
     # Full / LoRA shared
     "learning_rate": "LEARNING_RATE",
     "num_steps": "NUM_STEPS",
@@ -80,6 +81,14 @@ _KEY_TO_ENV = {
     "delta_mode": "DELTA_MODE",
     # Full-model specific
     "optimizer": "OPTIMIZER",
+    # Early stopping
+    "es_disable": "ES_DISABLE",
+    "es_check_every": "ES_CHECK_EVERY",
+    "es_patience": "ES_PATIENCE",
+    "es_anchor_sigmas": "ES_ANCHOR_SIGMAS",
+    "es_noise_draws": "ES_NOISE_DRAWS",
+    "es_strategy": "ES_STRATEGY",
+    "es_holdout_fraction": "ES_HOLDOUT_FRACTION",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
 }

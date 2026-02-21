@@ -1,0 +1,40 @@
+# Series 30: Experiment 5 -- Video Batch-Size Ablation (LoRA)
+# Goal: Study impact of batch-level TTA vs instance-level TTA.
+# Fixed: LoRA best config (lr=2e-4, steps=20, rank=1, alpha=2)
+# Swept: batch_videos
+
+method: lora
+series: 30
+series_name: exp5_batch_size_lora
+description: "Batch-size ablation: LoRA TTA"
+
+fixed:
+  lora_rank: 1
+  lora_alpha: 2
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_modules: "qkv,proj"
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: BS_L1
+    batch_videos: 1
+  - run_id: BS_L2
+    batch_videos: 5
+  - run_id: BS_L3
+    batch_videos: 10
+  - run_id: BS_L4
+    batch_videos: 25
+  - run_id: BS_L5
+    batch_videos: 100

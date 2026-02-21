@@ -51,6 +51,7 @@ GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
 MAX_VIDEOS="${MAX_VIDEOS:-100}"
+BATCH_VIDEOS="${BATCH_VIDEOS:-1}"
 
 # Early stopping (shared by all methods)
 ES_DISABLE="${ES_DISABLE:-}"
@@ -194,6 +195,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
+        --batch-videos "${BATCH_VIDEOS}" \
         ${EXTRA_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -239,6 +241,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
+        --batch-videos "${BATCH_VIDEOS}" \
         ${EXTRA_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -265,6 +268,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
+        --batch-videos "${BATCH_VIDEOS}" \
         ${ES_FLAGS}
     ;;
 

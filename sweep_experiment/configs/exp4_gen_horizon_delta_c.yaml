@@ -1,0 +1,37 @@
+# Series 28: Experiment 4 -- Generation Horizon Ablation (Delta-C)
+# Goal: Vary generation horizon to study impact on adaptation quality.
+# Fixed: Delta-C best config (delta_lr=1e-2, delta_steps=20, delta_mode=per_channel), num_cond_frames=14
+# Swept: num_frames
+
+method: delta_c
+series: 28
+series_name: exp4_gen_horizon_delta_c
+description: "Generation horizon ablation: Delta-C TTA"
+
+fixed:
+  delta_lr: 1.0e-2
+  delta_steps: 20
+  delta_mode: per_channel
+  num_cond_frames: 14
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: GH_DC1
+    num_frames: 16
+  - run_id: GH_DC2
+    num_frames: 20
+  - run_id: GH_DC3
+    num_frames: 28
+  - run_id: GH_DC4
+    num_frames: 36
+  - run_id: GH_DC5
+    num_frames: 44
+  - run_id: GH_DC6
+    num_frames: 56
+  - run_id: GH_DC7
+    num_frames: 72

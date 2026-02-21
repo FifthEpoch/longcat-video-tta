@@ -1,0 +1,36 @@
+# Series 26: Experiment 4 -- Generation Horizon Ablation (Delta-A)
+# Goal: Vary generation horizon to study impact on adaptation quality.
+# Fixed: Delta-A best config (delta_lr=5e-3, delta_steps=20), num_cond_frames=14
+# Swept: num_frames
+
+method: delta_a
+series: 26
+series_name: exp4_gen_horizon_delta_a
+description: "Generation horizon ablation: Delta-A TTA"
+
+fixed:
+  delta_lr: 5.0e-3
+  delta_steps: 20
+  num_cond_frames: 14
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: GH_DA1
+    num_frames: 16
+  - run_id: GH_DA2
+    num_frames: 20
+  - run_id: GH_DA3
+    num_frames: 28
+  - run_id: GH_DA4
+    num_frames: 36
+  - run_id: GH_DA5
+    num_frames: 44
+  - run_id: GH_DA6
+    num_frames: 56
+  - run_id: GH_DA7
+    num_frames: 72

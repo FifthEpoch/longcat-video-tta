@@ -1,0 +1,33 @@
+# Series 17: Early Stopping Ablation -- Noise Draws
+# Goal: Vary the number of noise samples used for early stopping evaluation.
+# Fixed: Full-model best config (lr=1e-5, steps=20, warmup=3, optimizer=sgd)
+# Swept: es_noise_draws
+
+method: full
+series: 17
+series_name: es_ablation_noise_draws
+description: "Early stopping ablation: noise draws sweep"
+
+fixed:
+  learning_rate: 1.0e-5
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  optimizer: sgd
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: ES_ND1
+    es_noise_draws: 1
+  - run_id: ES_ND2
+    es_noise_draws: 2
+  - run_id: ES_ND3
+    es_noise_draws: 4

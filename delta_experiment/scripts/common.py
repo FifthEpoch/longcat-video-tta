@@ -1195,6 +1195,66 @@ def save_checkpoint(checkpoint: dict, checkpoint_path: str):
 
 
 # ============================================================================
+# Video batching helpers
+# ============================================================================
+
+def cluster_videos_by_prompt(
+    video_entries: List[Dict],
+    batch_size: int = 1,
+    method: str = "sequential",
+) -> List[List[Dict]]:
+    """Group video entries into batches for batch-level TTA.
+
+    Parameters
+    ----------
+    video_entries : list of dicts with at least 'video_path' and 'caption'
+    batch_size : number of videos per batch (1 = instance-level)
+    method : grouping strategy
+        - 'sequential': simple sequential chunking
+        - 'similarity': group by text prompt similarity (requires sentence-transformers)
+
+    Returns
+    -------
+    List of batches, each batch is a list of video entry dicts.
+    """
+    if batch_size <= 1:
+        return [[v] for v in video_entries]
+
+    if method == "similarity":
+        try:
+            from sentence_transformers import SentenceTransformer
+            from sklearn.cluster import KMeans
+
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            captions = [v.get("caption", "") for v in video_entries]
+            embeddings = model.encode(captions, show_progress_bar=False)
+
+            n_clusters = max(1, len(video_entries) // batch_size)
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(embeddings)
+
+            from collections import defaultdict
+            clusters = defaultdict(list)
+            for i, label in enumerate(labels):
+                clusters[label].append(video_entries[i])
+
+            batches = []
+            for cluster_entries in clusters.values():
+                for i in range(0, len(cluster_entries), batch_size):
+                    batches.append(cluster_entries[i:i + batch_size])
+            return batches
+
+        except ImportError:
+            print("WARNING: sentence-transformers not available, falling back to sequential",
+                  file=sys.stderr)
+
+    batches = []
+    for i in range(0, len(video_entries), batch_size):
+        batches.append(video_entries[i:i + batch_size])
+    return batches
+
+
+# ============================================================================
 # GPU memory helpers
 # ============================================================================
 
