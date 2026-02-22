@@ -265,6 +265,8 @@ def main():
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--resolution", type=str, default="480p")
     parser.add_argument("--skip-generation", action="store_true")
+    parser.add_argument("--no-save-videos", action="store_true",
+                        help="Skip saving generated videos to disk (metrics still computed in-memory)")
 
     # Early stopping
     add_early_stopping_args(parser)
@@ -380,7 +382,8 @@ def main():
     # Process videos
     print(f"\nProcessing {len(videos) - start_idx} videos...\n")
     videos_dir = os.path.join(args.output_dir, "videos")
-    os.makedirs(videos_dir, exist_ok=True)
+    if not args.no_save_videos:
+        os.makedirs(videos_dir, exist_ok=True)
 
     for idx, entry in enumerate(tqdm(videos, desc="Full TTA")):
         if idx < start_idx:
@@ -543,10 +546,12 @@ def main():
                 )
                 gen_time = time.time() - gen_start
 
-                output_path = os.path.join(videos_dir, f"{video_name}_full.mp4")
-                save_video_from_numpy(gen_frames, output_path, fps=24)
-                result["output_path"] = output_path
                 result["gen_time"] = gen_time
+
+                output_path = os.path.join(videos_dir, f"{video_name}_full.mp4")
+                if not args.no_save_videos:
+                    save_video_from_numpy(gen_frames, output_path, fps=24)
+                    result["output_path"] = output_path
 
                 num_gen = args.num_frames - args.num_cond_frames
                 metrics = evaluate_generation_metrics(

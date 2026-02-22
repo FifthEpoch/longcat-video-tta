@@ -436,6 +436,8 @@ def main():
                         help="Target resolution for generation")
     parser.add_argument("--skip-generation", action="store_true",
                         help="Skip video generation (only train)")
+    parser.add_argument("--no-save-videos", action="store_true",
+                        help="Skip saving generated videos to disk (metrics still computed in-memory)")
 
     # Early stopping
     add_early_stopping_args(parser)
@@ -573,7 +575,8 @@ def main():
     print(f"\nProcessing {len(videos) - start_idx} videos...\n")
     videos_dir = os.path.join(args.output_dir, "videos")
     lora_dir = os.path.join(args.output_dir, "lora_weights")
-    os.makedirs(videos_dir, exist_ok=True)
+    if not args.no_save_videos:
+        os.makedirs(videos_dir, exist_ok=True)
     if args.save_lora_weights:
         os.makedirs(lora_dir, exist_ok=True)
 
@@ -742,11 +745,12 @@ def main():
                 )
                 gen_time = time.time() - gen_start
 
-                # Save generated video
-                output_path = os.path.join(videos_dir, f"{video_name}_lora.mp4")
-                save_video_from_numpy(gen_frames, output_path, fps=24)
-                result["output_path"] = output_path
                 result["gen_time"] = gen_time
+
+                output_path = os.path.join(videos_dir, f"{video_name}_lora.mp4")
+                if not args.no_save_videos:
+                    save_video_from_numpy(gen_frames, output_path, fps=24)
+                    result["output_path"] = output_path
 
                 num_gen = args.num_frames - args.num_cond_frames
                 metrics = evaluate_generation_metrics(

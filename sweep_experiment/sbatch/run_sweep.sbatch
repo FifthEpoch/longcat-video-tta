@@ -51,7 +51,6 @@ GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
 MAX_VIDEOS="${MAX_VIDEOS:-100}"
-BATCH_VIDEOS="${BATCH_VIDEOS:-1}"
 
 # Early stopping (shared by all methods)
 ES_DISABLE="${ES_DISABLE:-}"
@@ -61,6 +60,9 @@ ES_ANCHOR_SIGMAS="${ES_ANCHOR_SIGMAS:-0.25,0.5,0.75}"
 ES_NOISE_DRAWS="${ES_NOISE_DRAWS:-2}"
 ES_STRATEGY="${ES_STRATEGY:-patience}"
 ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
+
+# Disk-saving: skip writing generated .mp4 files (metrics still computed in-memory)
+NO_SAVE_VIDEOS="${NO_SAVE_VIDEOS:-1}"
 
 # ============================================================================
 # Method-specific hyperparameters (only used by their respective methods)
@@ -158,6 +160,12 @@ ES_FLAGS="${ES_FLAGS} --es-noise-draws ${ES_NOISE_DRAWS}"
 ES_FLAGS="${ES_FLAGS} --es-strategy ${ES_STRATEGY}"
 ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
 
+# Build --no-save-videos flag
+SAVE_FLAGS=""
+if [ "${NO_SAVE_VIDEOS}" = "1" ]; then
+    SAVE_FLAGS="--no-save-videos"
+fi
+
 # ============================================================================
 # Dispatch to the appropriate method script
 # ============================================================================
@@ -195,7 +203,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
-        --batch-videos "${BATCH_VIDEOS}" \
+        ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -241,7 +249,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
-        --batch-videos "${BATCH_VIDEOS}" \
+        ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -268,7 +276,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
-        --batch-videos "${BATCH_VIDEOS}" \
+        ${SAVE_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -296,6 +304,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
+        ${SAVE_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -323,6 +332,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
+        ${SAVE_FLAGS} \
         ${ES_FLAGS}
     ;;
 

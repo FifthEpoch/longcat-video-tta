@@ -256,6 +256,8 @@ def main():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--skip-generation", action="store_true",
                         help="Skip video generation (only train delta)")
+    parser.add_argument("--no-save-videos", action="store_true",
+                        help="Delete generated videos after evaluation to save disk space")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -313,7 +315,7 @@ def main():
     early_stopper = build_early_stopper_from_args(args)
     all_results = []
     videos_dir = os.path.join(args.output_dir, "videos")
-    if not args.skip_generation:
+    if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
     for idx, entry in enumerate(videos):
@@ -483,10 +485,12 @@ def main():
                     )
                     gen_time = time.time() - gen_start
 
-                    output_path = os.path.join(videos_dir, f"{video_name}_delta_c.mp4")
-                    save_video_from_numpy(gen_frames, output_path, fps=24)
-                    result["output_path"] = output_path
                     result["gen_time"] = gen_time
+
+                    output_path = os.path.join(videos_dir, f"{video_name}_delta_c.mp4")
+                    if not args.no_save_videos:
+                        save_video_from_numpy(gen_frames, output_path, fps=24)
+                        result["output_path"] = output_path
 
                     num_gen = args.num_frames - args.num_cond_frames
                     metrics = evaluate_generation_metrics(
