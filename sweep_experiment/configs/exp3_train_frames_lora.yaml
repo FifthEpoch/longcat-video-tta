@@ -28,18 +28,10 @@ fixed:
 
 sweep:
   - run_id: TF_L1
-    num_cond_frames: 1
-  - run_id: TF_L2
     num_cond_frames: 2
-  - run_id: TF_L3
-    num_cond_frames: 4
-  - run_id: TF_L4
+  - run_id: TF_L2
     num_cond_frames: 7
-  - run_id: TF_L5
-    num_cond_frames: 10
-  - run_id: TF_L6
+  - run_id: TF_L3
     num_cond_frames: 14
-  - run_id: TF_L7
-    num_cond_frames: 20
-  - run_id: TF_L8
+  - run_id: TF_L4
     num_cond_frames: 24

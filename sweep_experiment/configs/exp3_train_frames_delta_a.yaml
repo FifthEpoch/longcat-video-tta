@@ -21,18 +21,10 @@ fixed:
 
 sweep:
   - run_id: TF_DA1
-    num_cond_frames: 1
-  - run_id: TF_DA2
     num_cond_frames: 2
-  - run_id: TF_DA3
-    num_cond_frames: 4
-  - run_id: TF_DA4
+  - run_id: TF_DA2
     num_cond_frames: 7
-  - run_id: TF_DA5
-    num_cond_frames: 10
-  - run_id: TF_DA6
+  - run_id: TF_DA3
     num_cond_frames: 14
-  - run_id: TF_DA7
-    num_cond_frames: 20
-  - run_id: TF_DA8
+  - run_id: TF_DA4
     num_cond_frames: 24

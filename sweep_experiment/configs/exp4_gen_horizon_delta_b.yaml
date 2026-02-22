@@ -24,14 +24,8 @@ sweep:
   - run_id: GH_DB1
     num_frames: 16
   - run_id: GH_DB2
-    num_frames: 20
-  - run_id: GH_DB3
     num_frames: 28
-  - run_id: GH_DB4
-    num_frames: 36
-  - run_id: GH_DB5
+  - run_id: GH_DB3
     num_frames: 44
-  - run_id: GH_DB6
-    num_frames: 56
-  - run_id: GH_DB7
+  - run_id: GH_DB4
     num_frames: 72

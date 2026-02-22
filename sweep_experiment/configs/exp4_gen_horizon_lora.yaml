@@ -30,14 +30,8 @@ sweep:
   - run_id: GH_L1
     num_frames: 16
   - run_id: GH_L2
-    num_frames: 20
-  - run_id: GH_L3
     num_frames: 28
-  - run_id: GH_L4
-    num_frames: 36
-  - run_id: GH_L5
+  - run_id: GH_L3
     num_frames: 44
-  - run_id: GH_L6
-    num_frames: 56
-  - run_id: GH_L7
+  - run_id: GH_L4
     num_frames: 72

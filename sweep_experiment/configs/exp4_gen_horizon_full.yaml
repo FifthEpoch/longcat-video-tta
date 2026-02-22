@@ -27,14 +27,8 @@ sweep:
   - run_id: GH_F1
     num_frames: 16
   - run_id: GH_F2
-    num_frames: 20
-  - run_id: GH_F3
     num_frames: 28
-  - run_id: GH_F4
-    num_frames: 36
-  - run_id: GH_F5
+  - run_id: GH_F3
     num_frames: 44
-  - run_id: GH_F6
-    num_frames: 56
-  - run_id: GH_F7
+  - run_id: GH_F4
     num_frames: 72

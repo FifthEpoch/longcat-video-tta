@@ -23,14 +23,8 @@ sweep:
   - run_id: GH_DA1
     num_frames: 16
   - run_id: GH_DA2
-    num_frames: 20
-  - run_id: GH_DA3
     num_frames: 28
-  - run_id: GH_DA4
-    num_frames: 36
-  - run_id: GH_DA5
+  - run_id: GH_DA3
     num_frames: 44
-  - run_id: GH_DA6
-    num_frames: 56
-  - run_id: GH_DA7
+  - run_id: GH_DA4
     num_frames: 72

@@ -22,18 +22,10 @@ fixed:
 
 sweep:
   - run_id: TF_DC1
-    num_cond_frames: 1
-  - run_id: TF_DC2
     num_cond_frames: 2
-  - run_id: TF_DC3
-    num_cond_frames: 4
-  - run_id: TF_DC4
+  - run_id: TF_DC2
     num_cond_frames: 7
-  - run_id: TF_DC5
-    num_cond_frames: 10
-  - run_id: TF_DC6
+  - run_id: TF_DC3
     num_cond_frames: 14
-  - run_id: TF_DC7
-    num_cond_frames: 20
-  - run_id: TF_DC8
+  - run_id: TF_DC4
     num_cond_frames: 24
