@@ -1,0 +1,81 @@
+# Constrained LoRA Sweep ("Option A")
+#
+# Motivation: Standard LoRA TTA (all 48 blocks, rank=1) has 2.56M params
+# trained on ~75K latent values, causing severe overfitting (PSNR < baseline).
+# This sweep constrains LoRA by:
+#   1. Targeting only the last N blocks (not all 48)
+#   2. Targeting only self-attention qkv (not proj or cross-attention)
+#   3. Sweeping alpha to control LoRA contribution magnitude
+#
+# With rank=1, qkv-only, the param count per block is:
+#   qkv: (4096 + 12288) × 1 = 16,384 params
+#
+# Expected param counts:
+#   last_4  blocks × qkv → ~65K params  (comparable to Delta-A)
+#   last_8  blocks × qkv → ~131K params
+#   last_16 blocks × qkv → ~262K params
+
+method: lora
+series: 14
+series_name: lora_constrained_sweep
+description: "Constrained LoRA sweep: fewer blocks + qkv-only + alpha scaling"
+
+fixed:
+  lora_rank: 1
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  # ── last_4 blocks × alpha sweep (qkv only, ~65K params) ──
+  - run_id: LA1
+    lora_target_blocks: "last_4"
+    target_modules: "qkv"
+    lora_alpha: 0.1
+  - run_id: LA2
+    lora_target_blocks: "last_4"
+    target_modules: "qkv"
+    lora_alpha: 0.5
+  - run_id: LA3
+    lora_target_blocks: "last_4"
+    target_modules: "qkv"
+    lora_alpha: 1.0
+
+  # ── last_8 blocks × alpha sweep (qkv only, ~131K params) ──
+  - run_id: LA4
+    lora_target_blocks: "last_8"
+    target_modules: "qkv"
+    lora_alpha: 0.1
+  - run_id: LA5
+    lora_target_blocks: "last_8"
+    target_modules: "qkv"
+    lora_alpha: 0.5
+  - run_id: LA6
+    lora_target_blocks: "last_8"
+    target_modules: "qkv"
+    lora_alpha: 1.0
+
+  # ── last_16 blocks × alpha sweep (qkv only, ~262K params) ──
+  - run_id: LA7
+    lora_target_blocks: "last_16"
+    target_modules: "qkv"
+    lora_alpha: 0.1
+  - run_id: LA8
+    lora_target_blocks: "last_16"
+    target_modules: "qkv"
+    lora_alpha: 0.5
+  - run_id: LA9
+    lora_target_blocks: "last_16"
+    target_modules: "qkv"
+    lora_alpha: 1.0

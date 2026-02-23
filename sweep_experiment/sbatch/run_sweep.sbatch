@@ -81,6 +81,7 @@ OPTIMIZER="${OPTIMIZER:-sgd}"
 LORA_RANK="${LORA_RANK:-8}"
 LORA_ALPHA="${LORA_ALPHA:-16}"
 TARGET_MODULES="${TARGET_MODULES:-qkv,proj}"
+LORA_TARGET_BLOCKS="${LORA_TARGET_BLOCKS:-all}"
 TARGET_FFN="${TARGET_FFN:-}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
 
@@ -213,6 +214,7 @@ case "${METHOD}" in
     echo "  LoRA rank      : ${LORA_RANK}"
     echo "  LoRA alpha     : ${LORA_ALPHA}"
     echo "  Target modules : ${TARGET_MODULES}"
+    echo "  Target blocks  : ${LORA_TARGET_BLOCKS}"
     echo "  Target FFN     : ${TARGET_FFN:-no}"
     echo "  Learning rate  : ${LEARNING_RATE}"
     echo "  Num steps      : ${NUM_STEPS}"
@@ -235,6 +237,7 @@ case "${METHOD}" in
         --lora-rank "${LORA_RANK}" \
         --lora-alpha "${LORA_ALPHA}" \
         --target-modules "${TARGET_MODULES}" \
+        --lora-target-blocks "${LORA_TARGET_BLOCKS}" \
         --learning-rate "${LEARNING_RATE}" \
         --num-steps "${NUM_STEPS}" \
         --warmup-steps "${WARMUP_STEPS}" \

@@ -71,6 +71,7 @@ _KEY_TO_ENV = {
     "lora_rank": "LORA_RANK",
     "lora_alpha": "LORA_ALPHA",
     "target_modules": "TARGET_MODULES",
+    "lora_target_blocks": "LORA_TARGET_BLOCKS",
     "target_ffn": "TARGET_FFN",
     # Delta shared
     "delta_steps": "DELTA_STEPS",

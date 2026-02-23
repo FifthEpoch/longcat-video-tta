@@ -120,6 +120,29 @@ class LoRALinear(nn.Module):
         return orig_out + lora_out * self.scaling
 
 
+def _parse_target_blocks(target_blocks: str, num_blocks: int) -> Optional[set]:
+    """Parse --lora-target-blocks into a set of block indices.
+
+    Accepts:
+      "all"    -> None (every block)
+      "last_N" -> last N block indices
+      "0,5,10" -> explicit comma-separated indices
+    """
+    target_blocks = target_blocks.strip().lower()
+    if target_blocks == "all":
+        return None
+    if target_blocks.startswith("last_"):
+        n = int(target_blocks.split("_", 1)[1])
+        if n <= 0 or n > num_blocks:
+            raise ValueError(f"last_{n} invalid for {num_blocks} blocks")
+        return set(range(num_blocks - n, num_blocks))
+    indices = set(int(x.strip()) for x in target_blocks.split(","))
+    for idx in indices:
+        if idx < 0 or idx >= num_blocks:
+            raise ValueError(f"Block index {idx} out of range [0, {num_blocks})")
+    return indices
+
+
 def inject_lora_into_dit(
     dit: nn.Module,
     rank: int = 8,
@@ -127,6 +150,7 @@ def inject_lora_into_dit(
     dropout: float = 0.0,
     target_modules: List[str] = ("qkv", "proj"),
     target_ffn: bool = False,
+    target_blocks: str = "all",
 ) -> List[LoRALinear]:
     """Inject LoRA adapters into the DiT's transformer blocks.
 
@@ -138,6 +162,8 @@ def inject_lora_into_dit(
     dropout : Dropout rate for LoRA
     target_modules : Which attention modules to target. Options: "qkv", "proj"
     target_ffn : If True, also target FFN (w1, w2, w3) layers
+    target_blocks : Which blocks to inject LoRA into.
+        "all" = every block, "last_N" = last N blocks, or comma-separated indices.
 
     Returns
     -------
@@ -147,7 +173,16 @@ def inject_lora_into_dit(
     device = next(dit.parameters()).device
     dtype = next(dit.parameters()).dtype
 
+    block_indices = _parse_target_blocks(target_blocks, len(dit.blocks))
+    if block_indices is not None:
+        print(f"  LoRA target blocks: {sorted(block_indices)} "
+              f"({len(block_indices)}/{len(dit.blocks)})")
+    else:
+        print(f"  LoRA target blocks: all ({len(dit.blocks)})")
+
     for block_idx, block in enumerate(dit.blocks):
+        if block_indices is not None and block_idx not in block_indices:
+            continue
         # Self-attention layers
         if hasattr(block, "attn"):
             attn = block.attn
@@ -409,6 +444,11 @@ def main():
                         help="Also apply LoRA to FFN (w1, w2, w3) layers")
     parser.add_argument("--target-modules", type=str, default="qkv,proj",
                         help="Comma-separated attention modules to target (qkv, proj)")
+    parser.add_argument("--lora-target-blocks", type=str, default="all",
+                        help="Which DiT blocks to inject LoRA into. "
+                             "'all' = every block, 'last_N' = last N blocks "
+                             "(e.g. 'last_4', 'last_8'), or comma-separated "
+                             "block indices (e.g. '44,45,46,47')")
     parser.add_argument("--save-lora-weights", action="store_true",
                         help="Save per-video LoRA weights")
 
@@ -479,6 +519,7 @@ def main():
     print(f"LoRA rank      : {args.lora_rank}")
     print(f"LoRA alpha     : {args.lora_alpha}")
     print(f"Target modules : {target_modules}")
+    print(f"Target blocks  : {args.lora_target_blocks}")
     print(f"Target FFN     : {args.target_ffn}")
     print(f"Learning rate  : {args.learning_rate}")
     print(f"Num steps      : {args.num_steps}")
@@ -508,7 +549,8 @@ def main():
         p.requires_grad = False
 
     # Inject LoRA
-    print(f"\nInjecting LoRA adapters (rank={args.lora_rank}, alpha={args.lora_alpha})...")
+    print(f"\nInjecting LoRA adapters (rank={args.lora_rank}, alpha={args.lora_alpha}, "
+          f"blocks={args.lora_target_blocks})...")
     lora_modules = inject_lora_into_dit(
         dit,
         rank=args.lora_rank,
@@ -516,6 +558,7 @@ def main():
         dropout=args.lora_dropout,
         target_modules=target_modules,
         target_ffn=args.target_ffn,
+        target_blocks=args.lora_target_blocks,
     )
 
     param_counts = count_lora_parameters(lora_modules)
@@ -533,6 +576,7 @@ def main():
             "alpha": args.lora_alpha,
             "dropout": args.lora_dropout,
             "target_modules": target_modules,
+            "target_blocks": args.lora_target_blocks,
             "target_ffn": args.target_ffn,
             "num_modules": len(lora_modules),
             "trainable_params": param_counts["trainable"],
