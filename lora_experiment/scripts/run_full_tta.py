@@ -566,8 +566,9 @@ def main():
 
             result["total_time"] = train_result["train_time"] + gen_time
 
+            loss_str = f"Loss: {result['final_loss']:.4f}" if result.get('final_loss') is not None else "Loss: N/A (0 steps)"
             print(f"  Train: {train_result['train_time']:.1f}s, "
-                  f"Loss: {result['final_loss']:.4f}"
+                  f"{loss_str}"
                   + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else "")
                   + (f", PSNR={result.get('psnr', 'N/A')}" if 'psnr' in result else ""))
 
@@ -613,9 +614,7 @@ def main():
             else 0
         ),
         "avg_final_loss": (
-            np.mean([r["final_loss"] for r in successful if r.get("final_loss") is not None])
-            if successful
-            else 0
+            float(np.mean(valid_losses)) if (valid_losses := [r["final_loss"] for r in successful if r.get("final_loss") is not None]) else None
         ),
         "results": all_results,
     }
@@ -627,7 +626,11 @@ def main():
     print(f"Successful: {len(successful)}/{len(all_results)}")
     if successful:
         print(f"Avg train time: {summary['avg_train_time']:.1f}s")
-        print(f"Avg final loss: {summary['avg_final_loss']:.4f}")
+        avg_loss = summary['avg_final_loss']
+        if avg_loss is not None and not np.isnan(avg_loss):
+            print(f"Avg final loss: {avg_loss:.4f}")
+        else:
+            print("Avg final loss: N/A (0 training steps)")
     print(f"Results saved to: {args.output_dir}")
     print("=" * 70)
 
