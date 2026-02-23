@@ -82,6 +82,7 @@ LORA_RANK="${LORA_RANK:-8}"
 LORA_ALPHA="${LORA_ALPHA:-16}"
 TARGET_MODULES="${TARGET_MODULES:-qkv,proj}"
 LORA_TARGET_BLOCKS="${LORA_TARGET_BLOCKS:-all}"
+USE_BUILTIN_LORA="${USE_BUILTIN_LORA:-}"
 TARGET_FFN="${TARGET_FFN:-}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
 
@@ -211,6 +212,7 @@ case "${METHOD}" in
 
   lora)
     echo "Method-specific config:"
+    echo "  LoRA impl      : ${USE_BUILTIN_LORA:-custom}"
     echo "  LoRA rank      : ${LORA_RANK}"
     echo "  LoRA alpha     : ${LORA_ALPHA}"
     echo "  Target modules : ${TARGET_MODULES}"
@@ -227,6 +229,9 @@ case "${METHOD}" in
     fi
     if [ -n "${SKIP_GENERATION}" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --skip-generation"
+    fi
+    if [ -n "${USE_BUILTIN_LORA}" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --use-builtin-lora"
     fi
 
     python lora_experiment/scripts/run_lora_tta.py \

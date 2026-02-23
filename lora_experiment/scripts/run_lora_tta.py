@@ -78,7 +78,132 @@ from early_stopping import (
 
 
 # ============================================================================
-# LoRA implementation for LongCat-Video DiT
+# Built-in LoRA support (uses LongCat-Video's native LoRAModule)
+# ============================================================================
+
+_LONGCAT_ROOT = _REPO_ROOT / "LongCat-Video"
+sys.path.insert(0, str(_LONGCAT_ROOT))
+from longcat_video.modules.lora_utils import LoRAModule
+
+
+def inject_builtin_lora_into_dit(
+    dit: nn.Module,
+    rank: int = 8,
+    alpha: float = 16.0,
+    target_modules: List[str] = ("qkv", "proj"),
+    target_ffn: bool = False,
+    target_blocks: str = "all",
+) -> List[LoRAModule]:
+    """Inject LoRA via LongCat's native LoRAModule + forward-hook mechanism.
+
+    Instead of replacing nn.Linear modules (like our custom LoRALinear),
+    this creates standalone LoRAModule instances and patches the original
+    module's forward to add the LoRA contribution -- exactly matching the
+    official LongCat-Video LoRA workflow.
+    """
+    device = next(dit.parameters()).device
+    dtype = next(dit.parameters()).dtype
+
+    block_indices = _parse_target_blocks(target_blocks, len(dit.blocks))
+    label = (f"{sorted(block_indices)} ({len(block_indices)}/{len(dit.blocks)})"
+             if block_indices is not None else f"all ({len(dit.blocks)})")
+    print(f"  [builtin] LoRA target blocks: {label}")
+
+    lora_modules: List[LoRAModule] = []
+
+    def _maybe_add(module: nn.Module, name: str, n_sep: int = 1):
+        if not isinstance(module, nn.Linear):
+            return
+        lora = LoRAModule(name, module, multiplier=1.0,
+                          lora_dim=rank, alpha=alpha, n_seperate=n_sep)
+        lora = lora.to(device=device, dtype=dtype)
+        lora_modules.append(lora)
+
+        if not hasattr(module, "org_forward"):
+            module.org_forward = module.forward
+        hooked_fwd = _build_hooked_forward(module, lora)
+        module.forward = hooked_fwd
+
+    for block_idx, block in enumerate(dit.blocks):
+        if block_indices is not None and block_idx not in block_indices:
+            continue
+
+        if hasattr(block, "attn"):
+            attn = block.attn
+            if "qkv" in target_modules and hasattr(attn, "qkv"):
+                _maybe_add(attn.qkv, f"blocks.{block_idx}.attn.qkv", n_sep=3)
+            if "proj" in target_modules and hasattr(attn, "proj"):
+                _maybe_add(attn.proj, f"blocks.{block_idx}.attn.proj")
+
+        if hasattr(block, "cross_attn"):
+            xattn = block.cross_attn
+            if "qkv" in target_modules:
+                if hasattr(xattn, "q_linear"):
+                    _maybe_add(xattn.q_linear, f"blocks.{block_idx}.cross_attn.q_linear")
+                if hasattr(xattn, "kv_linear"):
+                    _maybe_add(xattn.kv_linear, f"blocks.{block_idx}.cross_attn.kv_linear", n_sep=2)
+            if "proj" in target_modules and hasattr(xattn, "proj"):
+                _maybe_add(xattn.proj, f"blocks.{block_idx}.cross_attn.proj")
+
+        if target_ffn and hasattr(block, "ffn"):
+            ffn = block.ffn
+            for layer_name in ("w1", "w2", "w3"):
+                if hasattr(ffn, layer_name):
+                    _maybe_add(getattr(ffn, layer_name),
+                               f"blocks.{block_idx}.ffn.{layer_name}")
+
+    return lora_modules
+
+
+def _build_hooked_forward(module: nn.Module, lora: LoRAModule):
+    """Build a patched forward that adds the LoRA contribution."""
+    def hooked_forward(x, *args, **kwargs):
+        org_output = module.org_forward(x, *args, **kwargs)
+        if lora.use_lora:
+            lx = lora.lora_down(x.to(lora.lora_down.weight.dtype))
+            lx = lora.lora_up(lx)
+            org_output = org_output + lx.to(org_output.dtype) * lora.multiplier * lora.alpha_scale
+        return org_output
+    return hooked_forward
+
+
+def get_builtin_lora_parameters(lora_modules: List[LoRAModule]) -> List[nn.Parameter]:
+    """Collect trainable parameters from builtin LoRA modules."""
+    params = []
+    for lora in lora_modules:
+        params.extend(lora.parameters())
+    return [p for p in params if not isinstance(p, torch.Tensor) or p.requires_grad]
+
+
+def count_builtin_lora_parameters(lora_modules: List[LoRAModule]) -> Dict[str, int]:
+    """Count trainable parameters in builtin LoRA modules."""
+    trainable = sum(p.numel() for lora in lora_modules
+                    for p in lora.parameters() if p.requires_grad)
+    total = sum(p.numel() for lora in lora_modules for p in lora.parameters())
+    return {"total_lora": total, "trainable": trainable}
+
+
+def reset_builtin_lora_weights(lora_modules: List[LoRAModule]):
+    """Re-initialize builtin LoRA weights to zero-output state."""
+    for lora in lora_modules:
+        nn.init.kaiming_uniform_(lora.lora_down.weight, a=math.sqrt(5))
+        if hasattr(lora.lora_up, "blocks"):
+            for blk in lora.lora_up.blocks:
+                nn.init.zeros_(blk.weight)
+        else:
+            nn.init.zeros_(lora.lora_up.weight)
+
+
+def unhook_builtin_lora(dit: nn.Module):
+    """Restore all forward methods patched by inject_builtin_lora_into_dit."""
+    for _, module in dit.named_modules():
+        if hasattr(module, "org_forward"):
+            module.forward = module.org_forward
+            delattr(module, "org_forward")
+
+
+# ============================================================================
+# Custom LoRA implementation (our original approach)
 # ============================================================================
 
 class LoRALinear(nn.Module):
@@ -284,7 +409,7 @@ def save_lora_weights(lora_modules: List[LoRALinear], path: str):
 
 def finetune_lora_on_conditioning(
     dit: nn.Module,
-    lora_modules: List[LoRALinear],
+    lora_modules,
     cond_latents: torch.Tensor,
     train_latents: torch.Tensor,
     prompt_embeds: torch.Tensor,
@@ -297,6 +422,7 @@ def finetune_lora_on_conditioning(
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
+    lora_param_fn=None,
     train_latents_variants: Optional[List[Dict]] = None,
 ) -> Dict:
     """Fine-tune LoRA adapters using conditioning-aware loss.
@@ -311,7 +437,10 @@ def finetune_lora_on_conditioning(
     -------
     dict with keys: losses, train_time, early_stopping_info
     """
-    lora_params = get_lora_parameters(lora_modules)
+    if lora_param_fn is not None:
+        lora_params = lora_param_fn()
+    else:
+        lora_params = get_lora_parameters(lora_modules)
     if not lora_params:
         raise ValueError("No LoRA parameters found.")
 
@@ -327,7 +456,11 @@ def finetune_lora_on_conditioning(
         train_latents_variants = [{"latents": train_latents, "name": "orig"}]
 
     def _save_fn():
-        return {k: v.clone() for k, v in dit.state_dict().items() if "lora" in k}
+        return [p.data.clone() for p in lora_params]
+
+    def _restore_from_snapshot(snapshot):
+        for p, saved in zip(lora_params, snapshot):
+            p.data.copy_(saved)
 
     dit.train()
     losses = []
@@ -378,9 +511,7 @@ def finetune_lora_on_conditioning(
 
     es_state = None
     if early_stopper is not None:
-        early_stopper.restore(
-            restore_fn=lambda sd: _restore_lora_from_state(dit, sd)
-        )
+        early_stopper.restore(restore_fn=_restore_from_snapshot)
         es_state = early_stopper.state
 
     torch.cuda.empty_cache()
@@ -449,6 +580,10 @@ def main():
                              "'all' = every block, 'last_N' = last N blocks "
                              "(e.g. 'last_4', 'last_8'), or comma-separated "
                              "block indices (e.g. '44,45,46,47')")
+    parser.add_argument("--use-builtin-lora", action="store_true",
+                        help="Use LongCat-Video's native LoRAModule instead of "
+                             "our custom LoRALinear wrapper. Enables n_separate "
+                             "for fused QKV (3-way) and KV (2-way) projections.")
     parser.add_argument("--save-lora-weights", action="store_true",
                         help="Save per-video LoRA weights")
 
@@ -516,6 +651,8 @@ def main():
     print(f"Checkpoint dir : {args.checkpoint_dir}")
     print(f"Data dir       : {args.data_dir}")
     print(f"Output dir     : {args.output_dir}")
+    use_builtin = getattr(args, "use_builtin_lora", False)
+    print(f"LoRA impl      : {'builtin (LongCat native)' if use_builtin else 'custom (LoRALinear)'}")
     print(f"LoRA rank      : {args.lora_rank}")
     print(f"LoRA alpha     : {args.lora_alpha}")
     print(f"Target modules : {target_modules}")
@@ -548,20 +685,37 @@ def main():
     for p in dit.parameters():
         p.requires_grad = False
 
-    # Inject LoRA
-    print(f"\nInjecting LoRA adapters (rank={args.lora_rank}, alpha={args.lora_alpha}, "
-          f"blocks={args.lora_target_blocks})...")
-    lora_modules = inject_lora_into_dit(
-        dit,
-        rank=args.lora_rank,
-        alpha=args.lora_alpha,
-        dropout=args.lora_dropout,
-        target_modules=target_modules,
-        target_ffn=args.target_ffn,
-        target_blocks=args.lora_target_blocks,
-    )
+    # Inject LoRA -- builtin or custom path
+    lora_impl = "builtin" if use_builtin else "custom"
+    print(f"\nInjecting LoRA adapters [{lora_impl}] (rank={args.lora_rank}, "
+          f"alpha={args.lora_alpha}, blocks={args.lora_target_blocks})...")
 
-    param_counts = count_lora_parameters(lora_modules)
+    if use_builtin:
+        lora_modules = inject_builtin_lora_into_dit(
+            dit,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            target_modules=target_modules,
+            target_ffn=args.target_ffn,
+            target_blocks=args.lora_target_blocks,
+        )
+        param_counts = count_builtin_lora_parameters(lora_modules)
+        _get_lora_params = lambda: get_builtin_lora_parameters(lora_modules)
+        _reset_lora = lambda: reset_builtin_lora_weights(lora_modules)
+    else:
+        lora_modules = inject_lora_into_dit(
+            dit,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            target_modules=target_modules,
+            target_ffn=args.target_ffn,
+            target_blocks=args.lora_target_blocks,
+        )
+        param_counts = count_lora_parameters(lora_modules)
+        _get_lora_params = lambda: get_lora_parameters(lora_modules)
+        _reset_lora = lambda: reset_lora_weights(lora_modules)
+
     total_dit_params = sum(p.numel() for p in dit.parameters())
     print(f"LoRA modules created : {len(lora_modules)}")
     print(f"LoRA trainable params: {param_counts['trainable']:,}")
@@ -570,11 +724,12 @@ def main():
 
     # Save experiment config
     exp_config = {
-        "method": "lora_tta",
+        "method": f"lora_tta_{lora_impl}",
         "lora": {
+            "implementation": lora_impl,
             "rank": args.lora_rank,
             "alpha": args.lora_alpha,
-            "dropout": args.lora_dropout,
+            "dropout": getattr(args, "lora_dropout", 0.0),
             "target_modules": target_modules,
             "target_blocks": args.lora_target_blocks,
             "target_ffn": args.target_ffn,
@@ -697,7 +852,7 @@ def main():
                       f"({', '.join(v['name'] for v in train_latents_variants)})")
 
             # Reset LoRA weights before each video
-            reset_lora_weights(lora_modules)
+            _reset_lora()
 
             # Setup early stopper for this video
             if early_stopper is not None and val_latents is not None:
@@ -742,6 +897,7 @@ def main():
                 dtype=torch.bfloat16,
                 early_stopper=early_stopper if val_latents is not None else None,
                 train_latents_variants=train_latents_variants,
+                lora_param_fn=_get_lora_params,
             )
 
             result = {
