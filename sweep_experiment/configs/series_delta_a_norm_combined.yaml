@@ -1,0 +1,30 @@
+# Series 23b: Delta-A + Norm Tuning Combined
+#
+# Uses the norm_tune method with --also-tune-delta flag to simultaneously
+# optimize a Delta-A vector (512 params) and pre_crs_attn_norm affine
+# parameters (~393K params). Tests whether combining lightweight
+# timestep adaptation with feature normalization tuning is synergistic.
+
+method: norm_tune
+series: 23
+series_name: delta_a_norm_combined
+description: "Delta-A + cross-attention norm tuning combined"
+
+fixed:
+  norm_target: cross_attn_norm
+  also_tune_delta: true
+  norm_steps: 20
+  norm_lr: 5.0e-3
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  - run_id: DAO3

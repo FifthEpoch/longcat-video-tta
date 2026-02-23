@@ -12,8 +12,8 @@
 # ============================================================================
 # Unified TTA Sweep Template
 #
-# This sbatch script handles all 5 TTA methods via the METHOD env var:
-#   METHOD = full | lora | delta_a | delta_b | delta_c
+# This sbatch script handles all 7 TTA methods via the METHOD env var:
+#   METHOD = full | lora | delta_a | delta_b | delta_c | norm_tune | film
 #
 # All hyperparameters are passed via environment variables.
 # The sweep runner (run_sweep.py) sets these before submission.
@@ -31,7 +31,7 @@ CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
 DATA_DIR="${DATA_DIR:-${SCRATCH_BASE}/longcat-video-tta/datasets/panda_100_480p}"
 
 # Method and run identification
-METHOD="${METHOD:?ERROR: METHOD env var is required (full|lora|delta_a|delta_b|delta_c)}"
+METHOD="${METHOD:?ERROR: METHOD env var is required (full|lora|delta_a|delta_b|delta_c|norm_tune|film)}"
 RUN_ID="${RUN_ID:?ERROR: RUN_ID env var is required}"
 SERIES_NAME="${SERIES_NAME:-sweep}"
 
@@ -92,9 +92,21 @@ DELTA_LR="${DELTA_LR:-1e-3}"
 
 # Delta-B specific
 NUM_GROUPS="${NUM_GROUPS:-4}"
+DELTA_TARGET="${DELTA_TARGET:-timestep}"
 
 # Delta-C specific
 DELTA_MODE="${DELTA_MODE:-per_channel}"
+
+# Norm-tuning specific
+NORM_STEPS="${NORM_STEPS:-20}"
+NORM_LR="${NORM_LR:-1e-3}"
+NORM_TARGET="${NORM_TARGET:-all_norm}"
+ALSO_TUNE_DELTA="${ALSO_TUNE_DELTA:-}"
+
+# FiLM adapter specific
+FILM_STEPS="${FILM_STEPS:-20}"
+FILM_LR="${FILM_LR:-1e-3}"
+FILM_MODE="${FILM_MODE:-full}"
 
 # ============================================================================
 echo "=============================================================================="
@@ -293,6 +305,7 @@ case "${METHOD}" in
     echo "  Delta LR       : ${DELTA_LR}"
     echo "  Delta steps    : ${DELTA_STEPS}"
     echo "  Num groups     : ${NUM_GROUPS}"
+    echo "  Delta target   : ${DELTA_TARGET}"
     echo "=============================================================================="
 
     python delta_experiment/scripts/run_delta_b.py \
@@ -303,6 +316,7 @@ case "${METHOD}" in
         --delta-steps "${DELTA_STEPS}" \
         --delta-lr "${DELTA_LR}" \
         --num-groups "${NUM_GROUPS}" \
+        --delta-target "${DELTA_TARGET}" \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
@@ -344,8 +358,73 @@ case "${METHOD}" in
         ${ES_FLAGS}
     ;;
 
+  norm_tune)
+    echo "Method-specific config:"
+    echo "  Norm target    : ${NORM_TARGET}"
+    echo "  Norm LR        : ${NORM_LR}"
+    echo "  Norm steps     : ${NORM_STEPS}"
+    echo "  Also delta     : ${ALSO_TUNE_DELTA:-no}"
+    echo "=============================================================================="
+
+    EXTRA_FLAGS=""
+    if [ -n "${ALSO_TUNE_DELTA}" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --also-tune-delta"
+    fi
+
+    python delta_experiment/scripts/run_norm_tune_tta.py \
+        --checkpoint-dir "${CHECKPOINT_DIR}" \
+        --data-dir "${DATA_DIR}" \
+        --output-dir "${OUTPUT_DIR}" \
+        --max-videos "${MAX_VIDEOS}" \
+        --norm-steps "${NORM_STEPS}" \
+        --norm-lr "${NORM_LR}" \
+        --norm-target "${NORM_TARGET}" \
+        --num-cond-frames "${NUM_COND_FRAMES}" \
+        --num-frames "${NUM_FRAMES}" \
+        --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
+        --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+        --guidance-scale "${GUIDANCE_SCALE}" \
+        --resolution "${RESOLUTION}" \
+        --seed "${SEED}" \
+        ${SAVE_FLAGS} \
+        ${EXTRA_FLAGS} \
+        ${ES_FLAGS}
+    ;;
+
+  film)
+    echo "Method-specific config:"
+    echo "  FiLM mode      : ${FILM_MODE}"
+    echo "  FiLM LR        : ${FILM_LR}"
+    echo "  FiLM steps     : ${FILM_STEPS}"
+    echo "  Num groups     : ${NUM_GROUPS}"
+    echo "=============================================================================="
+
+    python delta_experiment/scripts/run_film_tta.py \
+        --checkpoint-dir "${CHECKPOINT_DIR}" \
+        --data-dir "${DATA_DIR}" \
+        --output-dir "${OUTPUT_DIR}" \
+        --max-videos "${MAX_VIDEOS}" \
+        --film-steps "${FILM_STEPS}" \
+        --film-lr "${FILM_LR}" \
+        --num-groups "${NUM_GROUPS}" \
+        --film-mode "${FILM_MODE}" \
+        --num-cond-frames "${NUM_COND_FRAMES}" \
+        --num-frames "${NUM_FRAMES}" \
+        --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
+        --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+        --guidance-scale "${GUIDANCE_SCALE}" \
+        --resolution "${RESOLUTION}" \
+        --seed "${SEED}" \
+        ${SAVE_FLAGS} \
+        ${ES_FLAGS}
+    ;;
+
   *)
-    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|delta_a|delta_b|delta_c" >&2
+    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|delta_a|delta_b|delta_c|norm_tune|film" >&2
     exit 1
     ;;
 esac

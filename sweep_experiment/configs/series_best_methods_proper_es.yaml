@@ -1,0 +1,37 @@
+# Re-run best methods with corrected early stopping
+#
+# Previous runs used es_check_every=5, es_patience=3 with 20 steps,
+# making early stopping mathematically impossible to trigger.
+# Here we re-run each method's best config with es_check_every=1
+# and es_patience=5 at 40 steps to let ES find the true optimal step.
+#
+# This gives us:
+#   - Proper early stopping behavior
+#   - Best-step identification per method
+#   - Anchor loss curves for analysis
+
+method: delta_a
+series: 20
+series_name: best_methods_proper_es
+description: "Best configs re-run with corrected early stopping (check_every=1)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+  es_noise_draws: 2
+  es_anchor_sigmas: "0.25,0.5,0.75"
+  es_holdout_fraction: 0.25
+
+sweep:
+  # Delta-A best: LR=5e-3, 40 steps (known to peak at ~5 steps)
+  - run_id: DAES1
+    delta_steps: 40
+    delta_lr: 5.0e-3

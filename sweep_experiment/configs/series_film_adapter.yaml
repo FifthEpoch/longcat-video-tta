@@ -1,0 +1,62 @@
+# Series 22: FiLM Adapter Sweep
+#
+# Learn per-group additive corrections to adaLN modulation output.
+# This operates in the POST-FiLM space (24,576-dim per group) rather
+# than the pre-FiLM space (512-dim, which is what Delta-A does).
+#
+# adaLN output: [shift_msa | scale_msa | gate_msa | shift_mlp | scale_mlp | gate_mlp]
+# Each component is hidden_size=4096 dim.
+#
+# Modes:
+#   full:        all 6 components = 6 x 4096 = 24,576 per group
+#   shift_scale: shift + scale only (no gates) = 4 x 4096 = 16,384 per group
+#   scale_only:  scale only = 2 x 4096 = 8,192 per group
+
+method: film
+series: 22
+series_name: film_adapter_sweep
+description: "FiLM adapter TTA with mode, groups, and LR sweep"
+
+fixed:
+  film_steps: 20
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # ── Full correction, LR sweep ──
+  - run_id: FM1
+    num_groups: 1
+    film_mode: full
+    film_lr: 1.0e-3
+  - run_id: FM2
+    num_groups: 1
+    film_mode: full
+    film_lr: 1.0e-2
+
+  # ── Full correction, groups sweep ──
+  - run_id: FM3
+    num_groups: 4
+    film_mode: full
+    film_lr: 1.0e-3
+  - run_id: FM4
+    num_groups: 4
+    film_mode: full
+    film_lr: 1.0e-2
+
+  # ── Reduced modes (1 group) ──
+  - run_id: FM5
+    num_groups: 1
+    film_mode: scale_only
+    film_lr: 1.0e-2
+  - run_id: FM6
+    num_groups: 1
+    film_mode: shift_scale
+    film_lr: 1.0e-2

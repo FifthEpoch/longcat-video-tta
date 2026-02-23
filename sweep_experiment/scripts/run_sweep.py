@@ -79,8 +79,18 @@ _KEY_TO_ENV = {
     "delta_lr": "DELTA_LR",
     # Delta-B
     "num_groups": "NUM_GROUPS",
+    "delta_target": "DELTA_TARGET",
     # Delta-C
     "delta_mode": "DELTA_MODE",
+    # Norm-tuning specific
+    "norm_steps": "NORM_STEPS",
+    "norm_lr": "NORM_LR",
+    "norm_target": "NORM_TARGET",
+    "also_tune_delta": "ALSO_TUNE_DELTA",
+    # FiLM adapter specific
+    "film_steps": "FILM_STEPS",
+    "film_lr": "FILM_LR",
+    "film_mode": "FILM_MODE",
     # Full-model specific
     "optimizer": "OPTIMIZER",
     # Early stopping
@@ -102,6 +112,8 @@ _METHOD_MAP = {
     "delta_a": "delta_a",
     "delta_b": "delta_b",
     "delta_c": "delta_c",
+    "norm_tune": "norm_tune",
+    "film": "film",
 }
 
 
@@ -242,6 +254,22 @@ def estimate_time(method: str, run_overrides: dict, fixed: dict) -> str:
             return "12:00:00"
         else:
             return "18:00:00"
+    elif method == "norm_tune":
+        steps = merged.get("norm_steps", 20)
+        if steps <= 20:
+            return "8:00:00"
+        elif steps <= 50:
+            return "12:00:00"
+        else:
+            return "18:00:00"
+    elif method == "film":
+        steps = merged.get("film_steps", 20)
+        if steps <= 20:
+            return "8:00:00"
+        elif steps <= 50:
+            return "12:00:00"
+        else:
+            return "18:00:00"
     return "24:00:00"
 
 
@@ -251,7 +279,7 @@ def estimate_mem(method: str) -> str:
         return "256G"
     elif method == "lora":
         return "192G"
-    else:  # delta_a, delta_b, delta_c
+    else:  # delta_a, delta_b, delta_c, norm_tune, film
         return "192G"
 
 

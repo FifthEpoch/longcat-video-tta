@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 """
-Delta-B TTA: Per-layer modulation offsets.
+Norm-Tuning TTA: Fine-tune only the affine parameters of normalization layers.
 
-Each LongCatSingleStreamBlock produces 6 modulation vectors from the
-timestep embedding via adaLN_modulation:
-    shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp
+Inspired by TENT (Wang et al., ICLR 2021), this method freezes the entire
+DiT and only unfreezes the gamma/beta of selected normalization layers.
 
-Delta B learns grouped δ vectors that are added to the timestep embedding
-*before* it enters each block's adaLN_modulation. Blocks are divided into
-groups to keep parameter count small.
+Supported modes (--norm-target):
+  "cross_attn_norm"  -- pre_crs_attn_norm weight+bias (393K params)
+  "qk_norm"          -- RMSNorm weights in attn.q/k_norm (24K params)
+  "all_norm"          -- both of the above (418K params)
 
-Architecture:
-    - 48 blocks, grouped into `num_groups` groups (default 4)
-    - Each group has one δ_group ∈ R^{adaln_tembed_dim}
-    - δ_group is added to `t` before it enters each block in the group
-
-Usage:
-    python run_delta_b.py \\
-        --checkpoint-dir /path/to/longcat-video-checkpoints \\
-        --data-dir /path/to/dataset \\
-        --output-dir results/delta_b \\
-        --delta-steps 20 --delta-lr 1e-3 --num-groups 4
+No wrapper needed: the DiT's own norm params are unfrozen directly.
 """
 
 import argparse
@@ -39,7 +29,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
-from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -48,7 +37,6 @@ from common import (
     load_video_frames,
     encode_video,
     encode_prompt,
-    compute_flow_matching_loss,
     compute_flow_matching_loss_conditioned,
     generate_video_continuation,
     save_results,
@@ -56,7 +44,6 @@ from common import (
     load_checkpoint,
     save_checkpoint,
     torch_gc,
-    build_augmented_latent_variants,
     add_augmentation_args,
     add_tta_frame_args,
     parse_speed_factors,
@@ -71,112 +58,64 @@ from early_stopping import (
 
 
 # ============================================================================
-# Delta-B wrapper: per-group modulation offsets
+# Norm parameter collection
 # ============================================================================
 
-class DeltaBWrapper(nn.Module):
-    """Wraps LongCatVideoTransformer3DModel to inject per-group δ vectors.
+def collect_norm_params(dit: nn.Module, norm_target: str) -> List[nn.Parameter]:
+    """Collect norm affine parameters to unfreeze based on target mode."""
+    params = []
 
-    Supports two injection targets controlled by ``delta_target``:
-      - "timestep": adds δ to the timestep embedding before adaLN_modulation
-        (original implementation, 512-dim per group)
-      - "hidden":  adds δ as a residual to hidden states after each block
-        (new implementation, 4096-dim per group, mirrors Open-Sora's approach
-        where δ modifies the representation stream rather than the denoising
-        schedule)
+    for block in dit.blocks:
+        if norm_target in ("cross_attn_norm", "all_norm"):
+            norm = block.pre_crs_attn_norm
+            if hasattr(norm, "weight") and norm.weight is not None:
+                params.append(norm.weight)
+            if hasattr(norm, "bias") and norm.bias is not None:
+                params.append(norm.bias)
 
-    Parameters
-    ----------
-    dit : the frozen DiT model
-    num_groups : number of delta groups (blocks are split evenly)
-    adaln_tembed_dim : dimension of the timestep embedding (for "timestep" mode)
-    hidden_size : dimension of hidden states (for "hidden" mode)
-    delta_target : "timestep" or "hidden"
+        if norm_target in ("qk_norm", "all_norm"):
+            for sub_name in ("attn.q_norm", "attn.k_norm",
+                             "cross_attn.q_norm", "cross_attn.k_norm"):
+                parts = sub_name.split(".")
+                mod = block
+                for p in parts:
+                    mod = getattr(mod, p, None)
+                    if mod is None:
+                        break
+                if mod is not None and hasattr(mod, "weight") and mod.weight is not None:
+                    params.append(mod.weight)
+
+    return params
+
+
+def snapshot_params(params: List[nn.Parameter]) -> List[torch.Tensor]:
+    """Deep-copy parameter data for save/restore."""
+    return [p.data.clone() for p in params]
+
+
+def restore_params(params: List[nn.Parameter], snapshot: List[torch.Tensor]):
+    """Restore parameter data from snapshot."""
+    for p, s in zip(params, snapshot):
+        p.data.copy_(s)
+
+
+# ============================================================================
+# Training wrapper (thin wrapper for forward with gradient checkpointing)
+# ============================================================================
+
+class NormTuneForward(nn.Module):
+    """Thin wrapper that runs the DiT forward with gradient checkpointing.
+
+    No delta injection -- the DiT itself has unfrozen norm params.
     """
 
-    def __init__(
-        self,
-        dit: nn.Module,
-        num_groups: int = 4,
-        adaln_tembed_dim: int = 512,
-        hidden_size: int = 4096,
-        delta_target: str = "timestep",
-    ):
+    def __init__(self, dit: nn.Module):
         super().__init__()
         self.dit = dit
-        self.num_groups = num_groups
-        self.num_blocks = len(dit.blocks)
-        self.delta_target = delta_target
-
-        for p in self.dit.parameters():
-            p.requires_grad = False
-
-        delta_dim = adaln_tembed_dim if delta_target == "timestep" else hidden_size
-        self.deltas = nn.ParameterList([
-            nn.Parameter(torch.zeros(delta_dim))
-            for _ in range(num_groups)
-        ])
-
-        # Optional final-layer delta (used in "hidden" mode to match Open-Sora)
-        if delta_target == "hidden":
-            self.delta_final = nn.Parameter(torch.zeros(delta_dim))
-        else:
-            self.delta_final = None
-
-        blocks_per_group = math.ceil(self.num_blocks / num_groups)
-        self.block_to_group = [
-            min(i // blocks_per_group, num_groups - 1)
-            for i in range(self.num_blocks)
-        ]
-
-        self._gen_hooks: list = []
 
     @property
     def config(self):
-        """Proxy config to the inner DiT."""
         return self.dit.config
-
-    # ------------------------------------------------------------------
-    # Hook-based injection for pipeline generation
-    # ------------------------------------------------------------------
-    def apply_to_dit(self):
-        """Install per-block hooks for the pipeline's forward path."""
-        self._gen_hooks = []
-
-        if self.delta_target == "timestep":
-            for i, block in enumerate(self.dit.blocks):
-                group_idx = self.block_to_group[i]
-                delta_vec = self.deltas[group_idx]
-
-                def _make_pre_hook(dv):
-                    def hook(_module, args):
-                        args = list(args)
-                        args[2] = args[2] + dv.unsqueeze(0).unsqueeze(0).to(args[2].dtype)
-                        return tuple(args)
-                    return hook
-
-                h = block.register_forward_pre_hook(_make_pre_hook(delta_vec))
-                self._gen_hooks.append(h)
-        else:
-            for i, block in enumerate(self.dit.blocks):
-                group_idx = self.block_to_group[i]
-                delta_vec = self.deltas[group_idx]
-
-                def _make_post_hook(dv):
-                    def hook(_module, _args, output):
-                        if isinstance(output, tuple):
-                            return (output[0] + dv.unsqueeze(0).unsqueeze(0).to(output[0].dtype),) + output[1:]
-                        return output + dv.unsqueeze(0).unsqueeze(0).to(output.dtype)
-                    return hook
-
-                h = block.register_forward_hook(_make_post_hook(delta_vec))
-                self._gen_hooks.append(h)
-
-    def remove_from_dit(self):
-        """Remove all generation hooks."""
-        for h in self._gen_hooks:
-            h.remove()
-        self._gen_hooks = []
 
     def forward(
         self,
@@ -187,7 +126,6 @@ class DeltaBWrapper(nn.Module):
         num_cond_latents=0,
         **kwargs,
     ):
-        """Forward with per-group delta injection."""
         dit = self.dit
 
         B, _, T, H, W = hidden_states.shape
@@ -207,9 +145,9 @@ class DeltaBWrapper(nn.Module):
 
         import torch.amp as amp
         with amp.autocast(device_type="cuda", dtype=torch.float32):
-            t_base = dit.t_embedder(
+            t = dit.t_embedder(
                 timestep.float().flatten(), dtype=torch.float32
-            ).reshape(B, N_t, -1)  # [B, T, C_t]
+            ).reshape(B, N_t, -1)
 
         encoder_hidden_states = dit.y_embedder(encoder_hidden_states)
 
@@ -239,44 +177,21 @@ class DeltaBWrapper(nn.Module):
         from torch.utils.checkpoint import checkpoint as _ckpt_fn
         _ckpt = _ft.partial(_ckpt_fn, use_reentrant=False)
 
-        for i, block in enumerate(dit.blocks):
-            group_idx = self.block_to_group[i]
-            delta = self.deltas[group_idx]
-
-            if self.delta_target == "timestep":
-                t_modified = t_base + delta.unsqueeze(0).unsqueeze(0)
-                if torch.is_grad_enabled():
-                    hidden_states = _ckpt(
-                        block, hidden_states, encoder_hidden_states, t_modified,
-                        y_seqlens, (N_t, N_h, N_w),
-                        num_cond_latents=num_cond_latents,
-                    )
-                else:
-                    hidden_states = block(
-                        hidden_states, encoder_hidden_states, t_modified,
-                        y_seqlens, (N_t, N_h, N_w),
-                        num_cond_latents=num_cond_latents,
-                    )
+        for block in dit.blocks:
+            if torch.is_grad_enabled():
+                hidden_states = _ckpt(
+                    block, hidden_states, encoder_hidden_states, t,
+                    y_seqlens, (N_t, N_h, N_w),
+                    num_cond_latents=num_cond_latents,
+                )
             else:
-                if torch.is_grad_enabled():
-                    hidden_states = _ckpt(
-                        block, hidden_states, encoder_hidden_states, t_base,
-                        y_seqlens, (N_t, N_h, N_w),
-                        num_cond_latents=num_cond_latents,
-                    )
-                else:
-                    hidden_states = block(
-                        hidden_states, encoder_hidden_states, t_base,
-                        y_seqlens, (N_t, N_h, N_w),
-                        num_cond_latents=num_cond_latents,
-                    )
-                hidden_states = hidden_states + delta.unsqueeze(0).unsqueeze(0).to(hidden_states.dtype)
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, t,
+                    y_seqlens, (N_t, N_h, N_w),
+                    num_cond_latents=num_cond_latents,
+                )
 
-        # Final layer — apply delta_final in "hidden" mode
-        if self.delta_target == "hidden" and self.delta_final is not None:
-            hidden_states = hidden_states + self.delta_final.unsqueeze(0).unsqueeze(0).to(hidden_states.dtype)
-
-        hidden_states = dit.final_layer(hidden_states, t_base, (N_t, N_h, N_w))
+        hidden_states = dit.final_layer(hidden_states, t, (N_t, N_h, N_w))
         hidden_states = dit.unpatchify(hidden_states, N_t, N_h, N_w)
         hidden_states = hidden_states.to(torch.float32)
 
@@ -287,8 +202,9 @@ class DeltaBWrapper(nn.Module):
 # Optimization loop
 # ============================================================================
 
-def optimize_delta_b(
-    wrapper: DeltaBWrapper,
+def optimize_norm_params(
+    wrapper: NormTuneForward,
+    norm_params: List[nn.Parameter],
     cond_latents: torch.Tensor,
     train_latents: torch.Tensor,
     prompt_embeds: torch.Tensor,
@@ -300,22 +216,16 @@ def optimize_delta_b(
     early_stopper: Optional[AnchoredEarlyStopper] = None,
     train_latents_variants: Optional[List[Dict]] = None,
 ) -> Dict:
-    """Optimize the per-group delta vectors using conditioning-aware loss."""
-    delta_params = list(wrapper.deltas.parameters())
-    if wrapper.delta_final is not None:
-        delta_params.append(wrapper.delta_final)
-    optimizer = AdamW(delta_params, lr=lr, betas=(0.9, 0.999), eps=1e-15)
+    """Optimize norm affine parameters using conditioning-aware loss."""
+    optimizer = AdamW(norm_params, lr=lr, betas=(0.9, 0.999), eps=1e-15)
 
     if train_latents_variants is None:
         train_latents_variants = [{"latents": train_latents, "name": "orig"}]
 
     def _save_fn():
-        state = [copy.deepcopy(d.data) for d in wrapper.deltas]
-        if wrapper.delta_final is not None:
-            state.append(copy.deepcopy(wrapper.delta_final.data))
-        return state
+        return snapshot_params(norm_params)
 
-    wrapper.train()
+    wrapper.dit.train()
     losses = []
 
     for step in range(num_steps):
@@ -335,9 +245,7 @@ def optimize_delta_b(
         )
 
         loss.backward()
-        for p in delta_params:
-            if p.grad is not None:
-                torch.nn.utils.clip_grad_norm_([p], 1.0)
+        torch.nn.utils.clip_grad_norm_(norm_params, 1.0)
         optimizer.step()
 
         losses.append(loss.item())
@@ -350,69 +258,55 @@ def optimize_delta_b(
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
 
+    wrapper.dit.eval()
+
     es_state = None
     if early_stopper is not None:
-        def _restore_fn(saved):
-            for d, s in zip(wrapper.deltas, saved[:len(wrapper.deltas)]):
-                d.data.copy_(s)
-            if wrapper.delta_final is not None and len(saved) > len(wrapper.deltas):
-                wrapper.delta_final.data.copy_(saved[-1])
-        early_stopper.restore(restore_fn=_restore_fn)
+        early_stopper.restore(
+            restore_fn=lambda s: restore_params(norm_params, s)
+        )
         es_state = early_stopper.state
 
-    delta_norms = [d.detach().norm().item() for d in wrapper.deltas]
-    if wrapper.delta_final is not None:
-        delta_norms.append(wrapper.delta_final.detach().norm().item())
     return {
         "losses": losses,
-        "delta_norms": delta_norms,
         "early_stopping_info": es_state,
     }
 
 
 # ============================================================================
-# Main
+# Main experiment
 # ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Delta-B TTA for LongCat-Video")
+    parser = argparse.ArgumentParser(description="Norm-Tuning TTA for LongCat-Video")
     parser.add_argument("--checkpoint-dir", type=str, required=True)
     parser.add_argument("--data-dir", type=str, required=True)
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--max-videos", type=int, default=100)
-    parser.add_argument("--delta-steps", type=int, default=20)
-    parser.add_argument("--delta-lr", type=float, default=1e-3)
-    parser.add_argument("--num-groups", type=int, default=4,
-                        help="Number of delta groups across blocks")
-    parser.add_argument("--delta-target", type=str, default="timestep",
-                        choices=["timestep", "hidden"],
-                        help="Where to inject delta: 'timestep' adds to t "
-                             "(adaLN input, 512-dim), 'hidden' adds to block "
-                             "output (hidden state residual, 4096-dim)")
+    parser.add_argument("--norm-steps", type=int, default=20)
+    parser.add_argument("--norm-lr", type=float, default=1e-3)
+    parser.add_argument("--norm-target", type=str, default="all_norm",
+                        choices=["cross_attn_norm", "qk_norm", "all_norm"],
+                        help="Which norm layers to tune")
     parser.add_argument("--num-cond-frames", type=int, default=2)
     parser.add_argument("--num-frames", type=int, default=16)
-    parser.add_argument("--gen-start-frame", type=int, default=32,
-                        help="Fixed anchor frame where generation starts. "
-                             "Cond = video[anchor-cond : anchor]. "
-                             "Ensures fair comparison across configs.")
+    parser.add_argument("--gen-start-frame", type=int, default=32)
     parser.add_argument("--num-inference-steps", type=int, default=50)
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--resolution", type=str, default="480p")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--skip-generation", action="store_true",
-                        help="Skip video generation (only train delta)")
-    parser.add_argument("--no-save-videos", action="store_true",
-                        help="Delete generated videos after evaluation to save disk space")
+    parser.add_argument("--skip-generation", action="store_true")
+    parser.add_argument("--no-save-videos", action="store_true")
+    parser.add_argument("--also-tune-delta", action="store_true",
+                        help="Also learn a Delta-A vector alongside norm params")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
     args = parser.parse_args()
 
-    # Default tta_total_frames to gen_start_frame (all pre-anchor frames)
     if args.tta_total_frames is None:
         args.tta_total_frames = args.gen_start_frame
-    # Default tta_context_frames to match generation conditioning
     if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.num_cond_frames
 
@@ -427,18 +321,14 @@ def main():
     start_idx = ckpt.get("next_idx", 0) if ckpt else 0
 
     print("=" * 70)
-    print("Delta-B TTA for LongCat-Video")
+    print("Norm-Tuning TTA for LongCat-Video")
     print("=" * 70)
-    print(f"Checkpoint dir : {args.checkpoint_dir}")
-    print(f"Num groups     : {args.num_groups}")
-    print(f"Delta target   : {args.delta_target}")
-    print(f"Delta steps    : {args.delta_steps}")
-    print(f"Delta LR       : {args.delta_lr}")
-    print(f"Augmentation   : {args.aug_enabled}")
+    print(f"Norm target    : {args.norm_target}")
+    print(f"Norm steps     : {args.norm_steps}")
+    print(f"Norm LR        : {args.norm_lr}")
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
 
-    # Load model
     components = load_longcat_components(
         args.checkpoint_dir, device=args.device, dtype=torch.bfloat16
     )
@@ -452,9 +342,39 @@ def main():
     from torch.utils.checkpoint import checkpoint as _ckpt_fn
     dit.gradient_checkpointing = True
     dit._gradient_checkpointing_func = functools.partial(_ckpt_fn, use_reentrant=False)
-    print("Gradient checkpointing: ENABLED (use_reentrant=False)")
+    print("Gradient checkpointing: ENABLED")
 
-    adaln_dim = dit.config.adaln_tembed_dim
+    # Freeze everything
+    for p in dit.parameters():
+        p.requires_grad = False
+
+    # Collect and unfreeze norm params
+    norm_params = collect_norm_params(dit, args.norm_target)
+    for p in norm_params:
+        p.requires_grad = True
+
+    # Optionally add a Delta-A vector (combined tuning)
+    delta_hook_handle = None
+    if args.also_tune_delta:
+        adaln_dim = dit.config.adaln_tembed_dim
+        delta_param = nn.Parameter(torch.zeros(adaln_dim, device=args.device))
+        norm_params.append(delta_param)
+
+        def _delta_hook(_module, _input, output):
+            return output + delta_param.unsqueeze(0).to(output.dtype)
+
+        delta_hook_handle = dit.t_embedder.register_forward_hook(_delta_hook)
+        print(f"Also tuning Delta-A vector: {adaln_dim} params")
+
+    trainable = sum(p.numel() for p in norm_params)
+    total = sum(p.numel() for p in dit.parameters())
+    print(f"Total params to tune: {len(norm_params)} tensors, {trainable:,} params "
+          f"({100 * trainable / total:.4f}%)")
+
+    # Save original values for per-video reset
+    original_norm_snapshot = snapshot_params(norm_params)
+
+    wrapper = NormTuneForward(dit)
 
     from common import load_ucf101_video_list
     videos = load_ucf101_video_list(
@@ -479,7 +399,6 @@ def main():
         print(f"\n[{idx + 1}/{len(videos)}] {video_name}: {caption}")
 
         try:
-            # ── Frame loading ─────────────────────────────────────────
             tta_start = args.gen_start_frame - args.tta_total_frames
             pixel_frames = load_video_frames(
                 video_path, args.tta_total_frames, height=480, width=832,
@@ -488,7 +407,6 @@ def main():
 
             all_latents = encode_video(vae, pixel_frames, normalize=True)
 
-            # Split into context / train / val
             vae_t_scale = 4
             num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
             cond_latents, train_latents, val_latents = split_tta_latents(
@@ -499,7 +417,6 @@ def main():
                   f"train={train_latents.shape[2]}, "
                   f"val={val_latents.shape[2] if val_latents is not None else 0}")
 
-            # Generation conditioning frames
             gen_cond_start = args.gen_start_frame - args.num_cond_frames
             gen_pixel_frames = load_video_frames(
                 video_path, args.num_cond_frames, height=480, width=832,
@@ -511,7 +428,6 @@ def main():
                 device=args.device, dtype=torch.bfloat16,
             )
 
-            # Build augmented train latent variants if enabled
             train_latents_variants = None
             if args.aug_enabled:
                 from common import build_augmented_pixel_variants
@@ -538,15 +454,9 @@ def main():
                             "latents": aug_lat[:, :, t_start:t_end],
                             "name": pv["name"],
                         })
-                print(f"  Augmentation: {len(train_latents_variants)} variants "
-                      f"({', '.join(v['name'] for v in train_latents_variants)})")
 
-            # Fresh wrapper per video
-            wrapper = DeltaBWrapper(
-                dit, num_groups=args.num_groups, adaln_tembed_dim=adaln_dim,
-                hidden_size=dit.config.hidden_size,
-                delta_target=args.delta_target,
-            ).to(args.device)
+            # Reset norm params to original values for this video
+            restore_params(norm_params, original_norm_snapshot)
 
             if early_stopper is not None and val_latents is not None:
                 def _es_forward_fn(hs, ts, ncl):
@@ -556,7 +466,6 @@ def main():
                         encoder_attention_mask=prompt_mask,
                         num_cond_latents=ncl,
                     )
-
                 early_stopper.setup(
                     model=wrapper,
                     cond_latents=cond_latents,
@@ -567,27 +476,23 @@ def main():
                     dtype=torch.bfloat16,
                     forward_fn=_es_forward_fn,
                     video_id=video_name,
-                    save_fn=lambda: (
-                        [copy.deepcopy(d.data) for d in wrapper.deltas]
-                        + ([copy.deepcopy(wrapper.delta_final.data)]
-                           if wrapper.delta_final is not None else [])
-                    ),
+                    save_fn=lambda: snapshot_params(norm_params),
                 )
 
-            # Offload VAE + text encoder to CPU during training
             vae.to("cpu")
             text_encoder.to("cpu")
             torch.cuda.empty_cache()
 
             t0 = time.time()
-            opt_result = optimize_delta_b(
+            opt_result = optimize_norm_params(
                 wrapper=wrapper,
+                norm_params=norm_params,
                 cond_latents=cond_latents,
                 train_latents=train_latents,
                 prompt_embeds=prompt_embeds,
                 prompt_mask=prompt_mask,
-                num_steps=args.delta_steps,
-                lr=args.delta_lr,
+                num_steps=args.norm_steps,
+                lr=args.norm_lr,
                 device=args.device,
                 dtype=torch.bfloat16,
                 early_stopper=early_stopper if val_latents is not None else None,
@@ -601,77 +506,66 @@ def main():
                 "caption": caption,
                 "train_time": train_time,
                 "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
-                "delta_norms": opt_result["delta_norms"],
-                "num_groups": args.num_groups,
                 "early_stopping_info": opt_result.get("early_stopping_info"),
                 "success": True,
             }
 
-            print(f"  Train time: {train_time:.1f}s, "
-                  f"Final loss: {result['final_loss']:.4f}, "
-                  f"Norms: {opt_result['delta_norms']}")
+            loss_str = f"{result['final_loss']:.4f}" if result["final_loss"] is not None else "N/A"
+            print(f"  Train time: {train_time:.1f}s, Final loss: {loss_str}")
 
-            # ── Generation ──────────────────────────────────────────
-            # Bring VAE + text encoder back to GPU for generation
             vae.to(args.device)
             text_encoder.to(args.device)
 
             gen_time = 0.0
             if not args.skip_generation:
                 from PIL import Image
-
-                pf = gen_pixel_frames.squeeze(0)  # [C, T, H, W]
+                pf = gen_pixel_frames.squeeze(0)
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
                 cond_images = []
                 for t_idx in range(pf.shape[1]):
                     frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
                     cond_images.append(Image.fromarray(frame_np))
 
-                wrapper.apply_to_dit()
-                try:
-                    gen_start = time.time()
-                    gen_frames = generate_video_continuation(
-                        pipe=pipe,
-                        video_frames=cond_images,
-                        prompt=caption,
-                        num_cond_frames=args.num_cond_frames,
-                        num_frames=args.num_frames,
-                        num_inference_steps=args.num_inference_steps,
-                        guidance_scale=args.guidance_scale,
-                        seed=args.seed + idx,
-                        resolution=args.resolution,
-                        device=args.device,
-                    )
-                    gen_time = time.time() - gen_start
+                gen_start = time.time()
+                gen_frames = generate_video_continuation(
+                    pipe=pipe,
+                    video_frames=cond_images,
+                    prompt=caption,
+                    num_cond_frames=args.num_cond_frames,
+                    num_frames=args.num_frames,
+                    num_inference_steps=args.num_inference_steps,
+                    guidance_scale=args.guidance_scale,
+                    seed=args.seed + idx,
+                    resolution=args.resolution,
+                    device=args.device,
+                )
+                gen_time = time.time() - gen_start
 
-                    result["gen_time"] = gen_time
+                result["gen_time"] = gen_time
+                output_path = os.path.join(videos_dir, f"{video_name}_norm_tune.mp4")
+                if not args.no_save_videos:
+                    save_video_from_numpy(gen_frames, output_path, fps=24)
+                    result["output_path"] = output_path
 
-                    output_path = os.path.join(videos_dir, f"{video_name}_delta_b.mp4")
-                    if not args.no_save_videos:
-                        save_video_from_numpy(gen_frames, output_path, fps=24)
-                        result["output_path"] = output_path
-
-                    num_gen = args.num_frames - args.num_cond_frames
-                    metrics = evaluate_generation_metrics(
-                        gen_output=gen_frames,
-                        video_path=video_path,
-                        num_cond_frames=args.num_cond_frames,
-                        num_gen_frames=num_gen,
-                        gen_start_frame=args.gen_start_frame,
-                        device=args.device,
-                    )
-                    result.update(metrics)
-                    print(f"  Gen: {gen_time:.1f}s, "
-                          f"PSNR={metrics['psnr']:.2f}, "
-                          f"SSIM={metrics['ssim']:.4f}, "
-                          f"LPIPS={metrics['lpips']:.4f}")
-                finally:
-                    wrapper.remove_from_dit()
+                num_gen = args.num_frames - args.num_cond_frames
+                metrics = evaluate_generation_metrics(
+                    gen_output=gen_frames,
+                    video_path=video_path,
+                    num_cond_frames=args.num_cond_frames,
+                    num_gen_frames=num_gen,
+                    gen_start_frame=args.gen_start_frame,
+                    device=args.device,
+                )
+                result.update(metrics)
+                print(f"  Gen: {gen_time:.1f}s, "
+                      f"PSNR={metrics['psnr']:.2f}, "
+                      f"SSIM={metrics['ssim']:.4f}, "
+                      f"LPIPS={metrics['lpips']:.4f}")
 
             result["total_time"] = train_time + gen_time
             all_results.append(result)
 
-            del wrapper, all_latents, cond_latents, train_latents, val_latents
+            del all_latents, cond_latents, train_latents, val_latents
             del pixel_frames, gen_pixel_frames, prompt_embeds, prompt_mask
             torch_gc()
 
@@ -688,13 +582,16 @@ def main():
 
         save_checkpoint({"next_idx": idx + 1, "results": all_results}, ckpt_path)
 
+    if delta_hook_handle is not None:
+        delta_hook_handle.remove()
+
     successful = [r for r in all_results if r.get("success", False)]
     summary = {
-        "method": "delta_b",
-        "delta_target": args.delta_target,
-        "num_groups": args.num_groups,
-        "delta_steps": args.delta_steps,
-        "delta_lr": args.delta_lr,
+        "method": "norm_tune",
+        "norm_target": args.norm_target,
+        "norm_steps": args.norm_steps,
+        "norm_lr": args.norm_lr,
+        "trainable_params": trainable,
         "num_videos": len(all_results),
         "num_successful": len(successful),
         "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,
@@ -702,8 +599,6 @@ def main():
     }
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
     print(f"\nResults saved to {args.output_dir}/summary.json")
-    if successful:
-        print(f"Avg train time: {summary['avg_train_time']:.1f}s")
 
 
 if __name__ == "__main__":
