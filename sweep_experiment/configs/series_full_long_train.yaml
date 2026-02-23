@@ -1,0 +1,44 @@
+# Full-Model Long Training Experiment
+#
+# Goal: Determine if full-model TTA can improve metrics given enough steps.
+# Previous runs (5-80 steps) showed no meaningful improvement.
+# Here we extend to 500 steps with aggressive early stopping monitoring
+# (check every step, patience=10) to precisely identify:
+#   1. Whether PSNR eventually improves
+#   2. At which step the best checkpoint occurs
+#   3. The anchor loss curve shape
+#
+# Uses 30 videos (subset) due to time constraints: 500 steps per video
+# with ~4s/step means ~33 min training per video worst case.
+# With early stopping, most videos should finish much sooner.
+#
+# The checkpointing system allows resuming if the job times out.
+
+method: full
+series: 17
+series_name: full_long_train
+description: "Full-model TTA with 500 steps and aggressive ES monitoring"
+
+fixed:
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  optimizer: sgd
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 30
+  es_check_every: 1
+  es_patience: 10
+  es_noise_draws: 2
+  es_anchor_sigmas: "0.25,0.5,0.75"
+  es_holdout_fraction: 0.25
+
+sweep:
+  - run_id: FLT1
+    num_steps: 500
+    warmup_steps: 10

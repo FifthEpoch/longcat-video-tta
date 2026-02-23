@@ -1,0 +1,35 @@
+# Delta-A Long Training Experiment
+#
+# Goal: Map the full anchor loss curve for Delta-A beyond 80 steps.
+# We know Delta-A peaks at ~5 steps and degrades afterward.
+# This run validates that the early stopping anchor loss correctly
+# captures the degradation and identifies the optimal step.
+#
+# Also serves as a control: if ES (check_every=1, patience=10) correctly
+# stops Delta-A around step 5-15, it confirms the ES mechanism works
+# and the previous failure to trigger was purely due to check_every=5.
+
+method: delta_a
+series: 18
+series_name: delta_a_long_train
+description: "Delta-A with 200 steps and aggressive ES monitoring"
+
+fixed:
+  delta_lr: 5.0e-3
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 30
+  es_check_every: 1
+  es_patience: 10
+  es_noise_draws: 2
+  es_anchor_sigmas: "0.25,0.5,0.75"
+  es_holdout_fraction: 0.25
+
+sweep:
+  - run_id: DALT1
+    delta_steps: 200
