@@ -1,0 +1,31 @@
+# Series 23: Experiment 3 -- Training Frames Ablation (Delta-C)
+# Goal: Vary number of conditioning frames to study impact on adaptation.
+# Fixed: Delta-C best config (delta_lr=1e-2, delta_steps=20, delta_mode=per_channel)
+# Swept: num_cond_frames
+
+method: delta_c
+series: 23
+series_name: exp3_train_frames_delta_c
+description: "Training frames ablation: Delta-C TTA"
+
+fixed:
+  delta_lr: 1.0e-2
+  delta_steps: 20
+  delta_mode: per_channel
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: TF_DC1
+    num_cond_frames: 2
+  - run_id: TF_DC2
+    num_cond_frames: 7
+  - run_id: TF_DC3
+    num_cond_frames: 14
+  - run_id: TF_DC4
+    num_cond_frames: 24

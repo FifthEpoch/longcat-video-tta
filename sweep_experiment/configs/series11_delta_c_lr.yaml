@@ -1,0 +1,35 @@
+# Series 11: Delta-C (Output Correction) -- LR Sweep
+# Goal: Delta-C has only 16 trainable params (one per output channel).
+#        Tests whether a simple per-channel bias correction on the velocity
+#        prediction is useful. Needs high LRs due to tiny param count.
+# Fixed: steps=20
+# Swept: delta_lr
+
+method: delta_c
+series: 11
+series_name: delta_c_lr_sweep
+description: "Delta-C output correction LR sweep (16 params)"
+
+fixed:
+  delta_steps: 20
+  delta_mode: per_channel
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: DC1
+    delta_lr: 1.0e-2
+  - run_id: DC2
+    delta_lr: 5.0e-2
+  - run_id: DC3
+    delta_lr: 1.0e-1
+  - run_id: DC4
+    delta_lr: 5.0e-1
+  - run_id: DC5
+    delta_lr: 1.0

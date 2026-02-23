@@ -1,0 +1,33 @@
+# Series 31: Experiment 5 -- Video Batch-Size Ablation (Delta-A)
+# Goal: Study impact of batch-level TTA vs instance-level TTA.
+# Fixed: Delta-A best config (delta_lr=5e-3, delta_steps=20)
+# Swept: batch_videos
+
+method: delta_a
+series: 31
+series_name: exp5_batch_size_delta_a
+description: "Batch-size ablation: Delta-A TTA"
+
+fixed:
+  delta_lr: 5.0e-3
+  delta_steps: 20
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: BS_DA1
+    batch_videos: 1
+  - run_id: BS_DA2
+    batch_videos: 5
+  - run_id: BS_DA3
+    batch_videos: 10
+  - run_id: BS_DA4
+    batch_videos: 25
+  - run_id: BS_DA5
+    batch_videos: 100

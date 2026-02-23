@@ -1,0 +1,27 @@
+# Panda-70M: No-TTA continuation baseline
+# Uses conditioning frames but skips TTA training (0 steps)
+# This establishes the "LongCat-Video with conditioning but no adaptation" baseline
+method: full
+series: 36
+series_name: panda_no_tta_continuation
+description: "Panda-70M: LongCat no-TTA continuation baseline (cond frames, no training)"
+
+fixed:
+  learning_rate: 0.0
+  num_steps: 0
+  warmup_steps: 0
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  optimizer: sgd
+  es_disable: true
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: NOTTA

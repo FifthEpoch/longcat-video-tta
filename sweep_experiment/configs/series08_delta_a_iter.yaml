@@ -1,0 +1,30 @@
+# Series 8: Delta-A -- Iteration Sweep
+# Goal: Overfitting dynamics for 512-param method.
+# Fixed: delta_lr=5e-3 (best from DA2)
+# Swept: delta_steps
+
+method: delta_a
+series: 8
+series_name: delta_a_iter_sweep
+description: "Delta-A iteration sweep at best LR"
+
+fixed:
+  delta_lr: 5.0e-3
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: DA6
+    delta_steps: 5
+  - run_id: DA7
+    delta_steps: 10
+  - run_id: DA8
+    delta_steps: 40
+  - run_id: DA9
+    delta_steps: 80

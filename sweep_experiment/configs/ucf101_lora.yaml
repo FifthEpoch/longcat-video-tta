@@ -1,0 +1,26 @@
+# UCF-101 evaluation: LoRA TTA (best config) for FVD comparison
+method: lora
+series: 34
+series_name: ucf101_lora
+description: "UCF-101 evaluation: LoRA TTA (best config from Exp 1)"
+
+fixed:
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  lora_rank: 1
+  lora_alpha: 2
+  target_modules: "qkv,proj"
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 2500
+
+sweep:
+  - run_id: UCF_L1

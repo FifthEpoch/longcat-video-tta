@@ -1,0 +1,44 @@
+# Series 3: LoRA -- Rank Sweep (Capacity Axis)
+# Goal: Find the minimum LoRA rank matching/exceeding full-model performance.
+#        Maps the capacity threshold where LoRA saturates.
+# Fixed: lr=2e-4, steps=20, target=qkv,proj, alpha=2*rank
+# Swept: lora_rank, lora_alpha
+
+method: lora
+series: 3
+series_name: lora_rank_sweep
+description: "LoRA rank sweep (capacity axis)"
+
+fixed:
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_modules: "qkv,proj"
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: L1
+    lora_rank: 1
+    lora_alpha: 2
+  - run_id: L2
+    lora_rank: 4
+    lora_alpha: 8
+  - run_id: L3
+    lora_rank: 8
+    lora_alpha: 16
+  - run_id: L4
+    lora_rank: 16
+    lora_alpha: 32
+  - run_id: L5
+    lora_rank: 32
+    lora_alpha: 64

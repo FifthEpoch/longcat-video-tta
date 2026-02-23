@@ -1,0 +1,34 @@
+# Series 24: Experiment 4 -- Generation Horizon Ablation (Full-model)
+# Goal: Vary generation horizon to study impact on adaptation quality.
+# Fixed: Full-model best config (lr=1e-5, steps=20, warmup=3, optimizer=sgd), num_cond_frames=14
+# Swept: num_frames
+
+method: full
+series: 24
+series_name: exp4_gen_horizon_full
+description: "Generation horizon ablation: Full-model TTA"
+
+fixed:
+  learning_rate: 1.0e-5
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  optimizer: sgd
+  num_cond_frames: 14
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: GH_F1
+    num_frames: 16
+  - run_id: GH_F2
+    num_frames: 28
+  - run_id: GH_F3
+    num_frames: 44
+  - run_id: GH_F4
+    num_frames: 72

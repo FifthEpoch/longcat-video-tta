@@ -1,0 +1,31 @@
+# Series 9b: Delta-B -- Iteration Sweep
+# Goal: Overfitting dynamics for per-layer delta method.
+# Fixed: delta_lr=1e-2, num_groups=1 (best from DB1)
+# Swept: delta_steps
+
+method: delta_b
+series: 9
+series_name: delta_b_iter_sweep
+description: "Delta-B iteration sweep at best LR/groups"
+
+fixed:
+  delta_lr: 1.0e-2
+  num_groups: 1
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: DB12
+    delta_steps: 5
+  - run_id: DB13
+    delta_steps: 10
+  - run_id: DB14
+    delta_steps: 40
+  - run_id: DB15
+    delta_steps: 80
