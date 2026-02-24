@@ -6,6 +6,7 @@
 #SBATCH --time=02:00:00
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:h200:1
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=backbone_experiment/cogvideo/slurm_log/setup_cogvideo_%j.out
 #SBATCH --error=backbone_experiment/cogvideo/slurm_log/setup_cogvideo_%j.err
 
