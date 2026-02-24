@@ -1,0 +1,57 @@
+# Series 26: AdaSteer Groups Sweep at 5 Steps
+#
+# The original Delta-B groups sweep (DB1-DB6) was run at 20 steps with
+# LR=1e-2, causing severe overfitting for G>1. We now know that 5 steps
+# is the optimal step count for G=1 (DB12=22.54). This sweep tests
+# whether higher group counts are also viable at 5 steps.
+#
+# Hypothesis: The previous poor performance of G>1 was due to overfitting
+# at 20 steps, not an inherent limitation. At 5 steps, G=4 or G=12 might
+# be competitive with G=1.
+#
+# We also include LR-scaled variants: since more groups = more params,
+# the per-parameter update is larger at the same LR. Scaling LR down
+# proportionally (LR/G) should keep the total adaptation magnitude similar.
+
+method: delta_b
+series: 26
+series_name: adasteer_groups_5step
+description: "AdaSteer groups sweep at 5 steps (fixed vs scaled LR)"
+
+fixed:
+  delta_steps: 5
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # ── Fixed LR=1e-2 across all group counts ──
+  # Tests whether 5 steps prevents overfitting regardless of G
+  - run_id: AS1
+    num_groups: 1
+    delta_lr: 1.0e-2
+  - run_id: AS2
+    num_groups: 4
+    delta_lr: 1.0e-2
+  - run_id: AS3
+    num_groups: 12
+    delta_lr: 1.0e-2
+  - run_id: AS4
+    num_groups: 48
+    delta_lr: 1.0e-2
+
+  # ── LR scaled down proportionally (LR_base / G) ──
+  # Keeps total gradient magnitude per-param roughly constant
+  - run_id: AS5
+    num_groups: 4
+    delta_lr: 2.5e-3
+  - run_id: AS6
+    num_groups: 12
+    delta_lr: 8.3e-4

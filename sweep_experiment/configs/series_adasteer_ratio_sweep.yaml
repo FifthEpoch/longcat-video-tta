@@ -1,0 +1,76 @@
+# Series 27: AdaSteer Token-to-Parameter Ratio Sweep
+#
+# Tests the hypothesis that optimal group count G scales with available
+# training data. If an optimal ratio R* = tokens/params exists, then:
+#   G_optimal = num_training_tokens / (R* × 512)
+#
+# We vary num_cond_frames (which controls how many latents are used as
+# context vs training) and groups simultaneously. With more conditioning
+# frames, more latents are "context" (clean, used for loss conditioning)
+# and fewer are "training" (noised, contribute gradient signal).
+#
+# Approximate training token counts at 480p:
+#   2 cond frames → ~7 temporal train latents → ~700K values
+#   7 cond frames → ~6 temporal train latents → ~600K values
+#  14 cond frames → ~4 temporal train latents → ~400K values
+#  24 cond frames → ~2 temporal train latents → ~200K values
+#
+# If the ratio hypothesis holds, the optimal G should DECREASE with more
+# conditioning frames (fewer training tokens to support the parameters).
+#
+# Note: num_cond_frames also affects generation quality independently.
+# The Delta-A training frames sweep serves as the G=1 baseline for each
+# frame count.
+
+method: delta_b
+series: 27
+series_name: adasteer_ratio_sweep
+description: "2D sweep of conditioning frames x groups to find optimal ratio"
+
+fixed:
+  delta_steps: 5
+  delta_lr: 1.0e-2
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # ── 2 conditioning frames × groups ──
+  # Most training data available (~700K values)
+  - run_id: AR1
+    num_cond_frames: 2
+    num_groups: 1
+  - run_id: AR2
+    num_cond_frames: 2
+    num_groups: 4
+  - run_id: AR3
+    num_cond_frames: 2
+    num_groups: 12
+
+  # ── 14 conditioning frames × groups (standard) ──
+  # Moderate training data (~400K values)
+  # G=1 already covered by AS1 in Series 26
+  - run_id: AR4
+    num_cond_frames: 14
+    num_groups: 4
+  - run_id: AR5
+    num_cond_frames: 14
+    num_groups: 12
+
+  # ── 24 conditioning frames × groups ──
+  # Least training data (~200K values)
+  - run_id: AR6
+    num_cond_frames: 24
+    num_groups: 1
+  - run_id: AR7
+    num_cond_frames: 24
+    num_groups: 4
+  - run_id: AR8
+    num_cond_frames: 24
+    num_groups: 12
