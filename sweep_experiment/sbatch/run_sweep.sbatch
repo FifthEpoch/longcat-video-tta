@@ -93,6 +93,7 @@ DELTA_LR="${DELTA_LR:-1e-3}"
 # Delta-B specific
 NUM_GROUPS="${NUM_GROUPS:-4}"
 DELTA_TARGET="${DELTA_TARGET:-timestep}"
+DELTA_DIM="${DELTA_DIM:-}"
 
 # Delta-C specific
 DELTA_MODE="${DELTA_MODE:-per_channel}"
@@ -306,7 +307,13 @@ case "${METHOD}" in
     echo "  Delta steps    : ${DELTA_STEPS}"
     echo "  Num groups     : ${NUM_GROUPS}"
     echo "  Delta target   : ${DELTA_TARGET}"
+    echo "  Delta dim      : ${DELTA_DIM:-full}"
     echo "=============================================================================="
+
+    DELTA_DIM_FLAG=""
+    if [ -n "${DELTA_DIM}" ]; then
+        DELTA_DIM_FLAG="--delta-dim ${DELTA_DIM}"
+    fi
 
     python delta_experiment/scripts/run_delta_b.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
@@ -326,6 +333,7 @@ case "${METHOD}" in
         --guidance-scale "${GUIDANCE_SCALE}" \
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
+        ${DELTA_DIM_FLAG} \
         ${SAVE_FLAGS} \
         ${ES_FLAGS}
     ;;

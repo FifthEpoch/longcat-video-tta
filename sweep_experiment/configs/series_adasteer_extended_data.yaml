@@ -1,0 +1,121 @@
+# Series 28: AdaSteer Extended Training Data Sweep
+#
+# Tests whether dramatically more training data enables G>1 to become
+# competitive with G=1. By moving gen_start_frame deeper into the video,
+# we access 4-7x more training signal than the standard 32-frame window.
+#
+# Architecture: patch_size=(1,2,2), z_dim=16, latent spatial 60x104
+# => 99,840 values per temporal latent frame
+#
+# Window A (gen_start=120, ~5 sec at 24fps):
+#   tta_total_frames=120 → T_lat=30, context=4, train≈19, val≈7
+#   Training values ≈ 19 × 99,840 ≈ 1.9M (6.3× current 300K)
+#
+# Window B (gen_start=200, ~8 sec at 24fps):
+#   tta_total_frames=200 → T_lat=50, context=4, train≈34, val≈12
+#   Training values ≈ 34 × 99,840 ≈ 3.4M (11× current 300K)
+#
+# At these data scales, values-per-parameter ratios become:
+#   Window A: G=1→3,700, G=2→1,850, G=4→925, G=12→309
+#   Window B: G=1→6,640, G=2→3,320, G=4→1,660, G=12→553
+#
+# If there's a sweet spot (e.g., optimal ~500-1000 val/param), then
+# Window A should favor G=2-4 and Window B should favor G=4-12.
+#
+# Includes a no-TTA control (G=1, steps=1, lr=1e-20) at each anchor point.
+
+method: delta_b
+series: 28
+series_name: adasteer_extended_data
+description: "AdaSteer with 5s/8s input video: does more data enable more groups?"
+
+fixed:
+  delta_steps: 5
+  delta_lr: 1.0e-2
+  num_cond_frames: 14
+  num_frames: 28
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # ── Window A: 5 seconds (gen_start=120) ──
+  # No-TTA baseline at this anchor
+  - run_id: EX_A0
+    gen_start_frame: 120
+    tta_total_frames: 120
+    tta_context_frames: 14
+    num_groups: 1
+    delta_steps: 1
+    delta_lr: 1.0e-20
+    max_videos: 50
+
+  - run_id: EX_A1
+    gen_start_frame: 120
+    tta_total_frames: 120
+    tta_context_frames: 14
+    num_groups: 1
+    max_videos: 50
+
+  - run_id: EX_A2
+    gen_start_frame: 120
+    tta_total_frames: 120
+    tta_context_frames: 14
+    num_groups: 2
+    max_videos: 50
+
+  - run_id: EX_A4
+    gen_start_frame: 120
+    tta_total_frames: 120
+    tta_context_frames: 14
+    num_groups: 4
+    max_videos: 50
+
+  - run_id: EX_A12
+    gen_start_frame: 120
+    tta_total_frames: 120
+    tta_context_frames: 14
+    num_groups: 12
+    max_videos: 50
+
+  # ── Window B: 8 seconds (gen_start=200) ──
+  # No-TTA baseline at this anchor
+  - run_id: EX_B0
+    gen_start_frame: 200
+    tta_total_frames: 200
+    tta_context_frames: 14
+    num_groups: 1
+    delta_steps: 1
+    delta_lr: 1.0e-20
+    max_videos: 30
+
+  - run_id: EX_B1
+    gen_start_frame: 200
+    tta_total_frames: 200
+    tta_context_frames: 14
+    num_groups: 1
+    max_videos: 30
+
+  - run_id: EX_B2
+    gen_start_frame: 200
+    tta_total_frames: 200
+    tta_context_frames: 14
+    num_groups: 2
+    max_videos: 30
+
+  - run_id: EX_B4
+    gen_start_frame: 200
+    tta_total_frames: 200
+    tta_context_frames: 14
+    num_groups: 4
+    max_videos: 30
+
+  - run_id: EX_B12
+    gen_start_frame: 200
+    tta_total_frames: 200
+    tta_context_frames: 14
+    num_groups: 12
+    max_videos: 30

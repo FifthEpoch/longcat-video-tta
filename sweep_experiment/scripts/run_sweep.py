@@ -80,6 +80,7 @@ _KEY_TO_ENV = {
     # Delta-B
     "num_groups": "NUM_GROUPS",
     "delta_target": "DELTA_TARGET",
+    "delta_dim": "DELTA_DIM",
     # Delta-C
     "delta_mode": "DELTA_MODE",
     # Norm-tuning specific
@@ -248,10 +249,14 @@ def estimate_time(method: str, run_overrides: dict, fixed: dict) -> str:
             return "24:00:00"
     elif method in ("delta_a", "delta_b", "delta_c"):
         steps = merged.get("delta_steps", 20)
-        if steps <= 20:
+        tta_total = merged.get("tta_total_frames", 32)
+        extended_factor = max(1, tta_total / 32)
+        if steps <= 20 and extended_factor <= 2:
             return "8:00:00"
-        elif steps <= 50:
+        elif steps <= 20 and extended_factor <= 5:
             return "12:00:00"
+        elif steps <= 50 or extended_factor > 5:
+            return "18:00:00"
         else:
             return "18:00:00"
     elif method == "norm_tune":

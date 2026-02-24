@@ -101,6 +101,7 @@ class DeltaBWrapper(nn.Module):
         adaln_tembed_dim: int = 512,
         hidden_size: int = 4096,
         delta_target: str = "timestep",
+        delta_dim: int = None,
     ):
         super().__init__()
         self.dit = dit
@@ -111,9 +112,11 @@ class DeltaBWrapper(nn.Module):
         for p in self.dit.parameters():
             p.requires_grad = False
 
-        delta_dim = adaln_tembed_dim if delta_target == "timestep" else hidden_size
+        full_dim = adaln_tembed_dim if delta_target == "timestep" else hidden_size
+        self._full_dim = full_dim
+        self._partial_dim = delta_dim if delta_dim is not None else full_dim
         self.deltas = nn.ParameterList([
-            nn.Parameter(torch.zeros(delta_dim))
+            nn.Parameter(torch.zeros(self._partial_dim))
             for _ in range(num_groups)
         ])
 
@@ -131,6 +134,12 @@ class DeltaBWrapper(nn.Module):
 
         self._gen_hooks: list = []
 
+    def _pad_delta(self, dv: torch.Tensor) -> torch.Tensor:
+        """Zero-pad a partial-dimension delta to the full target dimension."""
+        if dv.shape[0] >= self._full_dim:
+            return dv
+        return F.pad(dv, (0, self._full_dim - dv.shape[0]))
+
     @property
     def config(self):
         """Proxy config to the inner DiT."""
@@ -142,6 +151,7 @@ class DeltaBWrapper(nn.Module):
     def apply_to_dit(self):
         """Install per-block hooks for the pipeline's forward path."""
         self._gen_hooks = []
+        pad = self._pad_delta
 
         if self.delta_target == "timestep":
             for i, block in enumerate(self.dit.blocks):
@@ -151,7 +161,7 @@ class DeltaBWrapper(nn.Module):
                 def _make_pre_hook(dv):
                     def hook(_module, args):
                         args = list(args)
-                        args[2] = args[2] + dv.unsqueeze(0).unsqueeze(0).to(args[2].dtype)
+                        args[2] = args[2] + pad(dv).unsqueeze(0).unsqueeze(0).to(args[2].dtype)
                         return tuple(args)
                     return hook
 
@@ -164,9 +174,10 @@ class DeltaBWrapper(nn.Module):
 
                 def _make_post_hook(dv):
                     def hook(_module, _args, output):
+                        expanded = pad(dv).unsqueeze(0).unsqueeze(0)
                         if isinstance(output, tuple):
-                            return (output[0] + dv.unsqueeze(0).unsqueeze(0).to(output[0].dtype),) + output[1:]
-                        return output + dv.unsqueeze(0).unsqueeze(0).to(output.dtype)
+                            return (output[0] + expanded.to(output[0].dtype),) + output[1:]
+                        return output + expanded.to(output.dtype)
                     return hook
 
                 h = block.register_forward_hook(_make_post_hook(delta_vec))
@@ -241,7 +252,7 @@ class DeltaBWrapper(nn.Module):
 
         for i, block in enumerate(dit.blocks):
             group_idx = self.block_to_group[i]
-            delta = self.deltas[group_idx]
+            delta = self._pad_delta(self.deltas[group_idx])
 
             if self.delta_target == "timestep":
                 t_modified = t_base + delta.unsqueeze(0).unsqueeze(0)
@@ -274,7 +285,8 @@ class DeltaBWrapper(nn.Module):
 
         # Final layer — apply delta_final in "hidden" mode
         if self.delta_target == "hidden" and self.delta_final is not None:
-            hidden_states = hidden_states + self.delta_final.unsqueeze(0).unsqueeze(0).to(hidden_states.dtype)
+            d_final = self._pad_delta(self.delta_final)
+            hidden_states = hidden_states + d_final.unsqueeze(0).unsqueeze(0).to(hidden_states.dtype)
 
         hidden_states = dit.final_layer(hidden_states, t_base, (N_t, N_h, N_w))
         hidden_states = dit.unpatchify(hidden_states, N_t, N_h, N_w)
@@ -389,6 +401,10 @@ def main():
                         help="Where to inject delta: 'timestep' adds to t "
                              "(adaLN input, 512-dim), 'hidden' adds to block "
                              "output (hidden state residual, 4096-dim)")
+    parser.add_argument("--delta-dim", type=int, default=None,
+                        help="Learn only the first k dimensions of the delta "
+                             "vector, zero-padding the rest. Defaults to full "
+                             "dim (512 for timestep, 4096 for hidden).")
     parser.add_argument("--num-cond-frames", type=int, default=2)
     parser.add_argument("--num-frames", type=int, default=16)
     parser.add_argument("--gen-start-frame", type=int, default=32,
@@ -546,6 +562,7 @@ def main():
                 dit, num_groups=args.num_groups, adaln_tembed_dim=adaln_dim,
                 hidden_size=dit.config.hidden_size,
                 delta_target=args.delta_target,
+                delta_dim=getattr(args, 'delta_dim', None),
             ).to(args.device)
 
             if early_stopper is not None and val_latents is not None:
