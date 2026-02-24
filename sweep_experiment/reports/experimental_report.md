@@ -67,7 +67,14 @@ Learns per-group additive corrections to the adaLN modulation output, operating 
 
 ### 3.2 Evaluation
 
-Generated frames compared to ground truth using PSNR (dB). All values are mean ± std across 99 successfully processed videos. Each TTA method is applied independently per video with full parameter reset between videos.
+Generated frames are compared to ground truth using three complementary metrics:
+- **PSNR** (dB, ↑): Peak Signal-to-Noise Ratio. Primary metric for reconstruction quality.
+- **SSIM** (0–1, ↑): Structural Similarity Index. Captures perceptual structure preservation.
+- **LPIPS** (0–1, ↓): Learned Perceptual Image Patch Similarity. Deep feature-based perceptual distance.
+
+All values are mean ± std across 99 successfully processed videos. Each TTA method is applied independently per video with full parameter reset between videos. Per-video timing is recorded for both TTA training and generation phases. Early stopping statistics (trigger rate, best step distribution) are tracked when ES is enabled.
+
+> **Note**: Tables in this report use PSNR as the primary metric for compactness. Full SSIM, LPIPS, timing, and early stopping statistics for every run are available via: `bash sweep_experiment/scripts/check_all_progress.sh`
 
 ### 3.3 Training Signal Budget
 

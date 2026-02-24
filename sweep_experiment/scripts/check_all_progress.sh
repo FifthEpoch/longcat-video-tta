@@ -2,6 +2,8 @@
 # ============================================================================
 # Comprehensive TTA Experiment Progress Checker
 #
+# Displays: PSNR, SSIM, LPIPS, train/gen time, config, early stopping stats
+#
 # Usage: bash sweep_experiment/scripts/check_all_progress.sh
 # ============================================================================
 
@@ -9,74 +11,15 @@ set -euo pipefail
 PROJECT_ROOT="/scratch/wc3013/longcat-video-tta"
 RESULTS_ROOT="${PROJECT_ROOT}/sweep_experiment/results"
 BASE_RESULTS="${PROJECT_ROOT}/baseline_experiment/results"
+EXTRACTOR="${PROJECT_ROOT}/sweep_experiment/scripts/extract_summary.py"
+
+scan() {
+    python3 "$EXTRACTOR" "$@"
+}
 
 echo "================================================================================"
 echo "       COMPREHENSIVE STATUS REPORT ($(date))"
 echo "================================================================================"
-
-# ── Helper: extract metrics from TTA sweep summary.json ──
-extract() {
-    local dir="$1"
-    local summary="${dir}/summary.json"
-    if [ -f "$summary" ]; then
-        python3 -c "
-import json, statistics
-with open('$summary') as f:
-    d = json.load(f)
-
-# TTA sweep format: results array with per-video dicts
-results = d.get('results', [])
-if results:
-    ok = [r for r in results if r.get('success', False)]
-    psnrs = [r['psnr'] for r in ok if 'psnr' in r]
-    n_total = d.get('num_videos', len(results))
-    n_ok = len(ok)
-    if psnrs:
-        m = statistics.mean(psnrs)
-        s = statistics.stdev(psnrs) if len(psnrs) > 1 else 0
-        print(f'{n_ok}/{n_total} ok, PSNR={m:.2f}+/-{s:.2f}')
-    else:
-        print(f'{n_ok}/{n_total} ok, no PSNR data')
-# Baseline format: metrics.psnr.mean at top level
-elif 'metrics' in d and 'psnr' in d['metrics']:
-    pm = d['metrics']['psnr'].get('mean', 0)
-    ps = d['metrics']['psnr'].get('std', 0)
-    n_ok = d.get('num_successful', '?')
-    n_total = d.get('num_videos', '?')
-    print(f'{n_ok}/{n_total} ok, PSNR={pm:.2f}+/-{ps:.2f}')
-else:
-    n_total = d.get('num_videos', '?')
-    print(f'0/{n_total} ok, unrecognized format')
-" 2>/dev/null || echo "parse error"
-    elif [ -f "${dir}/checkpoint.json" ]; then
-        python3 -c "
-import json
-with open('${dir}/checkpoint.json') as f:
-    d = json.load(f)
-idx = d.get('next_idx', 0)
-n = len(d.get('results', []))
-print(f'in-progress: {n} videos (checkpoint next_idx={idx})')
-" 2>/dev/null || echo "checkpoint exists, parse error"
-    elif [ -d "$dir" ]; then
-        echo "dir exists, no data"
-    else
-        echo "NOT STARTED"
-    fi
-}
-
-# ── Helper: list subdirs and extract ──
-scan_series() {
-    local base_dir="$1"
-    local pattern="${2:-*}"
-    if [ -d "$base_dir" ]; then
-        for d in "${base_dir}"/${pattern}; do
-            [ -d "$d" ] || continue
-            echo "  $(basename $d): $(extract $d)"
-        done
-    else
-        echo "  (directory not found: $base_dir)"
-    fi
-}
 
 # ── Currently running SLURM jobs ──
 echo ""
@@ -89,14 +32,17 @@ squeue -u wc3013 2>/dev/null || echo "(squeue not available)"
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 0: BASELINES (no TTA)"
+echo "  Goal: Establish video continuation quality without any adaptation"
 echo "================================================================================"
-echo "  Panda-70M no-TTA:  $(extract ${RESULTS_ROOT}/panda_no_tta_continuation/NOTTA)"
-echo "  UCF-101 no-TTA:    $(extract ${RESULTS_ROOT}/ucf101_no_tta/UCF_NOTTA)"
 echo ""
-echo "--- Baseline Sweep (baseline_experiment) ---"
+echo "--- TTA Baseline (sweep format, 14 cond, 14 gen, anchor=32) ---"
+scan "${RESULTS_ROOT}/panda_no_tta_continuation" "NOTTA"
+scan "${RESULTS_ROOT}/ucf101_no_tta" "UCF_"
+echo ""
+echo "--- Baseline Sweep (various cond/gen combos, no TTA) ---"
 for d in "${BASE_RESULTS}"/cond*_gen* "${BASE_RESULTS}"/baseline_480p; do
     [ -d "$d" ] || continue
-    echo "  $(basename $d): $(extract $d)"
+    scan "$d"
 done
 
 # ============================================================================
@@ -105,19 +51,21 @@ done
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 1: CONDITIONING + GENERATION LENGTH"
+echo "  Goal: How does # of cond frames and gen horizon affect quality?"
+echo "  Config: anchor=32, total=28 frames, best LR per method, 20 steps"
 echo "================================================================================"
 echo ""
-echo "--- Exp 3: Training Frames Ablation ---"
+echo "--- Exp 3: Training Frames Ablation (2/7/14/24 cond frames) ---"
 for method in full delta_a delta_b delta_c lora; do
     echo "  [$method]"
-    scan_series "${RESULTS_ROOT}/exp3_train_frames_${method}" "TF_*"
+    scan "${RESULTS_ROOT}/exp3_train_frames_${method}" "TF_"
 done
 
 echo ""
-echo "--- Exp 4: Generation Horizon Ablation ---"
+echo "--- Exp 4: Generation Horizon (16/28/44/72 total frames, 14 cond) ---"
 for method in full delta_a delta_b delta_c lora; do
     echo "  [$method]"
-    scan_series "${RESULTS_ROOT}/exp4_gen_horizon_${method}" "GH_*"
+    scan "${RESULTS_ROOT}/exp4_gen_horizon_${method}" "GH_"
 done
 
 # ============================================================================
@@ -126,13 +74,18 @@ done
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 2: FULL-MODEL TTA"
+echo "  Goal: Verify TTA works, find best LR, establish TTA upper bound"
+echo "  Config: 13.6B params, SGD, 14 cond, 14 gen, anchor=32"
 echo "================================================================================"
-echo "--- LR Sweep (Series 1) ---"
-scan_series "${RESULTS_ROOT}/full_lr_sweep" "F*"
-echo "--- Iteration Sweep (Series 2) ---"
-scan_series "${RESULTS_ROOT}/full_iter_sweep" "F*"
-echo "--- Long Train with ES (Series 17) ---"
-scan_series "${RESULTS_ROOT}/full_long_train" "FLT*"
+echo ""
+echo "--- LR Sweep (Series 1): 20 steps, LR={1e-6, 5e-6, 1e-5, 5e-5, 1e-4} ---"
+scan "${RESULTS_ROOT}/full_lr_sweep" "F"
+echo ""
+echo "--- Iteration Sweep (Series 2): lr=1e-5, steps={5, 10, 20, 40, 80} ---"
+scan "${RESULTS_ROOT}/full_iter_sweep" "F"
+echo ""
+echo "--- Long Train + ES (Series 17): lr=1e-5, 500 max steps, ES p=10, 30 vids ---"
+scan "${RESULTS_ROOT}/full_long_train" "FLT"
 
 # ============================================================================
 # EXPERIMENT 3: SINGLE VECTOR TTA (AdaSteer-1 / Delta-A)
@@ -140,17 +93,24 @@ scan_series "${RESULTS_ROOT}/full_long_train" "FLT*"
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 3: SINGLE VECTOR TTA (AdaSteer-1)"
+echo "  Goal: Can 512 params match full-model TTA?"
+echo "  Config: 512 params, AdamW, shared timestep embedding offset"
 echo "================================================================================"
-echo "--- LR Sweep (Series 7) ---"
-scan_series "${RESULTS_ROOT}/delta_a_lr_sweep" "DA*"
-echo "--- Iteration Sweep (Series 8) ---"
-scan_series "${RESULTS_ROOT}/delta_a_iter_sweep" "DA*"
-echo "--- Long Train with ES (Series 18) ---"
-scan_series "${RESULTS_ROOT}/delta_a_long_train" "DALT*"
-echo "--- Optimized: More Frames + Extended Training (Series 23) ---"
-scan_series "${RESULTS_ROOT}/delta_a_optimized" "DAO*"
+echo ""
+echo "--- LR Sweep (Series 7): 20 steps, LR={1e-3, 5e-3, 1e-2, 5e-2, 1e-1} ---"
+scan "${RESULTS_ROOT}/delta_a_lr_sweep" "DA"
+echo ""
+echo "--- Iteration Sweep (Series 8): lr=5e-3, steps={5, 10, 20, 40, 80} ---"
+scan "${RESULTS_ROOT}/delta_a_iter_sweep" "DA"
+echo ""
+echo "--- Long Train + ES (Series 18): lr=5e-3, 200 max steps, ES, 30 vids ---"
+scan "${RESULTS_ROOT}/delta_a_long_train" "DALT"
+echo ""
+echo "--- Optimized (Series 23): 24 cond frames / 100-step extended ---"
+scan "${RESULTS_ROOT}/delta_a_optimized" "DAO"
+echo ""
 echo "--- Combined: AdaSteer + Norm Tuning (Series 23b) ---"
-scan_series "${RESULTS_ROOT}/delta_a_norm_combined" "DAO*"
+scan "${RESULTS_ROOT}/delta_a_norm_combined" "DAO"
 
 # ============================================================================
 # EXPERIMENT 4: MULTIPLE VECTOR TTA (AdaSteer G>1 / Delta-B)
@@ -158,23 +118,33 @@ scan_series "${RESULTS_ROOT}/delta_a_norm_combined" "DAO*"
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 4: MULTIPLE VECTOR TTA (AdaSteer G>1)"
+echo "  Goal: Does per-block specialization help? Optimal group count?"
+echo "  Config: G×512 params, AdamW, per-group timestep offset"
 echo "================================================================================"
-echo "--- Groups Sweep (Series 9, 20 steps, lr=1e-2) ---"
-scan_series "${RESULTS_ROOT}/delta_b_groups_sweep" "DB*"
-echo "--- LR Sweep (Series 10, G=4, 20 steps) ---"
-scan_series "${RESULTS_ROOT}/delta_b_lr_sweep" "DB*"
-echo "--- Iteration Sweep (Series 9b, G=1, lr=1e-2) ---"
-scan_series "${RESULTS_ROOT}/delta_b_iter_sweep" "DB*"
-echo "--- Low-LR Sweep (Series 24, G=1, 20 steps) ---"
-scan_series "${RESULTS_ROOT}/delta_b_low_lr" "DBL*"
-echo "--- Hidden-State Residual (Series 19) ---"
-scan_series "${RESULTS_ROOT}/delta_b_hidden_sweep" "DBH*"
-echo "--- Equivalence Verification (Series 25) ---"
-scan_series "${RESULTS_ROOT}/delta_a_equiv_verify" "DAV*"
-echo "--- Groups at 5 Steps (Series 26) ---"
-scan_series "${RESULTS_ROOT}/adasteer_groups_5step" "AS*"
-echo "--- Ratio Sweep: Frames x Groups (Series 27) ---"
-scan_series "${RESULTS_ROOT}/adasteer_ratio_sweep" "AR*"
+echo ""
+echo "--- Groups Sweep (Series 9): G={1,2,4,8,16,48}, 20 steps, lr=1e-2 ---"
+scan "${RESULTS_ROOT}/delta_b_groups_sweep" "DB"
+echo ""
+echo "--- LR Sweep (Series 10): G=4, 20 steps, LR={1e-3..1e-1} ---"
+scan "${RESULTS_ROOT}/delta_b_lr_sweep" "DB"
+echo ""
+echo "--- Iter Sweep (Series 9b): G=1, lr=1e-2, steps={5,10,40,80} ---"
+scan "${RESULTS_ROOT}/delta_b_iter_sweep" "DB"
+echo ""
+echo "--- Low-LR Sweep (Series 24): G=1, 20 steps, LR={5e-4..5e-3} ---"
+scan "${RESULTS_ROOT}/delta_b_low_lr" "DBL"
+echo ""
+echo "--- Hidden-State Residual (Series 19): hidden target, G={1,4,12}, LR sweep ---"
+scan "${RESULTS_ROOT}/delta_b_hidden_sweep" "DBH"
+echo ""
+echo "--- Equivalence Verification (Series 25): Delta-A vs Delta-B(G=1) ---"
+scan "${RESULTS_ROOT}/delta_a_equiv_verify" "DAV"
+echo ""
+echo "--- Groups at 5 Steps (Series 26): G={1,4,12,48}, lr=1e-2, 5 steps ---"
+scan "${RESULTS_ROOT}/adasteer_groups_5step" "AS"
+echo ""
+echo "--- Ratio Sweep (Series 27): cond={2,14,24} × G={1,4,12}, 5 steps ---"
+scan "${RESULTS_ROOT}/adasteer_ratio_sweep" "AR"
 
 # ============================================================================
 # EXPERIMENT 5: LoRA TTA
@@ -182,17 +152,24 @@ scan_series "${RESULTS_ROOT}/adasteer_ratio_sweep" "AR*"
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 5: LoRA TTA"
+echo "  Goal: Standard PEFT baseline for TTA comparison"
+echo "  Config: AdamW, qkv+proj targets across 48 blocks"
 echo "================================================================================"
-echo "--- Rank Sweep (Series 3) ---"
-scan_series "${RESULTS_ROOT}/lora_rank_sweep" "L*"
-echo "--- Iteration Sweep (Series 6) ---"
-scan_series "${RESULTS_ROOT}/lora_iter_sweep" "L*"
-echo "--- Constrained Sweep (Series 14) ---"
-scan_series "${RESULTS_ROOT}/lora_constrained_sweep" "LA*"
-echo "--- Ultra-Constrained (Series 16) ---"
-scan_series "${RESULTS_ROOT}/lora_ultra_constrained" "LB*"
-echo "--- Built-in Comparison (Series 15) ---"
-scan_series "${RESULTS_ROOT}/lora_builtin_comparison" "LN*"
+echo ""
+echo "--- Rank Sweep (Series 3): r={1,4,8,16,32}, α=2r, lr=2e-4, 20 steps ---"
+scan "${RESULTS_ROOT}/lora_rank_sweep" "L"
+echo ""
+echo "--- Iter Sweep (Series 6): r=1, lr=2e-4, steps={5,10,20,40} ---"
+scan "${RESULTS_ROOT}/lora_iter_sweep" "L"
+echo ""
+echo "--- Constrained (Series 14): r=1, last_{4,8,16} blocks, α={0.1,0.5,1.0} ---"
+scan "${RESULTS_ROOT}/lora_constrained_sweep" "LA"
+echo ""
+echo "--- Ultra-Constrained (Series 16): r=1, last_{1,2} blocks, α={0.01,0.05} ---"
+scan "${RESULTS_ROOT}/lora_ultra_constrained" "LB"
+echo ""
+echo "--- Built-in LoRA (Series 15): diffusers built-in LoRA for sanity check ---"
+scan "${RESULTS_ROOT}/lora_builtin_comparison" "LN"
 
 # ============================================================================
 # EXPERIMENT 6: OUTPUT RESIDUAL (Delta-C)
@@ -200,11 +177,15 @@ scan_series "${RESULTS_ROOT}/lora_builtin_comparison" "LN*"
 echo ""
 echo "================================================================================"
 echo "  EXPERIMENT 6: OUTPUT RESIDUAL (Delta-C)"
+echo "  Goal: Naive output-space TTA baseline"
+echo "  Config: 16 params (per-channel), AdamW"
 echo "================================================================================"
-echo "--- LR Sweep (Series 11) ---"
-scan_series "${RESULTS_ROOT}/delta_c_lr_sweep" "DC*"
-echo "--- Iteration Sweep (Series 12) ---"
-scan_series "${RESULTS_ROOT}/delta_c_iter_sweep" "DC*"
+echo ""
+echo "--- LR Sweep (Series 11): 20 steps, LR={1e-2, 5e-2, 1e-1, 5e-1, 1.0} ---"
+scan "${RESULTS_ROOT}/delta_c_lr_sweep" "DC"
+echo ""
+echo "--- Iter Sweep (Series 12): lr=1e-2, steps={5, 10, 20, 40} ---"
+scan "${RESULTS_ROOT}/delta_c_iter_sweep" "DC"
 
 # ============================================================================
 # EARLY STOPPING ABLATION
@@ -212,26 +193,33 @@ scan_series "${RESULTS_ROOT}/delta_c_iter_sweep" "DC*"
 echo ""
 echo "================================================================================"
 echo "  EARLY STOPPING ABLATION"
+echo "  Config: full-model TTA (lr=1e-5, 20 steps) — all null results (inert method)"
 echo "================================================================================"
 for prefix in es_ablation_check_freq es_ablation_disable es_ablation_holdout \
               es_ablation_noise_draws es_ablation_patience es_ablation_sigmas; do
+    echo ""
     echo "--- ${prefix} ---"
-    scan_series "${RESULTS_ROOT}/${prefix}" "ES_*"
+    scan "${RESULTS_ROOT}/${prefix}" "ES_"
 done
 
 # ============================================================================
-# EXTENDED EXPERIMENTS (Series 21-22)
+# EXTENDED EXPERIMENTS
 # ============================================================================
 echo ""
 echo "================================================================================"
 echo "  EXTENDED EXPERIMENTS"
 echo "================================================================================"
+echo ""
 echo "--- Norm Tuning / TENT-style (Series 21) ---"
-scan_series "${RESULTS_ROOT}/norm_tune_sweep" "NT*"
+echo "  Tunes affine params of normalization layers"
+scan "${RESULTS_ROOT}/norm_tune_sweep" "NT"
+echo ""
 echo "--- FiLM Adapter (Series 22) ---"
-scan_series "${RESULTS_ROOT}/film_adapter_sweep" "FM*"
+echo "  Learns corrections to adaLN modulation output (6×4096-dim)"
+scan "${RESULTS_ROOT}/film_adapter_sweep" "FM"
+echo ""
 echo "--- Best Methods with Proper ES ---"
-scan_series "${RESULTS_ROOT}/best_methods_proper_es"
+scan "${RESULTS_ROOT}/best_methods_proper_es"
 
 # ============================================================================
 # NEW SERIES (28-29)
@@ -240,10 +228,12 @@ echo ""
 echo "================================================================================"
 echo "  NEW SERIES (28-29)"
 echo "================================================================================"
-echo "--- Extended Data (Series 28) ---"
-scan_series "${RESULTS_ROOT}/adasteer_extended_data" "EX_*"
-echo "--- Parameter Dimension Sweep (Series 29) ---"
-scan_series "${RESULTS_ROOT}/adasteer_param_sweep"
+echo ""
+echo "--- Extended Data (Series 28): 5s/8s input windows ---"
+scan "${RESULTS_ROOT}/adasteer_extended_data"
+echo ""
+echo "--- Parameter Dimension Sweep (Series 29): delta_dim={32..512}, G={1,2,3} ---"
+scan "${RESULTS_ROOT}/adasteer_param_sweep"
 
 # ============================================================================
 # UCF-101 CROSS-DATASET
@@ -251,11 +241,12 @@ scan_series "${RESULTS_ROOT}/adasteer_param_sweep"
 echo ""
 echo "================================================================================"
 echo "  UCF-101 CROSS-DATASET"
+echo "  Config: Same as best Panda-70M configs, applied to UCF-101"
 echo "================================================================================"
-scan_series "${RESULTS_ROOT}/ucf101_no_tta" "UCF_*"
-scan_series "${RESULTS_ROOT}/ucf101_full" "UCF_*"
-scan_series "${RESULTS_ROOT}/ucf101_delta_a" "UCF_*"
-scan_series "${RESULTS_ROOT}/ucf101_lora" "UCF_*"
+scan "${RESULTS_ROOT}/ucf101_no_tta" "UCF_"
+scan "${RESULTS_ROOT}/ucf101_full" "UCF_"
+scan "${RESULTS_ROOT}/ucf101_delta_a" "UCF_"
+scan "${RESULTS_ROOT}/ucf101_lora" "UCF_"
 
 # ============================================================================
 # BACKBONE EXPERIMENTS
@@ -264,21 +255,17 @@ echo ""
 echo "================================================================================"
 echo "  BACKBONE EXPERIMENTS"
 echo "================================================================================"
+echo ""
 echo "--- Open-Sora v2.0 ---"
 if [ -d "${PROJECT_ROOT}/backbone_experiment/opensora/results" ]; then
-    for d in "${PROJECT_ROOT}/backbone_experiment/opensora/results"/*/; do
-        [ -d "$d" ] || continue
-        echo "  $(basename $d): $(extract $d)"
-    done
+    scan "${PROJECT_ROOT}/backbone_experiment/opensora/results"
 else
     echo "  (not started)"
 fi
+echo ""
 echo "--- CogVideoX-5B-I2V ---"
 if [ -d "${PROJECT_ROOT}/backbone_experiment/cogvideo/results" ]; then
-    for d in "${PROJECT_ROOT}/backbone_experiment/cogvideo/results"/*/; do
-        [ -d "$d" ] || continue
-        echo "  $(basename $d): $(extract $d)"
-    done
+    scan "${PROJECT_ROOT}/backbone_experiment/cogvideo/results"
 else
     echo "  (not started)"
 fi
@@ -290,19 +277,32 @@ echo ""
 echo "================================================================================"
 echo "                              SUMMARY COUNTS"
 echo "================================================================================"
-complete=0
-in_prog=0
-for series_dir in "${RESULTS_ROOT}"/*/; do
-    [ -d "$series_dir" ] || continue
-    for run_dir in "${series_dir}"*/; do
-        [ -d "$run_dir" ] || continue
-        if [ -f "${run_dir}summary.json" ]; then
-            complete=$((complete + 1))
-        elif [ -f "${run_dir}checkpoint.json" ]; then
-            in_prog=$((in_prog + 1))
-        fi
-    done
-done
-echo "  Complete (summary.json): ${complete}"
-echo "  In-progress (checkpoint only): ${in_prog}"
+python3 -c "
+import os, json
+
+results_root = '${RESULTS_ROOT}'
+complete = 0
+in_prog = 0
+not_started = 0
+
+for series in sorted(os.listdir(results_root)):
+    sp = os.path.join(results_root, series)
+    if not os.path.isdir(sp):
+        continue
+    for run in sorted(os.listdir(sp)):
+        rp = os.path.join(sp, run)
+        if not os.path.isdir(rp):
+            continue
+        if os.path.isfile(os.path.join(rp, 'summary.json')):
+            complete += 1
+        elif os.path.isfile(os.path.join(rp, 'checkpoint.json')):
+            in_prog += 1
+        else:
+            not_started += 1
+
+print(f'  Complete (summary.json):    {complete}')
+print(f'  In-progress (checkpoint):   {in_prog}')
+print(f'  Empty dirs (no data):       {not_started}')
+print(f'  Total experiment dirs:      {complete + in_prog + not_started}')
+" 2>/dev/null || echo "  (count unavailable)"
 echo "================================================================================"

@@ -32,6 +32,9 @@ datasets/panda_100/*.jsonl
 .DS_Store
 Thumbs.db
 
+# Paper (private, do not push)
+paper/
+
 # IDE
 .vscode/
 .idea/
