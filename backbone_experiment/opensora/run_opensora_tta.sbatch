@@ -13,7 +13,7 @@
 # Open-Sora v2.0 TTA Experiment
 #
 # Dispatches to the appropriate TTA script based on METHOD env var:
-#   METHOD = full | delta_a
+#   METHOD = full | lora | delta_a
 #
 # All hyperparameters are passed via environment variables.
 # ============================================================================
@@ -68,6 +68,10 @@ WARMUP_STEPS="${WARMUP_STEPS:-2}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 OPTIMIZER="${OPTIMIZER:-sgd}"
+
+# LoRA specific
+LORA_RANK="${LORA_RANK:-4}"
+LORA_ALPHA="${LORA_ALPHA:-4.0}"
 
 # Delta-A specific
 DELTA_STEPS="${DELTA_STEPS:-20}"
@@ -175,6 +179,23 @@ case "${METHOD}" in
         --optimizer "${OPTIMIZER}"
     ;;
 
+  lora)
+    echo "Method-specific config:"
+    echo "  Learning rate  : ${LEARNING_RATE}"
+    echo "  Num steps      : ${NUM_STEPS}"
+    echo "  LoRA rank      : ${LORA_RANK}"
+    echo "  LoRA alpha     : ${LORA_ALPHA}"
+    echo "=============================================================================="
+
+    python backbone_experiment/opensora/run_lora_tta_opensora.py \
+        ${COMMON_FLAGS} \
+        --learning-rate "${LEARNING_RATE}" \
+        --num-steps "${NUM_STEPS}" \
+        --lora-rank "${LORA_RANK}" \
+        --lora-alpha "${LORA_ALPHA}" \
+        --max-grad-norm "${MAX_GRAD_NORM}"
+    ;;
+
   delta_a)
     echo "Method-specific config:"
     echo "  Delta LR       : ${DELTA_LR}"
@@ -188,7 +209,7 @@ case "${METHOD}" in
     ;;
 
   *)
-    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|delta_a" >&2
+    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|delta_a" >&2
     exit 1
     ;;
 esac

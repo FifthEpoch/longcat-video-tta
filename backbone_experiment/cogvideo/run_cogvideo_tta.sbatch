@@ -37,6 +37,10 @@ WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 OPTIMIZER="${OPTIMIZER:-sgd}"
 
+# LoRA settings
+LORA_RANK="${LORA_RANK:-4}"
+LORA_ALPHA="${LORA_ALPHA:-4.0}"
+
 # Delta-A settings
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
@@ -76,6 +80,11 @@ if [ "${METHOD}" = "full" ]; then
     echo "  Learning rate  : ${LEARNING_RATE}"
     echo "  Num steps      : ${NUM_STEPS}"
     echo "  Optimizer      : ${OPTIMIZER}"
+elif [ "${METHOD}" = "lora" ]; then
+    echo "  Learning rate  : ${LEARNING_RATE}"
+    echo "  Num steps      : ${NUM_STEPS}"
+    echo "  LoRA rank      : ${LORA_RANK}"
+    echo "  LoRA alpha     : ${LORA_ALPHA}"
 elif [ "${METHOD}" = "delta_a" ]; then
     echo "  Delta steps    : ${DELTA_STEPS}"
     echo "  Delta LR       : ${DELTA_LR}"
@@ -151,6 +160,27 @@ if [ "${METHOD}" = "full" ]; then
         --guidance-scale "${GUIDANCE_SCALE}" \
         --seed "${SEED}"
 
+elif [ "${METHOD}" = "lora" ]; then
+    echo "Starting LoRA TTA for CogVideoX-5B-I2V..."
+    python backbone_experiment/cogvideo/run_lora_tta_cogvideo.py \
+        --model-path "${MODEL_PATH}" \
+        --data-dir "${DATA_DIR}" \
+        ${META_FLAG} \
+        --output-dir "${OUTPUT_DIR}" \
+        --max-videos "${NUM_VIDEOS}" \
+        --learning-rate "${LEARNING_RATE}" \
+        --num-steps "${NUM_STEPS}" \
+        --lora-rank "${LORA_RANK}" \
+        --lora-alpha "${LORA_ALPHA}" \
+        --max-grad-norm "${MAX_GRAD_NORM}" \
+        --num-cond-frames "${NUM_COND_FRAMES}" \
+        --num-train-frames "${NUM_TRAIN_FRAMES}" \
+        --num-gen-frames "${NUM_GEN_FRAMES}" \
+        --gen-start-frame "${GEN_START_FRAME}" \
+        --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+        --guidance-scale "${GUIDANCE_SCALE}" \
+        --seed "${SEED}"
+
 elif [ "${METHOD}" = "delta_a" ]; then
     echo "Starting Delta-A TTA for CogVideoX-5B-I2V..."
     python backbone_experiment/cogvideo/run_delta_a_cogvideo.py \
@@ -170,7 +200,7 @@ elif [ "${METHOD}" = "delta_a" ]; then
         --seed "${SEED}"
 
 else
-    echo "ERROR: Unknown METHOD '${METHOD}'. Use 'full' or 'delta_a'." >&2
+    echo "ERROR: Unknown METHOD '${METHOD}'. Use 'full', 'lora', or 'delta_a'." >&2
     exit 1
 fi
 
