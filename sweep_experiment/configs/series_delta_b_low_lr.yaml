@@ -1,0 +1,42 @@
+# Series 24: Delta-B Low-LR Sweep (1 Group, 20 Steps)
+#
+# Motivation: Delta-B with 1 group achieves the best single-config PSNR
+# (22.54 dB) at LR=1e-2 with only 5 steps. But at 20 steps with the
+# same LR, it overfits to 21.21 dB. This sweep tests whether reducing
+# the LR while keeping 20 steps can achieve similar peak performance
+# with more stable optimization.
+#
+# The key insight: total gradient magnitude ~ LR * steps.
+# LR=1e-2 * 5 steps ≈ LR=5e-3 * 10 steps ≈ LR=2.5e-3 * 20 steps.
+#
+# We also include LR=5e-4 (very conservative) to test whether the
+# 1-group Delta-B can match Delta-A's robustness profile.
+
+method: delta_b
+series: 24
+series_name: delta_b_low_lr
+description: "Delta-B 1-group with reduced LR at 20 steps"
+
+fixed:
+  num_groups: 1
+  delta_steps: 20
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  - run_id: DBL1
+    delta_lr: 5.0e-4
+  - run_id: DBL2
+    delta_lr: 1.0e-3
+  - run_id: DBL3
+    delta_lr: 2.5e-3
+  - run_id: DBL4
+    delta_lr: 5.0e-3

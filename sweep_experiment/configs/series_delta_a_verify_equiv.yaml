@@ -1,0 +1,45 @@
+# Series 25: Delta-A / Delta-B Equivalence Verification
+#
+# Delta-A and Delta-B (1 group, timestep target) are architecturally identical:
+# both learn a single 512-dim additive vector to the timestep embedding.
+# DB12 achieved 22.54 dB at LR=1e-2, 5 steps. If the methods are truly
+# equivalent, Delta-A at the same hyperparameters should reproduce this result.
+#
+# We also test LR=1e-2 at 10 steps (to match DB13=22.53) and a range of
+# lower LRs at 20 steps to find the optimal Delta-A operating point.
+
+method: delta_a
+series: 25
+series_name: delta_a_equiv_verify
+description: "Verify Delta-A == Delta-B(1 group) at matching hyperparameters"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # Match DB12 exactly: LR=1e-2, 5 steps
+  - run_id: DAV1
+    delta_lr: 1.0e-2
+    delta_steps: 5
+
+  # Match DB13: LR=1e-2, 10 steps
+  - run_id: DAV2
+    delta_lr: 1.0e-2
+    delta_steps: 10
+
+  # Refined LR sweep at 20 steps (filling the gap between DA2 and DA3)
+  - run_id: DAV3
+    delta_lr: 2.5e-3
+    delta_steps: 20
+  - run_id: DAV4
+    delta_lr: 7.5e-3
+    delta_steps: 20
