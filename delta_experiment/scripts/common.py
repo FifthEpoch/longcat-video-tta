@@ -785,37 +785,60 @@ def load_ucf101_video_list(
     seed: int = 42,
     stratified: bool = True,
 ) -> List[Dict]:
-    """Load a list of video entries from a UCF101-style dataset directory.
+    """Load a list of video entries from a dataset directory.
+
+    Reads metadata.csv if present (columns: filename, caption, category).
+    Falls back to scanning for video files and using directory names.
 
     Returns list of dicts with keys: video_path, caption, class_name.
     """
+    import csv as _csv
+
     data_dir = Path(data_dir)
     video_entries = []
 
-    # Look for video files
-    for ext in ("*.mp4", "*.avi"):
-        for vp in sorted(data_dir.rglob(ext)):
-            class_name = vp.parent.name if vp.parent != data_dir else "unknown"
-            caption = class_name.replace("_", " ")
-            video_entries.append({
-                "video_path": str(vp),
-                "caption": caption,
-                "class_name": class_name,
-            })
+    meta_path = data_dir / "metadata.csv"
+    if meta_path.exists():
+        with open(meta_path, "r", encoding="utf-8", errors="replace") as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                fname = row.get("filename", row.get("video_path", ""))
+                vp = data_dir / "videos" / fname
+                if not vp.exists():
+                    vp = data_dir / fname
+                if not vp.exists():
+                    continue
+                caption = row.get("caption", row.get("text", ""))
+                class_name = row.get("category", row.get("class_name", "unknown"))
+                video_entries.append({
+                    "video_path": str(vp),
+                    "caption": caption,
+                    "class_name": class_name,
+                })
+        if video_entries:
+            print(f"  Loaded {len(video_entries)} videos from {meta_path}")
+    
+    if not video_entries:
+        for ext in ("*.mp4", "*.avi"):
+            for vp in sorted(data_dir.rglob(ext)):
+                class_name = vp.parent.name if vp.parent != data_dir else "unknown"
+                caption = class_name.replace("_", " ")
+                video_entries.append({
+                    "video_path": str(vp),
+                    "caption": caption,
+                    "class_name": class_name,
+                })
 
     if not video_entries:
         raise FileNotFoundError(f"No video files found in {data_dir}")
 
-    # Stratified sampling
     rng = np.random.RandomState(seed)
     if stratified:
-        # Group by class
         from collections import defaultdict
         by_class = defaultdict(list)
         for entry in video_entries:
             by_class[entry["class_name"]].append(entry)
 
-        # Sample proportionally from each class
         n_classes = len(by_class)
         per_class = max(1, max_videos // n_classes)
         selected = []

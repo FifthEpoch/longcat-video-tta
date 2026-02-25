@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """
-Sample 100 stratified videos from UCF101 and resize to 832x480 (16:9 480p).
+Sample a stratified subset of UCF101 videos and resize to 832x480 (16:9 480p).
 
 Reads originals from ucf101_org/ (category subdirs with .avi files),
-picks 1 video per category (seed=42, first 100 alphabetical categories),
-converts to mp4 at 832x480, and writes metadata.csv.
+picks --videos-per-category videos from each category, converts to mp4
+at 832x480, and writes metadata.csv.
 
 Usage:
+  # 100 videos (1 per category, original behavior):
   python prepare_ucf101_subset.py \
       --src-dir /path/to/ucf101_org \
       --dst-dir /path/to/datasets/ucf101_100_480p \
       --num-videos 100 --seed 42
+
+  # 1000 videos (10 per category, for batch-size ablation):
+  python prepare_ucf101_subset.py \
+      --src-dir /path/to/ucf101_org \
+      --dst-dir /path/to/datasets/ucf101_1000_480p \
+      --num-videos 1000 --videos-per-category 10 --seed 42
 """
 from __future__ import annotations
 
@@ -58,8 +65,11 @@ def main():
     p.add_argument("--src-dir", type=str, required=True,
                    help="Path to ucf101_org/ with category subdirectories")
     p.add_argument("--dst-dir", type=str, required=True,
-                   help="Output directory (e.g. datasets/ucf101_100_480p)")
+                   help="Output directory (e.g. datasets/ucf101_1000_480p)")
     p.add_argument("--num-videos", type=int, default=100)
+    p.add_argument("--videos-per-category", type=int, default=None,
+                   help="Number of videos to sample per category. "
+                        "Default: auto (num_videos // num_categories)")
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
@@ -72,29 +82,37 @@ def main():
         print("ERROR: ffmpeg not found in PATH", flush=True)
         sys.exit(1)
 
-    # Discover categories and videos
     categories = sorted([d.name for d in src.iterdir() if d.is_dir()])
     print(f"Found {len(categories)} categories", flush=True)
 
     rng = random.Random(args.seed)
 
-    # Pick 1 video per category, take first num_videos categories alphabetically
+    vpc = args.videos_per_category
+    if vpc is None:
+        vpc = max(1, args.num_videos // len(categories))
+    print(f"Sampling up to {vpc} video(s) per category (target: {args.num_videos})", flush=True)
+
     selected = []
-    for cat in categories[:args.num_videos]:
+    for cat in categories:
         cat_dir = src / cat
         vids = sorted(cat_dir.glob("*.avi"))
         if not vids:
             print(f"  WARNING: no .avi files in {cat}, skipping", flush=True)
             continue
-        chosen = rng.choice(vids)
+        rng.shuffle(vids)
         caption = class_name_to_caption(cat)
-        selected.append({
-            "src_path": chosen,
-            "category": cat,
-            "caption": caption,
-        })
+        for v in vids[:vpc]:
+            selected.append({
+                "src_path": v,
+                "category": cat,
+                "caption": caption,
+            })
 
-    print(f"Selected {len(selected)} videos from {len(categories)} categories", flush=True)
+    rng.shuffle(selected)
+    selected = selected[:args.num_videos]
+
+    n_cats_used = len(set(e["category"] for e in selected))
+    print(f"Selected {len(selected)} videos from {n_cats_used} categories", flush=True)
 
     # Resize and convert
     metadata = []

@@ -3,9 +3,12 @@
 #   instance-level (batch=1): adapt on 1 video, reset, repeat
 #   batch-level (batch=K): pool K similar videos by text prompt similarity,
 #       jointly adapt a shared delta, then generate for all K
-#   dataset-level (batch=100): adapt on ALL videos before generating
+#   dataset-level (batch=1000): adapt on ALL videos before generating
 # Fixed: Delta-A best config (delta_lr=5e-3, delta_steps=20)
 # Swept: batch_videos
+# NOTE: requires 1000-video dataset. Submit with:
+#   --data-dir /scratch/wc3013/longcat-video-tta/datasets/ucf101_1000_480p
+#   or: --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p
 
 method: delta_a
 series: 37
@@ -23,7 +26,7 @@ fixed:
   guidance_scale: 4.0
   resolution: 480p
   seed: 42
-  max_videos: 100
+  max_videos: 1000
 
 sweep:
   - run_id: BS_DA1
@@ -33,6 +36,6 @@ sweep:
   - run_id: BS_DA3
     batch_videos: 10
   - run_id: BS_DA4
-    batch_videos: 25
+    batch_videos: 50
   - run_id: BS_DA5
-    batch_videos: 100
+    batch_videos: 1000

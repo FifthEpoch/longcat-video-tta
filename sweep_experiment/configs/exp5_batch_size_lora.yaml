@@ -2,6 +2,7 @@
 # Goal: Study impact of batch-level TTA vs instance-level TTA.
 # Fixed: LoRA best config (lr=2e-4, steps=20, rank=1, alpha=2)
 # Swept: batch_videos
+# NOTE: requires 1000-video dataset + batch support in run_lora_tta.py
 
 method: lora
 series: 38
@@ -26,7 +27,7 @@ fixed:
   guidance_scale: 4.0
   resolution: 480p
   seed: 42
-  max_videos: 100
+  max_videos: 1000
 
 sweep:
   - run_id: BS_L1
@@ -36,6 +37,6 @@ sweep:
   - run_id: BS_L3
     batch_videos: 10
   - run_id: BS_L4
-    batch_videos: 25
+    batch_videos: 50
   - run_id: BS_L5
-    batch_videos: 100
+    batch_videos: 1000

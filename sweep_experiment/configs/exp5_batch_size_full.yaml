@@ -2,6 +2,7 @@
 # Goal: Study impact of batch-level TTA vs instance-level TTA.
 # Fixed: Full-model best config (lr=1e-5, steps=20, optimizer=sgd)
 # Swept: batch_videos
+# NOTE: requires 1000-video dataset + batch support in run_full_tta.py
 
 method: full
 series: 39
@@ -23,7 +24,7 @@ fixed:
   guidance_scale: 4.0
   resolution: 480p
   seed: 42
-  max_videos: 100
+  max_videos: 1000
 
 sweep:
   - run_id: BS_F1
@@ -33,6 +34,6 @@ sweep:
   - run_id: BS_F3
     batch_videos: 10
   - run_id: BS_F4
-    batch_videos: 25
+    batch_videos: 50
   - run_id: BS_F5
-    batch_videos: 100
+    batch_videos: 1000
