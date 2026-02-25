@@ -255,10 +255,10 @@ def estimate_time(method: str, run_overrides: dict, fixed: dict) -> str:
             return "8:00:00"
         elif steps <= 20 and extended_factor <= 5:
             return "12:00:00"
-        elif steps <= 50 or extended_factor > 5:
+        elif steps <= 50:
             return "18:00:00"
         else:
-            return "18:00:00"
+            return "24:00:00"
     elif method == "norm_tune":
         steps = merged.get("norm_steps", 20)
         if steps <= 20:

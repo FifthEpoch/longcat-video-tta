@@ -222,11 +222,11 @@ echo "--- Best Methods with Proper ES ---"
 scan "${RESULTS_ROOT}/best_methods_proper_es"
 
 # ============================================================================
-# NEW SERIES (28-29)
+# NEW SERIES (28-32)
 # ============================================================================
 echo ""
 echo "================================================================================"
-echo "  NEW SERIES (28-29)"
+echo "  NEW SERIES (28-32)"
 echo "================================================================================"
 echo ""
 echo "--- Extended Data (Series 28): 5s/8s input windows ---"
@@ -234,6 +234,15 @@ scan "${RESULTS_ROOT}/adasteer_extended_data"
 echo ""
 echo "--- Parameter Dimension Sweep (Series 29): delta_dim={32..512}, G={1,2,3} ---"
 scan "${RESULTS_ROOT}/adasteer_param_sweep"
+echo ""
+echo "--- AdaSteer Long-Train + ES (Series 30): lower LR, 100-200 steps ---"
+scan "${RESULTS_ROOT}/adasteer_long_train_es" "ALES"
+echo ""
+echo "--- Full-Model Long-Train 100v (Series 31): lr={1e-5,5e-5}, 200-500 steps ---"
+scan "${RESULTS_ROOT}/full_long_train_100v" "FLT"
+echo ""
+echo "--- Ultra-LoRA Long-Train + ES (Series 32): last_{1,2}, 50 steps ---"
+scan "${RESULTS_ROOT}/lora_ultra_long_train" "LBES"
 
 # ============================================================================
 # UCF-101 CROSS-DATASET
