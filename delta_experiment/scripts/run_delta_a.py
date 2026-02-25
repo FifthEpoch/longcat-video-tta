@@ -286,6 +286,63 @@ def optimize_delta_a(
     }
 
 
+def _optimize_delta_a_batch(
+    wrapper: DeltaAWrapper,
+    batch_data: List[Dict],
+    num_steps: int = 20,
+    lr: float = 1e-3,
+    device: str = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
+) -> Dict:
+    """Optimize a shared delta vector across multiple videos.
+
+    At each training step, one video is randomly sampled from the batch.
+    Its conditioning and training latents are loaded to GPU, the flow-matching
+    loss is computed, and the shared delta is updated. This acts as natural
+    regularization: the delta must improve denoising across diverse content.
+    """
+    optimizer = AdamW([wrapper.delta], lr=lr, betas=(0.9, 0.999), eps=1e-15)
+
+    wrapper.train()
+    losses = []
+    n_vids = len(batch_data)
+
+    for step in range(num_steps):
+        optimizer.zero_grad()
+
+        vi = step % n_vids
+        bd = batch_data[vi]
+
+        cond_lat = bd["cond_latents"].to(device)
+        train_lat = bd["train_latents"].to(device)
+        pe = bd["prompt_embeds"].to(device)
+        pm = bd["prompt_mask"].to(device) if bd["prompt_mask"] is not None else None
+
+        loss = compute_flow_matching_loss_conditioned(
+            dit=wrapper,
+            cond_latents=cond_lat,
+            target_latents=train_lat,
+            prompt_embeds=pe,
+            prompt_mask=pm,
+            device=device,
+            dtype=dtype,
+        )
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_([wrapper.delta], 1.0)
+        optimizer.step()
+
+        losses.append(loss.item())
+
+        del cond_lat, train_lat, pe, pm
+
+    return {
+        "losses": losses,
+        "delta_norm": wrapper.delta.detach().norm().item(),
+        "early_stopping_info": None,
+    }
+
+
 # ============================================================================
 # Main experiment
 # ============================================================================
@@ -313,6 +370,14 @@ def main():
                         help="Skip video generation (only train delta)")
     parser.add_argument("--no-save-videos", action="store_true",
                         help="Delete generated videos after evaluation to save disk space")
+    parser.add_argument("--batch-videos", type=int, default=1,
+                        help="Number of videos per TTA batch. 1=instance-level (default), "
+                             "K>1=batch-level (shared delta across K similar videos), "
+                             "set to max_videos for dataset-level adaptation.")
+    parser.add_argument("--batch-method", type=str, default="similarity",
+                        choices=["sequential", "similarity"],
+                        help="How to group videos into batches. 'similarity' clusters "
+                             "by text prompt cosine similarity; 'sequential' uses order.")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -345,6 +410,8 @@ def main():
     print(f"Delta steps    : {args.delta_steps}")
     print(f"Delta LR       : {args.delta_lr}")
     print(f"Augmentation   : {args.aug_enabled}")
+    print(f"Batch videos   : {args.batch_videos}")
+    print(f"Batch method   : {args.batch_method}")
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
 
@@ -368,7 +435,7 @@ def main():
     adaln_dim = dit.config.adaln_tembed_dim
 
     # Load video list
-    from common import load_ucf101_video_list
+    from common import load_ucf101_video_list, cluster_videos_by_prompt
     videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
     )
@@ -383,228 +450,284 @@ def main():
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
-    for idx, entry in enumerate(videos):
-        if idx < start_idx:
+    # ── Group videos into batches ──
+    batches = cluster_videos_by_prompt(
+        videos, batch_size=args.batch_videos, method=args.batch_method,
+    )
+    batch_level = args.batch_videos > 1
+    if batch_level:
+        print(f"\nBatch-level TTA: {len(batches)} batches of up to {args.batch_videos} videos")
+        print(f"  Grouping method: {args.batch_method}")
+
+    global_idx = 0
+    for batch_idx, batch in enumerate(batches):
+        if global_idx + len(batch) <= start_idx:
+            global_idx += len(batch)
             continue
 
-        video_path = entry["video_path"]
-        caption = entry["caption"]
-        video_name = Path(video_path).stem
-
-        print(f"\n[{idx + 1}/{len(videos)}] {video_name}: {caption}")
+        if batch_level:
+            print(f"\n{'='*70}")
+            print(f"BATCH {batch_idx + 1}/{len(batches)} ({len(batch)} videos)")
+            print(f"{'='*70}")
 
         try:
-            # ── Frame loading ─────────────────────────────────────────
-            # Load tta_total_frames ending at anchor for TTA
-            tta_start = args.gen_start_frame - args.tta_total_frames
-            pixel_frames = load_video_frames(
-                video_path, args.tta_total_frames, height=480, width=832,
-                start_frame=max(0, tta_start),
-            ).to(args.device, torch.bfloat16)
+            # ── Pre-encode all videos in the batch ──
+            batch_data = []
+            for entry in batch:
+                video_path = entry["video_path"]
+                caption = entry["caption"]
+                video_name = Path(video_path).stem
 
-            all_latents = encode_video(vae, pixel_frames, normalize=True)
+                tta_start = args.gen_start_frame - args.tta_total_frames
+                pixel_frames = load_video_frames(
+                    video_path, args.tta_total_frames, height=480, width=832,
+                    start_frame=max(0, tta_start),
+                ).to(args.device, torch.bfloat16)
 
-            # Split into context / train / val
-            vae_t_scale = 4  # vae_scale_factor_temporal
-            num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
-            cond_latents, train_latents, val_latents = split_tta_latents(
-                all_latents, num_ctx_lat,
-                holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
-            )
-            print(f"  Latent split: cond={cond_latents.shape[2]}, "
-                  f"train={train_latents.shape[2]}, "
-                  f"val={val_latents.shape[2] if val_latents is not None else 0}")
+                all_latents = encode_video(vae, pixel_frames, normalize=True)
 
-            # Also keep the original num_cond_frames pixel clip for generation
-            gen_cond_start = args.gen_start_frame - args.num_cond_frames
-            gen_pixel_frames = load_video_frames(
-                video_path, args.num_cond_frames, height=480, width=832,
-                start_frame=max(0, gen_cond_start),
-            ).to(args.device, torch.bfloat16)
-
-            # Encode text
-            prompt_embeds, prompt_mask = encode_prompt(
-                tokenizer, text_encoder, caption,
-                device=args.device, dtype=torch.bfloat16,
-            )
-
-            # Build augmented train latent variants if enabled
-            train_latents_variants = None
-            if args.aug_enabled:
-                # Augment only the train portion at pixel level
-                # For simplicity, augment the full pixel clip and re-encode,
-                # then slice out the train portion
-                from common import build_augmented_pixel_variants
-                pix_variants = build_augmented_pixel_variants(
-                    pixel_frames,
-                    enable_flip=args.aug_flip,
-                    rotate_deg=args.aug_rotate_deg,
-                    rotate_random_min=args.aug_rotate_random_min,
-                    rotate_random_max=args.aug_rotate_random_max,
-                    rotate_random_count=args.aug_rotate_random_count,
-                    rotate_random_step=args.aug_rotate_random_step,
-                    rotate_zoom=args.aug_rotate_zoom,
-                    speed_factors=parse_speed_factors(args.aug_speed_factors),
+                vae_t_scale = 4
+                num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
+                cond_latents, train_latents, val_latents = split_tta_latents(
+                    all_latents, num_ctx_lat,
+                    holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
                 )
-                train_latents_variants = []
-                for pv in pix_variants:
-                    if pv["name"] == "orig":
-                        train_latents_variants.append({"latents": train_latents, "name": "orig"})
-                    else:
-                        aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
-                        # Slice out the train portion (same offsets)
-                        t_start = cond_latents.shape[2]
-                        t_end = t_start + train_latents.shape[2]
-                        train_latents_variants.append({
-                            "latents": aug_lat[:, :, t_start:t_end],
-                            "name": pv["name"],
-                        })
-                print(f"  Augmentation: {len(train_latents_variants)} variants "
-                      f"({', '.join(v['name'] for v in train_latents_variants)})")
 
-            # Create wrapper with fresh delta
+                gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                gen_pixel_frames = load_video_frames(
+                    video_path, args.num_cond_frames, height=480, width=832,
+                    start_frame=max(0, gen_cond_start),
+                ).to(args.device, torch.bfloat16)
+
+                prompt_embeds, prompt_mask = encode_prompt(
+                    tokenizer, text_encoder, caption,
+                    device=args.device, dtype=torch.bfloat16,
+                )
+
+                batch_data.append({
+                    "video_path": video_path,
+                    "video_name": video_name,
+                    "caption": caption,
+                    "cond_latents": cond_latents.cpu(),
+                    "train_latents": train_latents.cpu(),
+                    "val_latents": val_latents.cpu() if val_latents is not None else None,
+                    "gen_pixel_frames": gen_pixel_frames.cpu(),
+                    "prompt_embeds": prompt_embeds.cpu(),
+                    "prompt_mask": prompt_mask.cpu() if prompt_mask is not None else None,
+                })
+
+                del all_latents, pixel_frames
+                torch_gc()
+
+            if batch_level:
+                for bd in batch_data:
+                    print(f"  {bd['video_name']}: cond={bd['cond_latents'].shape[2]}, "
+                          f"train={bd['train_latents'].shape[2]}")
+
+            # ── Create fresh delta for this batch ──
             wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
-
-            # Setup early stopper
-            if early_stopper is not None and val_latents is not None:
-                def _es_forward_fn(hs, ts, ncl):
-                    return wrapper(
-                        hidden_states=hs, timestep=ts,
-                        encoder_hidden_states=prompt_embeds,
-                        encoder_attention_mask=prompt_mask,
-                        num_cond_latents=ncl,
-                    )
-
-                early_stopper.setup(
-                    model=wrapper,
-                    cond_latents=cond_latents,
-                    val_latents=val_latents,
-                    prompt_embeds=prompt_embeds,
-                    prompt_mask=prompt_mask,
-                    device=args.device,
-                    dtype=torch.bfloat16,
-                    forward_fn=_es_forward_fn,
-                    video_id=video_name,
-                    save_fn=lambda: copy.deepcopy(wrapper.delta.data),
-                )
 
             # Offload VAE + text encoder to CPU during training
             vae.to("cpu")
             text_encoder.to("cpu")
             torch.cuda.empty_cache()
 
-            # Optimize
+            # ── Train: cycle through videos in batch ──
             t0 = time.time()
-            opt_result = optimize_delta_a(
-                wrapper=wrapper,
-                cond_latents=cond_latents,
-                train_latents=train_latents,
-                prompt_embeds=prompt_embeds,
-                prompt_mask=prompt_mask,
-                num_steps=args.delta_steps,
-                lr=args.delta_lr,
-                device=args.device,
-                dtype=torch.bfloat16,
-                early_stopper=early_stopper if val_latents is not None else None,
-                train_latents_variants=train_latents_variants,
-            )
+            if batch_level:
+                opt_result = _optimize_delta_a_batch(
+                    wrapper=wrapper,
+                    batch_data=batch_data,
+                    num_steps=args.delta_steps,
+                    lr=args.delta_lr,
+                    device=args.device,
+                    dtype=torch.bfloat16,
+                )
+            else:
+                bd = batch_data[0]
+                cond_lat = bd["cond_latents"].to(args.device)
+                train_lat = bd["train_latents"].to(args.device)
+                val_lat = bd["val_latents"].to(args.device) if bd["val_latents"] is not None else None
+                pe = bd["prompt_embeds"].to(args.device)
+                pm = bd["prompt_mask"].to(args.device) if bd["prompt_mask"] is not None else None
+
+                if early_stopper is not None and val_lat is not None:
+                    def _es_forward_fn(hs, ts, ncl):
+                        return wrapper(
+                            hidden_states=hs, timestep=ts,
+                            encoder_hidden_states=pe,
+                            encoder_attention_mask=pm,
+                            num_cond_latents=ncl,
+                        )
+
+                    early_stopper.setup(
+                        model=wrapper,
+                        cond_latents=cond_lat,
+                        val_latents=val_lat,
+                        prompt_embeds=pe,
+                        prompt_mask=pm,
+                        device=args.device,
+                        dtype=torch.bfloat16,
+                        forward_fn=_es_forward_fn,
+                        video_id=bd["video_name"],
+                        save_fn=lambda: copy.deepcopy(wrapper.delta.data),
+                    )
+
+                train_latents_variants = None
+                if args.aug_enabled:
+                    from common import build_augmented_pixel_variants
+                    _tta_start = args.gen_start_frame - args.tta_total_frames
+                    _pf = load_video_frames(
+                        bd["video_path"], args.tta_total_frames,
+                        height=480, width=832, start_frame=max(0, _tta_start),
+                    ).to(args.device, torch.bfloat16)
+                    pix_variants = build_augmented_pixel_variants(
+                        _pf,
+                        enable_flip=args.aug_flip,
+                        rotate_deg=args.aug_rotate_deg,
+                        rotate_random_min=args.aug_rotate_random_min,
+                        rotate_random_max=args.aug_rotate_random_max,
+                        rotate_random_count=args.aug_rotate_random_count,
+                        rotate_random_step=args.aug_rotate_random_step,
+                        rotate_zoom=args.aug_rotate_zoom,
+                        speed_factors=parse_speed_factors(args.aug_speed_factors),
+                    )
+                    train_latents_variants = []
+                    for pv in pix_variants:
+                        if pv["name"] == "orig":
+                            train_latents_variants.append({"latents": train_lat, "name": "orig"})
+                        else:
+                            aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
+                            t_start = cond_lat.shape[2]
+                            t_end = t_start + train_lat.shape[2]
+                            train_latents_variants.append({
+                                "latents": aug_lat[:, :, t_start:t_end],
+                                "name": pv["name"],
+                            })
+                    del _pf
+
+                opt_result = optimize_delta_a(
+                    wrapper=wrapper,
+                    cond_latents=cond_lat,
+                    train_latents=train_lat,
+                    prompt_embeds=pe,
+                    prompt_mask=pm,
+                    num_steps=args.delta_steps,
+                    lr=args.delta_lr,
+                    device=args.device,
+                    dtype=torch.bfloat16,
+                    early_stopper=early_stopper if val_lat is not None else None,
+                    train_latents_variants=train_latents_variants,
+                )
+
             train_time = time.time() - t0
+            print(f"  Batch train time: {train_time:.1f}s, "
+                  f"Delta norm: {opt_result['delta_norm']:.4f}")
 
-            result = {
-                "video_name": video_name,
-                "video_path": video_path,
-                "caption": caption,
-                "train_time": train_time,
-                "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
-                "delta_norm": opt_result["delta_norm"],
-                "early_stopping_info": opt_result.get("early_stopping_info"),
-                "success": True,
-            }
-
-            print(f"  Train time: {train_time:.1f}s, "
-                  f"Final loss: {result['final_loss']:.4f}, "
-                  f"Delta norm: {result['delta_norm']:.4f}")
-
-            # ── Generation ──────────────────────────────────────────
-            # Bring VAE + text encoder back to GPU for generation
+            # ── Generate for each video using the shared delta ──
             vae.to(args.device)
             text_encoder.to(args.device)
 
-            gen_time = 0.0
-            if not args.skip_generation:
-                from PIL import Image
+            for vi, bd in enumerate(batch_data):
+                v_idx = global_idx + vi
+                if v_idx < start_idx:
+                    continue
 
-                # Convert generation conditioning frames to PIL images
-                pf = gen_pixel_frames.squeeze(0)  # [C, T, H, W]
-                pf = ((pf + 1.0) / 2.0).clamp(0, 1)
-                cond_images = []
-                for t_idx in range(pf.shape[1]):
-                    frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
-                    cond_images.append(Image.fromarray(frame_np))
+                video_name = bd["video_name"]
+                print(f"\n  [{v_idx + 1}/{len(videos)}] Generating: {video_name}")
 
-                # Install delta hook so the pipeline sees the adapted model
-                wrapper.apply_to_dit()
-                try:
-                    gen_start = time.time()
-                    gen_frames = generate_video_continuation(
-                        pipe=pipe,
-                        video_frames=cond_images,
-                        prompt=caption,
-                        num_cond_frames=args.num_cond_frames,
-                        num_frames=args.num_frames,
-                        num_inference_steps=args.num_inference_steps,
-                        guidance_scale=args.guidance_scale,
-                        seed=args.seed + idx,
-                        resolution=args.resolution,
-                        device=args.device,
-                    )
-                    gen_time = time.time() - gen_start
+                result = {
+                    "video_name": video_name,
+                    "video_path": bd["video_path"],
+                    "caption": bd["caption"],
+                    "train_time": train_time / len(batch_data),
+                    "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
+                    "delta_norm": opt_result["delta_norm"],
+                    "batch_size": len(batch_data),
+                    "early_stopping_info": opt_result.get("early_stopping_info"),
+                    "success": True,
+                }
 
-                    result["gen_time"] = gen_time
+                gen_time = 0.0
+                if not args.skip_generation:
+                    from PIL import Image
 
-                    output_path = os.path.join(videos_dir, f"{video_name}_delta_a.mp4")
-                    if not args.no_save_videos:
-                        save_video_from_numpy(gen_frames, output_path, fps=24)
-                        result["output_path"] = output_path
+                    gen_pf = bd["gen_pixel_frames"].to(args.device)
+                    pf = gen_pf.squeeze(0)
+                    pf = ((pf + 1.0) / 2.0).clamp(0, 1)
+                    cond_images = []
+                    for t_idx in range(pf.shape[1]):
+                        frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
+                        cond_images.append(Image.fromarray(frame_np))
 
-                    num_gen = args.num_frames - args.num_cond_frames
-                    metrics = evaluate_generation_metrics(
-                        gen_output=gen_frames,
-                        video_path=video_path,
-                        num_cond_frames=args.num_cond_frames,
-                        num_gen_frames=num_gen,
-                        gen_start_frame=args.gen_start_frame,
-                        device=args.device,
-                    )
-                    result.update(metrics)
-                    print(f"  Gen: {gen_time:.1f}s, "
-                          f"PSNR={metrics['psnr']:.2f}, "
-                          f"SSIM={metrics['ssim']:.4f}, "
-                          f"LPIPS={metrics['lpips']:.4f}")
-                finally:
-                    wrapper.remove_from_dit()
+                    wrapper.apply_to_dit()
+                    try:
+                        gen_start = time.time()
+                        gen_frames = generate_video_continuation(
+                            pipe=pipe,
+                            video_frames=cond_images,
+                            prompt=bd["caption"],
+                            num_cond_frames=args.num_cond_frames,
+                            num_frames=args.num_frames,
+                            num_inference_steps=args.num_inference_steps,
+                            guidance_scale=args.guidance_scale,
+                            seed=args.seed + v_idx,
+                            resolution=args.resolution,
+                            device=args.device,
+                        )
+                        gen_time = time.time() - gen_start
 
-            result["total_time"] = train_time + gen_time
-            all_results.append(result)
+                        result["gen_time"] = gen_time
 
-            # Cleanup per-video
-            del wrapper, all_latents, cond_latents, train_latents, val_latents
-            del pixel_frames, gen_pixel_frames, prompt_embeds, prompt_mask
-            torch_gc()
+                        output_path = os.path.join(videos_dir, f"{video_name}_delta_a.mp4")
+                        if not args.no_save_videos:
+                            save_video_from_numpy(gen_frames, output_path, fps=24)
+                            result["output_path"] = output_path
+
+                        num_gen = args.num_frames - args.num_cond_frames
+                        metrics = evaluate_generation_metrics(
+                            gen_output=gen_frames,
+                            video_path=bd["video_path"],
+                            num_cond_frames=args.num_cond_frames,
+                            num_gen_frames=num_gen,
+                            gen_start_frame=args.gen_start_frame,
+                            device=args.device,
+                        )
+                        result.update(metrics)
+                        print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
+                              f"SSIM={metrics['ssim']:.4f}, "
+                              f"LPIPS={metrics['lpips']:.4f}")
+                    finally:
+                        wrapper.remove_from_dit()
+
+                    del gen_pf
+                    torch_gc()
+
+                result["total_time"] = (train_time / len(batch_data)) + gen_time
+                all_results.append(result)
+
+                save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
 
         except Exception as e:
             import traceback
-            print(f"  ERROR: {e}")
+            print(f"  BATCH ERROR: {e}")
             traceback.print_exc()
-            all_results.append({
-                "video_name": video_name,
-                "video_path": video_path,
-                "error": str(e),
-                "success": False,
-            })
+            for vi, entry in enumerate(batch):
+                v_idx = global_idx + vi
+                if v_idx < start_idx:
+                    continue
+                all_results.append({
+                    "video_name": Path(entry["video_path"]).stem,
+                    "video_path": entry["video_path"],
+                    "error": str(e),
+                    "success": False,
+                })
+            save_checkpoint({"next_idx": global_idx + len(batch), "results": all_results}, ckpt_path)
 
-        # Save checkpoint
-        save_checkpoint({"next_idx": idx + 1, "results": all_results}, ckpt_path)
+        # Cleanup batch
+        del wrapper, batch_data
+        torch_gc()
+        global_idx += len(batch)
 
     # Save final results
     successful = [r for r in all_results if r.get("success", False)]
@@ -612,6 +735,8 @@ def main():
         "method": "delta_a",
         "delta_steps": args.delta_steps,
         "delta_lr": args.delta_lr,
+        "batch_videos": args.batch_videos,
+        "batch_method": args.batch_method,
         "num_videos": len(all_results),
         "num_successful": len(successful),
         "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,

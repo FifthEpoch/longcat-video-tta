@@ -1,10 +1,10 @@
-# Series 29: Experiment 5 -- Video Batch-Size Ablation (Full-model)
+# Series 39: Experiment 5 -- Video Batch-Size Ablation (Full-model)
 # Goal: Study impact of batch-level TTA vs instance-level TTA.
 # Fixed: Full-model best config (lr=1e-5, steps=20, optimizer=sgd)
 # Swept: batch_videos
 
 method: full
-series: 29
+series: 39
 series_name: exp5_batch_size_full
 description: "Batch-size ablation: Full-model TTA"
 
@@ -15,6 +15,7 @@ fixed:
   weight_decay: 0.01
   max_grad_norm: 1.0
   optimizer: sgd
+  batch_method: similarity
   num_cond_frames: 14
   num_frames: 28
   gen_start_frame: 32

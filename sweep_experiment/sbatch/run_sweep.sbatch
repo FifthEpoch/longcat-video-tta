@@ -86,6 +86,10 @@ USE_BUILTIN_LORA="${USE_BUILTIN_LORA:-}"
 TARGET_FFN="${TARGET_FFN:-}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
 
+# Batch-level TTA (multi-video batching)
+BATCH_VIDEOS="${BATCH_VIDEOS:-1}"
+BATCH_METHOD="${BATCH_METHOD:-similarity}"
+
 # Delta A/B/C shared
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
@@ -279,6 +283,8 @@ case "${METHOD}" in
     echo "Method-specific config:"
     echo "  Delta LR       : ${DELTA_LR}"
     echo "  Delta steps    : ${DELTA_STEPS}"
+    echo "  Batch videos   : ${BATCH_VIDEOS}"
+    echo "  Batch method   : ${BATCH_METHOD}"
     echo "=============================================================================="
 
     python delta_experiment/scripts/run_delta_a.py \
@@ -288,6 +294,8 @@ case "${METHOD}" in
         --max-videos "${MAX_VIDEOS}" \
         --delta-steps "${DELTA_STEPS}" \
         --delta-lr "${DELTA_LR}" \
+        --batch-videos "${BATCH_VIDEOS}" \
+        --batch-method "${BATCH_METHOD}" \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \

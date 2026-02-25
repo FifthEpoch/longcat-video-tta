@@ -1,16 +1,21 @@
-# Series 31: Experiment 5 -- Video Batch-Size Ablation (Delta-A)
+# Series 37: Experiment 5 -- Video Batch-Size Ablation (Delta-A)
 # Goal: Study impact of batch-level TTA vs instance-level TTA.
+#   instance-level (batch=1): adapt on 1 video, reset, repeat
+#   batch-level (batch=K): pool K similar videos by text prompt similarity,
+#       jointly adapt a shared delta, then generate for all K
+#   dataset-level (batch=100): adapt on ALL videos before generating
 # Fixed: Delta-A best config (delta_lr=5e-3, delta_steps=20)
 # Swept: batch_videos
 
 method: delta_a
-series: 31
+series: 37
 series_name: exp5_batch_size_delta_a
 description: "Batch-size ablation: Delta-A TTA"
 
 fixed:
   delta_lr: 5.0e-3
   delta_steps: 20
+  batch_method: similarity
   num_cond_frames: 14
   num_frames: 28
   gen_start_frame: 32

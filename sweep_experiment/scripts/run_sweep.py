@@ -61,6 +61,7 @@ _KEY_TO_ENV = {
     "seed": "SEED",
     "max_videos": "MAX_VIDEOS",
     "batch_videos": "BATCH_VIDEOS",
+    "batch_method": "BATCH_METHOD",
     # Full / LoRA shared
     "learning_rate": "LEARNING_RATE",
     "num_steps": "NUM_STEPS",

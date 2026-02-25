@@ -245,6 +245,25 @@ echo "--- Ultra-LoRA Long-Train + ES (Series 32): last_{1,2}, 50 steps ---"
 scan "${RESULTS_ROOT}/lora_ultra_long_train" "LBES"
 
 # ============================================================================
+# BATCH-SIZE ABLATION (Experiment 5)
+# ============================================================================
+echo ""
+echo "================================================================================"
+echo "  EXPERIMENT 5: VIDEO BATCH-SIZE ABLATION"
+echo "  Goal: Instance-level (batch=1) vs batch-level vs dataset-level TTA"
+echo "  Config: Shared delta/LoRA/full across K similar videos grouped by prompt"
+echo "================================================================================"
+echo ""
+echo "--- Delta-A Batch-Size (Series 37): batch_videos={1,5,10,25,100} ---"
+scan "${RESULTS_ROOT}/exp5_batch_size_delta_a" "BS_DA"
+echo ""
+echo "--- LoRA Batch-Size (Series 38): batch_videos={1,5,10,25,100} ---"
+scan "${RESULTS_ROOT}/exp5_batch_size_lora" "BS_L"
+echo ""
+echo "--- Full-Model Batch-Size (Series 39): batch_videos={1,5,10,25,100} ---"
+scan "${RESULTS_ROOT}/exp5_batch_size_full" "BS_F"
+
+# ============================================================================
 # UCF-101 CROSS-DATASET
 # ============================================================================
 echo ""
