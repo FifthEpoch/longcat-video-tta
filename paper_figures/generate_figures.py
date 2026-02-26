@@ -36,22 +36,23 @@ OUT_ROOT = Path(__file__).resolve().parent / "output"
 # COLOR PALETTE
 # ═══════════════════════════════════════════════════════════════════════
 
-C_ADASTEER   = "#5160FF"   # hero — AdaSteer (Delta-A / Delta-B)
-C_ADASTEER_B = "#7B86FF"   # lighter variant for Delta-B when shown separately
-C_LORA       = "#88AADE"
-C_FULL       = "#8BBE70"
-C_DELTAC     = "#A8AA35"
-C_NORMTUNE   = "#B0B5AC"
-C_FILM       = "#C5C0A0"
-C_BASELINE   = "#B0B5AC"
+C_ADASTEER   = "#5160FF"   # hero — AdaSteer (best of A/B)
+C_ADASTEER_B = "#5160FF"   # alias (unified now)
+C_LORA       = "#D4A574"   # warm amber — distinct from blue/green
+C_FULL       = "#8BBE70"   # green
+C_DELTAC     = "#A8AA35"   # olive (naive methods)
+C_NORMTUNE   = "#C4977A"   # dusty rose (naive methods)
+C_FILM       = "#9BB8A0"   # sage (naive methods)
+C_BASELINE   = "#B0B5AC"   # muted grey-green
 C_RED        = "#FF6262"
 C_LIGHT_Y    = "#F9FFB7"
 C_LIGHT_T    = "#B7E8E0"
+C_BASELINE_LINE = "#9A9E98"  # darker grey for baseline dashed line
 
 METHOD_COLORS = {
-    "AdaSteer-A":  C_ADASTEER,
-    "AdaSteer-B":  C_ADASTEER_B,
     "AdaSteer":    C_ADASTEER,
+    "AdaSteer-A":  C_ADASTEER,
+    "AdaSteer-B":  C_ADASTEER,
     "Delta-C":     C_DELTAC,
     "Full-model":  C_FULL,
     "LoRA":        C_LORA,
@@ -60,9 +61,13 @@ METHOD_COLORS = {
     "No TTA":      C_BASELINE,
 }
 
+# Main comparison: only AdaSteer (unified), LoRA, Full-model, No TTA
+METHOD_ORDER_MAIN = ["AdaSteer", "LoRA", "Full-model", "No TTA"]
+
+# Full order including naive (for other graphs)
 METHOD_ORDER = [
-    "AdaSteer-A", "AdaSteer-B", "Full-model",
-    "LoRA", "Delta-C", "NormTune", "FiLM", "No TTA",
+    "AdaSteer", "LoRA", "Full-model",
+    "Delta-C", "NormTune", "FiLM", "No TTA",
 ]
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -118,8 +123,8 @@ RATIO_SWEEP_COND = {
 # Method display name from raw method string
 def method_display(raw: str) -> str:
     m = {
-        "delta_a":      "AdaSteer-A",
-        "delta_b":      "AdaSteer-B",
+        "delta_a":      "AdaSteer",
+        "delta_b":      "AdaSteer",
         "delta_c":      "Delta-C",
         "full_tta":     "Full-model",
         "lora_tta":     "LoRA",
@@ -166,6 +171,15 @@ def save(fig, *parts):
     print(f"  ✓ {p.relative_to(OUT_ROOT)}")
 
 
+def titled(ax, title, fixed=None, fontsize=13):
+    """Set title with optional 'Fixed: ...' subtitle."""
+    ax.set_title(title, fontweight="bold", pad=18 if fixed else 10, fontsize=fontsize)
+    if fixed:
+        ax.text(0.5, 1.01, f"Fixed: {fixed}",
+                transform=ax.transAxes, ha="center", va="bottom",
+                fontsize=8.5, color="#777777", style="italic")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # FIG 1: MAIN METHOD COMPARISON  (DeepSeek-style grouped bars)
 # ═══════════════════════════════════════════════════════════════════════
@@ -196,97 +210,83 @@ def _get_standard_best(c):
     return best_per
 
 
+def _draw_method_bars(ax, methods, best_per, key, metric_label, unit,
+                      fontsize_annot=9, show_baseline_text=False):
+    """Shared bar-drawing logic for method comparison charts."""
+    vals = [(m, best_per[m].get(key, 0) or 0) for m in methods]
+    n = len(vals)
+    bar_w = 0.82
+    xs = np.arange(n)
+
+    # Baseline dashed line BEHIND bars (zorder=0)
+    bl_val = best_per.get("No TTA", {}).get(key)
+    if bl_val is not None:
+        ax.axhline(bl_val, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+
+    # Compute y-limits first so annotation offset is proportional
+    all_v = [v for _, v in vals]
+    vrange = max(all_v) - min(all_v) if max(all_v) != min(all_v) else max(all_v) * 0.05
+    lower_is_better = "LPIPS" in metric_label
+    if not lower_is_better:
+        ymin = min(all_v) - vrange * 0.25
+        ymin = max(ymin, 0)
+        ymax = max(all_v) + vrange * 0.55
+    else:
+        ymin = min(all_v) - vrange * 0.25
+        ymin = max(ymin, 0)
+        ymax = max(all_v) + vrange * 0.55
+    ax.set_ylim(ymin, ymax)
+    vis_range = ymax - ymin
+    annot_offset = vis_range * 0.02
+
+    for i, (m, v) in enumerate(vals):
+        color = METHOD_COLORS.get(m, "#999999")
+        is_hero = m == "AdaSteer"
+        hatch = "///" if is_hero else ""
+        ec = "#3040CC" if is_hero else "none"
+        bar = ax.bar(i, v, bar_w, color=color, hatch=hatch,
+                     edgecolor=ec, linewidth=0.8 if is_hero else 0, zorder=3)
+        annotate_bar(ax, bar[0], v, fmt="{:.2f}", bold=is_hero,
+                     fontsize=fontsize_annot, offset=annot_offset)
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels([v[0] for v in vals], fontsize=10)
+    ylabel = metric_label
+    if unit:
+        ylabel += f" ({unit})"
+    ax.set_ylabel(ylabel)
+
+
 def fig_method_comparison(data):
     print("\n[1] Method comparison (per-metric bar charts)")
     c = complete_runs(data)
     best_per = _get_standard_best(c)
 
-    methods = [m for m in METHOD_ORDER if m in best_per]
+    methods = [m for m in METHOD_ORDER_MAIN if m in best_per]
     metrics = [("PSNR", "psnr_mean", "psnr_std", "dB"),
                ("SSIM", "ssim_mean", "ssim_std", ""),
                ("LPIPS (lower is better)", "lpips_mean", "lpips_std", "")]
 
+    STD_FIXED = "20 steps, 14 cond frames, 28 gen frames, best LR per method"
+
+    # --- Individual metric charts ---
     for metric_label, key, std_key, unit in metrics:
-        fig, ax = plt.subplots(figsize=(8, 4.5))
-
-        vals = [(m, best_per[m].get(key, 0) or 0, best_per[m].get(std_key, 0) or 0)
-                for m in methods]
-
-        xs = np.arange(len(vals))
-        for i, (m, v, s) in enumerate(vals):
-            color = METHOD_COLORS.get(m, "#999999")
-            is_hero = "AdaSteer" in m
-            hatch = "///" if is_hero else ""
-            ec = "#3040CC" if is_hero else "none"
-            bar = ax.bar(i, v, 0.65, color=color, hatch=hatch,
-                         edgecolor=ec, linewidth=0.7 if is_hero else 0)
-            fmtstr = "{:.2f}"
-            offset = max(v * 0.008, 0.1) if "psnr" in key else max(v * 0.01, 0.002)
-            annotate_bar(ax, bar[0], v, fmt=fmtstr, bold=is_hero, fontsize=8, offset=offset)
-
-        bl_val = best_per.get("No TTA", {}).get(key)
-        if bl_val is not None:
-            ax.axhline(bl_val, color=C_RED, ls="--", lw=1.2, alpha=0.7, zorder=5)
-            side = "bottom" if "LPIPS" not in metric_label else "top"
-            ax.text(len(vals) - 0.5, bl_val, f"No TTA = {bl_val:.2f}",
-                    color=C_RED, fontsize=8, va=side, ha="right")
-
-        ax.set_xticks(xs)
-        ax.set_xticklabels([v[0] for v in vals], rotation=25, ha="right")
-        ylabel = f"{metric_label}"
-        if unit:
-            ylabel += f" ({unit})"
-        ax.set_ylabel(ylabel)
-        ax.set_title(f"{metric_label} — Best Standard Configuration per Method",
-                     fontweight="bold", pad=10)
-
-        lower_is_better = "LPIPS" in metric_label
-        if not lower_is_better:
-            ymin = min(v for _, v, _ in vals) * 0.9
-            ax.set_ylim(ymin, ax.get_ylim()[1] * 1.08)
-        else:
-            ax.set_ylim(0, max(v for _, v, _ in vals) * 1.15)
-
+        fig, ax = plt.subplots(figsize=(5.5, 5))
+        _draw_method_bars(ax, methods, best_per, key, metric_label, unit, fontsize_annot=9)
+        titled(ax, f"{metric_label} — Method Comparison", fixed=STD_FIXED)
         save(fig, "01_method_comparison", f"method_comparison_{key.split('_')[0]}.png")
 
     # --- Multi-metric comparison: 3 subplots side by side ---
-    fig, axes = plt.subplots(1, 3, figsize=(17, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(14, 5.5))
     for ax, (metric_label, key, std_key, unit) in zip(axes, metrics):
-        vals = [(m, best_per[m].get(key, 0) or 0) for m in methods]
-        xs = np.arange(len(vals))
-        for i, (m, v) in enumerate(vals):
-            color = METHOD_COLORS.get(m, "#999999")
-            is_hero = "AdaSteer" in m
-            hatch = "///" if is_hero else ""
-            ec = "#3040CC" if is_hero else "none"
-            bar = ax.bar(i, v, 0.65, color=color, hatch=hatch,
-                         edgecolor=ec, linewidth=0.7 if is_hero else 0)
-            fmtstr = "{:.2f}"
-            offset = max(v * 0.008, 0.06) if "psnr" in key else max(v * 0.01, 0.002)
-            annotate_bar(ax, bar[0], v, fmt=fmtstr, bold=is_hero, fontsize=7, offset=offset)
-
-        bl_val = best_per.get("No TTA", {}).get(key)
-        if bl_val is not None:
-            ax.axhline(bl_val, color=C_RED, ls="--", lw=1, alpha=0.6, zorder=5)
-
-        ax.set_xticks(xs)
-        ax.set_xticklabels([v[0] for v in vals], rotation=35, ha="right", fontsize=8)
-        ylabel = metric_label
-        if unit:
-            ylabel += f" ({unit})"
-        ax.set_ylabel(ylabel)
+        _draw_method_bars(ax, methods, best_per, key, metric_label, unit, fontsize_annot=8)
         ax.set_title(metric_label, fontweight="bold")
 
-        lower_is_better = "LPIPS" in metric_label
-        if not lower_is_better:
-            ymin = min(v for _, v in vals) * 0.9
-            ax.set_ylim(ymin, ax.get_ylim()[1] * 1.08)
-        else:
-            ax.set_ylim(0, max(v for _, v in vals) * 1.15)
-
-    fig.suptitle("TTA Method Comparison — Standard Config (14 cond, 28 gen frames)",
-                 fontweight="bold", y=1.02, fontsize=13)
-    fig.tight_layout()
+    fig.suptitle("TTA Method Comparison",
+                 fontweight="bold", y=1.03, fontsize=13)
+    fig.text(0.5, 0.98, f"Fixed: {STD_FIXED}",
+             ha="center", fontsize=8.5, color="#777777", style="italic")
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     save(fig, "01_method_comparison", "method_comparison_all_metrics.png")
 
 
@@ -304,10 +304,10 @@ def fig_pareto(data):
     # --- Params vs PSNR ---
     fig, ax = plt.subplots(figsize=(8, 5.5))
 
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1.2, alpha=0.6, zorder=0)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     plotted = []
-    for m in METHOD_ORDER:
+    for m in METHOD_ORDER_MAIN:
         if m not in best_per or m == "No TTA":
             continue
         r = best_per[m]
@@ -316,29 +316,29 @@ def fig_pareto(data):
             continue
         psnr = r["psnr_mean"]
         color = METHOD_COLORS.get(m, "#999999")
-        marker = "D" if "AdaSteer" in m else "o"
-        ms = 100 if "AdaSteer" in m else 65
+        marker = "D" if m == "AdaSteer" else "o"
+        ms = 100 if m == "AdaSteer" else 65
         ax.scatter(params, psnr, c=color, s=ms, marker=marker,
                    edgecolors="white", linewidths=1.0, zorder=10)
         plotted.append((params, psnr, m, color))
 
-    # Smart annotation placement
     for params, psnr, m, color in plotted:
         ha, dx, dy = "left", 10, 5
         if "Full" in m:
             ha, dx, dy = "right", -10, -12
         ax.annotate(m, (params, psnr), textcoords="offset points",
                     xytext=(dx, dy), fontsize=9, color=color, ha=ha,
-                    fontweight="bold" if "AdaSteer" in m else "normal")
+                    fontweight="bold" if m == "AdaSteer" else "normal")
 
     ax.text(0.98, 0.03, f"No TTA baseline = {bl_psnr:.2f} dB",
-            transform=ax.transAxes, color=C_RED, fontsize=8,
+            transform=ax.transAxes, color=C_BASELINE_LINE, fontsize=8,
             ha="right", va="bottom")
 
     ax.set_xscale("log")
     ax.set_xlabel("Trainable Parameters")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Quality vs. Parameter Efficiency", fontweight="bold", pad=10)
+    titled(ax, "Quality vs. Parameter Efficiency",
+           fixed="20 steps, 14 cond frames, 28 gen frames")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(
         lambda x, _: f"{x:.0f}" if x < 1e4 else f"{x/1e3:.0f}K" if x < 1e6
         else f"{x/1e6:.0f}M" if x < 1e9 else f"{x/1e9:.1f}B"))
@@ -347,10 +347,10 @@ def fig_pareto(data):
     # --- Time vs PSNR ---
     fig, ax = plt.subplots(figsize=(8, 5.5))
 
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1.2, alpha=0.6, zorder=0)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     plotted = []
-    for m in METHOD_ORDER:
+    for m in METHOD_ORDER_MAIN:
         if m not in best_per or m == "No TTA":
             continue
         r = best_per[m]
@@ -359,8 +359,8 @@ def fig_pareto(data):
             continue
         psnr = r["psnr_mean"]
         color = METHOD_COLORS.get(m, "#999999")
-        marker = "D" if "AdaSteer" in m else "o"
-        ms = 100 if "AdaSteer" in m else 65
+        marker = "D" if m == "AdaSteer" else "o"
+        ms = 100 if m == "AdaSteer" else 65
         ax.scatter(tt, psnr, c=color, s=ms, marker=marker,
                    edgecolors="white", linewidths=1.0, zorder=10)
         plotted.append((tt, psnr, m, color))
@@ -372,15 +372,16 @@ def fig_pareto(data):
         ha = "left" if dx > 0 else "right"
         ax.annotate(m, (tt, psnr), textcoords="offset points",
                     xytext=(dx, dy), fontsize=9, color=color, ha=ha,
-                    fontweight="bold" if "AdaSteer" in m else "normal")
+                    fontweight="bold" if m == "AdaSteer" else "normal")
 
     ax.text(0.98, 0.03, f"No TTA baseline = {bl_psnr:.2f} dB",
-            transform=ax.transAxes, color=C_RED, fontsize=8,
+            transform=ax.transAxes, color=C_BASELINE_LINE, fontsize=8,
             ha="right", va="bottom")
 
     ax.set_xlabel("Training Time per Video (s)")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Quality vs. Training Cost", fontweight="bold", pad=10)
+    titled(ax, "Quality vs. Training Cost",
+           fixed="20 steps, 14 cond frames, 28 gen frames")
     save(fig, "02_pareto", "pareto_time_vs_psnr.png")
 
 
@@ -392,10 +393,9 @@ def fig_lr_sweep(data):
     print("\n[3] Learning rate sweep")
     c = complete_runs(data)
 
+    # Main methods only; use B data for AdaSteer (better performing impl)
     series_map = {
-        "delta_a_lr_sweep": ("AdaSteer-A", "delta_lr"),
-        "delta_b_lr_sweep": ("AdaSteer-B", "delta_lr"),
-        "delta_c_lr_sweep": ("Delta-C",    "delta_lr"),
+        "delta_b_lr_sweep": ("AdaSteer", "delta_lr"),
         "full_lr_sweep":    ("Full-model",  "learning_rate"),
     }
 
@@ -403,9 +403,7 @@ def fig_lr_sweep(data):
 
     bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
     if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_RED, ls="--", lw=1.2, alpha=0.6)
-        ax.text(1e-6, bl[0]["psnr_mean"] + 0.15, "No TTA",
-                color=C_RED, fontsize=8, va="bottom")
+        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     for series_name, (label, lr_key) in series_map.items():
         runs = by_series(c, series_name)
@@ -415,21 +413,22 @@ def fig_lr_sweep(data):
                        r["psnr_mean"]) for r in runs])
         xs, ys = zip(*pts)
         color = METHOD_COLORS.get(label, "#999999")
-        marker = "D" if "AdaSteer" in label else "o"
+        marker = "D" if label == "AdaSteer" else "o"
         ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
                 markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
 
     ax.set_xscale("log")
     ax.set_xlabel("Learning Rate")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Learning Rate Sweep", fontweight="bold", pad=10)
+    titled(ax, "Learning Rate Sweep",
+           fixed="20 steps, 14 cond frames, 28 gen frames")
     ax.legend(frameon=False)
     save(fig, "03_lr_sweep", "lr_sweep_psnr.png")
 
-    # Also add delta_b_low_lr combined with delta_b_lr_sweep
+    # AdaSteer LR sensitivity detail (combined B sweep + low-lr data)
     fig, ax = plt.subplots(figsize=(7, 5))
     if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_RED, ls="--", lw=1.2, alpha=0.6)
+        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     db_all = by_series(c, "delta_b_lr_sweep") + by_series(c, "delta_b_low_lr")
     if db_all:
@@ -440,20 +439,14 @@ def fig_lr_sweep(data):
                 pts[lr] = r["psnr_mean"]
         pts = sorted(pts.items())
         xs, ys = zip(*pts)
-        ax.plot(xs, ys, "-", color=C_ADASTEER_B, marker="D", markersize=6,
-                markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label="AdaSteer-B")
-
-    da = by_series(c, "delta_a_lr_sweep")
-    if da:
-        pts = sorted([(r.get("delta_lr", 0), r["psnr_mean"]) for r in da])
-        xs, ys = zip(*pts)
         ax.plot(xs, ys, "-", color=C_ADASTEER, marker="D", markersize=6,
-                markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label="AdaSteer-A")
+                markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label="AdaSteer")
 
     ax.set_xscale("log")
     ax.set_xlabel("Learning Rate")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("AdaSteer Learning Rate Sensitivity", fontweight="bold", pad=10)
+    titled(ax, "AdaSteer Learning Rate Sensitivity",
+           fixed="20 steps, 14 cond frames, 28 gen frames")
     ax.legend(frameon=False)
     save(fig, "03_lr_sweep", "lr_sweep_adasteer_detail.png")
 
@@ -466,10 +459,9 @@ def fig_iter_sweep(data):
     print("\n[4] Iteration sweep")
     c = complete_runs(data)
 
+    # Main methods only; use A data for AdaSteer (has more iter-sweep data)
     series_map = {
-        "delta_a_iter_sweep": ("AdaSteer-A", "delta_steps"),
-        "delta_b_iter_sweep": ("AdaSteer-B", "delta_steps"),
-        "delta_c_iter_sweep": ("Delta-C",    "delta_steps"),
+        "delta_a_iter_sweep": ("AdaSteer", "delta_steps"),
         "full_iter_sweep":    ("Full-model",  "num_steps"),
         "lora_iter_sweep":    ("LoRA",        "num_steps"),
     }
@@ -478,9 +470,7 @@ def fig_iter_sweep(data):
 
     bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
     if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_RED, ls="--", lw=1.2, alpha=0.6)
-        ax.text(82, bl[0]["psnr_mean"] + 0.15, "No TTA",
-                color=C_RED, fontsize=8, va="bottom")
+        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     for series_name, (label, step_key) in series_map.items():
         runs = by_series(c, series_name)
@@ -490,13 +480,14 @@ def fig_iter_sweep(data):
                        r["psnr_mean"]) for r in runs])
         xs, ys = zip(*pts)
         color = METHOD_COLORS.get(label, "#999999")
-        marker = "D" if "AdaSteer" in label else "o"
+        marker = "D" if label == "AdaSteer" else "o"
         ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
                 markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
 
     ax.set_xlabel("Training Steps")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Training Steps Sweep", fontweight="bold", pad=10)
+    titled(ax, "Training Steps Sweep",
+           fixed="best LR per method, 14 cond frames, 28 gen frames")
     ax.legend(frameon=False)
     save(fig, "04_iter_sweep", "iter_sweep_psnr.png")
 
@@ -520,12 +511,12 @@ def fig_adasteer_groups(data):
     if runs:
         pts = sorted([(r.get("num_groups", 1), r["psnr_mean"]) for r in runs])
         xs, ys = zip(*pts)
-        ax.plot(xs, ys, "-", color=C_ADASTEER_B, marker="D", markersize=7,
+        ax.plot(xs, ys, "-", color=C_ADASTEER, marker="D", markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2, label="20-step")
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xlabel("Number of Groups (G)")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("AdaSteer-B Groups (20 steps)", fontweight="bold")
+    ax.set_title("AdaSteer Groups (20 steps)", fontweight="bold")
     ax.legend(frameon=False)
 
     # Panel B: adasteer_groups_5step
@@ -536,7 +527,7 @@ def fig_adasteer_groups(data):
         xs, ys = zip(*pts)
         ax.plot(xs, ys, "-", color=C_ADASTEER, marker="D", markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2, label="5-step")
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xlabel("Number of Groups (G)")
     ax.set_title("AdaSteer Groups (5 steps, delta_lr=0.01)", fontweight="bold")
     ax.legend(frameon=False)
@@ -567,7 +558,7 @@ def fig_lora_analysis(data):
         xs, ys = zip(*pts)
         ax.plot(xs, ys, "-", color=C_LORA, marker="o", markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2)
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xlabel("LoRA Rank")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("LoRA Rank Sweep", fontweight="bold")
@@ -576,8 +567,8 @@ def fig_lora_analysis(data):
     ax = axes[1]
     lora_series = ["lora_rank_sweep", "lora_constrained_sweep",
                    "lora_ultra_constrained", "lora_builtin_comparison"]
-    colors_lora = [C_LORA, "#6690C0", "#5577AA", "#99BBDD"]
-    labels_lora = ["Standard rank", "Constrained", "Ultra-constrained", "Built-in comparison"]
+    colors_lora = [C_LORA, C_ADASTEER, C_FULL, C_BASELINE]
+    labels_lora = ["All blocks", "Low alpha", "Last block only", "Built-in LoRA"]
 
     for si, (sname, col, lab) in enumerate(zip(lora_series, colors_lora, labels_lora)):
         runs = by_series(c, sname)
@@ -587,7 +578,7 @@ def fig_lora_analysis(data):
         xs, ys = zip(*pts)
         ax.scatter(xs, ys, c=col, s=40, alpha=0.8, label=lab, zorder=5)
 
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xscale("log")
     ax.set_xlabel("Trainable Parameters")
     ax.set_ylabel("PSNR (dB)")
@@ -608,10 +599,9 @@ def fig_cond_frames(data):
     print("\n[7] Conditioning frames ablation (exp3)")
     c = complete_runs(data)
 
+    # Use B data for AdaSteer; exclude Delta-C (naive)
     series_methods = {
-        "exp3_train_frames_delta_a": "AdaSteer-A",
-        "exp3_train_frames_delta_b": "AdaSteer-B",
-        "exp3_train_frames_delta_c": "Delta-C",
+        "exp3_train_frames_delta_b": "AdaSteer",
         "exp3_train_frames_full":    "Full-model",
         "exp3_train_frames_lora":    "LoRA",
     }
@@ -620,9 +610,7 @@ def fig_cond_frames(data):
 
     bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
     if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_RED, ls="--", lw=1, alpha=0.6)
-        ax.text(23, bl[0]["psnr_mean"] + 0.15, "No TTA",
-                color=C_RED, fontsize=8, va="bottom")
+        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     for sname, label in series_methods.items():
         runs = by_series(c, sname)
@@ -638,13 +626,14 @@ def fig_cond_frames(data):
         pts.sort()
         xs, ys = zip(*pts)
         color = METHOD_COLORS.get(label, "#999999")
-        marker = "D" if "AdaSteer" in label else "o"
+        marker = "D" if label == "AdaSteer" else "o"
         ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
                 markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
 
-    ax.set_xlabel("Conditioning Frames (num_cond_frames)")
+    ax.set_xlabel("Conditioning Frames")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Effect of Conditioning Frames on TTA Quality", fontweight="bold", pad=10)
+    titled(ax, "Effect of Conditioning Frames",
+           fixed="20 steps, 28 gen frames, best LR per method")
     ax.legend(frameon=False)
     ax.set_xticks([2, 7, 14, 24])
     save(fig, "07_cond_frames", "cond_frames_psnr.png")
@@ -658,15 +647,18 @@ def fig_gen_horizon(data):
     print("\n[8] Generation horizon ablation (exp4)")
     c = complete_runs(data)
 
+    # Use B data for AdaSteer; exclude Delta-C (naive)
     series_methods = {
-        "exp4_gen_horizon_delta_a": "AdaSteer-A",
-        "exp4_gen_horizon_delta_b": "AdaSteer-B",
-        "exp4_gen_horizon_delta_c": "Delta-C",
+        "exp4_gen_horizon_delta_b": "AdaSteer",
         "exp4_gen_horizon_full":    "Full-model",
         "exp4_gen_horizon_lora":    "LoRA",
     }
 
     fig, ax = plt.subplots(figsize=(7, 5))
+
+    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
+    if bl:
+        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     for sname, label in series_methods.items():
         runs = by_series(c, sname)
@@ -682,13 +674,14 @@ def fig_gen_horizon(data):
         pts.sort()
         xs, ys = zip(*pts)
         color = METHOD_COLORS.get(label, "#999999")
-        marker = "D" if "AdaSteer" in label else "o"
+        marker = "D" if label == "AdaSteer" else "o"
         ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
                 markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
 
-    ax.set_xlabel("Generation Frames (num_frames)")
+    ax.set_xlabel("Generation Frames")
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Effect of Generation Horizon on TTA Quality", fontweight="bold", pad=10)
+    titled(ax, "Effect of Generation Horizon",
+           fixed="20 steps, 14 cond frames, best LR per method")
     ax.legend(frameon=False)
     ax.set_xticks([16, 28, 44, 72])
     save(fig, "08_gen_horizon", "gen_horizon_psnr.png")
@@ -715,7 +708,7 @@ def fig_cross_dataset(data):
         if md not in ucf_best or r["psnr_mean"] > ucf_best[md]["psnr_mean"]:
             ucf_best[md] = r
 
-    common = [m for m in ["AdaSteer-A", "Full-model", "LoRA", "No TTA"]
+    common = [m for m in ["AdaSteer", "LoRA", "Full-model", "No TTA"]
               if m in panda_best and m in ucf_best]
 
     if not common:
@@ -723,13 +716,13 @@ def fig_cross_dataset(data):
         return
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    bar_w = 0.32
+    bar_w = 0.38
     xs = np.arange(len(common))
 
     bars_panda = ax.bar(xs - bar_w / 2, [panda_best[m]["psnr_mean"] for m in common],
-                        bar_w, color=C_ADASTEER, alpha=0.85, label="Panda-70M")
+                        bar_w, color=C_ADASTEER, alpha=0.85, label="Panda-70M", zorder=3)
     bars_ucf = ax.bar(xs + bar_w / 2, [ucf_best[m]["psnr_mean"] for m in common],
-                      bar_w, color=C_DELTAC, alpha=0.85, label="UCF-101")
+                      bar_w, color=C_LORA, alpha=0.85, label="UCF-101", zorder=3)
 
     for b in bars_panda:
         annotate_bar(ax, b, b.get_height(), fmt="{:.1f}", fontsize=8, offset=0.15)
@@ -739,12 +732,16 @@ def fig_cross_dataset(data):
     ax.set_xticks(xs)
     ax.set_xticklabels(common)
     ax.set_ylabel("PSNR (dB)")
-    ax.set_title("Cross-Dataset Generalization", fontweight="bold", pad=10)
+    titled(ax, "Cross-Dataset Generalization",
+           fixed="20 steps, 14 cond frames, 28 gen frames, best LR per method")
     ax.legend(frameon=False)
 
-    ymin = min(panda_best[m]["psnr_mean"] for m in common) * 0.9
-    ymin = min(ymin, min(ucf_best[m]["psnr_mean"] for m in common) * 0.9)
-    ax.set_ylim(ymin, ax.get_ylim()[1] * 1.08)
+    all_vals = [panda_best[m]["psnr_mean"] for m in common] + \
+               [ucf_best[m]["psnr_mean"] for m in common]
+    vrange = max(all_vals) - min(all_vals) if max(all_vals) != min(all_vals) else 1
+    ymin = min(all_vals) - vrange * 0.25
+    ymax = max(all_vals) + vrange * 0.45
+    ax.set_ylim(max(ymin, 0), ymax)
 
     save(fig, "09_cross_dataset", "cross_dataset_psnr.png")
 
@@ -769,17 +766,19 @@ def fig_early_stopping(data):
         stopped_frac = [r.get("es_stopped_count", 0) / max(r.get("es_total_count", 1), 1)
                         for r in runs]
 
-        ax.plot(patience_vals[:len(psnrs)], psnrs, "-o", color=C_ADASTEER,
-                markersize=6, markeredgecolor="white", lw=1.8, label="PSNR")
-        ax.set_xlabel("Patience")
-        ax.set_ylabel("PSNR (dB)", color=C_ADASTEER)
-
         ax2 = ax.twinx()
         ax2.bar(patience_vals[:len(stopped_frac)],
                 [f * 100 for f in stopped_frac],
-                0.6, color=C_LIGHT_T, alpha=0.6, label="% Stopped")
+                0.6, color=C_LIGHT_T, alpha=0.45, zorder=1)
         ax2.set_ylabel("% Videos Stopped Early", color="#666666")
         ax2.set_ylim(0, 105)
+
+        ax.set_zorder(ax2.get_zorder() + 1)
+        ax.patch.set_visible(False)
+        ax.plot(patience_vals[:len(psnrs)], psnrs, "-o", color=C_ADASTEER,
+                markersize=6, markeredgecolor="white", lw=1.8, label="PSNR", zorder=10)
+        ax.set_xlabel("Patience")
+        ax.set_ylabel("PSNR (dB)", color=C_ADASTEER)
         ax.set_title("Early Stopping: Patience", fontweight="bold")
 
     # --- Panel B: ES ablation - Check Frequency ---
@@ -792,17 +791,19 @@ def fig_early_stopping(data):
         stopped_frac = [r.get("es_stopped_count", 0) / max(r.get("es_total_count", 1), 1)
                         for r in runs]
 
-        ax.plot(check_freqs[:len(psnrs)], psnrs, "-o", color=C_ADASTEER,
-                markersize=6, markeredgecolor="white", lw=1.8, label="PSNR")
-        ax.set_xlabel("Check Every N Steps")
-        ax.set_ylabel("PSNR (dB)", color=C_ADASTEER)
-
         ax2 = ax.twinx()
         ax2.bar(check_freqs[:len(stopped_frac)],
                 [f * 100 for f in stopped_frac],
-                0.6, color=C_LIGHT_T, alpha=0.6, label="% Stopped")
+                0.6, color=C_LIGHT_T, alpha=0.45, zorder=1)
         ax2.set_ylabel("% Videos Stopped Early", color="#666666")
         ax2.set_ylim(0, 105)
+
+        ax.set_zorder(ax2.get_zorder() + 1)
+        ax.patch.set_visible(False)
+        ax.plot(check_freqs[:len(psnrs)], psnrs, "-o", color=C_ADASTEER,
+                markersize=6, markeredgecolor="white", lw=1.8, label="PSNR", zorder=10)
+        ax.set_xlabel("Check Every N Steps")
+        ax.set_ylabel("PSNR (dB)", color=C_ADASTEER)
         ax.set_title("Early Stopping: Check Frequency", fontweight="bold")
 
     fig.tight_layout()
@@ -849,52 +850,56 @@ def fig_time_cost(data):
     print("\n[11] Training time cost")
     c = complete_runs(data)
     best_per = _get_standard_best(c)
-    methods = [m for m in METHOD_ORDER if m in best_per and m != "No TTA"]
+    methods = [m for m in METHOD_ORDER_MAIN if m in best_per and m != "No TTA"]
 
     # --- Bar chart: training time per video ---
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
     xs = np.arange(len(methods))
+    bar_w = 0.82
     for i, m in enumerate(methods):
         r = best_per[m]
         tt = r.get("train_time_mean", 0)
-        gt = r.get("gen_time_mean", 80)
         color = METHOD_COLORS.get(m, "#999999")
-        hatch = "///" if "AdaSteer" in m else ""
-        edgecolor = color if hatch else "none"
+        is_hero = m == "AdaSteer"
+        hatch = "///" if is_hero else ""
+        ec = "#3040CC" if is_hero else "none"
 
-        bar = ax.bar(i, tt, 0.55, color=color, hatch=hatch,
-                     edgecolor=edgecolor, linewidth=0.5)
-        annotate_bar(ax, bar[0], tt, fmt="{:.0f}s", fontsize=8,
-                     bold="AdaSteer" in m, offset=max(tt * 0.02, 1))
+        bar = ax.bar(i, tt, bar_w, color=color, hatch=hatch,
+                     edgecolor=ec, linewidth=0.8 if is_hero else 0, zorder=3)
+        annotate_bar(ax, bar[0], tt, fmt="{:.0f}s", fontsize=9,
+                     bold=is_hero, offset=max(tt * 0.02, 1))
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(methods, rotation=25, ha="right")
+    ax.set_xticklabels(methods, fontsize=10)
     ax.set_ylabel("Training Time per Video (s)")
-    ax.set_title("TTA Training Cost per Video", fontweight="bold", pad=10)
+    titled(ax, "TTA Training Cost per Video",
+           fixed="20 steps, 14 cond frames, 28 gen frames")
     save(fig, "11_time_cost", "train_time.png")
 
     # --- Train/Gen ratio ---
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
     for i, m in enumerate(methods):
         r = best_per[m]
         ratio = r.get("train_gen_ratio", 0) or 0
         color = METHOD_COLORS.get(m, "#999999")
-        hatch = "///" if "AdaSteer" in m else ""
-        edgecolor = color if hatch else "none"
+        is_hero = m == "AdaSteer"
+        hatch = "///" if is_hero else ""
+        ec = "#3040CC" if is_hero else "none"
 
-        bar = ax.bar(i, ratio, 0.55, color=color, hatch=hatch,
-                     edgecolor=edgecolor, linewidth=0.5)
-        annotate_bar(ax, bar[0], ratio, fmt="{:.2f}x", fontsize=8,
-                     bold="AdaSteer" in m, offset=max(ratio * 0.02, 0.01))
+        bar = ax.bar(i, ratio, bar_w, color=color, hatch=hatch,
+                     edgecolor=ec, linewidth=0.8 if is_hero else 0, zorder=3)
+        annotate_bar(ax, bar[0], ratio, fmt="{:.2f}x", fontsize=9,
+                     bold=is_hero, offset=max(ratio * 0.02, 0.01))
 
-    ax.axhline(1.0, color=C_RED, ls="--", lw=1, alpha=0.6)
-    ax.text(len(methods) - 0.5, 1.03, "Train = Gen time", color=C_RED,
+    ax.axhline(1.0, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    ax.text(len(methods) - 0.5, 1.03, "Train = Gen time", color=C_BASELINE_LINE,
             fontsize=8, ha="right")
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(methods, rotation=25, ha="right")
+    ax.set_xticklabels(methods, fontsize=10)
     ax.set_ylabel("Train Time / Generation Time")
-    ax.set_title("Training Overhead Relative to Generation", fontweight="bold", pad=10)
+    titled(ax, "Training Overhead Relative to Generation",
+           fixed="20 steps, 14 cond frames, 28 gen frames")
     save(fig, "11_time_cost", "train_gen_ratio.png")
 
 
@@ -918,17 +923,14 @@ def fig_extended_data(data):
 
     for ax, window, title, color_base in [
         (axes[0], window_a, "Window A (5s, gen_start=120)", C_ADASTEER),
-        (axes[1], window_b, "Window B (8s, gen_start=200)", C_ADASTEER_B),
+        (axes[1], window_b, "Window B (8s, gen_start=200)", C_ADASTEER),
     ]:
-        # Separate no-TTA control
         control_key = [k for k in window if k.endswith("0")]
         tta_keys = [k for k in sorted(window.keys()) if not k.endswith("0")]
 
         if control_key:
             ctrl = window[control_key[0]]
-            ax.axhline(ctrl["psnr_mean"], color=C_RED, ls="--", lw=1, alpha=0.6)
-            ax.text(0.5, ctrl["psnr_mean"] + 0.05, f"No TTA = {ctrl['psnr_mean']:.2f}",
-                    color=C_RED, fontsize=8, transform=ax.get_yaxis_transform(), va="bottom")
+            ax.axhline(ctrl["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
         groups = []
         psnrs = []
@@ -972,7 +974,7 @@ def fig_ratio_sweep(data):
     bl_psnr = bl[0]["psnr_mean"] if bl else 22.07
 
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     by_cond = defaultdict(list)
     for r in runs:
@@ -1009,7 +1011,7 @@ def fig_all_runs_scatter(data):
 
     bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
     if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_RED, ls="--", lw=1, alpha=0.5)
+        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
 
     seen_methods = set()
     for r in c:
@@ -1020,15 +1022,15 @@ def fig_all_runs_scatter(data):
         color = METHOD_COLORS.get(md, "#999999")
         label = md if md not in seen_methods else None
         seen_methods.add(md)
-        marker = "D" if "AdaSteer" in md else "o"
-        ax.scatter(params, r["psnr_mean"], c=color, s=20, alpha=0.5,
+        marker = "D" if md == "AdaSteer" else "o"
+        ax.scatter(params, r["psnr_mean"], c=color, s=25, alpha=0.55,
                    marker=marker, label=label, zorder=5)
 
     ax.set_xscale("log")
     ax.set_xlabel("Trainable Parameters")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("All Experiment Runs", fontweight="bold", pad=10)
-    ax.legend(frameon=False, fontsize=8, loc="lower left")
+    ax.legend(frameon=False, fontsize=9, loc="lower right")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(
         lambda x, _: f"{x:.0f}" if x < 1e3 else f"{x/1e3:.0f}K" if x < 1e6
         else f"{x/1e6:.0f}M" if x < 1e9 else f"{x/1e9:.1f}B"))
@@ -1039,50 +1041,79 @@ def fig_all_runs_scatter(data):
 # FIG BONUS: NormTune & FiLM detail
 # ═══════════════════════════════════════════════════════════════════════
 
-def fig_normtune_film(data):
-    print("\n[Bonus] NormTune & FiLM sweep detail")
+def fig_naive_methods(data):
+    """Naive TTA methods (Delta-C, NormTune, FiLM) in their own directory."""
+    print("\n[Naive] Naive TTA methods (Delta-C, NormTune, FiLM)")
     c = complete_runs(data)
     bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
     bl_psnr = bl[0]["psnr_mean"] if bl else 22.07
+    best_per = _get_standard_best(c)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    # --- Comparison bar chart ---
+    naive_methods = ["Delta-C", "NormTune", "FiLM", "No TTA"]
+    available = [m for m in naive_methods if m in best_per]
+    if available:
+        fig, ax = plt.subplots(figsize=(5.5, 4.5))
+        _draw_method_bars(ax, available, best_per, "psnr_mean", "PSNR", "dB")
+        # Also show AdaSteer as reference
+        ada_val = best_per.get("AdaSteer", {}).get("psnr_mean")
+        if ada_val:
+            ax.axhline(ada_val, color=C_ADASTEER, ls="-", lw=1.2, alpha=0.5, zorder=0)
+            ax.text(0.02, ada_val, f"AdaSteer = {ada_val:.2f}",
+                    color=C_ADASTEER, fontsize=8, va="bottom",
+                    transform=ax.get_yaxis_transform())
+        ax.set_title("Naive TTA Methods — PSNR", fontweight="bold", pad=10)
+        save(fig, "14_naive_methods", "naive_methods_psnr.png")
 
-    # NormTune
-    ax = axes[0]
+    # --- NormTune sweep detail ---
+    fig, ax = plt.subplots(figsize=(6, 4.5))
     runs = by_series(c, "norm_tune_sweep")
     if runs:
         for r in runs:
             params = r.get("trainable_params", 0)
             lr = r.get("norm_lr") or r.get("learning_rate") or 0
             psnr = r["psnr_mean"]
-            ax.scatter(lr, psnr, c=C_NORMTUNE, s=60, zorder=5, edgecolors="white")
+            ax.scatter(lr, psnr, c=C_NORMTUNE, s=65, zorder=5, edgecolors="white", lw=0.8)
             ax.annotate(f"{params/1e3:.0f}K", (lr, psnr), textcoords="offset points",
-                        xytext=(5, 5), fontsize=7, color="#666666")
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+                        xytext=(6, 6), fontsize=7, color="#555555")
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
     ax.set_xscale("log")
     ax.set_xlabel("Learning Rate")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("NormTune Sweep", fontweight="bold")
+    save(fig, "14_naive_methods", "normtune_sweep.png")
 
-    # FiLM
-    ax = axes[1]
+    # --- FiLM sweep detail ---
+    fig, ax = plt.subplots(figsize=(6, 4.5))
     runs = by_series(c, "film_adapter_sweep")
     if runs:
         for r in runs:
             params = r.get("trainable_params", 0)
             lr = r.get("film_lr") or r.get("learning_rate") or 0
             psnr = r["psnr_mean"]
-            ax.scatter(lr, psnr, c=C_FILM, s=60, zorder=5, edgecolors="white")
+            ax.scatter(lr, psnr, c=C_FILM, s=65, zorder=5, edgecolors="white", lw=0.8)
             ax.annotate(f"{params/1e3:.0f}K", (lr, psnr), textcoords="offset points",
-                        xytext=(5, 5), fontsize=7, color="#666666")
-    ax.axhline(bl_psnr, color=C_RED, ls="--", lw=1, alpha=0.6)
+                        xytext=(6, 6), fontsize=7, color="#555555")
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
     ax.set_xscale("log")
     ax.set_xlabel("Learning Rate")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("FiLM Adapter Sweep", fontweight="bold")
+    save(fig, "14_naive_methods", "film_sweep.png")
 
-    fig.tight_layout()
-    save(fig, "01_method_comparison", "normtune_film_detail.png")
+    # --- Delta-C iteration sweep ---
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    runs = by_series(c, "delta_c_iter_sweep")
+    if runs:
+        pts = sorted([(r.get("delta_steps", 0), r["psnr_mean"]) for r in runs])
+        xs, ys = zip(*pts)
+        ax.plot(xs, ys, "-o", color=C_DELTAC, markersize=7,
+                markeredgecolor="white", markeredgewidth=0.8, lw=2)
+    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
+    ax.set_xlabel("Training Steps")
+    ax.set_ylabel("PSNR (dB)")
+    ax.set_title("Delta-C (Output Residual) Iteration Sweep", fontweight="bold")
+    save(fig, "14_naive_methods", "delta_c_iter_sweep.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1090,11 +1121,11 @@ def fig_normtune_film(data):
 # ═══════════════════════════════════════════════════════════════════════
 
 def fig_summary_table(data):
-    """Render a visual summary table of all methods."""
+    """Render a visual summary table of main methods."""
     print("\n[Table] Summary table figure")
     c = complete_runs(data)
     best_per = _get_standard_best(c)
-    methods = [m for m in METHOD_ORDER if m in best_per]
+    methods = [m for m in METHOD_ORDER_MAIN if m in best_per]
 
     columns = ["Method", "Params", "PSNR (dB)", "SSIM", "LPIPS", "Train (s)", "Ratio"]
     rows = []
@@ -1169,10 +1200,203 @@ def main():
     fig_extended_data(data)
     fig_ratio_sweep(data)
     fig_all_runs_scatter(data)
-    fig_normtune_film(data)
+    fig_naive_methods(data)
     fig_summary_table(data)
 
+    # Loss curve figures (from separate export)
+    loss_file = ROOT / "loss_curves.json"
+    if loss_file.exists():
+        with open(loss_file) as f:
+            loss_data = json.load(f)
+        print(f"\nLoading loss curves from {loss_file}")
+        print(f"  {len(loss_data)} runs with loss curves\n")
+        fig_loss_curves_long_train(loss_data)
+        fig_loss_curves_method_compare(loss_data)
+        fig_loss_curves_es_check_freq(loss_data)
+        fig_loss_curves_iter_sweep(loss_data)
+    else:
+        print(f"\n  (skipping loss curves: {loss_file} not found)")
+
     print(f"\nAll figures saved to {OUT_ROOT}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# LOSS CURVE FIGURES
+# ═══════════════════════════════════════════════════════════════════════
+
+def _get_curve(loss_data, series, run_id):
+    """Find a run in loss_data by series/run_id."""
+    for r in loss_data:
+        if r["series"] == series and r["run_id"] == run_id:
+            return r
+    return None
+
+
+def _plot_loss_curve(ax, curve_data, color, label, alpha_fill=0.15, lw=2.0,
+                     subsample=1):
+    """Plot mean +/- std anchor loss curve (DeepSeek-R1 style)."""
+    agg = curve_data["aggregate_curve"]
+    steps = [p["step"] for p in agg]
+    means = [p["mean"] for p in agg]
+    stds  = [p["std"]  for p in agg]
+
+    if subsample > 1:
+        steps = steps[::subsample]
+        means = means[::subsample]
+        stds  = stds[::subsample]
+
+    upper = [m + s for m, s in zip(means, stds)]
+    lower = [m - s for m, s in zip(means, stds)]
+
+    ax.fill_between(steps, lower, upper, color=color, alpha=alpha_fill, linewidth=0)
+    ax.plot(steps, means, color=color, lw=lw, label=label)
+
+
+def fig_loss_curves_long_train(loss_data):
+    """Long-train anchor validation loss: AdaSteer-A (200 steps) vs Full-model (500 steps)."""
+    print("[Loss] Long-train anchor validation loss curves")
+
+    da_long = _get_curve(loss_data, "delta_a_long_train", "DALT1")
+    full_long = _get_curve(loss_data, "full_long_train", "FLT1")
+
+    if not da_long and not full_long:
+        print("  (no data)")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+    # --- Panel A: AdaSteer-A long train ---
+    ax = axes[0]
+    if da_long:
+        _plot_loss_curve(ax, da_long, C_ADASTEER, "AdaSteer")
+        best = da_long.get("best_step_mean", 0)
+        ax.axvline(best, color=C_RED, ls="--", lw=1.2, alpha=0.7)
+        ax.text(best + 3, ax.get_ylim()[0] + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.05,
+                f"avg best = step {best:.0f}", color=C_RED, fontsize=9, va="bottom")
+        stopped = da_long.get("stopped_early_count", 0)
+        n = da_long.get("n_videos_with_curves", 0)
+        ax.set_title(f"AdaSteer (200 steps, {stopped}/{n} stopped early)",
+                     fontweight="bold")
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Anchor Validation Loss")
+    ax.legend(frameon=False)
+
+    # --- Panel B: Full-model long train ---
+    ax = axes[1]
+    if full_long:
+        _plot_loss_curve(ax, full_long, C_FULL, "Full-model")
+        best = full_long.get("best_step_mean", 0)
+        ax.axvline(best, color=C_RED, ls="--", lw=1.2, alpha=0.7)
+        ax.text(best + 5, ax.get_ylim()[0] + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.05,
+                f"avg best = step {best:.0f}", color=C_RED, fontsize=9, va="bottom")
+        stopped = full_long.get("stopped_early_count", 0)
+        n = full_long.get("n_videos_with_curves", 0)
+        ax.set_title(f"Full-model (500 steps, {stopped}/{n} stopped early)",
+                     fontweight="bold")
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Anchor Validation Loss")
+    ax.legend(frameon=False)
+
+    fig.suptitle("Anchor Validation Loss During Extended Training",
+                 fontweight="bold", y=1.02, fontsize=13)
+    fig.tight_layout()
+    save(fig, "10_early_stopping", "long_train_loss_curves.png")
+
+
+def fig_loss_curves_method_compare(loss_data):
+    """Compare loss curves across methods at 20 training steps."""
+    print("[Loss] Method comparison loss curves (20-step)")
+
+    runs = [
+        ("delta_b_low_lr", "DBL4", "AdaSteer (512 params)", C_ADASTEER),
+        ("full_lr_sweep", "F2", "Full-model (13.6B params)", C_FULL),
+    ]
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    plotted = False
+
+    for series, run_id, label, color in runs:
+        r = _get_curve(loss_data, series, run_id)
+        if not r:
+            continue
+        _plot_loss_curve(ax, r, color, label, alpha_fill=0.08, lw=2.2)
+        plotted = True
+
+    if not plotted:
+        plt.close(fig)
+        print("  (no data)")
+        return
+
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Anchor Validation Loss")
+    ax.set_title("Anchor Validation Loss — Best 20-Step Configs",
+                 fontweight="bold", pad=10)
+    ax.legend(frameon=False)
+    save(fig, "10_early_stopping", "method_compare_loss_curves.png")
+
+
+def fig_loss_curves_es_check_freq(loss_data):
+    """ES check frequency effect on loss curves."""
+    print("[Loss] ES check frequency loss curves")
+
+    check_freqs = [
+        ("es_ablation_check_freq", "ES_CF1", "check every 1 step", C_ADASTEER),
+        ("es_ablation_check_freq", "ES_CF2", "check every 2 steps", C_LORA),
+        ("es_ablation_check_freq", "ES_CF3", "check every 5 steps", C_FULL),
+        ("es_ablation_check_freq", "ES_CF4", "check every 10 steps", C_BASELINE),
+    ]
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    plotted = False
+
+    for series, run_id, label, color in check_freqs:
+        r = _get_curve(loss_data, series, run_id)
+        if not r:
+            continue
+        _plot_loss_curve(ax, r, color, label, lw=1.8)
+        plotted = True
+
+    if not plotted:
+        plt.close(fig)
+        print("  (no data)")
+        return
+
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Anchor Validation Loss")
+    ax.set_title("Effect of ES Check Frequency on Validation Loss (Full-model, 20 steps)",
+                 fontweight="bold", pad=10)
+    ax.legend(frameon=False)
+    save(fig, "10_early_stopping", "es_check_freq_loss_curves.png")
+
+
+def fig_loss_curves_iter_sweep(loss_data):
+    """Loss curves at different training step budgets, per method."""
+    print("[Loss] Iteration sweep loss curves")
+
+    methods = [
+        ("AdaSteer", ("delta_a_long_train", "DALT1", "200 steps"), C_ADASTEER),
+        ("LoRA", ("lora_iter_sweep", "L16", "80 steps"), C_LORA),
+        ("Full-model", ("full_long_train", "FLT1", "500 steps"), C_FULL),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.5))
+
+    for ax, (method_name, (series, run_id, label), base_color) in zip(axes, methods):
+        r = _get_curve(loss_data, series, run_id)
+        if r:
+            sub = 5 if method_name != "LoRA" else 1
+            _plot_loss_curve(ax, r, base_color, label, alpha_fill=0.12, lw=2.0,
+                             subsample=sub)
+
+        ax.set_xlabel("Training Step")
+        ax.set_ylabel("Anchor Validation Loss")
+        ax.set_title(method_name, fontweight="bold")
+        ax.legend(frameon=False, fontsize=9)
+
+    fig.suptitle("Validation Loss Across Training Budgets",
+                 fontweight="bold", y=1.02, fontsize=13)
+    fig.tight_layout()
+    save(fig, "10_early_stopping", "iter_sweep_loss_curves.png")
 
 
 if __name__ == "__main__":

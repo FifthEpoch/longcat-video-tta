@@ -1,23 +1,21 @@
-# Series 4: LoRA -- Learning Rate Sweep
-# Goal: Find the optimal LR for the best rank from Series 3.
-# Fixed: lora_rank=BEST_FROM_S3, steps=20
+# Series 4: LoRA -- Learning Rate Sweep (Standard: all blocks)
+# Goal: Find optimal LR for standard LoRA (rank=1, all blocks, 1.7M params).
+# Fixed: lora_rank=1, lora_alpha=2.0, all blocks, steps=20
 # Swept: learning_rate
-# NOTE: Update lora_rank and lora_alpha after Series 3 completes.
 
 method: lora
 series: 4
 series_name: lora_lr_sweep
-description: "LoRA learning rate sweep at best rank"
-depends_on: [3]
+description: "LoRA LR sweep — standard config (rank=1, all blocks)"
 
 fixed:
-  lora_rank: 8        # PLACEHOLDER -- update from Series 3 best
-  lora_alpha: 16      # PLACEHOLDER -- 2x rank
+  lora_rank: 1
+  lora_alpha: 2.0
   num_steps: 20
   warmup_steps: 3
   weight_decay: 0.01
   max_grad_norm: 1.0
-  target_modules: "qkv,proj"
+  target_modules: "qkv"
   target_ffn: false
   num_cond_frames: 14
   num_frames: 28
