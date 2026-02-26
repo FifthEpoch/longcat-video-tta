@@ -1,13 +1,23 @@
-# Series 38: Experiment 5 -- Video Batch-Size Ablation (LoRA)
-# Goal: Study impact of batch-level TTA vs instance-level TTA.
+# Series 38: Experiment 5 -- Retrieval-Augmented Batch-Size Ablation (LoRA)
+# Goal: Study impact of retrieval-augmented batch-level TTA vs instance-level.
+# Eval set: same 100 videos from --data-dir
+# Retrieval pool: 1000-video superset in retrieval_pool_dir
 # Fixed: LoRA best config (lr=2e-4, steps=20, rank=1, alpha=2)
 # Swept: batch_videos
-# NOTE: requires 1000-video dataset + batch support in run_lora_tta.py
+# NOTE: batch support implemented in run_lora_tta.py (--retrieval-pool-dir, --batch-videos)
+#
+# COST & TRAINING NOTE:
+#   - Pre-encoding time scales linearly with K (each neighbour needs VAE + text encode).
+#   - Training time is constant (num_steps is fixed regardless of K).
+#   - BUT training steps are distributed round-robin, so each video gets ~num_steps/K
+#     gradient updates. At K=100, steps=20, the eval video is only trained on ~once.
+#   - If results show under-training at large K, consider a follow-up sweep that
+#     increases num_steps proportionally with K (e.g. steps=20*K or steps=max(20, K)).
 
 method: lora
 series: 38
 series_name: exp5_batch_size_lora
-description: "Batch-size ablation: LoRA TTA"
+description: "Retrieval-augmented batch-size ablation: LoRA TTA"
 
 fixed:
   lora_rank: 1
@@ -20,6 +30,7 @@ fixed:
   target_modules: "qkv,proj"
   target_ffn: false
   batch_method: similarity
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p
   num_cond_frames: 14
   num_frames: 28
   gen_start_frame: 32
@@ -27,7 +38,7 @@ fixed:
   guidance_scale: 4.0
   resolution: 480p
   seed: 42
-  max_videos: 1000
+  max_videos: 100
 
 sweep:
   - run_id: BS_L1
@@ -39,4 +50,4 @@ sweep:
   - run_id: BS_L4
     batch_videos: 50
   - run_id: BS_L5
-    batch_videos: 1000
+    batch_videos: 100

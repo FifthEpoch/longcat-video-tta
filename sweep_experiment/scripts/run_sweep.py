@@ -62,6 +62,7 @@ _KEY_TO_ENV = {
     "max_videos": "MAX_VIDEOS",
     "batch_videos": "BATCH_VIDEOS",
     "batch_method": "BATCH_METHOD",
+    "retrieval_pool_dir": "RETRIEVAL_POOL_DIR",
     # Full / LoRA shared
     "learning_rate": "LEARNING_RATE",
     "num_steps": "NUM_STEPS",

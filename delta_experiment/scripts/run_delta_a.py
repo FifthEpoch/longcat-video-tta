@@ -58,6 +58,8 @@ from common import (
     parse_speed_factors,
     split_tta_latents,
     evaluate_generation_metrics,
+    build_retrieval_pool,
+    retrieve_neighbors,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -372,12 +374,15 @@ def main():
                         help="Delete generated videos after evaluation to save disk space")
     parser.add_argument("--batch-videos", type=int, default=1,
                         help="Number of videos per TTA batch. 1=instance-level (default), "
-                             "K>1=batch-level (shared delta across K similar videos), "
-                             "set to max_videos for dataset-level adaptation.")
+                             "K>1=retrieval-augmented batch-level (train on eval video + "
+                             "K-1 nearest neighbours from the retrieval pool).")
     parser.add_argument("--batch-method", type=str, default="similarity",
                         choices=["sequential", "similarity"],
-                        help="How to group videos into batches. 'similarity' clusters "
-                             "by text prompt cosine similarity; 'sequential' uses order.")
+                        help="(Legacy) Retrieval is always by text-prompt similarity.")
+    parser.add_argument("--retrieval-pool-dir", type=str, default=None,
+                        help="Directory containing the larger retrieval pool dataset "
+                             "(e.g. 1000 videos). Required when --batch-videos > 1. "
+                             "Eval videos come from --data-dir; neighbours come from here.")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -412,6 +417,8 @@ def main():
     print(f"Augmentation   : {args.aug_enabled}")
     print(f"Batch videos   : {args.batch_videos}")
     print(f"Batch method   : {args.batch_method}")
+    if args.retrieval_pool_dir:
+        print(f"Retrieval pool : {args.retrieval_pool_dir}")
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
 
@@ -434,12 +441,31 @@ def main():
 
     adaln_dim = dit.config.adaln_tembed_dim
 
-    # Load video list
-    from common import load_ucf101_video_list, cluster_videos_by_prompt
-    videos = load_ucf101_video_list(
+    # Load evaluation videos (always from --data-dir, same 100 as usual)
+    from common import load_ucf101_video_list
+    eval_videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
     )
-    print(f"\nTotal videos: {len(videos)}")
+    print(f"\nEvaluation videos: {len(eval_videos)}")
+
+    # Build retrieval pool for batch-level TTA
+    batch_level = args.batch_videos > 1
+    pool_entries = None
+    pool_embeddings = None
+    st_model = None
+
+    if batch_level:
+        pool_dir = args.retrieval_pool_dir or args.data_dir
+        if pool_dir == args.data_dir:
+            print(f"\nWARNING: --retrieval-pool-dir not set; using --data-dir as pool. "
+                  f"For proper retrieval-augmented TTA, provide a larger pool dataset.",
+                  file=sys.stderr)
+
+        pool_entries = load_ucf101_video_list(
+            pool_dir, max_videos=999999, seed=args.seed
+        )
+        print(f"Retrieval pool: {len(pool_entries)} videos from {pool_dir}")
+        pool_embeddings, st_model = build_retrieval_pool(pool_entries)
 
     # Build early stopper
     early_stopper = build_early_stopper_from_args(args)
@@ -450,33 +476,38 @@ def main():
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
-    # ── Group videos into batches ──
-    batches = cluster_videos_by_prompt(
-        videos, batch_size=args.batch_videos, method=args.batch_method,
-    )
-    batch_level = args.batch_videos > 1
-    if batch_level:
-        print(f"\nBatch-level TTA: {len(batches)} batches of up to {args.batch_videos} videos")
-        print(f"  Grouping method: {args.batch_method}")
-
-    global_idx = 0
-    for batch_idx, batch in enumerate(batches):
-        if global_idx + len(batch) <= start_idx:
-            global_idx += len(batch)
+    # ── Per-video loop ──
+    for v_idx, eval_entry in enumerate(eval_videos):
+        if v_idx < start_idx:
             continue
 
+        eval_name = Path(eval_entry["video_path"]).stem
+        print(f"\n{'='*70}")
+        print(f"[{v_idx + 1}/{len(eval_videos)}] {eval_name}")
+
+        # Build training batch: eval video + K-1 nearest neighbours
         if batch_level:
-            print(f"\n{'='*70}")
-            print(f"BATCH {batch_idx + 1}/{len(batches)} ({len(batch)} videos)")
-            print(f"{'='*70}")
+            neighbors = retrieve_neighbors(
+                eval_entry, pool_entries, pool_embeddings, st_model,
+                k=args.batch_videos,
+            )
+            training_entries = [eval_entry] + neighbors
+            print(f"  Batch: 1 eval + {len(neighbors)} retrieved neighbours "
+                  f"(total {len(training_entries)})")
+            for ni, ne in enumerate(neighbors[:5]):
+                print(f"    neighbour {ni+1}: {Path(ne['video_path']).stem} "
+                      f"-- \"{ne['caption'][:60]}\"")
+            if len(neighbors) > 5:
+                print(f"    ... and {len(neighbors) - 5} more")
+        else:
+            training_entries = [eval_entry]
 
         try:
-            # ── Pre-encode all videos in the batch ──
+            # ── Pre-encode all videos in the training batch ──
             batch_data = []
-            for entry in batch:
+            for entry in training_entries:
                 video_path = entry["video_path"]
                 caption = entry["caption"]
-                video_name = Path(video_path).stem
 
                 tta_start = args.gen_start_frame - args.tta_total_frames
                 pixel_frames = load_video_frames(
@@ -493,12 +524,6 @@ def main():
                     holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
                 )
 
-                gen_cond_start = args.gen_start_frame - args.num_cond_frames
-                gen_pixel_frames = load_video_frames(
-                    video_path, args.num_cond_frames, height=480, width=832,
-                    start_frame=max(0, gen_cond_start),
-                ).to(args.device, torch.bfloat16)
-
                 prompt_embeds, prompt_mask = encode_prompt(
                     tokenizer, text_encoder, caption,
                     device=args.device, dtype=torch.bfloat16,
@@ -506,12 +531,11 @@ def main():
 
                 batch_data.append({
                     "video_path": video_path,
-                    "video_name": video_name,
+                    "video_name": Path(video_path).stem,
                     "caption": caption,
                     "cond_latents": cond_latents.cpu(),
                     "train_latents": train_latents.cpu(),
                     "val_latents": val_latents.cpu() if val_latents is not None else None,
-                    "gen_pixel_frames": gen_pixel_frames.cpu(),
                     "prompt_embeds": prompt_embeds.cpu(),
                     "prompt_mask": prompt_mask.cpu() if prompt_mask is not None else None,
                 })
@@ -519,12 +543,14 @@ def main():
                 del all_latents, pixel_frames
                 torch_gc()
 
-            if batch_level:
-                for bd in batch_data:
-                    print(f"  {bd['video_name']}: cond={bd['cond_latents'].shape[2]}, "
-                          f"train={bd['train_latents'].shape[2]}")
+            # Pre-encode generation conditioning for the eval video only
+            gen_cond_start = args.gen_start_frame - args.num_cond_frames
+            gen_pixel_frames = load_video_frames(
+                eval_entry["video_path"], args.num_cond_frames,
+                height=480, width=832, start_frame=max(0, gen_cond_start),
+            ).to(args.device, torch.bfloat16).cpu()
 
-            # ── Create fresh delta for this batch ──
+            # ── Create fresh delta ──
             wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
 
             # Offload VAE + text encoder to CPU during training
@@ -532,7 +558,7 @@ def main():
             text_encoder.to("cpu")
             torch.cuda.empty_cache()
 
-            # ── Train: cycle through videos in batch ──
+            # ── Train ──
             t0 = time.time()
             if batch_level:
                 opt_result = _optimize_delta_a_batch(
@@ -621,113 +647,101 @@ def main():
                 )
 
             train_time = time.time() - t0
-            print(f"  Batch train time: {train_time:.1f}s, "
+            print(f"  Train time: {train_time:.1f}s, "
                   f"Delta norm: {opt_result['delta_norm']:.4f}")
 
-            # ── Generate for each video using the shared delta ──
+            # ── Generate ONLY for the eval video ──
             vae.to(args.device)
             text_encoder.to(args.device)
 
-            for vi, bd in enumerate(batch_data):
-                v_idx = global_idx + vi
-                if v_idx < start_idx:
-                    continue
+            result = {
+                "video_name": eval_name,
+                "video_path": eval_entry["video_path"],
+                "caption": eval_entry["caption"],
+                "train_time": train_time,
+                "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
+                "delta_norm": opt_result["delta_norm"],
+                "batch_size": len(training_entries),
+                "num_neighbors": len(training_entries) - 1,
+                "early_stopping_info": opt_result.get("early_stopping_info"),
+                "success": True,
+            }
 
-                video_name = bd["video_name"]
-                print(f"\n  [{v_idx + 1}/{len(videos)}] Generating: {video_name}")
+            gen_time = 0.0
+            if not args.skip_generation:
+                from PIL import Image
 
-                result = {
-                    "video_name": video_name,
-                    "video_path": bd["video_path"],
-                    "caption": bd["caption"],
-                    "train_time": train_time / len(batch_data),
-                    "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
-                    "delta_norm": opt_result["delta_norm"],
-                    "batch_size": len(batch_data),
-                    "early_stopping_info": opt_result.get("early_stopping_info"),
-                    "success": True,
-                }
+                gen_pf = gen_pixel_frames.to(args.device)
+                pf = gen_pf.squeeze(0)
+                pf = ((pf + 1.0) / 2.0).clamp(0, 1)
+                cond_images = []
+                for t_idx in range(pf.shape[1]):
+                    frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
+                    cond_images.append(Image.fromarray(frame_np))
 
-                gen_time = 0.0
-                if not args.skip_generation:
-                    from PIL import Image
+                wrapper.apply_to_dit()
+                try:
+                    gen_start = time.time()
+                    gen_frames = generate_video_continuation(
+                        pipe=pipe,
+                        video_frames=cond_images,
+                        prompt=eval_entry["caption"],
+                        num_cond_frames=args.num_cond_frames,
+                        num_frames=args.num_frames,
+                        num_inference_steps=args.num_inference_steps,
+                        guidance_scale=args.guidance_scale,
+                        seed=args.seed + v_idx,
+                        resolution=args.resolution,
+                        device=args.device,
+                    )
+                    gen_time = time.time() - gen_start
 
-                    gen_pf = bd["gen_pixel_frames"].to(args.device)
-                    pf = gen_pf.squeeze(0)
-                    pf = ((pf + 1.0) / 2.0).clamp(0, 1)
-                    cond_images = []
-                    for t_idx in range(pf.shape[1]):
-                        frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
-                        cond_images.append(Image.fromarray(frame_np))
+                    result["gen_time"] = gen_time
 
-                    wrapper.apply_to_dit()
-                    try:
-                        gen_start = time.time()
-                        gen_frames = generate_video_continuation(
-                            pipe=pipe,
-                            video_frames=cond_images,
-                            prompt=bd["caption"],
-                            num_cond_frames=args.num_cond_frames,
-                            num_frames=args.num_frames,
-                            num_inference_steps=args.num_inference_steps,
-                            guidance_scale=args.guidance_scale,
-                            seed=args.seed + v_idx,
-                            resolution=args.resolution,
-                            device=args.device,
-                        )
-                        gen_time = time.time() - gen_start
+                    output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
+                    if not args.no_save_videos:
+                        save_video_from_numpy(gen_frames, output_path, fps=24)
+                        result["output_path"] = output_path
 
-                        result["gen_time"] = gen_time
+                    num_gen = args.num_frames - args.num_cond_frames
+                    metrics = evaluate_generation_metrics(
+                        gen_output=gen_frames,
+                        video_path=eval_entry["video_path"],
+                        num_cond_frames=args.num_cond_frames,
+                        num_gen_frames=num_gen,
+                        gen_start_frame=args.gen_start_frame,
+                        device=args.device,
+                    )
+                    result.update(metrics)
+                    print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
+                          f"SSIM={metrics['ssim']:.4f}, "
+                          f"LPIPS={metrics['lpips']:.4f}")
+                finally:
+                    wrapper.remove_from_dit()
 
-                        output_path = os.path.join(videos_dir, f"{video_name}_delta_a.mp4")
-                        if not args.no_save_videos:
-                            save_video_from_numpy(gen_frames, output_path, fps=24)
-                            result["output_path"] = output_path
+                del gen_pf
+                torch_gc()
 
-                        num_gen = args.num_frames - args.num_cond_frames
-                        metrics = evaluate_generation_metrics(
-                            gen_output=gen_frames,
-                            video_path=bd["video_path"],
-                            num_cond_frames=args.num_cond_frames,
-                            num_gen_frames=num_gen,
-                            gen_start_frame=args.gen_start_frame,
-                            device=args.device,
-                        )
-                        result.update(metrics)
-                        print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
-                              f"SSIM={metrics['ssim']:.4f}, "
-                              f"LPIPS={metrics['lpips']:.4f}")
-                    finally:
-                        wrapper.remove_from_dit()
+            result["total_time"] = train_time + gen_time
+            all_results.append(result)
 
-                    del gen_pf
-                    torch_gc()
+            save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
 
-                result["total_time"] = (train_time / len(batch_data)) + gen_time
-                all_results.append(result)
-
-                save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
+            # Cleanup per-video
+            del wrapper, batch_data, gen_pixel_frames
+            torch_gc()
 
         except Exception as e:
             import traceback
-            print(f"  BATCH ERROR: {e}")
+            print(f"  ERROR: {e}")
             traceback.print_exc()
-            for vi, entry in enumerate(batch):
-                v_idx = global_idx + vi
-                if v_idx < start_idx:
-                    continue
-                all_results.append({
-                    "video_name": Path(entry["video_path"]).stem,
-                    "video_path": entry["video_path"],
-                    "error": str(e),
-                    "success": False,
-                })
-            save_checkpoint({"next_idx": global_idx + len(batch), "results": all_results}, ckpt_path)
-
-        # Cleanup batch
-        del wrapper, batch_data
-        torch_gc()
-        global_idx += len(batch)
+            all_results.append({
+                "video_name": eval_name,
+                "video_path": eval_entry["video_path"],
+                "error": str(e),
+                "success": False,
+            })
+            save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
 
     # Save final results
     successful = [r for r in all_results if r.get("success", False)]
@@ -736,7 +750,7 @@ def main():
         "delta_steps": args.delta_steps,
         "delta_lr": args.delta_lr,
         "batch_videos": args.batch_videos,
-        "batch_method": args.batch_method,
+        "retrieval_pool_dir": args.retrieval_pool_dir,
         "num_videos": len(all_results),
         "num_successful": len(successful),
         "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,

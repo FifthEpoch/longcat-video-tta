@@ -86,9 +86,10 @@ USE_BUILTIN_LORA="${USE_BUILTIN_LORA:-}"
 TARGET_FFN="${TARGET_FFN:-}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
 
-# Batch-level TTA (multi-video batching)
+# Batch-level TTA (retrieval-augmented)
 BATCH_VIDEOS="${BATCH_VIDEOS:-1}"
 BATCH_METHOD="${BATCH_METHOD:-similarity}"
+RETRIEVAL_POOL_DIR="${RETRIEVAL_POOL_DIR:-}"
 
 # Delta A/B/C shared
 DELTA_STEPS="${DELTA_STEPS:-20}"
@@ -195,11 +196,18 @@ case "${METHOD}" in
     echo "  Learning rate  : ${LEARNING_RATE}"
     echo "  Num steps      : ${NUM_STEPS}"
     echo "  Warmup steps   : ${WARMUP_STEPS}"
+    echo "  Batch videos   : ${BATCH_VIDEOS}"
+    echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
     echo "=============================================================================="
 
     EXTRA_FLAGS=""
     if [ -n "${SKIP_GENERATION}" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --skip-generation"
+    fi
+
+    POOL_FLAGS=""
+    if [ -n "${RETRIEVAL_POOL_DIR}" ]; then
+        POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
     fi
 
     python lora_experiment/scripts/run_full_tta.py \
@@ -213,6 +221,8 @@ case "${METHOD}" in
         --weight-decay "${WEIGHT_DECAY}" \
         --max-grad-norm "${MAX_GRAD_NORM}" \
         --optimizer "${OPTIMIZER}" \
+        --batch-videos "${BATCH_VIDEOS}" \
+        ${POOL_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
@@ -238,6 +248,8 @@ case "${METHOD}" in
     echo "  Learning rate  : ${LEARNING_RATE}"
     echo "  Num steps      : ${NUM_STEPS}"
     echo "  Warmup steps   : ${WARMUP_STEPS}"
+    echo "  Batch videos   : ${BATCH_VIDEOS}"
+    echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
     echo "=============================================================================="
 
     EXTRA_FLAGS=""
@@ -249,6 +261,11 @@ case "${METHOD}" in
     fi
     if [ -n "${USE_BUILTIN_LORA}" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --use-builtin-lora"
+    fi
+
+    POOL_FLAGS=""
+    if [ -n "${RETRIEVAL_POOL_DIR}" ]; then
+        POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
     fi
 
     python lora_experiment/scripts/run_lora_tta.py \
@@ -265,6 +282,8 @@ case "${METHOD}" in
         --warmup-steps "${WARMUP_STEPS}" \
         --weight-decay "${WEIGHT_DECAY}" \
         --max-grad-norm "${MAX_GRAD_NORM}" \
+        --batch-videos "${BATCH_VIDEOS}" \
+        ${POOL_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \
@@ -285,7 +304,13 @@ case "${METHOD}" in
     echo "  Delta steps    : ${DELTA_STEPS}"
     echo "  Batch videos   : ${BATCH_VIDEOS}"
     echo "  Batch method   : ${BATCH_METHOD}"
+    echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
     echo "=============================================================================="
+
+    POOL_FLAGS=""
+    if [ -n "${RETRIEVAL_POOL_DIR}" ]; then
+        POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
+    fi
 
     python delta_experiment/scripts/run_delta_a.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
@@ -296,6 +321,7 @@ case "${METHOD}" in
         --delta-lr "${DELTA_LR}" \
         --batch-videos "${BATCH_VIDEOS}" \
         --batch-method "${BATCH_METHOD}" \
+        ${POOL_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \

@@ -1218,63 +1218,66 @@ def save_checkpoint(checkpoint: dict, checkpoint_path: str):
 
 
 # ============================================================================
-# Video batching helpers
+# Retrieval-based batch helpers
 # ============================================================================
 
-def cluster_videos_by_prompt(
-    video_entries: List[Dict],
-    batch_size: int = 1,
-    method: str = "sequential",
-) -> List[List[Dict]]:
-    """Group video entries into batches for batch-level TTA.
+def build_retrieval_pool(
+    pool_entries: List[Dict],
+    model_name: str = "all-MiniLM-L6-v2",
+) -> Tuple[np.ndarray, Any]:
+    """Pre-compute normalised sentence embeddings for a pool of videos.
 
-    Parameters
-    ----------
-    video_entries : list of dicts with at least 'video_path' and 'caption'
-    batch_size : number of videos per batch (1 = instance-level)
-    method : grouping strategy
-        - 'sequential': simple sequential chunking
-        - 'similarity': group by text prompt similarity (requires sentence-transformers)
-
-    Returns
-    -------
-    List of batches, each batch is a list of video entry dicts.
+    Returns (embeddings, sentence_transformer_model) so the model can be
+    reused for encoding query captions without reloading.
     """
-    if batch_size <= 1:
-        return [[v] for v in video_entries]
+    from sentence_transformers import SentenceTransformer
 
-    if method == "similarity":
-        try:
-            from sentence_transformers import SentenceTransformer
-            from sklearn.cluster import KMeans
+    st_model = SentenceTransformer(model_name)
+    captions = [v.get("caption", "") for v in pool_entries]
+    embeddings = st_model.encode(
+        captions, show_progress_bar=True, normalize_embeddings=True,
+    )
+    print(f"  Retrieval pool: {len(pool_entries)} videos, "
+          f"embedding dim={embeddings.shape[1]}")
+    return embeddings, st_model
 
-            model = SentenceTransformer("all-MiniLM-L6-v2")
-            captions = [v.get("caption", "") for v in video_entries]
-            embeddings = model.encode(captions, show_progress_bar=False)
 
-            n_clusters = max(1, len(video_entries) // batch_size)
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(embeddings)
+def retrieve_neighbors(
+    query_entry: Dict,
+    pool_entries: List[Dict],
+    pool_embeddings: np.ndarray,
+    st_model: Any,
+    k: int,
+) -> List[Dict]:
+    """Return up to *k-1* nearest neighbours from the pool for *query_entry*.
 
-            from collections import defaultdict
-            clusters = defaultdict(list)
-            for i, label in enumerate(labels):
-                clusters[label].append(video_entries[i])
+    The intended batch for TTA training is ``[query_entry] + neighbours`` so
+    the total size is *k*.  When *k* <= 1, an empty list is returned.
 
-            batches = []
-            for cluster_entries in clusters.values():
-                for i in range(0, len(cluster_entries), batch_size):
-                    batches.append(cluster_entries[i:i + batch_size])
-            return batches
+    Matching is by cosine similarity of text-prompt embeddings.  The query
+    video itself is excluded from the returned list (matched by absolute path).
+    """
+    if k <= 1:
+        return []
 
-        except ImportError:
-            print("WARNING: sentence-transformers not available, falling back to sequential",
-                  file=sys.stderr)
+    query_emb = st_model.encode(
+        [query_entry.get("caption", "")], normalize_embeddings=True,
+    )
+    sims = (pool_embeddings @ query_emb.T).squeeze()
 
-    batches = []
-    for i in range(0, len(video_entries), batch_size):
-        batches.append(video_entries[i:i + batch_size])
-    return batches
+    query_path = os.path.abspath(query_entry.get("video_path", ""))
+    ranked = np.argsort(-sims)
+
+    neighbors: List[Dict] = []
+    for idx in ranked:
+        if len(neighbors) >= k - 1:
+            break
+        pool_path = os.path.abspath(pool_entries[int(idx)].get("video_path", ""))
+        if pool_path == query_path:
+            continue
+        neighbors.append(pool_entries[int(idx)])
+
+    return neighbors
 
 
 # ============================================================================

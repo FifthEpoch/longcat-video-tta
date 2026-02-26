@@ -65,6 +65,8 @@ from common import (
     parse_speed_factors,
     split_tta_latents,
     evaluate_generation_metrics,
+    build_retrieval_pool,
+    retrieve_neighbors,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -208,6 +210,82 @@ def reset_dit_weights(dit: nn.Module, base_state: Dict[str, torch.Tensor]):
                 param.data.copy_(base_state[name].to(param.device))
 
 
+def finetune_full_batch(
+    dit: nn.Module,
+    batch_data: List[Dict],
+    num_steps: int = 10,
+    lr: float = 1e-5,
+    warmup_steps: int = 2,
+    weight_decay: float = 0.01,
+    max_grad_norm: float = 1.0,
+    device: str = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
+    optimizer_type: str = "sgd",
+) -> Dict:
+    """Fine-tune all DiT parameters across multiple videos (round-robin).
+
+    Used for retrieval-augmented batch-level TTA.
+    """
+    params = [p for p in dit.parameters() if p.requires_grad]
+
+    if optimizer_type == "adamw":
+        optimizer = AdamW(params, lr=lr, betas=(0.9, 0.999),
+                          weight_decay=weight_decay, eps=1e-8)
+    else:
+        optimizer = SGD(params, lr=lr, momentum=0.0, weight_decay=weight_decay)
+
+    dit.train()
+    losses = []
+    n_vids = len(batch_data)
+    train_start = time.time()
+
+    for step in range(num_steps):
+        optimizer.zero_grad(set_to_none=True)
+
+        if step < warmup_steps and warmup_steps > 0:
+            warmup_lr = lr * (step + 1) / warmup_steps
+            for pg in optimizer.param_groups:
+                pg["lr"] = warmup_lr
+
+        vi = step % n_vids
+        bd = batch_data[vi]
+
+        cond_lat = bd["cond_latents"].to(device)
+        train_lat = bd["train_latents"].to(device)
+        pe = bd["prompt_embeds"].to(device)
+        pm = bd["prompt_mask"].to(device) if bd["prompt_mask"] is not None else None
+
+        loss = compute_flow_matching_loss_conditioned(
+            dit=dit,
+            cond_latents=cond_lat,
+            target_latents=train_lat,
+            prompt_embeds=pe,
+            prompt_mask=pm,
+            device=device,
+            dtype=dtype,
+        )
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
+        optimizer.step()
+
+        losses.append(loss.item())
+        del cond_lat, train_lat, pe, pm, loss
+
+        if step % 5 == 0:
+            torch.cuda.empty_cache()
+
+    train_time = time.time() - train_start
+    dit.eval()
+    torch.cuda.empty_cache()
+
+    return {
+        "losses": losses,
+        "train_time": train_time,
+        "early_stopping_info": None,
+    }
+
+
 # ============================================================================
 # Evaluation helpers
 # ============================================================================
@@ -267,6 +345,17 @@ def main():
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument("--no-save-videos", action="store_true",
                         help="Skip saving generated videos to disk (metrics still computed in-memory)")
+
+    # Retrieval-augmented batch TTA
+    parser.add_argument("--batch-videos", type=int, default=1,
+                        help="Number of videos per TTA batch. 1=instance-level (default), "
+                             "K>1=retrieval-augmented batch-level.")
+    parser.add_argument("--batch-method", type=str, default="similarity",
+                        choices=["sequential", "similarity"],
+                        help="(Legacy) Retrieval is always by text-prompt similarity.")
+    parser.add_argument("--retrieval-pool-dir", type=str, default=None,
+                        help="Directory containing the larger retrieval pool dataset. "
+                             "Required when --batch-videos > 1.")
 
     # Early stopping
     add_early_stopping_args(parser)
@@ -365,11 +454,26 @@ def main():
     with open(os.path.join(args.output_dir, "config.json"), "w") as f:
         json.dump(exp_config, f, indent=2)
 
-    # Load video list
-    videos = load_ucf101_video_list(
+    # Load evaluation videos (always from --data-dir)
+    eval_videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
     )
-    print(f"\nTotal videos: {len(videos)}")
+    print(f"\nEvaluation videos: {len(eval_videos)}")
+
+    # Build retrieval pool for batch-level TTA
+    batch_level = args.batch_videos > 1
+    pool_entries = None
+    pool_embeddings = None
+    st_model = None
+
+    if batch_level:
+        pool_dir = args.retrieval_pool_dir or args.data_dir
+        if pool_dir == args.data_dir:
+            print(f"\nWARNING: --retrieval-pool-dir not set; using --data-dir as pool.",
+                  file=sys.stderr)
+        pool_entries = load_ucf101_video_list(pool_dir, max_videos=999999, seed=args.seed)
+        print(f"Retrieval pool: {len(pool_entries)} videos from {pool_dir}")
+        pool_embeddings, st_model = build_retrieval_pool(pool_entries)
 
     # Build early stopper
     early_stopper = build_early_stopper_from_args(args)
@@ -380,127 +484,167 @@ def main():
         print("[EarlyStopper] Disabled")
 
     # Process videos
-    print(f"\nProcessing {len(videos) - start_idx} videos...\n")
+    print(f"\nProcessing {len(eval_videos) - start_idx} videos...\n")
     videos_dir = os.path.join(args.output_dir, "videos")
     if not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
-    for idx, entry in enumerate(tqdm(videos, desc="Full TTA")):
+    for idx, eval_entry in enumerate(tqdm(eval_videos, desc="Full TTA")):
         if idx < start_idx:
             continue
 
-        video_path = entry["video_path"]
-        caption = entry["caption"]
+        video_path = eval_entry["video_path"]
+        caption = eval_entry["caption"]
         video_name = Path(video_path).stem
 
-        print(f"\n[{idx + 1}/{len(videos)}] {video_name}: {caption}")
+        print(f"\n[{idx + 1}/{len(eval_videos)}] {video_name}: {caption}")
+
+        # Build training batch: eval video + K-1 nearest neighbours
+        if batch_level:
+            neighbors = retrieve_neighbors(
+                eval_entry, pool_entries, pool_embeddings, st_model,
+                k=args.batch_videos,
+            )
+            training_entries = [eval_entry] + neighbors
+            print(f"  Batch: 1 eval + {len(neighbors)} retrieved neighbours")
+        else:
+            training_entries = [eval_entry]
 
         try:
             # Reset DiT to base weights before each video
             reset_dit_weights(dit, base_state)
 
-            # ── Frame loading ─────────────────────────────────────────
-            tta_start = args.gen_start_frame - args.tta_total_frames
-            pixel_frames = load_video_frames(
-                video_path, args.tta_total_frames, height=480, width=832,
-                start_frame=max(0, tta_start),
-            ).to(args.device, torch.bfloat16)
+            if batch_level:
+                # ── Batch-level: pre-encode all videos, train jointly ──
+                batch_data = []
+                for te in training_entries:
+                    tta_start = args.gen_start_frame - args.tta_total_frames
+                    pf = load_video_frames(
+                        te["video_path"], args.tta_total_frames, height=480, width=832,
+                        start_frame=max(0, tta_start),
+                    ).to(args.device, torch.bfloat16)
 
-            all_latents = encode_video(vae, pixel_frames, normalize=True)
+                    al = encode_video(vae, pf, normalize=True)
+                    vae_t_scale = 4
+                    num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
+                    cl, tl, _ = split_tta_latents(
+                        al, num_ctx_lat,
+                        holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+                    )
+                    pe, pm = encode_prompt(
+                        tokenizer, text_encoder, te["caption"],
+                        device=args.device, dtype=torch.bfloat16,
+                    )
+                    batch_data.append({
+                        "cond_latents": cl.cpu(), "train_latents": tl.cpu(),
+                        "prompt_embeds": pe.cpu(),
+                        "prompt_mask": pm.cpu() if pm is not None else None,
+                    })
+                    del al, pf
+                    torch_gc()
 
-            vae_t_scale = 4
-            num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
-            cond_latents, train_latents, val_latents = split_tta_latents(
-                all_latents, num_ctx_lat,
-                holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
-            )
-            print(f"  Latent split: cond={cond_latents.shape[2]}, "
-                  f"train={train_latents.shape[2]}, "
-                  f"val={val_latents.shape[2] if val_latents is not None else 0}")
-
-            gen_cond_start = args.gen_start_frame - args.num_cond_frames
-            gen_pixel_frames = load_video_frames(
-                video_path, args.num_cond_frames, height=480, width=832,
-                start_frame=max(0, gen_cond_start),
-            ).to(args.device, torch.bfloat16)
-
-            # Encode text
-            prompt_embeds, prompt_mask = encode_prompt(
-                tokenizer, text_encoder, caption,
-                device=args.device, dtype=torch.bfloat16,
-            )
-
-            # Build augmented train latent variants if enabled
-            train_latents_variants = None
-            if args.aug_enabled:
-                from common import build_augmented_pixel_variants
-                pix_variants = build_augmented_pixel_variants(
-                    pixel_frames,
-                    enable_flip=args.aug_flip,
-                    rotate_deg=args.aug_rotate_deg,
-                    rotate_random_min=args.aug_rotate_random_min,
-                    rotate_random_max=args.aug_rotate_random_max,
-                    rotate_random_count=args.aug_rotate_random_count,
-                    rotate_random_step=args.aug_rotate_random_step,
-                    rotate_zoom=args.aug_rotate_zoom,
-                    speed_factors=parse_speed_factors(args.aug_speed_factors),
+                train_result = finetune_full_batch(
+                    dit=dit, batch_data=batch_data,
+                    num_steps=args.num_steps, lr=args.learning_rate,
+                    warmup_steps=args.warmup_steps,
+                    weight_decay=args.weight_decay,
+                    max_grad_norm=args.max_grad_norm,
+                    device=args.device, dtype=torch.bfloat16,
+                    optimizer_type=args.optimizer,
                 )
-                train_latents_variants = []
-                for pv in pix_variants:
-                    if pv["name"] == "orig":
-                        train_latents_variants.append({"latents": train_latents, "name": "orig"})
-                    else:
-                        aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
-                        t_start = cond_latents.shape[2]
-                        t_end = t_start + train_latents.shape[2]
-                        train_latents_variants.append({
-                            "latents": aug_lat[:, :, t_start:t_end],
-                            "name": pv["name"],
-                        })
-                print(f"  Augmentation: {len(train_latents_variants)} variants "
-                      f"({', '.join(v['name'] for v in train_latents_variants)})")
+                del batch_data
 
-            # Setup early stopper for this video
-            if early_stopper is not None and val_latents is not None:
-                def _es_forward_fn(hs, ts, ncl):
-                    return dit(
-                        hidden_states=hs, timestep=ts,
-                        encoder_hidden_states=prompt_embeds,
-                        encoder_attention_mask=prompt_mask,
-                        num_cond_latents=ncl,
+            else:
+                # ── Instance-level: original single-video path ──
+                tta_start = args.gen_start_frame - args.tta_total_frames
+                pixel_frames = load_video_frames(
+                    video_path, args.tta_total_frames, height=480, width=832,
+                    start_frame=max(0, tta_start),
+                ).to(args.device, torch.bfloat16)
+
+                all_latents = encode_video(vae, pixel_frames, normalize=True)
+
+                vae_t_scale = 4
+                num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
+                cond_latents, train_latents, val_latents = split_tta_latents(
+                    all_latents, num_ctx_lat,
+                    holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+                )
+
+                prompt_embeds, prompt_mask = encode_prompt(
+                    tokenizer, text_encoder, caption,
+                    device=args.device, dtype=torch.bfloat16,
+                )
+
+                train_latents_variants = None
+                if args.aug_enabled:
+                    from common import build_augmented_pixel_variants
+                    pix_variants = build_augmented_pixel_variants(
+                        pixel_frames,
+                        enable_flip=args.aug_flip,
+                        rotate_deg=args.aug_rotate_deg,
+                        rotate_random_min=args.aug_rotate_random_min,
+                        rotate_random_max=args.aug_rotate_random_max,
+                        rotate_random_count=args.aug_rotate_random_count,
+                        rotate_random_step=args.aug_rotate_random_step,
+                        rotate_zoom=args.aug_rotate_zoom,
+                        speed_factors=parse_speed_factors(args.aug_speed_factors),
+                    )
+                    train_latents_variants = []
+                    for pv in pix_variants:
+                        if pv["name"] == "orig":
+                            train_latents_variants.append({"latents": train_latents, "name": "orig"})
+                        else:
+                            aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
+                            t_start = cond_latents.shape[2]
+                            t_end = t_start + train_latents.shape[2]
+                            train_latents_variants.append({
+                                "latents": aug_lat[:, :, t_start:t_end],
+                                "name": pv["name"],
+                            })
+
+                if early_stopper is not None and val_latents is not None:
+                    def _es_forward_fn(hs, ts, ncl):
+                        return dit(
+                            hidden_states=hs, timestep=ts,
+                            encoder_hidden_states=prompt_embeds,
+                            encoder_attention_mask=prompt_mask,
+                            num_cond_latents=ncl,
+                        )
+
+                    early_stopper.setup(
+                        model=dit,
+                        cond_latents=cond_latents,
+                        val_latents=val_latents,
+                        prompt_embeds=prompt_embeds,
+                        prompt_mask=prompt_mask,
+                        device=args.device,
+                        dtype=torch.bfloat16,
+                        forward_fn=_es_forward_fn,
+                        video_id=video_name,
                     )
 
-                early_stopper.setup(
-                    model=dit,
+                train_result = finetune_full_on_conditioning(
+                    dit=dit,
                     cond_latents=cond_latents,
-                    val_latents=val_latents,
+                    train_latents=train_latents,
                     prompt_embeds=prompt_embeds,
                     prompt_mask=prompt_mask,
+                    num_steps=args.num_steps,
+                    lr=args.learning_rate,
+                    warmup_steps=args.warmup_steps,
+                    weight_decay=args.weight_decay,
+                    max_grad_norm=args.max_grad_norm,
                     device=args.device,
                     dtype=torch.bfloat16,
-                    forward_fn=_es_forward_fn,
-                    video_id=video_name,
-                    # Note: For full TTA, no save_fn — too expensive to snapshot full model
+                    early_stopper=early_stopper if val_latents is not None else None,
+                    train_latents_variants=train_latents_variants,
+                    optimizer_type=args.optimizer,
                 )
 
-            # Fine-tune
-            train_result = finetune_full_on_conditioning(
-                dit=dit,
-                cond_latents=cond_latents,
-                train_latents=train_latents,
-                prompt_embeds=prompt_embeds,
-                prompt_mask=prompt_mask,
-                num_steps=args.num_steps,
-                lr=args.learning_rate,
-                warmup_steps=args.warmup_steps,
-                weight_decay=args.weight_decay,
-                max_grad_norm=args.max_grad_norm,
-                device=args.device,
-                dtype=torch.bfloat16,
-                early_stopper=early_stopper if val_latents is not None else None,
-                train_latents_variants=train_latents_variants,
-                optimizer_type=args.optimizer,
-            )
+                del all_latents, cond_latents, train_latents, val_latents
+                del pixel_frames, prompt_embeds, prompt_mask
+                torch_gc()
 
             result = {
                 "idx": idx,
@@ -509,22 +653,25 @@ def main():
                 "caption": caption,
                 "train_time": train_result["train_time"],
                 "final_loss": train_result["losses"][-1] if train_result["losses"] else None,
-                "avg_loss": (
-                    sum(train_result["losses"]) / len(train_result["losses"])
-                    if train_result["losses"]
-                    else None
-                ),
                 "num_train_steps": len(train_result["losses"]),
+                "batch_size": len(training_entries),
+                "num_neighbors": len(training_entries) - 1,
                 "early_stopping_info": train_result.get("early_stopping_info"),
                 "success": True,
             }
 
-            # Generate video continuation
+            # Generate video continuation (eval video only)
             gen_time = 0.0
             if not args.skip_generation:
                 from PIL import Image
 
-                pf = gen_pixel_frames.squeeze(0)  # [C, T, H, W]
+                gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                gen_pixel_frames = load_video_frames(
+                    video_path, args.num_cond_frames, height=480, width=832,
+                    start_frame=max(0, gen_cond_start),
+                ).to(args.device, torch.bfloat16)
+
+                pf = gen_pixel_frames.squeeze(0)
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
                 cond_images = []
                 for t_idx in range(pf.shape[1]):
@@ -533,19 +680,15 @@ def main():
 
                 gen_start = time.time()
                 gen_frames = generate_video_continuation(
-                    pipe=pipe,
-                    video_frames=cond_images,
-                    prompt=caption,
+                    pipe=pipe, video_frames=cond_images, prompt=caption,
                     num_cond_frames=args.num_cond_frames,
                     num_frames=args.num_frames,
                     num_inference_steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
                     seed=args.seed + idx,
-                    resolution=args.resolution,
-                    device=args.device,
+                    resolution=args.resolution, device=args.device,
                 )
                 gen_time = time.time() - gen_start
-
                 result["gen_time"] = gen_time
 
                 output_path = os.path.join(videos_dir, f"{video_name}_full.mp4")
@@ -555,14 +698,15 @@ def main():
 
                 num_gen = args.num_frames - args.num_cond_frames
                 metrics = evaluate_generation_metrics(
-                    gen_output=gen_frames,
-                    video_path=video_path,
+                    gen_output=gen_frames, video_path=video_path,
                     num_cond_frames=args.num_cond_frames,
                     num_gen_frames=num_gen,
-                    gen_start_frame=args.gen_start_frame,
-                    device=args.device,
+                    gen_start_frame=args.gen_start_frame, device=args.device,
                 )
                 result.update(metrics)
+
+                del gen_pixel_frames
+                torch_gc()
 
             result["total_time"] = train_result["train_time"] + gen_time
 
@@ -574,29 +718,17 @@ def main():
 
             all_results.append(result)
 
-            # Cleanup
-            del all_latents, cond_latents, train_latents, val_latents
-            del pixel_frames, gen_pixel_frames, prompt_embeds, prompt_mask
-            torch_gc()
-
         except Exception as e:
             import traceback
             print(f"  ERROR: {e}")
             traceback.print_exc()
             all_results.append({
-                "idx": idx,
-                "video_name": video_name,
-                "video_path": video_path,
-                "error": str(e),
-                "success": False,
+                "idx": idx, "video_name": video_name,
+                "video_path": video_path, "error": str(e), "success": False,
             })
             torch_gc()
 
-        # Save checkpoint after each video
-        save_checkpoint(
-            {"next_idx": idx + 1, "results": all_results},
-            ckpt_path,
-        )
+        save_checkpoint({"next_idx": idx + 1, "results": all_results}, ckpt_path)
 
     # Save final results
     successful = [r for r in all_results if r.get("success", False)]
@@ -604,17 +736,20 @@ def main():
         "method": "full_tta",
         "learning_rate": args.learning_rate,
         "num_steps": args.num_steps,
+        "batch_videos": args.batch_videos,
+        "retrieval_pool_dir": args.retrieval_pool_dir,
         "total_params": total_params,
         "num_videos": len(all_results),
         "num_successful": len(successful),
         "num_failed": len(all_results) - len(successful),
         "avg_train_time": (
-            np.mean([r["train_time"] for r in successful])
-            if successful
-            else 0
+            np.mean([r["train_time"] for r in successful]) if successful else 0
         ),
         "avg_final_loss": (
-            float(np.mean(valid_losses)) if (valid_losses := [r["final_loss"] for r in successful if r.get("final_loss") is not None]) else None
+            float(np.mean(valid_losses))
+            if (valid_losses := [r["final_loss"] for r in successful
+                                 if r.get("final_loss") is not None])
+            else None
         ),
         "results": all_results,
     }

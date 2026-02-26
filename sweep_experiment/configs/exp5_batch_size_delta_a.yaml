@@ -1,24 +1,38 @@
-# Series 37: Experiment 5 -- Video Batch-Size Ablation (Delta-A)
-# Goal: Study impact of batch-level TTA vs instance-level TTA.
-#   instance-level (batch=1): adapt on 1 video, reset, repeat
-#   batch-level (batch=K): pool K similar videos by text prompt similarity,
-#       jointly adapt a shared delta, then generate for all K
-#   dataset-level (batch=1000): adapt on ALL videos before generating
+# Series 37: Experiment 5 -- Retrieval-Augmented Batch-Size Ablation (Delta-A)
+# Goal: Study impact of retrieval-augmented batch-level TTA vs instance-level.
+#   instance-level (batch=1): adapt on 1 eval video alone
+#   batch-level (batch=K): for each eval video, retrieve K-1 nearest
+#       neighbours by text-prompt similarity from a larger pool, train a
+#       shared delta on the eval video + neighbours, generate for eval only
+#   dataset-level (batch=N_pool): use the entire pool as training batch
+#
+# Eval set: the same 100 videos from --data-dir (unchanged across all runs)
+# Retrieval pool: 1000-video superset in retrieval_pool_dir
 # Fixed: Delta-A best config (delta_lr=5e-3, delta_steps=20)
 # Swept: batch_videos
-# NOTE: requires 1000-video dataset. Submit with:
-#   --data-dir /scratch/wc3013/longcat-video-tta/datasets/ucf101_1000_480p
-#   or: --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p
+#
+# Submit with --data-dir pointing to the ORIGINAL 100-video dataset:
+#   --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_100_480p
+# The retrieval_pool_dir below points to the 1000-video superset.
+#
+# COST & TRAINING NOTE:
+#   - Pre-encoding time scales linearly with K (each neighbour needs VAE + text encode).
+#   - Training time is constant (num_steps is fixed regardless of K).
+#   - BUT training steps are distributed round-robin, so each video gets ~num_steps/K
+#     gradient updates. At K=100, steps=20, the eval video is only trained on ~once.
+#   - If results show under-training at large K, consider a follow-up sweep that
+#     increases num_steps proportionally with K (e.g. steps=20*K or steps=max(20, K)).
 
 method: delta_a
 series: 37
 series_name: exp5_batch_size_delta_a
-description: "Batch-size ablation: Delta-A TTA"
+description: "Retrieval-augmented batch-size ablation: Delta-A TTA"
 
 fixed:
   delta_lr: 5.0e-3
   delta_steps: 20
   batch_method: similarity
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p
   num_cond_frames: 14
   num_frames: 28
   gen_start_frame: 32
@@ -26,7 +40,7 @@ fixed:
   guidance_scale: 4.0
   resolution: 480p
   seed: 42
-  max_videos: 1000
+  max_videos: 100
 
 sweep:
   - run_id: BS_DA1
@@ -38,4 +52,4 @@ sweep:
   - run_id: BS_DA4
     batch_videos: 50
   - run_id: BS_DA5
-    batch_videos: 1000
+    batch_videos: 100
