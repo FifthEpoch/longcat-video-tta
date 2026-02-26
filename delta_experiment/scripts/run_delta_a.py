@@ -728,7 +728,9 @@ def main():
             save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
 
             # Cleanup per-video
-            del wrapper, batch_data, gen_pixel_frames
+            wrapper = None
+            batch_data = None
+            gen_pixel_frames = None
             torch_gc()
 
         except Exception as e:
@@ -742,6 +744,7 @@ def main():
                 "success": False,
             })
             save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
+            torch_gc()
 
     # Save final results
     successful = [r for r in all_results if r.get("success", False)]

@@ -43,7 +43,7 @@ echo "==========================================================================
 SCRATCH_BASE="/scratch/wc3013"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 ENV_PATH="${SCRATCH_BASE}/conda-envs/longcat"
-DATASET_DIR="${PROJECT_ROOT}/datasets/panda_100"
+DATASET_DIR="${PROJECT_ROOT}/datasets/panda_${NUM_VIDEOS}"
 
 # Temp dirs on scratch (avoid cross-device link issues)
 export TMPDIR="${SCRATCH_BASE}/tmp"
