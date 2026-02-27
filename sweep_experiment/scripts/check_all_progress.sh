@@ -8,7 +8,12 @@
 # ============================================================================
 
 set -euo pipefail
-PROJECT_ROOT="/scratch/wc3013/longcat-video-tta"
+# PROJECT_ROOT: repo root so baseline_experiment/results and sweep results resolve.
+# If unset, derive from this script's path (sweep_experiment/scripts/ -> repo root).
+if [ -z "${PROJECT_ROOT:-}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+fi
 RESULTS_ROOT="${PROJECT_ROOT}/sweep_experiment/results"
 BASE_RESULTS="${PROJECT_ROOT}/baseline_experiment/results"
 EXTRACTOR="${PROJECT_ROOT}/sweep_experiment/scripts/extract_summary.py"

@@ -6,6 +6,19 @@
 
 ---
 
+## Queue reason → script and output (for dual preempt / no-preempt submissions)
+
+When the same sweep is submitted twice (preemption and no-preemption), use `squeue` reason to tell them apart:
+
+| `squeue` reason | Script used | Results directory |
+|------------------|-------------|-------------------|
+| **(Priority)** | `run_sweep_no_preempt.sbatch` (no preemption) | `sweep_experiment/results_no_preempt/<series>/<run_id>/` |
+| **(QOSMaxGRESPerUser)** | `run_sweep.sbatch` (with `--comment="preemption=yes;requeue=true"`) | `sweep_experiment/results/<series>/<run_id>/` |
+
+So: **Priority** = normal queue, no preemption, saves to `results_no_preempt/`. **QOSMaxGRESPerUser** = preemption queue, saves to default `results/`.
+
+---
+
 ## Quick Summary
 
 | Category | Status |

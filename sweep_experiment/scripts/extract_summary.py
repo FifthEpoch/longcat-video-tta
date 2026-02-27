@@ -272,54 +272,111 @@ def process_dir(dir_path):
         return {"not_found": True}
 
 
+# Abbreviations for config keys to save horizontal space
+_CONFIG_ABBREV = {
+    "learning_rate": "lr",
+    "num_steps": "steps",
+    "warmup_steps": "warmup",
+    "weight_decay": "wd",
+    "max_grad_norm": "mgn",
+    "delta_steps": "d_steps",
+    "delta_lr": "d_lr",
+    "num_groups": "grp",
+    "delta_target": "d_tgt",
+    "delta_mode": "d_mode",
+    "lora_rank": "r",
+    "lora_alpha": "a",
+    "total_params": "params",
+    "trainable_params": "trainable",
+    "norm_target": "n_tgt",
+    "norm_steps": "n_steps",
+    "norm_lr": "n_lr",
+    "film_mode": "f_mode",
+    "film_steps": "f_steps",
+    "film_lr": "f_lr",
+}
+
+
 def _config_short(cfg):
-    """Short config string (exclude cond/gen, truncate)."""
+    """Short config string (abbreviated keys, exclude cond/gen, truncate)."""
     skip = ("method", "num_cond_frames", "num_frames", "gen_start_frame")
     parts = []
     for k, v in (cfg or {}).items():
         if k in skip:
             continue
+        key = _CONFIG_ABBREV.get(k, k)
         if isinstance(v, float):
-            parts.append(f"{k}={v:g}")
+            parts.append(f"{key}={v:g}")
         else:
-            parts.append(f"{k}={v}")
+            parts.append(f"{key}={v}")
     s = ", ".join(parts)
-    return s[:40] + "…" if len(s) > 40 else s
+    return s[:44] + "…" if len(s) > 44 else s
 
 
-def data_to_row(run_id, data, baseline_dir=None):
+def _infer_cond_gen_exp3(run_id, series_dir):
+    """Infer (num_cond, num_gen) for Exp 3 Training Frames Ablation from run_id when summary lacks them.
+    Exp 3 run_ids: TF_F1..TF_F4, TF_DA1..TF_DA4, etc. Suffix 1→2 cond, 2→7, 3→14, 4→24; gen=14."""
+    if not series_dir or "exp3_train_frames" not in os.path.normpath(series_dir):
+        return None, None
+    s = run_id.strip()
+    if not s:
+        return None, None
+    last = s[-1]
+    if last not in "1234":
+        return None, None
+    cond_map = {"1": 2, "2": 7, "3": 14, "4": 24}
+    return cond_map[last], 14
+
+
+def _bl_cell(baseline_val, run_val, decimals=2):
+    """Format baseline column: baseline value and delta, e.g. '21.5 (+0.9)'."""
+    if baseline_val is None or run_val is None:
+        return "—"
+    delta = run_val - baseline_val
+    sign = "+" if delta >= 0 else ""
+    if decimals <= 2:
+        return f"{fmt(baseline_val, decimals)} ({sign}{fmt(delta, decimals)})"
+    return f"{fmt(baseline_val, 4)} ({sign}{fmt(delta, 4)})"
+
+
+def data_to_row(run_id, data, baseline_dir=None, series_dir=None):
     """Turn one run's data into a dict of table column values (strings)."""
     row = {}
+    all_cols = ("ok", "PSNR", "PSNR_bl", "SSIM", "SSIM_bl", "LPIPS", "LPIPS_bl",
+                "cond", "gen", "config", "train_s", "gen_s", "ES")
     if "error" in data:
         row["run_id"] = run_id
-        row["status"] = f"ERROR: {data['error'][:30]}"
-        for k in ("ok", "PSNR", "SSIM", "LPIPS", "cond", "gen", "config", "train_s", "gen_s",
-                  "ES", "No-TTA_PSNR", "No-TTA_SSIM", "No-TTA_LPIPS", "Δ_PSNR", "Δ_SSIM", "Δ_LPIPS"):
+        row["ok"] = f"ERROR: {data['error'][:24]}"
+        for k in all_cols:
             row[k] = "—"
         return row
     if data.get("in_progress"):
         row["run_id"] = run_id
-        row["status"] = f"in-progress ({data.get('n_done', 0)} vids, next={data.get('next_idx', '?')})"
-        for k in ("ok", "PSNR", "SSIM", "LPIPS", "cond", "gen", "config", "train_s", "gen_s",
-                  "ES", "No-TTA_PSNR", "No-TTA_SSIM", "No-TTA_LPIPS", "Δ_PSNR", "Δ_SSIM", "Δ_LPIPS"):
+        row["ok"] = f"in-prog ({data.get('n_done', 0)} vids)"
+        for k in all_cols:
             row[k] = "—"
         return row
     if data.get("empty") or data.get("not_found"):
         row["run_id"] = run_id
-        row["status"] = "empty" if data.get("empty") else "NOT STARTED"
-        for k in ("ok", "PSNR", "SSIM", "LPIPS", "cond", "gen", "config", "train_s", "gen_s",
-                  "ES", "No-TTA_PSNR", "No-TTA_SSIM", "No-TTA_LPIPS", "Δ_PSNR", "Δ_SSIM", "Δ_LPIPS"):
+        row["ok"] = "empty" if data.get("empty") else "NOT STARTED"
+        for k in all_cols:
             row[k] = "—"
         return row
 
     row["run_id"] = run_id
-    row["status"] = ""
     row["ok"] = f"{data['n_ok']}/{data['n_total']}"
     row["PSNR"] = f"{fmt(data.get('psnr_mean'))}±{fmt(data.get('psnr_std', 0))}" if data.get("psnr_mean") is not None else "—"
     row["SSIM"] = f"{fmt(data.get('ssim_mean'), 4)}±{fmt(data.get('ssim_std', 0), 4)}" if data.get("ssim_mean") is not None else "—"
     row["LPIPS"] = f"{fmt(data.get('lpips_mean'), 4)}±{fmt(data.get('lpips_std', 0), 4)}" if data.get("lpips_mean") is not None else "—"
     n_cond = data.get("num_cond_frames")
     n_gen = data.get("num_gen_frames")
+    # Infer cond/gen for Exp 3 when summary was written before we added these fields
+    if (n_cond is None or n_gen is None) and series_dir:
+        i_cond, i_gen = _infer_cond_gen_exp3(run_id, series_dir)
+        if n_cond is None and i_cond is not None:
+            n_cond = i_cond
+        if n_gen is None and i_gen is not None:
+            n_gen = i_gen
     row["cond"] = str(n_cond) if n_cond is not None else "—"
     row["gen"] = str(n_gen) if n_gen is not None else "—"
     row["config"] = _config_short(data.get("config"))
@@ -337,39 +394,31 @@ def data_to_row(run_id, data, baseline_dir=None):
     if data.get("format") == "tta" and baseline_dir and n_cond is not None and n_gen is not None:
         bl = load_baseline_metrics(baseline_dir, n_cond, n_gen)
     if bl:
-        row["No-TTA_PSNR"] = fmt(bl.get("psnr_mean")) if bl.get("psnr_mean") is not None else "—"
-        row["No-TTA_SSIM"] = fmt(bl.get("ssim_mean"), 4) if bl.get("ssim_mean") is not None else "—"
-        row["No-TTA_LPIPS"] = fmt(bl.get("lpips_mean"), 4) if bl.get("lpips_mean") is not None else "—"
-        row["Δ_PSNR"] = (f"{'+' if (data.get('psnr_mean') or 0) - (bl.get('psnr_mean') or 0) >= 0 else ''}{fmt((data.get('psnr_mean') or 0) - (bl.get('psnr_mean') or 0))}" if bl.get("psnr_mean") is not None and data.get("psnr_mean") is not None else "—")
-        row["Δ_SSIM"] = (f"{'+' if (data.get('ssim_mean') or 0) - (bl.get('ssim_mean') or 0) >= 0 else ''}{fmt((data.get('ssim_mean') or 0) - (bl.get('ssim_mean') or 0), 4)}" if bl.get("ssim_mean") is not None and data.get("ssim_mean") is not None else "—")
-        row["Δ_LPIPS"] = (f"{'+' if (data.get('lpips_mean') or 0) - (bl.get('lpips_mean') or 0) >= 0 else ''}{fmt((data.get('lpips_mean') or 0) - (bl.get('lpips_mean') or 0), 4)}" if bl.get("lpips_mean") is not None and data.get("lpips_mean") is not None else "—")
+        row["PSNR_bl"] = _bl_cell(bl.get("psnr_mean"), data.get("psnr_mean"), 2)
+        row["SSIM_bl"] = _bl_cell(bl.get("ssim_mean"), data.get("ssim_mean"), 4)
+        row["LPIPS_bl"] = _bl_cell(bl.get("lpips_mean"), data.get("lpips_mean"), 4)
     else:
-        row["No-TTA_PSNR"] = row["No-TTA_SSIM"] = row["No-TTA_LPIPS"] = "—"
-        row["Δ_PSNR"] = row["Δ_SSIM"] = row["Δ_LPIPS"] = "—"
+        row["PSNR_bl"] = row["SSIM_bl"] = row["LPIPS_bl"] = "—"
 
     return row
 
 
-# Column order and display widths for the series table
+# Column order and display widths (no status; PSNR | PSNR bl | SSIM | SSIM bl | LPIPS | LPIPS bl)
 TABLE_COLUMNS = [
     ("run_id", 10),
-    ("status", 28),
-    ("ok", 8),
+    ("ok", 12),
     ("PSNR", 14),
+    ("PSNR_bl", 14),
     ("SSIM", 14),
+    ("SSIM_bl", 14),
     ("LPIPS", 14),
+    ("LPIPS_bl", 14),
     ("cond", 4),
     ("gen", 4),
-    ("config", 42),
+    ("config", 48),
     ("train_s", 12),
     ("gen_s", 10),
     ("ES", 18),
-    ("No-TTA_PSNR", 10),
-    ("No-TTA_SSIM", 10),
-    ("No-TTA_LPIPS", 10),
-    ("Δ_PSNR", 8),
-    ("Δ_SSIM", 8),
-    ("Δ_LPIPS", 8),
 ]
 
 
@@ -428,7 +477,7 @@ def scan_series(base_dir, pattern="", baseline_dir=None, table=True):
             if pattern and not name.startswith(pattern.rstrip("*")):
                 continue
             data = process_dir(full)
-            row = data_to_row(name, data, baseline_dir=baseline_dir)
+            row = data_to_row(name, data, baseline_dir=baseline_dir, series_dir=base_dir)
             rows.append(row)
         if rows:
             print_table(rows)
