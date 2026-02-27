@@ -8,6 +8,8 @@
 #SBATCH --gres=gpu:h200:1
 #SBATCH --output=sweep_experiment/slurm_log/%x_%j.out
 #SBATCH --error=sweep_experiment/slurm_log/%x_%j.err
+# Allow preemptible H200 GPUs; cancelled jobs will be requeued (per cluster IT guidance)
+#SBATCH --comment="preemption=yes;requeue=true"
 
 # ============================================================================
 # Unified TTA Sweep Template
