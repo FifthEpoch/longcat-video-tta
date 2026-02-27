@@ -1,7 +1,7 @@
 # Series 21: Experiment 3 -- Training Frames Ablation (Delta-A)
-# Goal: Vary number of conditioning frames to study impact on adaptation.
+# Goal: Vary number of conditioning frames; always generate 14 frames (same GT).
 # Fixed: Delta-A best config (delta_lr=5e-3, delta_steps=20)
-# Swept: num_cond_frames
+# Swept: num_cond_frames. num_frames = num_cond_frames + 14 so gen length = 14.
 
 method: delta_a
 series: 21
@@ -11,7 +11,6 @@ description: "Training frames ablation: Delta-A TTA"
 fixed:
   delta_lr: 5.0e-3
   delta_steps: 20
-  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0
@@ -22,9 +21,13 @@ fixed:
 sweep:
   - run_id: TF_DA1
     num_cond_frames: 2
+    num_frames: 16
   - run_id: TF_DA2
     num_cond_frames: 7
+    num_frames: 21
   - run_id: TF_DA3
     num_cond_frames: 14
+    num_frames: 28
   - run_id: TF_DA4
     num_cond_frames: 24
+    num_frames: 38

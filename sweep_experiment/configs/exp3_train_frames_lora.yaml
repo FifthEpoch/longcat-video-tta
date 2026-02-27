@@ -1,7 +1,7 @@
 # Series 20: Experiment 3 -- Training Frames Ablation (LoRA)
-# Goal: Vary number of conditioning frames to study impact on adaptation.
+# Goal: Vary number of conditioning frames; always generate 14 frames (same GT).
 # Fixed: LoRA best config (lr=2e-4, steps=20, rank=1, alpha=2, target_modules="qkv,proj")
-# Swept: num_cond_frames
+# Swept: num_cond_frames. num_frames = num_cond_frames + 14 so gen length = 14.
 
 method: lora
 series: 20
@@ -18,7 +18,6 @@ fixed:
   max_grad_norm: 1.0
   target_modules: "qkv,proj"
   target_ffn: false
-  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0
@@ -29,9 +28,13 @@ fixed:
 sweep:
   - run_id: TF_L1
     num_cond_frames: 2
+    num_frames: 16
   - run_id: TF_L2
     num_cond_frames: 7
+    num_frames: 21
   - run_id: TF_L3
     num_cond_frames: 14
+    num_frames: 28
   - run_id: TF_L4
     num_cond_frames: 24
+    num_frames: 38

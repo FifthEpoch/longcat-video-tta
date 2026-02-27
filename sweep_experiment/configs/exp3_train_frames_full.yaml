@@ -1,7 +1,7 @@
 # Series 19: Experiment 3 -- Training Frames Ablation (Full-model)
-# Goal: Vary number of conditioning frames to study impact on adaptation.
+# Goal: Vary number of conditioning frames; always generate 14 frames (same GT).
 # Fixed: Full-model best config (lr=1e-5, steps=20, warmup=3, optimizer=sgd)
-# Swept: num_cond_frames
+# Swept: num_cond_frames. num_frames = num_cond_frames + 14 so gen length = 14.
 
 method: full
 series: 19
@@ -15,7 +15,6 @@ fixed:
   weight_decay: 0.01
   max_grad_norm: 1.0
   optimizer: sgd
-  num_frames: 28
   gen_start_frame: 32
   num_inference_steps: 50
   guidance_scale: 4.0
@@ -26,9 +25,13 @@ fixed:
 sweep:
   - run_id: TF_F1
     num_cond_frames: 2
+    num_frames: 16
   - run_id: TF_F2
     num_cond_frames: 7
+    num_frames: 21
   - run_id: TF_F3
     num_cond_frames: 14
+    num_frames: 28
   - run_id: TF_F4
     num_cond_frames: 24
+    num_frames: 38

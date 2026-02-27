@@ -35,6 +35,9 @@ Thumbs.db
 # Paper (private, do not push)
 paper/
 
+# Sweep experiment docs (investigation notes, etc.)
+sweep_experiment/docs/
+
 # IDE
 .vscode/
 .idea/
