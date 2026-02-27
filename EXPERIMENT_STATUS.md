@@ -6,6 +6,32 @@
 
 ---
 
+## Checking job status (run on the cluster)
+
+To see which jobs have finished, failed, or are still queued, and what to do next:
+
+```bash
+cd /scratch/wc3013/longcat-video-tta   # or your PROJECT_ROOT
+PROJECT_ROOT=$PWD bash sweep_experiment/scripts/check_job_status.sh
+```
+
+The script reports:
+- **squeue** — currently queued/running jobs
+- **sacct** — recent job exits (COMPLETED / FAILED / etc.) for common job names
+- **Result dirs** — counts of complete (summary.json), in-progress (checkpoint only), and failed/empty run dirs
+- **Next steps:**
+  - **Successful runs:** re-export and regenerate graphics (see below).
+  - **Failed runs:** use `investigate_failed_jobs.sh` and `sweep_experiment/docs/INVESTIGATE_EXP3_FAILURES.md`, then fix and resubmit.
+
+After new jobs complete, update results and figures:
+
+```bash
+PROJECT_ROOT=$PWD python3 sweep_experiment/scripts/export_all_results.py > all_results.json
+python3 paper_figures/generate_figures.py
+```
+
+---
+
 ## Queue reason → script and output (for dual preempt / no-preempt submissions)
 
 When the same sweep is submitted twice (preemption and no-preemption), use `squeue` reason to tell them apart:

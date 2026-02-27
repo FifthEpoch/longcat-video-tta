@@ -24,6 +24,10 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.lines import Line2D
 import numpy as np
+try:
+    from scipy.interpolate import griddata
+except ImportError:
+    griddata = None
 
 # ═══════════════════════════════════════════════════════════════════════
 # PATHS
@@ -215,8 +219,9 @@ def _get_standard_best(c):
 
 
 def _draw_method_bars(ax, methods, best_per, key, metric_label, unit,
-                      fontsize_annot=9, show_baseline_text=False):
-    """Shared bar-drawing logic for method comparison charts."""
+                      fontsize_annot=9, show_baseline_text=False, ylim_override=None):
+    """Shared bar-drawing logic for method comparison charts.
+    ylim_override: optional (ymin, ymax) to fix y-axis range (e.g. (0.70, 0.79) for SSIM)."""
     vals = [(m, best_per[m].get(key, 0) or 0) for m in methods]
     n = len(vals)
     bar_w = 0.82
@@ -229,16 +234,19 @@ def _draw_method_bars(ax, methods, best_per, key, metric_label, unit,
 
     # Compute y-limits first so annotation offset is proportional
     all_v = [v for _, v in vals]
-    vrange = max(all_v) - min(all_v) if max(all_v) != min(all_v) else max(all_v) * 0.05
-    lower_is_better = "LPIPS" in metric_label
-    if not lower_is_better:
-        ymin = min(all_v) - vrange * 0.25
-        ymin = max(ymin, 0)
-        ymax = max(all_v) + vrange * 0.55
+    if ylim_override is not None:
+        ymin, ymax = ylim_override
     else:
-        ymin = min(all_v) - vrange * 0.25
-        ymin = max(ymin, 0)
-        ymax = max(all_v) + vrange * 0.55
+        vrange = max(all_v) - min(all_v) if max(all_v) != min(all_v) else max(all_v) * 0.05
+        lower_is_better = "LPIPS" in metric_label
+        if not lower_is_better:
+            ymin = min(all_v) - vrange * 0.25
+            ymin = max(ymin, 0)
+            ymax = max(all_v) + vrange * 0.55
+        else:
+            ymin = min(all_v) - vrange * 0.25
+            ymin = max(ymin, 0)
+            ymax = max(all_v) + vrange * 0.55
     ax.set_ylim(ymin, ymax)
     vis_range = ymax - ymin
     annot_offset = vis_range * 0.02
@@ -276,14 +284,16 @@ def fig_method_comparison(data):
     # --- Individual metric charts ---
     for metric_label, key, std_key, unit in metrics:
         fig, ax = plt.subplots(figsize=(5.5, 5))
-        _draw_method_bars(ax, methods, best_per, key, metric_label, unit, fontsize_annot=9)
+        ylim = (0.70, 0.79) if key == "ssim_mean" else None
+        _draw_method_bars(ax, methods, best_per, key, metric_label, unit, fontsize_annot=9, ylim_override=ylim)
         titled(ax, f"{metric_label} — Method Comparison", fixed=STD_FIXED)
         save(fig, "01_method_comparison", f"method_comparison_{key.split('_')[0]}.png")
 
     # --- Multi-metric comparison: 3 subplots side by side ---
     fig, axes = plt.subplots(1, 3, figsize=(14, 5.5))
     for ax, (metric_label, key, std_key, unit) in zip(axes, metrics):
-        _draw_method_bars(ax, methods, best_per, key, metric_label, unit, fontsize_annot=8)
+        ylim = (0.70, 0.79) if key == "ssim_mean" else None
+        _draw_method_bars(ax, methods, best_per, key, metric_label, unit, fontsize_annot=8, ylim_override=ylim)
         ax.set_title(metric_label, fontweight="bold")
 
     fig.suptitle("TTA Method Comparison",
@@ -719,35 +729,50 @@ def fig_cross_dataset(data):
         print("  (skip: no common methods)")
         return
 
-    fig, ax = plt.subplots(figsize=(7, 4.5))
+    # Same bar chart for PSNR, SSIM, and LPIPS
+    metrics_config = [
+        ("psnr_mean", "PSNR (dB)", "{:.1f}", True),
+        ("ssim_mean", "SSIM", "{:.3f}", True),
+        ("lpips_mean", "LPIPS", "{:.3f}", False),
+    ]
     bar_w = 0.38
     xs = np.arange(len(common))
 
-    bars_panda = ax.bar(xs - bar_w / 2, [panda_best[m]["psnr_mean"] for m in common],
-                        bar_w, color=C_ADASTEER, alpha=0.85, label="Panda-70M", zorder=3)
-    bars_ucf = ax.bar(xs + bar_w / 2, [ucf_best[m]["psnr_mean"] for m in common],
-                      bar_w, color=C_LORA, alpha=0.85, label="UCF-101", zorder=3)
-
-    for b in bars_panda:
-        annotate_bar(ax, b, b.get_height(), fmt="{:.1f}", fontsize=8, offset=0.15)
-    for b in bars_ucf:
-        annotate_bar(ax, b, b.get_height(), fmt="{:.1f}", fontsize=8, offset=0.15)
-
-    ax.set_xticks(xs)
-    ax.set_xticklabels(common)
-    ax.set_ylabel("PSNR (dB)")
-    titled(ax, "Cross-Dataset Generalization",
-           fixed="20 steps, 14 cond frames, 28 gen frames, best LR per method")
-    ax.legend(frameon=False)
-
-    all_vals = [panda_best[m]["psnr_mean"] for m in common] + \
-               [ucf_best[m]["psnr_mean"] for m in common]
-    vrange = max(all_vals) - min(all_vals) if max(all_vals) != min(all_vals) else 1
-    ymin = min(all_vals) - vrange * 0.25
-    ymax = max(all_vals) + vrange * 0.45
-    ax.set_ylim(max(ymin, 0), ymax)
-
-    save(fig, "09_cross_dataset", "cross_dataset_psnr.png")
+    for key, ylabel, fmt, higher_better in metrics_config:
+        fig, ax = plt.subplots(figsize=(7, 4.5))
+        panda_vals = [panda_best[m].get(key) for m in common]
+        ucf_vals = [ucf_best[m].get(key) for m in common]
+        if any(v is None for v in panda_vals + ucf_vals):
+            plt.close(fig)
+            continue
+        all_vals = panda_vals + ucf_vals
+        vrange = max(all_vals) - min(all_vals) if max(all_vals) != min(all_vals) else (0.1 if key == "psnr_mean" else 0.05)
+        # Offset for bar labels: proportional to data range so SSIM/LPIPS don't float way above bars
+        annot_offset = max(vrange * 0.05, 0.005)
+        bars_panda = ax.bar(xs - bar_w / 2, panda_vals, bar_w, color=C_ADASTEER, alpha=0.85,
+                            label="Panda-70M", zorder=3)
+        bars_ucf = ax.bar(xs + bar_w / 2, ucf_vals, bar_w, color=C_LORA, alpha=0.85,
+                          label="UCF-101", zorder=3)
+        for b in bars_panda:
+            annotate_bar(ax, b, b.get_height(), fmt=fmt, fontsize=8, offset=annot_offset)
+        for b in bars_ucf:
+            annotate_bar(ax, b, b.get_height(), fmt=fmt, fontsize=8, offset=annot_offset)
+        ax.set_xticks(xs)
+        ax.set_xticklabels(common)
+        ax.set_ylabel(ylabel)
+        titled(ax, "Cross-Dataset Generalization",
+               fixed="20 steps, 14 cond frames, 28 gen frames, best LR per method")
+        ax.legend(frameon=False)
+        ymin = min(all_vals) - vrange * 0.25
+        ymax = max(all_vals) + vrange * 0.45
+        if not higher_better:
+            ymin, ymax = max(ymin, 0), min(ymax, 1.0) if key == "lpips_mean" else ymax
+        else:
+            ymin = max(ymin, 0)
+        ax.set_ylim(ymin, ymax)
+        fname = "cross_dataset_psnr.png" if key == "psnr_mean" else \
+                "cross_dataset_ssim.png" if key == "ssim_mean" else "cross_dataset_lpips.png"
+        save(fig, "09_cross_dataset", fname)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -786,8 +811,10 @@ def _es_series_legend_labels():
     }
 
 
-def _add_es_series_legend(fig_or_ax, series_order: List[str], series_colors: Dict[str, str], ax=None):
-    """Add legend for ES ablation series (scatter colors). Pass fig and ax for fig.legend, or just ax for ax.legend."""
+def _add_es_series_legend(fig_or_ax, series_order: List[str], series_colors: Dict[str, str], ax=None,
+                         bbox_to_anchor=(0.96, 0.5)):
+    """Add legend for ES ablation series (scatter colors). Pass fig and ax for fig.legend, or just ax for ax.legend.
+    When ax is None, bbox_to_anchor places the legend (default 0.96,0.5 = just right of axes)."""
     labels = _es_series_legend_labels()
     handles = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=series_colors.get(s, "#999999"),
@@ -797,7 +824,7 @@ def _add_es_series_legend(fig_or_ax, series_order: List[str], series_colors: Dic
     if ax is not None:
         ax.legend(handles=handles, frameon=False, fontsize=9)
     else:
-        fig_or_ax.legend(handles=handles, frameon=False, fontsize=9, loc="center left", bbox_to_anchor=(1.02, 0.5))
+        fig_or_ax.legend(handles=handles, frameon=False, fontsize=9, loc="center left", bbox_to_anchor=bbox_to_anchor)
 
 
 def _get_es_ablation_time_runs(complete_runs_list: List[Dict]) -> Tuple[List[Dict], float]:
@@ -919,11 +946,11 @@ def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
         ax.set_ylabel(label, fontsize=10)
         ax.set_ylim(ylim_tight)
         ax.set_xlabel("# early", fontsize=9)
-    if first_metric_ax is not None:
-        _add_es_series_legend(fig, series_order, series_colors, first_metric_ax)
+    # Legend just to the right of the panels, close to the graphs
+    _add_es_series_legend(fig, series_order, series_colors, ax=None, bbox_to_anchor=(0.90, 0.5))
     fig.suptitle("Early stopping: time savings without compromising quality",
                  fontweight="bold", y=1.02, fontsize=13)
-    fig.tight_layout(rect=[0, 0, 1, 0.98])
+    fig.tight_layout(rect=[0, 0, 0.88, 0.98])
     save(fig, "10_early_stopping", "es_time_savings_two_panel.png")
 
     # --- 4. Time saved vs # early ---
@@ -949,10 +976,62 @@ def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
         ax.set_xlabel("Mean TTA train time per video (s)")
         ax.set_ylabel(label)
         ax.set_ylim(ylim_tight)
-    _add_es_series_legend(fig, series_order, series_colors, axes[1])
+    # Legend just to the right of the panels, close to the graphs
+    _add_es_series_legend(fig, series_order, series_colors, ax=None, bbox_to_anchor=(0.90, 0.5))
     fig.suptitle("Metrics vs. mean TTA train time per video (early-stopping ablations)", fontweight="bold", y=1.02)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.tight_layout(rect=[0, 0, 0.88, 0.96])
     save(fig, "10_early_stopping", "es_train_time_vs_metrics.png")
+
+
+def _fig_es_patience_train_time_psnr(complete_runs_list: List[Dict]):
+    """Patience parameter vs TTA training time (s) vs PSNR: contour map or scatter with PSNR colorbar."""
+    runs = sorted(by_series(complete_runs_list, "es_ablation_patience"), key=lambda r: r["run_id"])
+    if not runs or len(runs) < 2:
+        return
+    patience_vals = [1, 2, 3, 5, 10]  # ES_P1..ES_P5
+    patience = np.array(patience_vals[: len(runs)])
+    train_t = np.array([r["train_time_mean"] for r in runs])
+    psnr = np.array([r["psnr_mean"] for r in runs])
+    points = np.column_stack((patience, train_t))
+
+    # Average inference/generation time across these runs (for reference line)
+    gen_times = [r.get("gen_time_mean") for r in runs if r.get("gen_time_mean") is not None]
+    avg_gen_time = float(np.mean(gen_times)) if gen_times else None
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    if griddata is not None and len(points) >= 3:
+        # Interpolate PSNR onto a grid for contour
+        p_min, p_max = patience.min(), patience.max()
+        t_min, t_max = train_t.min() - 2, train_t.max() + 2
+        p_grid = np.linspace(p_min, p_max, 40)
+        t_grid = np.linspace(t_min, t_max, 40)
+        P, T = np.meshgrid(p_grid, t_grid)
+        Z = griddata(points, psnr, (P, T), method="cubic", fill_value=psnr.mean())
+        # Clip to valid range so fill_value doesn't dominate
+        Z = np.clip(Z, psnr.min() - 0.1, psnr.max() + 0.1)
+        cf = ax.contourf(P, T, Z, levels=12, cmap="viridis", alpha=0.7)
+        cbar = fig.colorbar(cf, ax=ax, shrink=0.7)
+        cbar.set_label("PSNR (dB)", fontsize=11)
+    # Grey dashed line: average inference/generation time (context for TTA cost)
+    if avg_gen_time is not None:
+        ax.axhline(avg_gen_time, color="#888888", ls="--", lw=1.2, alpha=0.85, zorder=2,
+                  label="avg inference time cost")
+        ax.legend(frameon=False, fontsize=9)
+    # Overlay actual points
+    sc = ax.scatter(patience, train_t, c=psnr, s=120, edgecolors="white", linewidths=2,
+                    cmap="viridis", zorder=5, vmin=psnr.min(), vmax=psnr.max())
+    if griddata is None or len(points) < 3:
+        cbar = fig.colorbar(sc, ax=ax, shrink=0.7)
+        cbar.set_label("PSNR (dB)", fontsize=11)
+    for i, (p, t, v) in enumerate(zip(patience, train_t, psnr)):
+        ax.annotate(f"{v:.2f}", (p, t), textcoords="offset points", xytext=(0, 8),
+                    ha="center", fontsize=9, color="#333333", zorder=10)
+    ax.set_xlabel("Patience (early-stopping parameter)")
+    ax.set_ylabel("Mean TTA training time per video (s)")
+    ax.set_title("Patience vs. training time vs. PSNR", fontweight="bold", pad=10)
+    ax.set_xticks(patience_vals[: len(runs)])
+    fig.tight_layout()
+    save(fig, "10_early_stopping", "es_patience_train_time_psnr.png")
 
 
 def fig_early_stopping(data):
@@ -1016,6 +1095,9 @@ def fig_early_stopping(data):
 
     # --- Time savings + same performance (all ES ablations) ---
     fig_early_stopping_time_savings(c)
+
+    # --- Patience vs TTA train time vs PSNR (contour or scatter) ---
+    _fig_es_patience_train_time_psnr(c)
 
     # --- Long-train early stopping overview ---
     fig, ax = plt.subplots(figsize=(8, 4))

@@ -153,6 +153,14 @@ else
     exit 1
 fi
 
+# Use the env's Python explicitly so we don't rely on PATH (avoids torch not found on compute nodes)
+PYTHON="${CONDA_ENV}/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    echo "ERROR: Python not found at $PYTHON" >&2
+    exit 1
+fi
+echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
+
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
 export TRANSFORMERS_CACHE="${HF_HOME}"
@@ -212,7 +220,7 @@ case "${METHOD}" in
         POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
     fi
 
-    python lora_experiment/scripts/run_full_tta.py \
+    "$PYTHON" lora_experiment/scripts/run_full_tta.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
@@ -270,7 +278,7 @@ case "${METHOD}" in
         POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
     fi
 
-    python lora_experiment/scripts/run_lora_tta.py \
+    "$PYTHON" lora_experiment/scripts/run_lora_tta.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
@@ -314,7 +322,7 @@ case "${METHOD}" in
         POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
     fi
 
-    python delta_experiment/scripts/run_delta_a.py \
+    "$PYTHON" delta_experiment/scripts/run_delta_a.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
@@ -351,7 +359,7 @@ case "${METHOD}" in
         DELTA_DIM_FLAG="--delta-dim ${DELTA_DIM}"
     fi
 
-    python delta_experiment/scripts/run_delta_b.py \
+    "$PYTHON" delta_experiment/scripts/run_delta_b.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
@@ -381,7 +389,7 @@ case "${METHOD}" in
     echo "  Delta mode     : ${DELTA_MODE}"
     echo "=============================================================================="
 
-    python delta_experiment/scripts/run_delta_c.py \
+    "$PYTHON" delta_experiment/scripts/run_delta_c.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
@@ -415,7 +423,7 @@ case "${METHOD}" in
         EXTRA_FLAGS="${EXTRA_FLAGS} --also-tune-delta"
     fi
 
-    python delta_experiment/scripts/run_norm_tune_tta.py \
+    "$PYTHON" delta_experiment/scripts/run_norm_tune_tta.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
@@ -445,7 +453,7 @@ case "${METHOD}" in
     echo "  Num groups     : ${NUM_GROUPS}"
     echo "=============================================================================="
 
-    python delta_experiment/scripts/run_film_tta.py \
+    "$PYTHON" delta_experiment/scripts/run_film_tta.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
