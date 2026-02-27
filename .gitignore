@@ -38,3 +38,6 @@ paper/
 # IDE
 .vscode/
 .idea/
+
+all_results.json
+loss_curves.json

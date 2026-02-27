@@ -1,0 +1,41 @@
+# Series 37 (UCF-101): Retrieval-Augmented Batch-Size Ablation (Delta-A)
+# Same as exp5_batch_size_delta_a but uses UCF-101 1000-video pool (Panda-70M 1000 failed).
+# Eval set: 100 videos from --data-dir (use ucf101_100_480p).
+# Retrieval pool: ucf101_1000_480p (1000 videos, ready).
+#
+# Submit:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/exp5_batch_size_delta_a_ucf101.yaml \
+#       --account torch_pr_36_mren \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/ucf101_100_480p
+
+method: delta_a
+series: 37
+series_name: exp5_batch_size_delta_a_ucf101
+description: "Retrieval-augmented batch-size ablation: Delta-A TTA (UCF-101)"
+
+fixed:
+  delta_lr: 5.0e-3
+  delta_steps: 20
+  batch_method: similarity
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/ucf101_1000_480p
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: BS_DA1
+    batch_videos: 1
+  - run_id: BS_DA2
+    batch_videos: 5
+  - run_id: BS_DA3
+    batch_videos: 10
+  - run_id: BS_DA4
+    batch_videos: 50
+  - run_id: BS_DA5
+    batch_videos: 100
