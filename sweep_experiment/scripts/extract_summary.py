@@ -47,18 +47,30 @@ def extract_tta(path):
         out["gen_mean"] = statistics.mean(gen_ts)
         out["gen_std"] = statistics.stdev(gen_ts) if len(gen_ts) > 1 else 0
 
-    # Config from top-level
+    # Config from top-level (incl. cond/gen for display and baseline lookup)
     cfg_keys = [
         "method", "delta_steps", "delta_lr", "num_groups", "delta_target",
         "delta_mode", "learning_rate", "num_steps", "lora_rank", "lora_alpha",
         "total_params", "trainable_params", "norm_target", "norm_steps",
         "norm_lr", "film_mode", "film_steps", "film_lr",
+        "num_cond_frames", "num_frames", "gen_start_frame",
     ]
     cfg = {}
     for k in cfg_keys:
         if k in d and d[k] is not None:
             cfg[k] = d[k]
     out["config"] = cfg
+
+    # Cond/gen from top-level or first result (for older summaries)
+    n_cond = d.get("num_cond_frames")
+    n_frames = d.get("num_frames")
+    if (n_cond is None or n_frames is None) and results:
+        r0 = results[0]
+        n_cond = n_cond if n_cond is not None else r0.get("num_cond_frames")
+        n_frames = n_frames if n_frames is not None else r0.get("num_frames")
+    out["num_cond_frames"] = n_cond
+    out["num_frames"] = n_frames
+    out["num_gen_frames"] = (int(n_frames) - int(n_cond)) if (n_frames is not None and n_cond is not None) else None
 
     # Early stopping
     es_infos = [r.get("early_stopping_info") for r in ok if r.get("early_stopping_info")]
@@ -109,6 +121,8 @@ def extract_baseline(path):
         if k in d:
             cfg[k] = d[k]
     out["config"] = cfg
+    out["num_cond_frames"] = d.get("num_cond_frames")
+    out["num_gen_frames"] = d.get("num_gen_frames")
 
     return out
 
@@ -122,7 +136,32 @@ def extract_checkpoint(path):
     return {"n_done": len(ok), "next_idx": idx}
 
 
-def format_line(run_id, data):
+def load_baseline_metrics(baseline_dir, num_cond, num_gen):
+    """Load No-TTA baseline metrics for the same cond/gen. Returns dict with psnr_mean, etc. or None."""
+    if baseline_dir is None or num_cond is None or num_gen is None:
+        return None
+    for subdir in (f"cond{num_cond}_gen{num_gen}", f"ucf101_cond{num_cond}_gen{num_gen}"):
+        path = os.path.join(baseline_dir, subdir, "summary.json")
+        if os.path.isfile(path):
+            try:
+                with open(path) as f:
+                    d = json.load(f)
+                m = d.get("metrics", {})
+                out = {}
+                if "psnr" in m and m["psnr"]:
+                    out["psnr_mean"] = m["psnr"].get("mean")
+                if "ssim" in m and m["ssim"]:
+                    out["ssim_mean"] = m["ssim"].get("mean")
+                if "lpips" in m and m["lpips"]:
+                    out["lpips_mean"] = m["lpips"].get("mean")
+                if out:
+                    return out
+            except Exception:
+                pass
+    return None
+
+
+def format_line(run_id, data, baseline_dir=None):
     """Format a single run's metrics into a compact multi-line display."""
     lines = []
 
@@ -139,12 +178,20 @@ def format_line(run_id, data):
     metric_str = ", ".join(metrics) if metrics else "no metric data"
     lines.append(f"  {run_id}: {status} | {metric_str}")
 
+    # Frames: cond / gen (for every run)
+    n_cond = data.get("num_cond_frames")
+    n_gen = data.get("num_gen_frames")
+    if n_cond is not None and n_gen is not None:
+        lines.append(f"         frames: {n_cond} cond, {n_gen} gen")
+    elif n_cond is not None and data.get("num_frames") is not None:
+        lines.append(f"         frames: {n_cond} cond, {int(data['num_frames']) - int(n_cond)} gen")
+
     # Line 2: Config
     cfg = data.get("config", {})
     if cfg:
         cfg_parts = []
         for k, v in cfg.items():
-            if k == "method":
+            if k in ("method", "num_cond_frames", "num_frames", "gen_start_frame"):
                 continue
             label = k.replace("_", " ")
             if isinstance(v, float):
@@ -175,6 +222,27 @@ def format_line(run_id, data):
                        f" max={data['es_best_step_max']}")
         lines.append(f"         {es_str}")
 
+    # vs No-TTA baseline (all three metrics)
+    if data.get("format") == "tta" and baseline_dir and "psnr_mean" in data:
+        bl = load_baseline_metrics(
+            baseline_dir,
+            data.get("num_cond_frames"),
+            data.get("num_gen_frames"),
+        )
+        if bl:
+            parts = []
+            if bl.get("psnr_mean") is not None:
+                d_psnr = data["psnr_mean"] - bl["psnr_mean"]
+                parts.append(f"PSNR {fmt(bl['psnr_mean'])}→Δ{'+' if d_psnr >= 0 else ''}{fmt(d_psnr)}")
+            if bl.get("ssim_mean") is not None:
+                d_ssim = data["ssim_mean"] - bl["ssim_mean"]
+                parts.append(f"SSIM {fmt(bl['ssim_mean'], 4)}→Δ{'+' if d_ssim >= 0 else ''}{fmt(d_ssim, 4)}")
+            if bl.get("lpips_mean") is not None:
+                d_lpips = data["lpips_mean"] - bl["lpips_mean"]
+                parts.append(f"LPIPS {fmt(bl['lpips_mean'], 4)}→Δ{'+' if d_lpips >= 0 else ''}{fmt(d_lpips, 4)}")
+            if parts:
+                lines.append(f"         vs No-TTA: {', '.join(parts)}")
+
     return "\n".join(lines)
 
 
@@ -204,7 +272,129 @@ def process_dir(dir_path):
         return {"not_found": True}
 
 
-def print_run(run_id, dir_path):
+def _config_short(cfg):
+    """Short config string (exclude cond/gen, truncate)."""
+    skip = ("method", "num_cond_frames", "num_frames", "gen_start_frame")
+    parts = []
+    for k, v in (cfg or {}).items():
+        if k in skip:
+            continue
+        if isinstance(v, float):
+            parts.append(f"{k}={v:g}")
+        else:
+            parts.append(f"{k}={v}")
+    s = ", ".join(parts)
+    return s[:40] + "…" if len(s) > 40 else s
+
+
+def data_to_row(run_id, data, baseline_dir=None):
+    """Turn one run's data into a dict of table column values (strings)."""
+    row = {}
+    if "error" in data:
+        row["run_id"] = run_id
+        row["status"] = f"ERROR: {data['error'][:30]}"
+        for k in ("ok", "PSNR", "SSIM", "LPIPS", "cond", "gen", "config", "train_s", "gen_s",
+                  "ES", "No-TTA_PSNR", "No-TTA_SSIM", "No-TTA_LPIPS", "Δ_PSNR", "Δ_SSIM", "Δ_LPIPS"):
+            row[k] = "—"
+        return row
+    if data.get("in_progress"):
+        row["run_id"] = run_id
+        row["status"] = f"in-progress ({data.get('n_done', 0)} vids, next={data.get('next_idx', '?')})"
+        for k in ("ok", "PSNR", "SSIM", "LPIPS", "cond", "gen", "config", "train_s", "gen_s",
+                  "ES", "No-TTA_PSNR", "No-TTA_SSIM", "No-TTA_LPIPS", "Δ_PSNR", "Δ_SSIM", "Δ_LPIPS"):
+            row[k] = "—"
+        return row
+    if data.get("empty") or data.get("not_found"):
+        row["run_id"] = run_id
+        row["status"] = "empty" if data.get("empty") else "NOT STARTED"
+        for k in ("ok", "PSNR", "SSIM", "LPIPS", "cond", "gen", "config", "train_s", "gen_s",
+                  "ES", "No-TTA_PSNR", "No-TTA_SSIM", "No-TTA_LPIPS", "Δ_PSNR", "Δ_SSIM", "Δ_LPIPS"):
+            row[k] = "—"
+        return row
+
+    row["run_id"] = run_id
+    row["status"] = ""
+    row["ok"] = f"{data['n_ok']}/{data['n_total']}"
+    row["PSNR"] = f"{fmt(data.get('psnr_mean'))}±{fmt(data.get('psnr_std', 0))}" if data.get("psnr_mean") is not None else "—"
+    row["SSIM"] = f"{fmt(data.get('ssim_mean'), 4)}±{fmt(data.get('ssim_std', 0), 4)}" if data.get("ssim_mean") is not None else "—"
+    row["LPIPS"] = f"{fmt(data.get('lpips_mean'), 4)}±{fmt(data.get('lpips_std', 0), 4)}" if data.get("lpips_mean") is not None else "—"
+    n_cond = data.get("num_cond_frames")
+    n_gen = data.get("num_gen_frames")
+    row["cond"] = str(n_cond) if n_cond is not None else "—"
+    row["gen"] = str(n_gen) if n_gen is not None else "—"
+    row["config"] = _config_short(data.get("config"))
+    row["train_s"] = f"{fmt(data.get('train_mean'), 1)}±{fmt(data.get('train_std', 0), 1)}" if data.get("train_mean") is not None else "—"
+    row["gen_s"] = f"{fmt(data.get('gen_mean'), 1)}±{fmt(data.get('gen_std', 0), 1)}" if data.get("gen_mean") is not None else "—"
+    if "es_total" in data:
+        es = f"{data['es_stopped']}/{data['es_total']} early"
+        if "es_best_step_mean" in data:
+            es += f", μ={fmt(data['es_best_step_mean'], 1)}"
+        row["ES"] = es
+    else:
+        row["ES"] = "—"
+
+    bl = None
+    if data.get("format") == "tta" and baseline_dir and n_cond is not None and n_gen is not None:
+        bl = load_baseline_metrics(baseline_dir, n_cond, n_gen)
+    if bl:
+        row["No-TTA_PSNR"] = fmt(bl.get("psnr_mean")) if bl.get("psnr_mean") is not None else "—"
+        row["No-TTA_SSIM"] = fmt(bl.get("ssim_mean"), 4) if bl.get("ssim_mean") is not None else "—"
+        row["No-TTA_LPIPS"] = fmt(bl.get("lpips_mean"), 4) if bl.get("lpips_mean") is not None else "—"
+        row["Δ_PSNR"] = (f"{'+' if (data.get('psnr_mean') or 0) - (bl.get('psnr_mean') or 0) >= 0 else ''}{fmt((data.get('psnr_mean') or 0) - (bl.get('psnr_mean') or 0))}" if bl.get("psnr_mean") is not None and data.get("psnr_mean") is not None else "—")
+        row["Δ_SSIM"] = (f"{'+' if (data.get('ssim_mean') or 0) - (bl.get('ssim_mean') or 0) >= 0 else ''}{fmt((data.get('ssim_mean') or 0) - (bl.get('ssim_mean') or 0), 4)}" if bl.get("ssim_mean") is not None and data.get("ssim_mean") is not None else "—")
+        row["Δ_LPIPS"] = (f"{'+' if (data.get('lpips_mean') or 0) - (bl.get('lpips_mean') or 0) >= 0 else ''}{fmt((data.get('lpips_mean') or 0) - (bl.get('lpips_mean') or 0), 4)}" if bl.get("lpips_mean") is not None and data.get("lpips_mean") is not None else "—")
+    else:
+        row["No-TTA_PSNR"] = row["No-TTA_SSIM"] = row["No-TTA_LPIPS"] = "—"
+        row["Δ_PSNR"] = row["Δ_SSIM"] = row["Δ_LPIPS"] = "—"
+
+    return row
+
+
+# Column order and display widths for the series table
+TABLE_COLUMNS = [
+    ("run_id", 10),
+    ("status", 28),
+    ("ok", 8),
+    ("PSNR", 14),
+    ("SSIM", 14),
+    ("LPIPS", 14),
+    ("cond", 4),
+    ("gen", 4),
+    ("config", 42),
+    ("train_s", 12),
+    ("gen_s", 10),
+    ("ES", 18),
+    ("No-TTA_PSNR", 10),
+    ("No-TTA_SSIM", 10),
+    ("No-TTA_LPIPS", 10),
+    ("Δ_PSNR", 8),
+    ("Δ_SSIM", 8),
+    ("Δ_LPIPS", 8),
+]
+
+
+def print_table(rows):
+    """Print a single table for a series (one row per run)."""
+    if not rows:
+        return
+    col_names = [c[0] for c in TABLE_COLUMNS]
+    widths = {c[0]: c[1] for c in TABLE_COLUMNS}
+    # Header
+    header = "  " + " | ".join(cn.ljust(widths[cn]) for cn in col_names)
+    sep = "  " + "-+-".join("-" * widths[cn] for cn in col_names)
+    print(header)
+    print(sep)
+    for r in rows:
+        cells = []
+        for cn in col_names:
+            val = r.get(cn, "—")
+            s = str(val)[:widths[cn]]
+            cells.append(s.ljust(widths[cn]))
+        print("  " + " | ".join(cells))
+    print()
+
+
+def print_run(run_id, dir_path, baseline_dir=None):
     data = process_dir(dir_path)
     if "error" in data:
         print(f"  {run_id}: ERROR - {data['error']}")
@@ -215,11 +405,11 @@ def print_run(run_id, dir_path):
     elif data.get("not_found"):
         print(f"  {run_id}: NOT STARTED")
     else:
-        print(format_line(run_id, data))
+        print(format_line(run_id, data, baseline_dir=baseline_dir))
 
 
-def scan_series(base_dir, pattern=""):
-    """Scan a series directory and print all runs."""
+def scan_series(base_dir, pattern="", baseline_dir=None, table=True):
+    """Scan a series directory and print all runs (as one table if table=True)."""
     if not os.path.isdir(base_dir):
         print(f"  (directory not found: {base_dir})")
         return
@@ -229,24 +419,46 @@ def scan_series(base_dir, pattern=""):
         print(f"  (empty directory)")
         return
 
-    for name in entries:
-        full = os.path.join(base_dir, name)
-        if os.path.isdir(full):
+    if table:
+        rows = []
+        for name in entries:
+            full = os.path.join(base_dir, name)
+            if not os.path.isdir(full):
+                continue
             if pattern and not name.startswith(pattern.rstrip("*")):
                 continue
-            print_run(name, full)
+            data = process_dir(full)
+            row = data_to_row(name, data, baseline_dir=baseline_dir)
+            rows.append(row)
+        if rows:
+            print_table(rows)
+    else:
+        for name in entries:
+            full = os.path.join(base_dir, name)
+            if os.path.isdir(full):
+                if pattern and not name.startswith(pattern.rstrip("*")):
+                    continue
+                print_run(name, full, baseline_dir=baseline_dir)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python extract_summary.py <dir> [pattern]")
-        sys.exit(1)
+    import argparse
+    ap = argparse.ArgumentParser(description="Extract and display metrics from TTA/baseline summary.json")
+    ap.add_argument("dir", help="Series directory or single run directory")
+    ap.add_argument("pattern", nargs="?", default="", help="Optional run name prefix filter (e.g. DA)")
+    ap.add_argument("--baseline-dir", type=str, default=None,
+                    help="Baseline results root (e.g. baseline_experiment/results) to compare vs No-TTA")
+    ap.add_argument("--no-table", action="store_true",
+                    help="Use multi-line format per run instead of one table per series")
+    args = ap.parse_args()
 
-    base = sys.argv[1]
-    pat = sys.argv[2] if len(sys.argv) > 2 else ""
+    base = args.dir
+    pat = args.pattern
+    baseline_dir = args.baseline_dir
+    table = not args.no_table
 
     if os.path.isfile(os.path.join(base, "summary.json")) or \
        os.path.isfile(os.path.join(base, "checkpoint.json")):
-        print_run(os.path.basename(base), base)
+        print_run(os.path.basename(base), base, baseline_dir=baseline_dir)
     else:
-        scan_series(base, pat)
+        scan_series(base, pat, baseline_dir=baseline_dir, table=table)

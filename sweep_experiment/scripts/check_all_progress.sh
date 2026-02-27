@@ -13,8 +13,9 @@ RESULTS_ROOT="${PROJECT_ROOT}/sweep_experiment/results"
 BASE_RESULTS="${PROJECT_ROOT}/baseline_experiment/results"
 EXTRACTOR="${PROJECT_ROOT}/sweep_experiment/scripts/extract_summary.py"
 
+# Pass baseline dir so TTA runs can show "vs No-TTA" for matching cond/gen
 scan() {
-    python3 "$EXTRACTOR" "$@"
+    python3 "$EXTRACTOR" "$1" "${2:-}" --baseline-dir "${BASE_RESULTS}"
 }
 
 echo "================================================================================"
