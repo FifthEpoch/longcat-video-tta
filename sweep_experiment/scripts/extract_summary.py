@@ -328,6 +328,99 @@ def _infer_cond_gen_exp3(run_id, series_dir):
     return cond_map[last], 14
 
 
+def _infer_cond_gen_exp4(run_id, series_dir):
+    """Exp 4 Generation Horizon: 14 cond fixed, num_frames swept 16/28/44/72 → gen = total - 14."""
+    if not series_dir or "exp4_gen_horizon" not in os.path.normpath(series_dir):
+        return None, None
+    # GH_F1→16, GH_F2→28, GH_F3→44, GH_F4→72
+    total_map = {"1": 16, "2": 28, "3": 44, "4": 72}
+    s = run_id.strip()
+    if len(s) < 2:
+        return None, None
+    suffix = s[-1] if s[-1] in "1234" else None
+    if suffix is None:
+        return None, None
+    total = total_map.get(suffix)
+    if total is None:
+        return None, None
+    return 14, total - 14
+
+
+def _infer_cond_gen_delta_a_optimized(run_id, series_dir):
+    """Delta-A optimized: DAO1 = 24 cond, 28 total → 4 gen; DAO2 = 14 cond, 14 gen."""
+    if not series_dir or "delta_a_optimized" not in os.path.normpath(series_dir):
+        return None, None
+    if run_id == "DAO1":
+        return 24, 4
+    if run_id == "DAO2":
+        return 14, 14
+    return None, None
+
+
+def _infer_cond_gen_ratio_sweep(run_id, series_dir):
+    """AdaSteer ratio sweep: num_frames=28, cond 2/14/24 → gen = 28 - cond."""
+    if not series_dir or "adasteer_ratio_sweep" not in os.path.normpath(series_dir):
+        return None, None
+    # AR1,AR2,AR3 → 2 cond, 26 gen; AR4,AR5 → 14,14; AR6,AR7,AR8 → 24,4
+    if run_id in ("AR1", "AR2", "AR3"):
+        return 2, 26
+    if run_id in ("AR4", "AR5"):
+        return 14, 14
+    if run_id in ("AR6", "AR7", "AR8"):
+        return 24, 4
+    return None, None
+
+
+# Series that use standard 14 cond, 14 gen (num_frames=28) when not in summary
+_SERIES_14_14 = frozenset([
+    "full_lr_sweep", "full_iter_sweep", "full_long_train", "full_long_train_100v",
+    "delta_a_lr_sweep", "delta_a_iter_sweep", "delta_a_long_train", "delta_a_norm_combined",
+    "delta_a_equiv_verify", "delta_b_groups_sweep", "delta_b_lr_sweep", "delta_b_iter_sweep",
+    "delta_b_low_lr", "delta_b_hidden_sweep", "adasteer_groups_5step",
+    "lora_rank_sweep", "lora_iter_sweep", "lora_constrained_sweep", "lora_ultra_constrained",
+    "lora_builtin_comparison", "delta_c_lr_sweep", "delta_c_iter_sweep",
+    "es_ablation_disable", "es_ablation_holdout", "es_ablation_noise_draws",
+    "es_ablation_patience", "es_ablation_sigmas", "es_ablation_check_freq",
+    "norm_tune_sweep", "film_adapter_sweep", "best_methods_proper_es",
+    "ucf101_full", "ucf101_delta_a", "ucf101_lora",
+    "panda_no_tta_continuation", "ucf101_no_tta",
+])
+
+
+def _infer_cond_gen_from_series(series_dir, run_id):
+    """Infer (num_cond, num_gen) from series path and run_id when summary lacks them."""
+    if not series_dir:
+        return None, None
+    path_norm = os.path.normpath(series_dir)
+    base_name = os.path.basename(path_norm)
+
+    # Exp 3 (training frames ablation)
+    c, g = _infer_cond_gen_exp3(run_id, path_norm)
+    if c is not None:
+        return c, g
+
+    # Exp 4 (generation horizon)
+    c, g = _infer_cond_gen_exp4(run_id, path_norm)
+    if c is not None:
+        return c, g
+
+    # Delta-A optimized
+    c, g = _infer_cond_gen_delta_a_optimized(run_id, path_norm)
+    if c is not None:
+        return c, g
+
+    # AdaSteer ratio sweep
+    c, g = _infer_cond_gen_ratio_sweep(run_id, path_norm)
+    if c is not None:
+        return c, g
+
+    # No-TTA and standard TTA series: 14 cond, 14 gen
+    if base_name in _SERIES_14_14:
+        return 14, 14
+
+    return None, None
+
+
 def _bl_cell(baseline_val, run_val, decimals=2):
     """Format baseline column: baseline value and delta, e.g. '21.5 (+0.9)'."""
     if baseline_val is None or run_val is None:
@@ -370,9 +463,9 @@ def data_to_row(run_id, data, baseline_dir=None, series_dir=None):
     row["LPIPS"] = f"{fmt(data.get('lpips_mean'), 4)}±{fmt(data.get('lpips_std', 0), 4)}" if data.get("lpips_mean") is not None else "—"
     n_cond = data.get("num_cond_frames")
     n_gen = data.get("num_gen_frames")
-    # Infer cond/gen for Exp 3 when summary was written before we added these fields
+    # Infer cond/gen when summary was written before we added these fields
     if (n_cond is None or n_gen is None) and series_dir:
-        i_cond, i_gen = _infer_cond_gen_exp3(run_id, series_dir)
+        i_cond, i_gen = _infer_cond_gen_from_series(series_dir, run_id)
         if n_cond is None and i_cond is not None:
             n_cond = i_cond
         if n_gen is None and i_gen is not None:
@@ -391,7 +484,14 @@ def data_to_row(run_id, data, baseline_dir=None, series_dir=None):
         row["ES"] = "—"
 
     bl = None
-    if data.get("format") == "tta" and baseline_dir and n_cond is not None and n_gen is not None:
+    is_no_tta = series_dir and ("no_tta" in os.path.normpath(series_dir))
+    if (
+        data.get("format") == "tta"
+        and not is_no_tta
+        and baseline_dir
+        and n_cond is not None
+        and n_gen is not None
+    ):
         bl = load_baseline_metrics(baseline_dir, n_cond, n_gen)
     if bl:
         row["PSNR_bl"] = _bl_cell(bl.get("psnr_mean"), data.get("psnr_mean"), 2)

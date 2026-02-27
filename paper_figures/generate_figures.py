@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib.lines import Line2D
 import numpy as np
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -139,6 +140,9 @@ def method_display(raw: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════
 
 def load_data() -> List[Dict]:
+    if not DATA_FILE.exists():
+        sys.stderr.write(f"  (no {DATA_FILE.name}, some figures will use embedded fallback data)\n")
+        return []
     with open(DATA_FILE) as f:
         return json.load(f)
 
@@ -750,6 +754,207 @@ def fig_cross_dataset(data):
 # FIG 10: EARLY STOPPING ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════
 
+# Fallback ES ablation data (from progress report) when all_results.json lacks it
+ES_ABLATION_FALLBACK = [
+    {"series": "es_ablation_disable", "run_id": "ES_D1", "n_early": 0, "train_time_mean": 77.6, "psnr_mean": 22.05, "ssim_mean": 0.7682, "lpips_mean": 0.2380},
+    {"series": "es_ablation_holdout", "run_id": "ES_H1", "n_early": 24, "train_time_mean": 94.0, "psnr_mean": 22.07, "ssim_mean": 0.7681, "lpips_mean": 0.2380},
+    {"series": "es_ablation_holdout", "run_id": "ES_H2", "n_early": 26, "train_time_mean": 92.4, "psnr_mean": 22.07, "ssim_mean": 0.7687, "lpips_mean": 0.2357},
+    {"series": "es_ablation_holdout", "run_id": "ES_H3", "n_early": 25, "train_time_mean": 92.4, "psnr_mean": 22.07, "ssim_mean": 0.7683, "lpips_mean": 0.2363},
+    {"series": "es_ablation_noise_draws", "run_id": "ES_ND1", "n_early": 31, "train_time_mean": 85.2, "psnr_mean": 22.05, "ssim_mean": 0.7683, "lpips_mean": 0.2373},
+    {"series": "es_ablation_noise_draws", "run_id": "ES_ND2", "n_early": 26, "train_time_mean": 93.7, "psnr_mean": 22.05, "ssim_mean": 0.7684, "lpips_mean": 0.2374},
+    {"series": "es_ablation_noise_draws", "run_id": "ES_ND3", "n_early": 31, "train_time_mean": 107.2, "psnr_mean": 22.07, "ssim_mean": 0.7685, "lpips_mean": 0.2358},
+    {"series": "es_ablation_patience", "run_id": "ES_P1", "n_early": 94, "train_time_mean": 51.9, "psnr_mean": 22.06, "ssim_mean": 0.7684, "lpips_mean": 0.2361},
+    {"series": "es_ablation_patience", "run_id": "ES_P2", "n_early": 59, "train_time_mean": 80.7, "psnr_mean": 22.07, "ssim_mean": 0.7683, "lpips_mean": 0.2364},
+    {"series": "es_ablation_patience", "run_id": "ES_P3", "n_early": 22, "train_time_mean": 93.5, "psnr_mean": 22.05, "ssim_mean": 0.7683, "lpips_mean": 0.2377},
+    {"series": "es_ablation_patience", "run_id": "ES_P4", "n_early": 0, "train_time_mean": 96.0, "psnr_mean": 22.07, "ssim_mean": 0.7682, "lpips_mean": 0.2365},
+    {"series": "es_ablation_patience", "run_id": "ES_P5", "n_early": 0, "train_time_mean": 95.7, "psnr_mean": 22.09, "ssim_mean": 0.7685, "lpips_mean": 0.2358},
+    {"series": "es_ablation_sigmas", "run_id": "ES_S1", "n_early": 23, "train_time_mean": 83.2, "psnr_mean": 22.06, "ssim_mean": 0.7685, "lpips_mean": 0.2372},
+    {"series": "es_ablation_sigmas", "run_id": "ES_S2", "n_early": 26, "train_time_mean": 82.8, "psnr_mean": 22.08, "ssim_mean": 0.7684, "lpips_mean": 0.2354},
+    {"series": "es_ablation_sigmas", "run_id": "ES_S3", "n_early": 24, "train_time_mean": 81.6, "psnr_mean": 22.08, "ssim_mean": 0.7681, "lpips_mean": 0.2373},
+    {"series": "es_ablation_sigmas", "run_id": "ES_S4", "n_early": 29, "train_time_mean": 82.3, "psnr_mean": 22.05, "ssim_mean": 0.7680, "lpips_mean": 0.2374},
+]
+
+
+def _es_series_legend_labels():
+    """Short labels for ES ablation series (for legend)."""
+    return {
+        "es_ablation_disable":    "No ES",
+        "es_ablation_holdout":   "Holdout",
+        "es_ablation_noise_draws": "Noise draws",
+        "es_ablation_patience":  "Patience",
+        "es_ablation_sigmas":    "Sigmas",
+    }
+
+
+def _add_es_series_legend(fig_or_ax, series_order: List[str], series_colors: Dict[str, str], ax=None):
+    """Add legend for ES ablation series (scatter colors). Pass fig and ax for fig.legend, or just ax for ax.legend."""
+    labels = _es_series_legend_labels()
+    handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=series_colors.get(s, "#999999"),
+               markeredgecolor="white", markeredgewidth=1.0, markersize=8, label=labels.get(s, s))
+        for s in series_order
+    ]
+    if ax is not None:
+        ax.legend(handles=handles, frameon=False, fontsize=9)
+    else:
+        fig_or_ax.legend(handles=handles, frameon=False, fontsize=9, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+
+def _get_es_ablation_time_runs(complete_runs_list: List[Dict]) -> Tuple[List[Dict], float]:
+    """Collect ES ablation runs with n_early, train_time_mean, psnr/ssim/lpips. Returns (runs, no_es_train_time)."""
+    es_series = {"es_ablation_disable", "es_ablation_holdout", "es_ablation_noise_draws",
+                 "es_ablation_patience", "es_ablation_sigmas"}
+    from_data = []
+    no_es_time = None
+    for r in complete_runs_list:
+        if r.get("series") not in es_series:
+            continue
+        n_early = r.get("es_stopped_count", 0)
+        total = max(r.get("es_total_count", 1), 1)
+        # Normalize to count
+        train_t = r.get("train_time_mean")
+        if train_t is None:
+            continue
+        if r.get("series") == "es_ablation_disable":
+            no_es_time = train_t
+        from_data.append({
+            "series": r["series"],
+            "run_id": r["run_id"],
+            "n_early": n_early,
+            "train_time_mean": train_t,
+            "psnr_mean": r.get("psnr_mean"),
+            "ssim_mean": r.get("ssim_mean"),
+            "lpips_mean": r.get("lpips_mean"),
+        })
+    if from_data and no_es_time is not None:
+        return from_data, no_es_time
+    # Use fallback
+    no_es_time = 77.6
+    return ES_ABLATION_FALLBACK, no_es_time
+
+
+def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
+    """Early stopping: time savings vs # videos stopped early, performance unchanged (PSNR/SSIM/LPIPS)."""
+    runs, no_es_time = _get_es_ablation_time_runs(complete_runs_list)
+    if not runs:
+        return
+
+    n_early = [r["n_early"] for r in runs]
+    train_t = [r["train_time_mean"] for r in runs]
+    psnr = [r.get("psnr_mean") for r in runs]
+    ssim = [r.get("ssim_mean") for r in runs]
+    lpips = [r.get("lpips_mean") for r in runs]
+    series = [r["series"] for r in runs]
+    run_ids = [r["run_id"] for r in runs]
+
+    # Color by series (ablation type)
+    series_order = ["es_ablation_disable", "es_ablation_holdout", "es_ablation_noise_draws",
+                    "es_ablation_patience", "es_ablation_sigmas"]
+    series_colors = {
+        "es_ablation_disable":    C_BASELINE,
+        "es_ablation_holdout":   C_LIGHT_T,
+        "es_ablation_noise_draws": C_LORA,
+        "es_ablation_patience":  C_ADASTEER,
+        "es_ablation_sigmas":    C_FULL,
+    }
+    colors = [series_colors.get(s, "#999999") for s in series]
+
+    # --- 1. Train time vs # early (with no-ES reference) ---
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    ax.axhline(no_es_time, color=C_BASELINE_LINE, ls="--", lw=1.2, alpha=0.7, label="No early stopping", zorder=0)
+    ax.scatter(n_early, train_t, c=colors, s=72, edgecolors="white", linewidths=1.0, zorder=5)
+    ax.set_xlabel("Videos stopped early")
+    ax.set_ylabel("Mean training time per video (s)")
+    ax.set_title("Early stopping reduces training time", fontweight="bold", pad=10)
+    labels = _es_series_legend_labels()
+    handles = [Line2D([0], [0], color=C_BASELINE_LINE, ls="--", lw=1.2, alpha=0.7, label="No early stopping")]
+    handles += [Line2D([0], [0], marker="o", color="w", markerfacecolor=series_colors.get(s, "#999999"),
+                       markeredgecolor="white", markeredgewidth=1.0, markersize=8, label=labels.get(s, s))
+                for s in series_order]
+    ax.legend(handles=handles, frameon=False, fontsize=9)
+    ax.set_ylim(0, max(train_t) * 1.08 if train_t else 120)
+    save(fig, "10_early_stopping", "es_time_vs_early.png")
+
+    # --- 2. PSNR, SSIM, LPIPS vs # early (three subplots) ---
+    fig, axes = plt.subplots(3, 1, figsize=(6.5, 8), sharex=True)
+    for ax, key, label, ylim_tight in [
+        (axes[0], "psnr_mean", "PSNR (dB)", (21.9, 22.2)),
+        (axes[1], "ssim_mean", "SSIM", (0.765, 0.772)),
+        (axes[2], "lpips_mean", "LPIPS", (0.233, 0.240)),
+    ]:
+        vals = [r.get(key) for r in runs if r.get(key) is not None]
+        if not vals:
+            continue
+        ax.scatter(n_early, [r.get(key) for r in runs], c=colors, s=72, edgecolors="white", linewidths=1.0, zorder=5)
+        ax.set_ylabel(label)
+        ax.set_ylim(ylim_tight)
+        ax.axhline(np.mean(vals), color=C_BASELINE_LINE, ls=":", lw=1.0, alpha=0.6, zorder=0)
+    axes[2].set_xlabel("Videos stopped early")
+    axes[0].set_title("Performance unchanged across early-stopping settings", fontweight="bold", pad=10)
+    _add_es_series_legend(fig, series_order, series_colors, axes[1])
+    fig.tight_layout()
+    save(fig, "10_early_stopping", "es_metrics_vs_early.png")
+
+    # --- 3. Two-panel: time + metrics (PSNR, SSIM, LPIPS in one row of 3 small panels) ---
+    fig = plt.figure(figsize=(12, 5))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+    ax_time = fig.add_subplot(gs[0])
+    ax_time.axhline(no_es_time, color=C_BASELINE_LINE, ls="--", lw=1.2, alpha=0.7, label="No ES", zorder=0)
+    ax_time.scatter(n_early, train_t, c=colors, s=64, edgecolors="white", linewidths=1.0, zorder=5)
+    ax_time.set_xlabel("Videos stopped early")
+    ax_time.set_ylabel("Mean training time (s)")
+    ax_time.set_title("Training time", fontweight="bold")
+
+    gs_right = gs[1].subgridspec(1, 3)
+    first_metric_ax = None
+    for i, (key, label, ylim_tight) in enumerate([
+        ("psnr_mean", "PSNR (dB)", (21.9, 22.2)),
+        ("ssim_mean", "SSIM", (0.765, 0.772)),
+        ("lpips_mean", "LPIPS", (0.233, 0.240)),
+    ]):
+        ax = fig.add_subplot(gs_right[0, i])
+        if first_metric_ax is None:
+            first_metric_ax = ax
+        ax.scatter(n_early, [r.get(key) for r in runs], c=colors, s=52, edgecolors="white", linewidths=0.8, zorder=5)
+        ax.set_ylabel(label, fontsize=10)
+        ax.set_ylim(ylim_tight)
+        ax.set_xlabel("# early", fontsize=9)
+    if first_metric_ax is not None:
+        _add_es_series_legend(fig, series_order, series_colors, first_metric_ax)
+    fig.suptitle("Early stopping: time savings without compromising quality",
+                 fontweight="bold", y=1.02, fontsize=13)
+    fig.tight_layout(rect=[0, 0, 1, 0.98])
+    save(fig, "10_early_stopping", "es_time_savings_two_panel.png")
+
+    # --- 4. Time saved vs # early ---
+    time_saved = [no_es_time - t for t in train_t]
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    ax.scatter(n_early, time_saved, c=colors, s=72, edgecolors="white", linewidths=1.0, zorder=5)
+    ax.axhline(0, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.5, zorder=0)
+    ax.set_xlabel("Videos stopped early")
+    ax.set_ylabel("Time saved per video (s)")
+    ax.set_title("Early stopping: time saved vs. number of videos stopped early", fontweight="bold", pad=10)
+    _add_es_series_legend(fig, series_order, series_colors, ax)
+    ax.set_ylim(min(time_saved) - 2 if time_saved else -5, 30)
+    save(fig, "10_early_stopping", "es_time_saved_vs_early.png")
+
+    # --- 5. Mean TTA train time per video vs metrics (PSNR, SSIM, LPIPS) ---
+    fig, axes = plt.subplots(1, 3, figsize=(11, 4), sharex=True)
+    for ax, key, label, ylim_tight in [
+        (axes[0], "psnr_mean", "PSNR (dB)", (21.9, 22.2)),
+        (axes[1], "ssim_mean", "SSIM", (0.765, 0.772)),
+        (axes[2], "lpips_mean", "LPIPS", (0.233, 0.240)),
+    ]:
+        ax.scatter(train_t, [r.get(key) for r in runs], c=colors, s=72, edgecolors="white", linewidths=1.0, zorder=5)
+        ax.set_xlabel("Mean TTA train time per video (s)")
+        ax.set_ylabel(label)
+        ax.set_ylim(ylim_tight)
+    _add_es_series_legend(fig, series_order, series_colors, axes[1])
+    fig.suptitle("Metrics vs. mean TTA train time per video (early-stopping ablations)", fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    save(fig, "10_early_stopping", "es_train_time_vs_metrics.png")
+
+
 def fig_early_stopping(data):
     print("\n[10] Early stopping analysis")
     c = complete_runs(data)
@@ -809,6 +1014,9 @@ def fig_early_stopping(data):
     fig.tight_layout()
     save(fig, "10_early_stopping", "es_ablation.png")
 
+    # --- Time savings + same performance (all ES ablations) ---
+    fig_early_stopping_time_savings(c)
+
     # --- Long-train early stopping overview ---
     fig, ax = plt.subplots(figsize=(8, 4))
     long_runs = sorted(
@@ -830,7 +1038,7 @@ def fig_early_stopping(data):
                     height=0.55, zorder=1)
             ax.barh(i, best_step, color=color, height=0.55, zorder=2)
             ax.text(best_step + total_steps * 0.02, i,
-                    f"avg best = step {best_step:.0f}  ({stopped}/{total_v} stopped)",
+                    f"avg best = step {best_step:.0f}  ({stopped} stopped early)",
                     va="center", fontsize=9, color="#333333", zorder=3)
 
         ax.set_yticks(range(len(labels)))
