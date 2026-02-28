@@ -139,6 +139,11 @@ echo "  Output dir     : ${OUTPUT_DIR}"
 
 # ============================================================================
 # Environment Setup
+#
+# CRITICAL: module load sets PYTHONHOME / PYTHONPATH to the system anaconda,
+# which breaks the conda env's sys.path (wrong Python version, missing
+# packages). We MUST unset these after conda activate. See:
+#   sweep_experiment/docs/SBATCH_CONDA_BEST_PRACTICES.md
 # ============================================================================
 module purge
 module load anaconda3/2025.06
@@ -153,13 +158,24 @@ else
     exit 1
 fi
 
-# Use the env's Python explicitly so we don't rely on PATH (avoids torch not found on compute nodes)
+# CRITICAL: unset PYTHONHOME and PYTHONPATH set by "module load anaconda3/..."
+# Without this, even explicit $PYTHON uses the system anaconda's sys.path,
+# causing "No module named 'torch'" and similar import errors.
+unset PYTHONHOME
+unset PYTHONPATH
+
 PYTHON="${CONDA_ENV}/bin/python"
 if [ ! -x "$PYTHON" ]; then
     echo "ERROR: Python not found at $PYTHON" >&2
     exit 1
 fi
 echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
+
+# Verify the environment is correct (catches broken conda activation early)
+"$PYTHON" -c "import torch; print(f'torch {torch.__version__}, CUDA {torch.cuda.is_available()}')" || {
+    echo "ERROR: torch import failed — conda env is broken or PYTHONHOME was not unset" >&2
+    exit 1
+}
 
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"

@@ -54,7 +54,7 @@ if command -v sacct &>/dev/null; then
   elif date -v-7d +%Y-%m-%dT%H:%M &>/dev/null; then
     START=$(date -v-7d +%Y-%m-%dT%H:%M)
   fi
-  for name in tta_exp3 tta_exp4 tta_adas tta_full tta_lora tta_delt opensora setup_co panda70m resize_v; do
+  for name in tta_exp3 tta_exp4 tta_exp5 tta_adas tta_full tta_lora tta_delt opensora setup_co panda70m resize_v; do
     COUNT=$(sacct --name="${name}" --starttime="${START}" --format=JobID,State -n 2>/dev/null | wc -l) || COUNT=0
     if [ "${COUNT}" -gt 0 ]; then
       echo "--- ${name} ---"
@@ -75,6 +75,8 @@ complete=0
 in_progress=0
 failed_dirs=()
 failed_series=()
+# Track failed keys to avoid duplicates when scanning both results and results_no_preempt
+declare -A failed_seen
 # Avoid set -e triggering on arithmetic when value is 0
 inc_complete() { complete=$((complete + 1)); }
 inc_in_progress() { in_progress=$((in_progress + 1)); }
@@ -92,11 +94,16 @@ scan_dir() {
     for run_dir in "${series_dir}"/*; do
       [ -d "$run_dir" ] || continue
       local run_name="${run_dir##*/}"
+      # Baseline runs use cond*_gen*/generated_videos for output; not a run dir
+      [ "$run_name" = "generated_videos" ] && continue
       if [ -f "${run_dir}/summary.json" ]; then
         inc_complete
       elif [ -f "${run_dir}/checkpoint.json" ]; then
         inc_in_progress
       else
+        local key="${series_name}/${run_name}"
+        [ -n "${failed_seen[$key]:-}" ] && continue
+        failed_seen[$key]=1
         failed_dirs+=("${run_dir}")
         failed_series+=("${series_name}/${run_name}")
       fi
@@ -150,8 +157,10 @@ echo "   - Inspect SLURM exit status and logs:"
 echo "     bash sweep_experiment/scripts/investigate_failed_jobs.sh"
 echo "   - For specific job IDs (from sacct above):"
 echo "     bash sweep_experiment/scripts/investigate_failed_jobs.sh <JOBID> [JOBID2 ...]"
-echo "   - See: sweep_experiment/docs/INVESTIGATE_EXP3_FAILURES.md"
+echo "   - Docs: sweep_experiment/docs/INVESTIGATE_EXP3_FAILURES.md (exp3/sweep)"
+echo "           sweep_experiment/docs/INVESTIGATE_EXP5_UCF101_FAILURES.md (exp5 batch-size UCF-101)"
 echo "   - After fixing (config/env/resources), resubmit with:"
 echo "     python3 sweep_experiment/scripts/run_sweep.py --config <config>.yaml --account torch_pr_36_mren"
+echo "     (Use --run-ids to resubmit only failed runs; see INVESTIGATE_EXP5_UCF101_FAILURES.md for exp5.)"
 echo ""
 echo "================================================================================"

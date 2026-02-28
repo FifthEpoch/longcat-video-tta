@@ -40,6 +40,9 @@ module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 
 conda activate cogvideo
+# CRITICAL: unset PYTHONHOME and PYTHONPATH set by "module load anaconda3/..."
+unset PYTHONHOME
+unset PYTHONPATH
 echo "Python: $(which python)"
 echo "Python version: $(python --version)"
 

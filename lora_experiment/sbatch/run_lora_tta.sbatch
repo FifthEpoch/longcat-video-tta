@@ -101,6 +101,10 @@ else
     exit 1
 fi
 
+# CRITICAL: unset PYTHONHOME and PYTHONPATH set by "module load anaconda3/..."
+unset PYTHONHOME
+unset PYTHONPATH
+
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
 export TRANSFORMERS_CACHE="${HF_HOME}"
