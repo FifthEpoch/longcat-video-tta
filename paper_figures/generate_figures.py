@@ -148,7 +148,13 @@ def load_data() -> List[Dict]:
         sys.stderr.write(f"  (no {DATA_FILE.name}, some figures will use embedded fallback data)\n")
         return []
     with open(DATA_FILE) as f:
-        return json.load(f)
+        raw = json.load(f)
+    # Support both old flat-array format and new {runs: [...]} format
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict) and "runs" in raw:
+        return raw["runs"]
+    return []
 
 def complete_runs(data: List[Dict]) -> List[Dict]:
     return [r for r in data
