@@ -383,8 +383,19 @@ def _is_baseline_series(series: str) -> bool:
     return series in ("results", "panda_no_tta_continuation", "ucf101_no_tta")
 
 
+_COND_GEN_SWEEP_PARAMS = {"num_cond_frames", "num_frames", "num_gen_frames"}
+
+
 def match_baselines(all_records: List[dict]) -> Tuple[List[dict], List[str]]:
-    """Phase 2: attach baseline metrics to each TTA run. Returns (records, missing_baselines)."""
+    """Phase 2: attach per-run baseline metrics to each TTA run.
+
+    Key principle: every run is matched to the no-TTA baseline with the
+    SAME cond/gen frame configuration.  For series that sweep cond or gen
+    counts (exp3, exp4, ratio_sweep, …) we use baseline_experiment entries
+    so all runs within the series are compared against the same methodology.
+    For standard series (fixed cond=14, gen=14) we use panda_no_tta /
+    ucf101_no_tta as before.  No fallback to a mismatched cond/gen baseline.
+    """
     idx = _build_baseline_index(all_records)
     missing_set: set = set()
 
@@ -405,10 +416,14 @@ def match_baselines(all_records: List[dict]) -> Tuple[List[dict], List[str]]:
             baseline = idx["es_disable"]
             bl_source = "es_ablation_disable/ES_D1"
 
-        # Exp5 batch-size UCF-101: baseline is no-TTA UCF-101 (same cond/gen, same 100 videos)
-        # Prefer baseline_experiment/results (ucf101_cond*_gen*) over ucf101_no_tta for correct dataset metrics
-        elif series.startswith("exp5_batch_size_") and "ucf101" in series:
-            if cond is not None and gen is not None:
+        elif cond is not None and gen is not None:
+            is_ucf = _is_ucf101_series(series)
+
+            series_info = SERIES_INFO.get(series, {})
+            sweeps = set(series_info.get("sweep_params", []))
+            varies_cond_gen = bool(sweeps & _COND_GEN_SWEEP_PARAMS)
+
+            if is_ucf:
                 baseline = idx["baseline_ucf101"].get((cond, gen))
                 if baseline:
                     bl_source = f"baseline:ucf101_cond{cond}_gen{gen}"
@@ -416,35 +431,11 @@ def match_baselines(all_records: List[dict]) -> Tuple[List[dict], List[str]]:
                     baseline = idx["no_tta_ucf101"].get((cond, gen))
                     if baseline:
                         bl_source = "ucf101_no_tta/UCF_NOTTA"
-                if baseline is None:
-                    missing_set.add(f"ucf101_cond{cond}_gen{gen}")
-
-        # Exp5 batch-size Panda: baseline is batch_videos=1 in same series (batch ablation)
-        elif series.startswith("exp5_batch_size_"):
-            first_runs = {"exp5_batch_size_delta_a": "BS_DA1",
-                          "exp5_batch_size_full": "BS_F1",
-                          "exp5_batch_size_lora": "BS_L1"}
-            first_id = first_runs.get(series)
-            if first_id and rid != first_id:
-                baseline = idx["by_series_run"].get((series, first_id))
-                bl_source = f"{series}/{first_id}"
-
-        # UCF-101 TTA series (non-exp5): baseline is no-TTA with same cond/gen per run
-        elif _is_ucf101_series(series) and not _is_baseline_series(series):
-            if cond is not None and gen is not None:
-                baseline = idx["no_tta_ucf101"].get((cond, gen))
+            elif varies_cond_gen:
+                baseline = idx["baseline_panda"].get((cond, gen))
                 if baseline:
-                    bl_source = "ucf101_no_tta/UCF_NOTTA"
-                else:
-                    baseline = idx["baseline_ucf101"].get((cond, gen))
-                    if baseline:
-                        bl_source = f"baseline:ucf101_cond{cond}_gen{gen}"
-                if baseline is None:
-                    missing_set.add(f"ucf101_cond{cond}_gen{gen}")
-
-        # Standard Panda TTA: no-TTA or baseline_experiment with same cond/gen (per-run; no fallback)
-        else:
-            if cond is not None and gen is not None:
+                    bl_source = f"baseline:cond{cond}_gen{gen}"
+            else:
                 baseline = idx["no_tta_panda"].get((cond, gen))
                 if baseline:
                     bl_source = "panda_no_tta/NOTTA"
@@ -452,8 +443,10 @@ def match_baselines(all_records: List[dict]) -> Tuple[List[dict], List[str]]:
                     baseline = idx["baseline_panda"].get((cond, gen))
                     if baseline:
                         bl_source = f"baseline:cond{cond}_gen{gen}"
-                    else:
-                        missing_set.add(f"cond{cond}_gen{gen}")
+
+            if baseline is None:
+                prefix = "ucf101_" if is_ucf else ""
+                missing_set.add(f"{prefix}cond{cond}_gen{gen}")
 
         if baseline:
             r["baseline_psnr"] = baseline.get("psnr_mean")
@@ -867,24 +860,40 @@ def print_series_table(series_name: str, runs: List[dict], meta: dict):
         else:
             print(line)
 
-    # Show baseline info: if all runs share the same baseline, show it; else "per run"
-    bl_sources = [r.get("baseline_source") for r in runs if r.get("baseline_source")]
-    distinct_sources = sorted(set(bl_sources)) if bl_sources else []
-    if len(distinct_sources) == 1:
-        bl_source = distinct_sources[0]
-        bl_r = next((r for r in runs if r.get("baseline_source") == bl_source), runs[0] if runs else {})
-        bl_psnr = bl_r.get("baseline_psnr")
-        bl_ssim = bl_r.get("baseline_ssim")
-        bl_lpips = bl_r.get("baseline_lpips")
+    # Analyse baseline variation across runs
+    _bl_info = {}
+    for r in runs:
+        src = r.get("baseline_source")
+        if src:
+            _bl_info[r.get("run_id", "?")] = {
+                "source": src,
+                "psnr": r.get("baseline_psnr"),
+                "ssim": r.get("baseline_ssim"),
+                "lpips": r.get("baseline_lpips"),
+            }
+    _unique_sources = set(v["source"] for v in _bl_info.values())
+    _has_missing_bl = any(
+        r.get("baseline_source") is None
+        and r.get("n_ok", 0) > 0
+        and not _is_no_tta(r)
+        for r in runs
+    )
+    _show_per_run_bl = len(_unique_sources) > 1 or (
+        _has_missing_bl and len(_unique_sources) >= 1
+    )
+
+    if len(_unique_sources) == 1 and not _has_missing_bl:
+        src = next(iter(_unique_sources))
+        info = next(v for v in _bl_info.values())
         parts = []
-        if bl_psnr is not None: parts.append(f"PSNR={bl_psnr:.4f}")
-        if bl_ssim is not None: parts.append(f"SSIM={bl_ssim:.4f}")
-        if bl_lpips is not None: parts.append(f"LPIPS={bl_lpips:.4f}")
-        print(f"  Baseln : {bl_source}  ({', '.join(parts)})")
-    elif distinct_sources:
-        print(f"  Baseln : (per run: cond/gen match)  [{', '.join(distinct_sources)}]")
-    elif not bl_sources and runs:
-        print("  Baseln : (none matched)")
+        if info["psnr"] is not None: parts.append(f"PSNR={info['psnr']:.4f}")
+        if info["ssim"] is not None: parts.append(f"SSIM={info['ssim']:.4f}")
+        if info["lpips"] is not None: parts.append(f"LPIPS={info['lpips']:.4f}")
+        print(f"  Baseln : {src}  ({', '.join(parts)})")
+    elif _show_per_run_bl:
+        print(f"  Baseln : per-run (varies by cond/gen)")
+    elif _has_missing_bl:
+        print(f"  Baseln : MISSING")
     print()
 
     # Build sweep header
@@ -917,6 +926,22 @@ def print_series_table(series_name: str, runs: List[dict], meta: dict):
                f"| {_fmt(lpips)} {_fmt_delta(lpips, bl_lpips, prec=4)} "
                f"| {_fmt(train_s, prec=1)}")
         print(row)
+
+    if _show_per_run_bl:
+        print()
+        print("  Baselines used:")
+        for r in sorted(runs, key=lambda x: x.get("run_id", "")):
+            if r.get("n_ok", 0) == 0:
+                continue
+            rid = r.get("run_id", "?")
+            src = r.get("baseline_source")
+            if src:
+                bl_psnr = r.get("baseline_psnr")
+                note = f" (PSNR={bl_psnr:.2f})" if bl_psnr is not None else ""
+                print(f"    {rid} -> {src}{note}")
+            else:
+                c, g = _infer_cond_gen_for_run(r)
+                print(f"    {rid} -> MISSING (need cond{c}_gen{g})")
 
 
 def print_report(all_records: List[dict], metadata: dict, missing: List[str]):
