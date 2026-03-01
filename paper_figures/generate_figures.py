@@ -194,6 +194,26 @@ def titled(ax, title, fixed=None, fontsize=13):
                 fontsize=8.5, color="#777777", style="italic")
 
 
+def _draw_baseline_curve(ax, runs, x_key_fn, metric="psnr_mean"):
+    """Draw a 'No TTA' baseline that varies per data point.
+
+    Uses the per-run baseline_psnr/ssim/lpips attached by export_all_results.
+    x_key_fn(run) -> x-axis value for that run.
+    """
+    bl_field = "baseline_" + metric.split("_")[0]
+    pts = {}
+    for r in runs:
+        x = x_key_fn(r)
+        bl = r.get(bl_field)
+        if x is not None and bl is not None:
+            pts[x] = bl
+    if not pts:
+        return
+    xs, ys = zip(*sorted(pts.items()))
+    ax.plot(xs, ys, "--", color=C_BASELINE_LINE, lw=1.2, alpha=0.7,
+            marker="x", markersize=5, zorder=1, label="No TTA")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # FIG 1: MAIN METHOD COMPARISON  (DeepSeek-style grouped bars)
 # ═══════════════════════════════════════════════════════════════════════
@@ -628,9 +648,11 @@ def fig_cond_frames(data):
 
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    all_exp3_runs = []
+    for sname in series_methods:
+        all_exp3_runs.extend(by_series(c, sname))
+    _draw_baseline_curve(ax, all_exp3_runs,
+                         lambda r: EXP3_COND_FRAMES.get(r["run_id"]))
 
     for sname, label in series_methods.items():
         runs = by_series(c, sname)
@@ -653,7 +675,7 @@ def fig_cond_frames(data):
     ax.set_xlabel("Conditioning Frames")
     ax.set_ylabel("PSNR (dB)")
     titled(ax, "Effect of Conditioning Frames",
-           fixed="20 steps, 28 gen frames, best LR per method")
+           fixed="20 steps, 14 gen frames, best LR per method")
     ax.legend(frameon=False)
     ax.set_xticks([2, 7, 14, 24])
     save(fig, "07_cond_frames", "cond_frames_psnr.png")
@@ -676,9 +698,11 @@ def fig_gen_horizon(data):
 
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    all_exp4_runs = []
+    for sname in series_methods:
+        all_exp4_runs.extend(by_series(c, sname))
+    _draw_baseline_curve(ax, all_exp4_runs,
+                         lambda r: EXP4_GEN_FRAMES.get(r["run_id"]))
 
     for sname, label in series_methods.items():
         runs = by_series(c, sname)
@@ -872,6 +896,8 @@ def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
     if not runs:
         return
 
+    es_d1 = next((r for r in runs if r.get("series") == "es_ablation_disable"), None)
+
     n_early = [r["n_early"] for r in runs]
     train_t = [r["train_time_mean"] for r in runs]
     psnr = [r.get("psnr_mean") for r in runs]
@@ -921,7 +947,9 @@ def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
         ax.scatter(n_early, [r.get(key) for r in runs], c=colors, s=72, edgecolors="white", linewidths=1.0, zorder=5)
         ax.set_ylabel(label)
         ax.set_ylim(ylim_tight)
-        ax.axhline(np.mean(vals), color=C_BASELINE_LINE, ls=":", lw=1.0, alpha=0.6, zorder=0)
+        ref_val = es_d1.get(key) if es_d1 else np.mean(vals)
+        ax.axhline(ref_val, color=C_BASELINE_LINE, ls=":", lw=1.0, alpha=0.6, zorder=0,
+                   label="No ES" if key == "psnr_mean" else None)
     axes[2].set_xlabel("Videos stopped early")
     axes[0].set_title("Performance unchanged across early-stopping settings", fontweight="bold", pad=10)
     _add_es_series_legend(fig, series_order, series_colors, axes[1])
@@ -952,6 +980,8 @@ def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
         ax.set_ylabel(label, fontsize=10)
         ax.set_ylim(ylim_tight)
         ax.set_xlabel("# early", fontsize=9)
+        if es_d1 and es_d1.get(key) is not None:
+            ax.axhline(es_d1[key], color=C_BASELINE_LINE, ls=":", lw=1.0, alpha=0.6, zorder=0)
     # Legend just to the right of the panels, close to the graphs
     _add_es_series_legend(fig, series_order, series_colors, ax=None, bbox_to_anchor=(0.90, 0.5))
     fig.suptitle("Early stopping: time savings without compromising quality",
@@ -982,6 +1012,8 @@ def fig_early_stopping_time_savings(complete_runs_list: List[Dict]):
         ax.set_xlabel("Mean TTA train time per video (s)")
         ax.set_ylabel(label)
         ax.set_ylim(ylim_tight)
+        if es_d1 and es_d1.get(key) is not None:
+            ax.axhline(es_d1[key], color=C_BASELINE_LINE, ls=":", lw=1.0, alpha=0.6, zorder=0)
     # Legend just to the right of the panels, close to the graphs
     _add_es_series_legend(fig, series_order, series_colors, ax=None, bbox_to_anchor=(0.90, 0.5))
     fig.suptitle("Metrics vs. mean TTA train time per video (early-stopping ablations)", fontweight="bold", y=1.02)
@@ -1266,18 +1298,26 @@ def fig_ratio_sweep(data):
         print("  (no data)")
         return
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    bl_psnr = bl[0]["psnr_mean"] if bl else 22.07
-
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     by_cond = defaultdict(list)
+    bl_by_cond = {}
     for r in runs:
         cond = RATIO_SWEEP_COND.get(r["run_id"])
         if cond is None:
             continue
         by_cond[cond].append((r.get("num_groups", 1), r["psnr_mean"]))
+        bl = r.get("baseline_psnr")
+        if bl is not None:
+            bl_by_cond[cond] = bl
+
+    for cond, bl_psnr in sorted(bl_by_cond.items()):
+        groups = sorted(g for g, _ in by_cond.get(cond, []))
+        if groups:
+            ax.hlines(bl_psnr, groups[0] - 0.3, groups[-1] + 0.3,
+                      colors=C_BASELINE_LINE, linestyles="--", lw=1.0, alpha=0.6)
+            ax.text(groups[-1] + 0.5, bl_psnr, f"No TTA (cond={cond})",
+                    fontsize=7, color=C_BASELINE_LINE, va="center")
 
     cond_colors = {2: C_ADASTEER, 24: C_ADASTEER_B}
     for cond in sorted(by_cond.keys()):
