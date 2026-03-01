@@ -307,6 +307,8 @@ def main():
                         help="Override data directory (e.g. for UCF101)")
     parser.add_argument("--output-base", type=str, default=None,
                         help="Override output base directory")
+    parser.add_argument("--time", type=str, default=None,
+                        help="Override SLURM time limit (e.g. 24:00:00)")
     parser.add_argument("--sbatch-template", type=str,
                         default="sweep_experiment/sbatch/run_sweep.sbatch",
                         help="Path to sbatch template")
@@ -354,7 +356,7 @@ def main():
             output_base=args.output_base,
         )
 
-        time_limit = estimate_time(method, row, fixed)
+        time_limit = args.time or estimate_time(method, row, fixed)
         mem = estimate_mem(method)
 
         print(f"Run {run_id}:")
