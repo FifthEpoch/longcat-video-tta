@@ -62,11 +62,14 @@ from common import (
     build_augmented_latent_variants,
     add_augmentation_args,
     add_tta_frame_args,
+    add_clip_gate_args,
     parse_speed_factors,
     split_tta_latents,
     evaluate_generation_metrics,
     build_retrieval_pool,
     retrieve_neighbors,
+    evaluate_clip_gate,
+    summarize_clip_gate_stats,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -361,6 +364,7 @@ def main():
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
+    add_clip_gate_args(parser)
 
     args = parser.parse_args()
 
@@ -450,6 +454,26 @@ def main():
         },
         "seed": args.seed,
         "max_videos": args.max_videos,
+        "clip_gate_enabled": args.clip_gate_enabled,
+        "clip_gate_threshold": args.clip_gate_threshold,
+        "clip_gate_model": args.clip_gate_model,
+        "clip_gate_sample_frames": args.clip_gate_sample_frames,
+        "clip_gate_aggregation": args.clip_gate_aggregation,
+        "clip_gate_sampling_mode": "late_only" if args.clip_gate_late_only else args.clip_gate_sampling_mode,
+        "clip_gate_late_fraction": args.clip_gate_late_fraction,
+        "clip_gate_log_only": args.clip_gate_log_only,
+        "clip_gate_fail_open": args.clip_gate_fail_open,
+        "clip_gate": {
+            "enabled": args.clip_gate_enabled,
+            "threshold": args.clip_gate_threshold,
+            "model": args.clip_gate_model,
+            "sample_frames": args.clip_gate_sample_frames,
+            "aggregation": args.clip_gate_aggregation,
+            "sampling_mode": "late_only" if args.clip_gate_late_only else args.clip_gate_sampling_mode,
+            "late_fraction": args.clip_gate_late_fraction,
+            "log_only": args.clip_gate_log_only,
+            "fail_open": args.clip_gate_fail_open,
+        },
     }
     with open(os.path.join(args.output_dir, "config.json"), "w") as f:
         json.dump(exp_config, f, indent=2)
@@ -499,8 +523,36 @@ def main():
 
         print(f"\n[{idx + 1}/{len(eval_videos)}] {video_name}: {caption}")
 
+        clip_gate_info = evaluate_clip_gate(
+            video_path=video_path,
+            caption=caption,
+            gen_start_frame=args.gen_start_frame,
+            tta_total_frames=args.tta_total_frames,
+            device=args.device,
+            enabled=args.clip_gate_enabled,
+            threshold=args.clip_gate_threshold,
+            model_name=args.clip_gate_model,
+            sample_frames=args.clip_gate_sample_frames,
+            aggregation=args.clip_gate_aggregation,
+            sampling_mode=args.clip_gate_sampling_mode,
+            late_fraction=args.clip_gate_late_fraction,
+            late_only=args.clip_gate_late_only,
+            fail_open=args.clip_gate_fail_open,
+            log_only=args.clip_gate_log_only,
+        )
+        if clip_gate_info.get("clip_alignment_score") is not None:
+            print(
+                "  CLIP gate: "
+                f"score={clip_gate_info['clip_alignment_score']:.4f}, "
+                f"decision={clip_gate_info['clip_gate_decision']}, "
+                f"mode={clip_gate_info['clip_gate_sampling_mode']}"
+            )
+        elif clip_gate_info.get("clip_gate_enabled"):
+            print(f"  CLIP gate: decision={clip_gate_info['clip_gate_decision']} "
+                  f"({clip_gate_info.get('clip_gate_reason', 'n/a')})")
+
         # Build training batch: eval video + K-1 nearest neighbours
-        if batch_level:
+        if batch_level and not clip_gate_info.get("tta_skipped", False):
             neighbors = retrieve_neighbors(
                 eval_entry, pool_entries, pool_embeddings, st_model,
                 k=args.batch_videos,
@@ -509,12 +561,20 @@ def main():
             print(f"  Batch: 1 eval + {len(neighbors)} retrieved neighbours")
         else:
             training_entries = [eval_entry]
+            if batch_level and clip_gate_info.get("tta_skipped", False):
+                print("  CLIP gate triggered: skip TTA for this sample, neighbors ignored.")
 
         try:
             # Reset DiT to base weights before each video
             reset_dit_weights(dit, base_state)
 
-            if batch_level:
+            if clip_gate_info.get("tta_skipped", False):
+                train_result = {
+                    "losses": [],
+                    "train_time": 0.0,
+                    "early_stopping_info": None,
+                }
+            elif batch_level:
                 # ── Batch-level: pre-encode all videos, train jointly ──
                 batch_data = []
                 for te in training_entries:
@@ -659,6 +719,7 @@ def main():
                 "early_stopping_info": train_result.get("early_stopping_info"),
                 "success": True,
             }
+            result.update(clip_gate_info)
 
             # Generate video continuation (eval video only)
             gen_time = 0.0
@@ -754,6 +815,16 @@ def main():
                                  if r.get("final_loss") is not None])
             else None
         ),
+        "clip_gate_enabled": args.clip_gate_enabled,
+        "clip_gate_threshold": args.clip_gate_threshold,
+        "clip_gate_model": args.clip_gate_model,
+        "clip_gate_sample_frames": args.clip_gate_sample_frames,
+        "clip_gate_aggregation": args.clip_gate_aggregation,
+        "clip_gate_sampling_mode": "late_only" if args.clip_gate_late_only else args.clip_gate_sampling_mode,
+        "clip_gate_late_fraction": args.clip_gate_late_fraction,
+        "clip_gate_log_only": args.clip_gate_log_only,
+        "clip_gate_fail_open": args.clip_gate_fail_open,
+        "clip_gate_stats": summarize_clip_gate_stats(successful),
         "results": all_results,
     }
     save_results(summary, os.path.join(args.output_dir, "summary.json"))

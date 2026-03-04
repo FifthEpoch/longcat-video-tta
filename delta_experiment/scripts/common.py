@@ -1149,6 +1149,77 @@ def add_tta_frame_args(parser):
     return parser
 
 
+def add_clip_gate_args(parser):
+    """Add CLIP gate CLI flags used across all TTA runners."""
+    g = parser.add_argument_group("CLIP gate")
+    g.add_argument(
+        "--clip-gate-enabled",
+        action="store_true",
+        help="Enable CLIP-based per-sample gate before TTA optimization.",
+    )
+    g.add_argument(
+        "--clip-gate-threshold",
+        type=float,
+        default=0.0,
+        help="Skip TTA when CLIP alignment score is below this threshold.",
+    )
+    g.add_argument(
+        "--clip-gate-model",
+        type=str,
+        default="openai/clip-vit-large-patch14",
+        help="HuggingFace CLIP model id for text-image alignment scoring.",
+    )
+    g.add_argument(
+        "--clip-gate-sample-frames",
+        type=int,
+        default=4,
+        help="Number of frames sampled from the TTA window for CLIP scoring.",
+    )
+    g.add_argument(
+        "--clip-gate-aggregation",
+        type=str,
+        default="mean",
+        choices=["mean", "min", "max"],
+        help="How to aggregate per-frame CLIP scores into one gate score.",
+    )
+    g.add_argument(
+        "--clip-gate-sampling-mode",
+        type=str,
+        default="full_window",
+        choices=["full_window", "late_only"],
+        help="Frame sampling region inside TTA window for CLIP scoring.",
+    )
+    g.add_argument(
+        "--clip-gate-late-fraction",
+        type=float,
+        default=0.4,
+        help="Fraction of trailing TTA window to use when mode is late_only.",
+    )
+    g.add_argument(
+        "--clip-gate-late-only",
+        action="store_true",
+        help="Compatibility alias for --clip-gate-sampling-mode late_only.",
+    )
+    g.add_argument(
+        "--clip-gate-fail-open",
+        action="store_true",
+        help="If CLIP scoring fails, continue with TTA instead of failing run.",
+    )
+    g.add_argument(
+        "--clip-gate-fail-closed",
+        action="store_false",
+        dest="clip_gate_fail_open",
+        help="If CLIP scoring fails, raise an error instead of continuing.",
+    )
+    g.add_argument(
+        "--clip-gate-log-only",
+        action="store_true",
+        help="Compute and log CLIP scores but never skip TTA.",
+    )
+    parser.set_defaults(clip_gate_fail_open=True)
+    return parser
+
+
 def add_augmentation_args(parser):
     """Add common augmentation CLI flags to an argparse parser."""
     group = parser.add_argument_group("Data augmentation")
@@ -1176,6 +1247,229 @@ def add_augmentation_args(parser):
     group.add_argument("--aug-speed-factors", type=str, default="",
                        help="Comma-separated speed factors (e.g. 0.5,2.0)")
     return parser
+
+
+_CLIP_SCORER_CACHE: Dict[Tuple[str, str], Tuple[Any, Any]] = {}
+
+
+def _get_clip_scorer(model_name: str, device: str):
+    """Lazy-load and cache a CLIP model+processor pair."""
+    key = (model_name, device)
+    if key in _CLIP_SCORER_CACHE:
+        return _CLIP_SCORER_CACHE[key]
+
+    from transformers import CLIPModel, CLIPProcessor
+
+    processor = CLIPProcessor.from_pretrained(model_name)
+    model = CLIPModel.from_pretrained(model_name)
+    model = model.to(device)
+    model.eval()
+    _CLIP_SCORER_CACHE[key] = (model, processor)
+    return model, processor
+
+
+def _sample_clip_frame_offsets(
+    window_len: int,
+    sample_frames: int,
+    sampling_mode: str = "full_window",
+    late_fraction: float = 0.4,
+) -> List[int]:
+    """Pick frame offsets inside a TTA window for CLIP scoring."""
+    if window_len <= 0:
+        return []
+
+    if sampling_mode == "late_only":
+        frac = min(max(float(late_fraction), 1e-6), 1.0)
+        late_len = max(1, int(round(window_len * frac)))
+        candidate_start = max(0, window_len - late_len)
+        candidates = list(range(candidate_start, window_len))
+    else:
+        candidates = list(range(window_len))
+
+    if not candidates:
+        return []
+
+    k = max(1, min(int(sample_frames), len(candidates)))
+    if k == 1:
+        return [candidates[-1]]
+
+    pos = np.linspace(0, len(candidates) - 1, num=k, dtype=int)
+    return [candidates[int(i)] for i in pos]
+
+
+def _decode_video_window_for_clip(
+    video_path: str,
+    start_frame: int,
+    num_frames: int,
+) -> List[Any]:
+    """Decode a contiguous frame window and return PIL frames."""
+    import av
+
+    if num_frames <= 0:
+        return []
+
+    container = av.open(video_path)
+    frames = []
+    decoded = 0
+    for frame in container.decode(video=0):
+        if decoded < start_frame:
+            decoded += 1
+            continue
+        if len(frames) >= num_frames:
+            break
+        frames.append(frame.to_image())
+        decoded += 1
+    container.close()
+
+    if not frames:
+        return []
+    while len(frames) < num_frames:
+        frames.append(frames[-1].copy())
+    return frames[:num_frames]
+
+
+def evaluate_clip_gate(
+    *,
+    video_path: str,
+    caption: str,
+    gen_start_frame: int,
+    tta_total_frames: int,
+    device: str = "cuda",
+    enabled: bool = False,
+    threshold: float = 0.0,
+    model_name: str = "openai/clip-vit-large-patch14",
+    sample_frames: int = 4,
+    aggregation: str = "mean",
+    sampling_mode: str = "full_window",
+    late_fraction: float = 0.4,
+    late_only: bool = False,
+    fail_open: bool = True,
+    log_only: bool = False,
+) -> Dict[str, Any]:
+    """Compute CLIP gate decision for a single sample.
+
+    Returns a dict with stable logging fields used by all runners.
+    """
+    if late_only:
+        sampling_mode = "late_only"
+
+    info: Dict[str, Any] = {
+        "clip_gate_enabled": bool(enabled),
+        "clip_gate_threshold": float(threshold),
+        "clip_gate_model": model_name,
+        "clip_gate_sample_frames": int(sample_frames),
+        "clip_gate_aggregation": aggregation,
+        "clip_gate_sampling_mode": sampling_mode,
+        "clip_gate_late_fraction": float(late_fraction),
+        "clip_gate_log_only": bool(log_only),
+        "clip_gate_fail_open": bool(fail_open),
+        "clip_alignment_score": None,
+        "clip_gate_window_start_frame": max(0, int(gen_start_frame - tta_total_frames)),
+        "clip_gate_window_end_frame": int(gen_start_frame),
+        "clip_gate_sampled_frames": [],
+        "clip_gate_decision": "run_tta",
+        "clip_gate_reason": "gate_disabled",
+        "tta_skipped": False,
+    }
+
+    if not enabled:
+        return info
+    if not caption or not caption.strip():
+        info["clip_gate_reason"] = "empty_caption"
+        return info
+
+    try:
+        window_start = info["clip_gate_window_start_frame"]
+        window_len = max(1, int(tta_total_frames))
+        window_frames = _decode_video_window_for_clip(
+            video_path=video_path,
+            start_frame=window_start,
+            num_frames=window_len,
+        )
+        if not window_frames:
+            raise RuntimeError("No frames available in CLIP gate window.")
+
+        offsets = _sample_clip_frame_offsets(
+            window_len=len(window_frames),
+            sample_frames=sample_frames,
+            sampling_mode=sampling_mode,
+            late_fraction=late_fraction,
+        )
+        if not offsets:
+            raise RuntimeError("No frame offsets selected for CLIP scoring.")
+        images = [window_frames[i] for i in offsets]
+        info["clip_gate_sampled_frames"] = [window_start + i for i in offsets]
+
+        model, processor = _get_clip_scorer(model_name, device)
+        text_inputs = processor(text=[caption], return_tensors="pt", truncation=True).to(device)
+        image_inputs = processor(images=images, return_tensors="pt").to(device)
+
+        with torch.no_grad():
+            text_feat = model.get_text_features(**text_inputs)
+            image_feat = model.get_image_features(**image_inputs)
+            text_feat = F.normalize(text_feat, dim=-1)
+            image_feat = F.normalize(image_feat, dim=-1)
+            frame_scores = (image_feat @ text_feat.T).squeeze(-1)
+
+        if aggregation == "min":
+            score = frame_scores.min()
+        elif aggregation == "max":
+            score = frame_scores.max()
+        else:
+            score = frame_scores.mean()
+
+        score_val = float(score.item())
+        info["clip_alignment_score"] = score_val
+
+        if log_only:
+            info["clip_gate_decision"] = "run_tta"
+            info["clip_gate_reason"] = "log_only"
+            info["tta_skipped"] = False
+        elif score_val < threshold:
+            info["clip_gate_decision"] = "skip_tta"
+            info["clip_gate_reason"] = "low_alignment"
+            info["tta_skipped"] = True
+        else:
+            info["clip_gate_decision"] = "run_tta"
+            info["clip_gate_reason"] = "passed_threshold"
+            info["tta_skipped"] = False
+        return info
+    except Exception as exc:
+        if fail_open:
+            info["clip_gate_decision"] = "run_tta"
+            info["clip_gate_reason"] = "fail_open_error"
+            info["clip_gate_error"] = str(exc)
+            info["tta_skipped"] = False
+            return info
+        raise
+
+
+def summarize_clip_gate_stats(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate CLIP-gate statistics for summary.json."""
+    enabled_rows = [r for r in results if r.get("clip_gate_enabled")]
+    scores = [
+        float(r["clip_alignment_score"])
+        for r in enabled_rows
+        if r.get("clip_alignment_score") is not None
+    ]
+    skipped = [r for r in enabled_rows if r.get("tta_skipped")]
+    total_enabled = len(enabled_rows)
+    skip_rate = (len(skipped) / total_enabled) if total_enabled else 0.0
+
+    stats: Dict[str, Any] = {
+        "num_enabled": total_enabled,
+        "num_scored": len(scores),
+        "num_skipped": len(skipped),
+        "skip_rate": skip_rate,
+    }
+    if scores:
+        stats.update({
+            "score_mean": float(np.mean(scores)),
+            "score_std": float(np.std(scores)),
+            "score_min": float(np.min(scores)),
+            "score_max": float(np.max(scores)),
+        })
+    return stats
 
 
 # ============================================================================

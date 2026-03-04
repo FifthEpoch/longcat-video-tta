@@ -55,11 +55,14 @@ from common import (
     build_augmented_latent_variants,
     add_augmentation_args,
     add_tta_frame_args,
+    add_clip_gate_args,
     parse_speed_factors,
     split_tta_latents,
     evaluate_generation_metrics,
     build_retrieval_pool,
     retrieve_neighbors,
+    evaluate_clip_gate,
+    summarize_clip_gate_stats,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -386,6 +389,7 @@ def main():
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
+    add_clip_gate_args(parser)
     args = parser.parse_args()
 
     # Default tta_total_frames to gen_start_frame (all pre-anchor frames)
@@ -485,8 +489,36 @@ def main():
         print(f"\n{'='*70}")
         print(f"[{v_idx + 1}/{len(eval_videos)}] {eval_name}")
 
+        clip_gate_info = evaluate_clip_gate(
+            video_path=eval_entry["video_path"],
+            caption=eval_entry["caption"],
+            gen_start_frame=args.gen_start_frame,
+            tta_total_frames=args.tta_total_frames,
+            device=args.device,
+            enabled=args.clip_gate_enabled,
+            threshold=args.clip_gate_threshold,
+            model_name=args.clip_gate_model,
+            sample_frames=args.clip_gate_sample_frames,
+            aggregation=args.clip_gate_aggregation,
+            sampling_mode=args.clip_gate_sampling_mode,
+            late_fraction=args.clip_gate_late_fraction,
+            late_only=args.clip_gate_late_only,
+            fail_open=args.clip_gate_fail_open,
+            log_only=args.clip_gate_log_only,
+        )
+        if clip_gate_info.get("clip_alignment_score") is not None:
+            print(
+                "  CLIP gate: "
+                f"score={clip_gate_info['clip_alignment_score']:.4f}, "
+                f"decision={clip_gate_info['clip_gate_decision']}, "
+                f"mode={clip_gate_info['clip_gate_sampling_mode']}"
+            )
+        elif clip_gate_info.get("clip_gate_enabled"):
+            print(f"  CLIP gate: decision={clip_gate_info['clip_gate_decision']} "
+                  f"({clip_gate_info.get('clip_gate_reason', 'n/a')})")
+
         # Build training batch: eval video + K-1 nearest neighbours
-        if batch_level:
+        if batch_level and not clip_gate_info.get("tta_skipped", False):
             neighbors = retrieve_neighbors(
                 eval_entry, pool_entries, pool_embeddings, st_model,
                 k=args.batch_videos,
@@ -501,158 +533,175 @@ def main():
                 print(f"    ... and {len(neighbors) - 5} more")
         else:
             training_entries = [eval_entry]
+            if batch_level and clip_gate_info.get("tta_skipped", False):
+                print("  CLIP gate triggered: skip TTA for this sample, neighbors ignored.")
 
         try:
-            # ── Pre-encode all videos in the training batch ──
-            batch_data = []
-            for entry in training_entries:
-                video_path = entry["video_path"]
-                caption = entry["caption"]
-
-                tta_start = args.gen_start_frame - args.tta_total_frames
-                pixel_frames = load_video_frames(
-                    video_path, args.tta_total_frames, height=480, width=832,
-                    start_frame=max(0, tta_start),
-                ).to(args.device, torch.bfloat16)
-
-                all_latents = encode_video(vae, pixel_frames, normalize=True)
-
-                vae_t_scale = 4
-                num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
-                cond_latents, train_latents, val_latents = split_tta_latents(
-                    all_latents, num_ctx_lat,
-                    holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
-                )
-
-                prompt_embeds, prompt_mask = encode_prompt(
-                    tokenizer, text_encoder, caption,
-                    device=args.device, dtype=torch.bfloat16,
-                )
-
-                batch_data.append({
-                    "video_path": video_path,
-                    "video_name": Path(video_path).stem,
-                    "caption": caption,
-                    "cond_latents": cond_latents.cpu(),
-                    "train_latents": train_latents.cpu(),
-                    "val_latents": val_latents.cpu() if val_latents is not None else None,
-                    "prompt_embeds": prompt_embeds.cpu(),
-                    "prompt_mask": prompt_mask.cpu() if prompt_mask is not None else None,
-                })
-
-                del all_latents, pixel_frames
-                torch_gc()
-
-            # Pre-encode generation conditioning for the eval video only
-            gen_cond_start = args.gen_start_frame - args.num_cond_frames
-            gen_pixel_frames = load_video_frames(
-                eval_entry["video_path"], args.num_cond_frames,
-                height=480, width=832, start_frame=max(0, gen_cond_start),
-            ).to(args.device, torch.bfloat16).cpu()
-
-            # ── Create fresh delta ──
-            wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
-
-            # Offload VAE + text encoder to CPU during training
-            vae.to("cpu")
-            text_encoder.to("cpu")
-            torch.cuda.empty_cache()
-
-            # ── Train ──
-            t0 = time.time()
-            if batch_level:
-                opt_result = _optimize_delta_a_batch(
-                    wrapper=wrapper,
-                    batch_data=batch_data,
-                    num_steps=args.delta_steps,
-                    lr=args.delta_lr,
-                    device=args.device,
-                    dtype=torch.bfloat16,
-                )
+            wrapper = None
+            if clip_gate_info.get("tta_skipped", False):
+                gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                gen_pixel_frames = load_video_frames(
+                    eval_entry["video_path"], args.num_cond_frames,
+                    height=480, width=832, start_frame=max(0, gen_cond_start),
+                ).to(args.device, torch.bfloat16).cpu()
+                opt_result = {
+                    "losses": [],
+                    "delta_norm": 0.0,
+                    "early_stopping_info": None,
+                }
+                train_time = 0.0
             else:
-                bd = batch_data[0]
-                cond_lat = bd["cond_latents"].to(args.device)
-                train_lat = bd["train_latents"].to(args.device)
-                val_lat = bd["val_latents"].to(args.device) if bd["val_latents"] is not None else None
-                pe = bd["prompt_embeds"].to(args.device)
-                pm = bd["prompt_mask"].to(args.device) if bd["prompt_mask"] is not None else None
+                # ── Pre-encode all videos in the training batch ──
+                batch_data = []
+                for entry in training_entries:
+                    video_path = entry["video_path"]
+                    caption = entry["caption"]
 
-                if early_stopper is not None and val_lat is not None:
-                    def _es_forward_fn(hs, ts, ncl):
-                        return wrapper(
-                            hidden_states=hs, timestep=ts,
-                            encoder_hidden_states=pe,
-                            encoder_attention_mask=pm,
-                            num_cond_latents=ncl,
-                        )
+                    tta_start = args.gen_start_frame - args.tta_total_frames
+                    pixel_frames = load_video_frames(
+                        video_path, args.tta_total_frames, height=480, width=832,
+                        start_frame=max(0, tta_start),
+                    ).to(args.device, torch.bfloat16)
 
-                    early_stopper.setup(
-                        model=wrapper,
-                        cond_latents=cond_lat,
-                        val_latents=val_lat,
-                        prompt_embeds=pe,
-                        prompt_mask=pm,
+                    all_latents = encode_video(vae, pixel_frames, normalize=True)
+
+                    vae_t_scale = 4
+                    num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
+                    cond_latents, train_latents, val_latents = split_tta_latents(
+                        all_latents, num_ctx_lat,
+                        holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+                    )
+
+                    prompt_embeds, prompt_mask = encode_prompt(
+                        tokenizer, text_encoder, caption,
+                        device=args.device, dtype=torch.bfloat16,
+                    )
+
+                    batch_data.append({
+                        "video_path": video_path,
+                        "video_name": Path(video_path).stem,
+                        "caption": caption,
+                        "cond_latents": cond_latents.cpu(),
+                        "train_latents": train_latents.cpu(),
+                        "val_latents": val_latents.cpu() if val_latents is not None else None,
+                        "prompt_embeds": prompt_embeds.cpu(),
+                        "prompt_mask": prompt_mask.cpu() if prompt_mask is not None else None,
+                    })
+
+                    del all_latents, pixel_frames
+                    torch_gc()
+
+                # Pre-encode generation conditioning for the eval video only
+                gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                gen_pixel_frames = load_video_frames(
+                    eval_entry["video_path"], args.num_cond_frames,
+                    height=480, width=832, start_frame=max(0, gen_cond_start),
+                ).to(args.device, torch.bfloat16).cpu()
+
+                # ── Create fresh delta ──
+                wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
+
+                # Offload VAE + text encoder to CPU during training
+                vae.to("cpu")
+                text_encoder.to("cpu")
+                torch.cuda.empty_cache()
+
+                # ── Train ──
+                t0 = time.time()
+                if batch_level:
+                    opt_result = _optimize_delta_a_batch(
+                        wrapper=wrapper,
+                        batch_data=batch_data,
+                        num_steps=args.delta_steps,
+                        lr=args.delta_lr,
                         device=args.device,
                         dtype=torch.bfloat16,
-                        forward_fn=_es_forward_fn,
-                        video_id=bd["video_name"],
-                        save_fn=lambda: copy.deepcopy(wrapper.delta.data),
+                    )
+                else:
+                    bd = batch_data[0]
+                    cond_lat = bd["cond_latents"].to(args.device)
+                    train_lat = bd["train_latents"].to(args.device)
+                    val_lat = bd["val_latents"].to(args.device) if bd["val_latents"] is not None else None
+                    pe = bd["prompt_embeds"].to(args.device)
+                    pm = bd["prompt_mask"].to(args.device) if bd["prompt_mask"] is not None else None
+
+                    if early_stopper is not None and val_lat is not None:
+                        def _es_forward_fn(hs, ts, ncl):
+                            return wrapper(
+                                hidden_states=hs, timestep=ts,
+                                encoder_hidden_states=pe,
+                                encoder_attention_mask=pm,
+                                num_cond_latents=ncl,
+                            )
+
+                        early_stopper.setup(
+                            model=wrapper,
+                            cond_latents=cond_lat,
+                            val_latents=val_lat,
+                            prompt_embeds=pe,
+                            prompt_mask=pm,
+                            device=args.device,
+                            dtype=torch.bfloat16,
+                            forward_fn=_es_forward_fn,
+                            video_id=bd["video_name"],
+                            save_fn=lambda: copy.deepcopy(wrapper.delta.data),
+                        )
+
+                    train_latents_variants = None
+                    if args.aug_enabled:
+                        from common import build_augmented_pixel_variants
+                        _tta_start = args.gen_start_frame - args.tta_total_frames
+                        _pf = load_video_frames(
+                            bd["video_path"], args.tta_total_frames,
+                            height=480, width=832, start_frame=max(0, _tta_start),
+                        ).to(args.device, torch.bfloat16)
+                        pix_variants = build_augmented_pixel_variants(
+                            _pf,
+                            enable_flip=args.aug_flip,
+                            rotate_deg=args.aug_rotate_deg,
+                            rotate_random_min=args.aug_rotate_random_min,
+                            rotate_random_max=args.aug_rotate_random_max,
+                            rotate_random_count=args.aug_rotate_random_count,
+                            rotate_random_step=args.aug_rotate_random_step,
+                            rotate_zoom=args.aug_rotate_zoom,
+                            speed_factors=parse_speed_factors(args.aug_speed_factors),
+                        )
+                        train_latents_variants = []
+                        for pv in pix_variants:
+                            if pv["name"] == "orig":
+                                train_latents_variants.append({"latents": train_lat, "name": "orig"})
+                            else:
+                                aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
+                                t_start = cond_lat.shape[2]
+                                t_end = t_start + train_lat.shape[2]
+                                train_latents_variants.append({
+                                    "latents": aug_lat[:, :, t_start:t_end],
+                                    "name": pv["name"],
+                                })
+                        del _pf
+
+                    opt_result = optimize_delta_a(
+                        wrapper=wrapper,
+                        cond_latents=cond_lat,
+                        train_latents=train_lat,
+                        prompt_embeds=pe,
+                        prompt_mask=pm,
+                        num_steps=args.delta_steps,
+                        lr=args.delta_lr,
+                        device=args.device,
+                        dtype=torch.bfloat16,
+                        early_stopper=early_stopper if val_lat is not None else None,
+                        train_latents_variants=train_latents_variants,
                     )
 
-                train_latents_variants = None
-                if args.aug_enabled:
-                    from common import build_augmented_pixel_variants
-                    _tta_start = args.gen_start_frame - args.tta_total_frames
-                    _pf = load_video_frames(
-                        bd["video_path"], args.tta_total_frames,
-                        height=480, width=832, start_frame=max(0, _tta_start),
-                    ).to(args.device, torch.bfloat16)
-                    pix_variants = build_augmented_pixel_variants(
-                        _pf,
-                        enable_flip=args.aug_flip,
-                        rotate_deg=args.aug_rotate_deg,
-                        rotate_random_min=args.aug_rotate_random_min,
-                        rotate_random_max=args.aug_rotate_random_max,
-                        rotate_random_count=args.aug_rotate_random_count,
-                        rotate_random_step=args.aug_rotate_random_step,
-                        rotate_zoom=args.aug_rotate_zoom,
-                        speed_factors=parse_speed_factors(args.aug_speed_factors),
-                    )
-                    train_latents_variants = []
-                    for pv in pix_variants:
-                        if pv["name"] == "orig":
-                            train_latents_variants.append({"latents": train_lat, "name": "orig"})
-                        else:
-                            aug_lat = encode_video(vae, pv["pixel_frames"], normalize=True)
-                            t_start = cond_lat.shape[2]
-                            t_end = t_start + train_lat.shape[2]
-                            train_latents_variants.append({
-                                "latents": aug_lat[:, :, t_start:t_end],
-                                "name": pv["name"],
-                            })
-                    del _pf
-
-                opt_result = optimize_delta_a(
-                    wrapper=wrapper,
-                    cond_latents=cond_lat,
-                    train_latents=train_lat,
-                    prompt_embeds=pe,
-                    prompt_mask=pm,
-                    num_steps=args.delta_steps,
-                    lr=args.delta_lr,
-                    device=args.device,
-                    dtype=torch.bfloat16,
-                    early_stopper=early_stopper if val_lat is not None else None,
-                    train_latents_variants=train_latents_variants,
-                )
-
-            train_time = time.time() - t0
-            print(f"  Train time: {train_time:.1f}s, "
-                  f"Delta norm: {opt_result['delta_norm']:.4f}")
+                train_time = time.time() - t0
+                print(f"  Train time: {train_time:.1f}s, "
+                      f"Delta norm: {opt_result['delta_norm']:.4f}")
 
             # ── Generate ONLY for the eval video ──
-            vae.to(args.device)
-            text_encoder.to(args.device)
+            if not clip_gate_info.get("tta_skipped", False):
+                vae.to(args.device)
+                text_encoder.to(args.device)
 
             result = {
                 "video_name": eval_name,
@@ -666,6 +715,7 @@ def main():
                 "early_stopping_info": opt_result.get("early_stopping_info"),
                 "success": True,
             }
+            result.update(clip_gate_info)
 
             gen_time = 0.0
             if not args.skip_generation:
@@ -679,8 +729,7 @@ def main():
                     frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
                     cond_images.append(Image.fromarray(frame_np))
 
-                wrapper.apply_to_dit()
-                try:
+                if clip_gate_info.get("tta_skipped", False):
                     gen_start = time.time()
                     gen_frames = generate_video_continuation(
                         pipe=pipe,
@@ -697,7 +746,6 @@ def main():
                     gen_time = time.time() - gen_start
 
                     result["gen_time"] = gen_time
-
                     output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
                     if not args.no_save_videos:
                         save_video_from_numpy(gen_frames, output_path, fps=24)
@@ -716,8 +764,46 @@ def main():
                     print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
                           f"SSIM={metrics['ssim']:.4f}, "
                           f"LPIPS={metrics['lpips']:.4f}")
-                finally:
-                    wrapper.remove_from_dit()
+                else:
+                    wrapper.apply_to_dit()
+                    try:
+                        gen_start = time.time()
+                        gen_frames = generate_video_continuation(
+                            pipe=pipe,
+                            video_frames=cond_images,
+                            prompt=eval_entry["caption"],
+                            num_cond_frames=args.num_cond_frames,
+                            num_frames=args.num_frames,
+                            num_inference_steps=args.num_inference_steps,
+                            guidance_scale=args.guidance_scale,
+                            seed=args.seed + v_idx,
+                            resolution=args.resolution,
+                            device=args.device,
+                        )
+                        gen_time = time.time() - gen_start
+
+                        result["gen_time"] = gen_time
+
+                        output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
+                        if not args.no_save_videos:
+                            save_video_from_numpy(gen_frames, output_path, fps=24)
+                            result["output_path"] = output_path
+
+                        num_gen = args.num_frames - args.num_cond_frames
+                        metrics = evaluate_generation_metrics(
+                            gen_output=gen_frames,
+                            video_path=eval_entry["video_path"],
+                            num_cond_frames=args.num_cond_frames,
+                            num_gen_frames=num_gen,
+                            gen_start_frame=args.gen_start_frame,
+                            device=args.device,
+                        )
+                        result.update(metrics)
+                        print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
+                              f"SSIM={metrics['ssim']:.4f}, "
+                              f"LPIPS={metrics['lpips']:.4f}")
+                    finally:
+                        wrapper.remove_from_dit()
 
                 del gen_pf
                 torch_gc()
@@ -760,6 +846,16 @@ def main():
         "num_videos": len(all_results),
         "num_successful": len(successful),
         "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,
+        "clip_gate_enabled": args.clip_gate_enabled,
+        "clip_gate_threshold": args.clip_gate_threshold,
+        "clip_gate_model": args.clip_gate_model,
+        "clip_gate_sample_frames": args.clip_gate_sample_frames,
+        "clip_gate_aggregation": args.clip_gate_aggregation,
+        "clip_gate_sampling_mode": "late_only" if args.clip_gate_late_only else args.clip_gate_sampling_mode,
+        "clip_gate_late_fraction": args.clip_gate_late_fraction,
+        "clip_gate_log_only": args.clip_gate_log_only,
+        "clip_gate_fail_open": args.clip_gate_fail_open,
+        "clip_gate_stats": summarize_clip_gate_stats(successful),
         "results": all_results,
     }
     save_results(summary, os.path.join(args.output_dir, "summary.json"))

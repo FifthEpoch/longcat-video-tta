@@ -105,6 +105,18 @@ DELTA_DIM="${DELTA_DIM:-}"
 # Delta-C specific
 DELTA_MODE="${DELTA_MODE:-per_channel}"
 
+# CLIP gate
+CLIP_GATE_ENABLED="${CLIP_GATE_ENABLED:-}"
+CLIP_GATE_THRESHOLD="${CLIP_GATE_THRESHOLD:-0.0}"
+CLIP_GATE_MODEL="${CLIP_GATE_MODEL:-openai/clip-vit-large-patch14}"
+CLIP_GATE_SAMPLE_FRAMES="${CLIP_GATE_SAMPLE_FRAMES:-4}"
+CLIP_GATE_AGGREGATION="${CLIP_GATE_AGGREGATION:-mean}"
+CLIP_GATE_SAMPLING_MODE="${CLIP_GATE_SAMPLING_MODE:-full_window}"
+CLIP_GATE_LATE_FRACTION="${CLIP_GATE_LATE_FRACTION:-0.4}"
+CLIP_GATE_LATE_ONLY="${CLIP_GATE_LATE_ONLY:-}"
+CLIP_GATE_FAIL_OPEN="${CLIP_GATE_FAIL_OPEN:-1}"
+CLIP_GATE_LOG_ONLY="${CLIP_GATE_LOG_ONLY:-}"
+
 # Norm-tuning specific
 NORM_STEPS="${NORM_STEPS:-20}"
 NORM_LR="${NORM_LR:-1e-3}"
@@ -212,6 +224,29 @@ if [ "${NO_SAVE_VIDEOS}" = "1" ]; then
     SAVE_FLAGS="--no-save-videos"
 fi
 
+# Build CLIP gate flags (shared across methods)
+CLIP_FLAGS=""
+if [ -n "${CLIP_GATE_ENABLED}" ]; then
+    CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-enabled"
+fi
+CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-threshold ${CLIP_GATE_THRESHOLD}"
+CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-model ${CLIP_GATE_MODEL}"
+CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-sample-frames ${CLIP_GATE_SAMPLE_FRAMES}"
+CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-aggregation ${CLIP_GATE_AGGREGATION}"
+CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-sampling-mode ${CLIP_GATE_SAMPLING_MODE}"
+CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-late-fraction ${CLIP_GATE_LATE_FRACTION}"
+if [ -n "${CLIP_GATE_LATE_ONLY}" ]; then
+    CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-late-only"
+fi
+if [ -n "${CLIP_GATE_LOG_ONLY}" ]; then
+    CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-log-only"
+fi
+if [ -n "${CLIP_GATE_FAIL_OPEN}" ]; then
+    CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-fail-open"
+else
+    CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-fail-closed"
+fi
+
 # ============================================================================
 # Dispatch to the appropriate method script
 # ============================================================================
@@ -260,6 +295,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
+        ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -321,6 +357,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
+        ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -358,6 +395,7 @@ case "${METHOD}" in
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
+        ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -395,6 +433,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${DELTA_DIM_FLAG} \
         ${SAVE_FLAGS} \
+        ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -423,6 +462,7 @@ case "${METHOD}" in
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
+        ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
 

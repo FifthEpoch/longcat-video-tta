@@ -181,6 +181,10 @@ def extract_run(run_dir: Path) -> Optional[dict]:
         "es_disable", "es_check_every", "es_patience",
         "es_anchor_sigmas", "es_noise_draws", "es_strategy",
         "es_holdout_fraction",
+        "clip_gate_enabled", "clip_gate_threshold", "clip_gate_model",
+        "clip_gate_sample_frames", "clip_gate_aggregation",
+        "clip_gate_sampling_mode", "clip_gate_late_fraction",
+        "clip_gate_log_only", "clip_gate_fail_open",
     ]
     for k in config_keys:
         if k in s and s[k] is not None:
@@ -200,6 +204,12 @@ def extract_run(run_dir: Path) -> Optional[dict]:
                         rec[k] = v
         except (json.JSONDecodeError, OSError):
             pass
+
+    clip_stats = s.get("clip_gate_stats")
+    if isinstance(clip_stats, dict):
+        rec["clip_skip_rate"] = clip_stats.get("skip_rate")
+        rec["clip_num_skipped"] = clip_stats.get("num_skipped")
+        rec["clip_num_scored"] = clip_stats.get("num_scored")
 
     trainable = rec.get("trainable_params")
     if trainable is None:

@@ -104,6 +104,17 @@ _KEY_TO_ENV = {
     "es_noise_draws": "ES_NOISE_DRAWS",
     "es_strategy": "ES_STRATEGY",
     "es_holdout_fraction": "ES_HOLDOUT_FRACTION",
+    # CLIP gate
+    "clip_gate_enabled": "CLIP_GATE_ENABLED",
+    "clip_gate_threshold": "CLIP_GATE_THRESHOLD",
+    "clip_gate_model": "CLIP_GATE_MODEL",
+    "clip_gate_sample_frames": "CLIP_GATE_SAMPLE_FRAMES",
+    "clip_gate_aggregation": "CLIP_GATE_AGGREGATION",
+    "clip_gate_sampling_mode": "CLIP_GATE_SAMPLING_MODE",
+    "clip_gate_late_fraction": "CLIP_GATE_LATE_FRACTION",
+    "clip_gate_late_only": "CLIP_GATE_LATE_ONLY",
+    "clip_gate_fail_open": "CLIP_GATE_FAIL_OPEN",
+    "clip_gate_log_only": "CLIP_GATE_LOG_ONLY",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
 }
