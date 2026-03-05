@@ -1694,4 +1694,46 @@ def fig_loss_curves_es_check_freq(loss_data):
 
     if not plotted:
         plt.close(fig)
-    
+        print("  (no data)")
+        return
+
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Anchor Validation Loss")
+    ax.set_title("Effect of ES Check Frequency on Validation Loss (Full-model, 20 steps)",
+                 fontweight="bold", pad=10)
+    ax.legend(frameon=False)
+    save(fig, "10_early_stopping", "es_check_freq_loss_curves.png")
+
+
+def fig_loss_curves_iter_sweep(loss_data):
+    """Loss curves at different training step budgets, per method."""
+    print("[Loss] Iteration sweep loss curves")
+
+    methods = [
+        ("AdaSteer", ("delta_a_long_train", "DALT1", "200 steps"), C_ADASTEER),
+        ("LoRA", ("lora_iter_sweep", "L16", "80 steps"), C_LORA),
+        ("Full-model", ("full_long_train", "FLT1", "500 steps"), C_FULL),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.5))
+
+    for ax, (method_name, (series, run_id, label), base_color) in zip(axes, methods):
+        r = _get_curve(loss_data, series, run_id)
+        if r:
+            sub = 5 if method_name != "LoRA" else 1
+            _plot_loss_curve(ax, r, base_color, label, alpha_fill=0.12, lw=2.0,
+                             subsample=sub)
+
+        ax.set_xlabel("Training Step")
+        ax.set_ylabel("Anchor Validation Loss")
+        ax.set_title(method_name, fontweight="bold")
+        ax.legend(frameon=False, fontsize=9)
+
+    fig.suptitle("Validation Loss Across Training Budgets",
+                 fontweight="bold", y=1.02, fontsize=13)
+    fig.tight_layout()
+    save(fig, "10_early_stopping", "iter_sweep_loss_curves.png")
+
+
+if __name__ == "__main__":
+    main()
