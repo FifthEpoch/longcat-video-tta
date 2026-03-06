@@ -865,6 +865,12 @@ def load_ucf101_video_list(
         raise FileNotFoundError(f"No video files found in {data_dir}")
 
     rng = np.random.RandomState(seed)
+    # Panda datasets should use plain random sampling to honor max_videos.
+    data_dir_lower = str(data_dir).lower()
+    if "panda" in data_dir_lower and stratified:
+        print("  Stratified sampling disabled for Panda dataset path.")
+        stratified = False
+
     if stratified:
         from collections import defaultdict
         from collections import Counter

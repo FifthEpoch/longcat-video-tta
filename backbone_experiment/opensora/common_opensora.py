@@ -503,6 +503,11 @@ def load_ucf101_video_list(
         raise FileNotFoundError(f"No video files found in {data_dir}")
 
     rng = np.random.RandomState(seed)
+    data_dir_lower = str(data_dir).lower()
+    if "panda" in data_dir_lower and stratified:
+        print("  Stratified sampling disabled for Panda dataset path.")
+        stratified = False
+
     if stratified:
         from collections import defaultdict
         by_class = defaultdict(list)
