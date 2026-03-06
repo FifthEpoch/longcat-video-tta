@@ -16,6 +16,7 @@ CogVideoX-5B-I2V architecture:
 """
 
 import csv
+import ast
 import gc
 import json
 import os
@@ -333,6 +334,28 @@ def load_panda70m_video_list(
     seed: int = 42,
 ) -> List[Dict]:
     """Load video list from a Panda-70M style dataset."""
+    def _normalize_caption(raw):
+        if raw is None:
+            return ""
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                s = str(item).strip()
+                if s:
+                    return s
+            return ""
+        s = str(raw).strip()
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                parsed = ast.literal_eval(s)
+                if isinstance(parsed, (list, tuple)):
+                    for item in parsed:
+                        t = str(item).strip()
+                        if t:
+                            return t
+            except (ValueError, SyntaxError):
+                pass
+        return s
+
     data_dir = Path(data_dir)
     video_entries = []
 
@@ -340,11 +363,14 @@ def load_panda70m_video_list(
         with open(meta_path, "r") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                vp = data_dir / row.get("filename", row.get("video_path", ""))
+                fname = row.get("filename", row.get("video_path", ""))
+                vp = data_dir / "videos" / fname
+                if not vp.exists():
+                    vp = data_dir / fname
                 if vp.exists():
                     video_entries.append({
                         "video_path": str(vp),
-                        "caption": row.get("caption", row.get("text", "")),
+                        "caption": _normalize_caption(row.get("caption", row.get("text", ""))),
                         "class_name": "panda70m",
                     })
     else:

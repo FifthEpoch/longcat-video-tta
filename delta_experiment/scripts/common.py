@@ -7,6 +7,7 @@ dataset loading, and evaluation metrics.
 """
 
 import gc
+import ast
 import json
 import math
 import os
@@ -779,6 +780,37 @@ def _ssim_single(pred: torch.Tensor, target: torch.Tensor) -> float:
 # Dataset helpers
 # ============================================================================
 
+def _normalize_caption(raw: Any) -> str:
+    """Normalize metadata captions to a clean string.
+
+    Handles:
+    - plain strings
+    - list/tuple values (pick first non-empty)
+    - list-like strings such as "['cap1', 'cap2']"
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            s = str(item).strip()
+            if s:
+                return s
+        return ""
+    s = str(raw).strip()
+    if not s:
+        return ""
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            parsed = ast.literal_eval(s)
+            if isinstance(parsed, (list, tuple)):
+                for item in parsed:
+                    t = str(item).strip()
+                    if t:
+                        return t
+        except (ValueError, SyntaxError):
+            pass
+    return s
+
 def load_ucf101_video_list(
     data_dir: str,
     max_videos: int = 100,
@@ -808,7 +840,7 @@ def load_ucf101_video_list(
                     vp = data_dir / fname
                 if not vp.exists():
                     continue
-                caption = row.get("caption", row.get("text", ""))
+                caption = _normalize_caption(row.get("caption", row.get("text", "")))
                 class_name = row.get("category", row.get("class_name", "unknown"))
                 video_entries.append({
                     "video_path": str(vp),
@@ -835,11 +867,27 @@ def load_ucf101_video_list(
     rng = np.random.RandomState(seed)
     if stratified:
         from collections import defaultdict
+        from collections import Counter
         by_class = defaultdict(list)
         for entry in video_entries:
             by_class[entry["class_name"]].append(entry)
 
         n_classes = len(by_class)
+        class_sizes = Counter(entry["class_name"] for entry in video_entries)
+        singleton_ratio = (
+            sum(1 for _, c in class_sizes.items() if c == 1) / max(n_classes, 1)
+        )
+        # Panda metadata often has many singleton "classes", which collapses
+        # sampling to ~number of unique labels (e.g., 86). Fall back to random
+        # sampling in that case so max_videos is respected.
+        if singleton_ratio > 0.5 and n_classes > max_videos // 2:
+            print(
+                "  Stratified sampling disabled: many singleton classes "
+                f"(classes={n_classes}, singleton_ratio={singleton_ratio:.2f})."
+            )
+            rng.shuffle(video_entries)
+            return video_entries[:max_videos]
+
         per_class = max(1, max_videos // n_classes)
         selected = []
         for cls in sorted(by_class.keys()):
@@ -869,11 +917,14 @@ def load_panda70m_video_list(
         with open(meta_path, "r") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                vp = data_dir / row.get("filename", row.get("video_path", ""))
+                fname = row.get("filename", row.get("video_path", ""))
+                vp = data_dir / "videos" / fname
+                if not vp.exists():
+                    vp = data_dir / fname
                 if vp.exists():
                     video_entries.append({
                         "video_path": str(vp),
-                        "caption": row.get("caption", row.get("text", "")),
+                        "caption": _normalize_caption(row.get("caption", row.get("text", ""))),
                         "class_name": "panda70m",
                     })
     else:
