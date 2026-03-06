@@ -83,6 +83,7 @@ _KEY_TO_ENV = {
     "num_groups": "NUM_GROUPS",
     "delta_target": "DELTA_TARGET",
     "delta_dim": "DELTA_DIM",
+    "delta_target_blocks": "DELTA_TARGET_BLOCKS",
     # Delta-C
     "delta_mode": "DELTA_MODE",
     # Norm-tuning specific

@@ -101,6 +101,7 @@ DELTA_LR="${DELTA_LR:-1e-3}"
 NUM_GROUPS="${NUM_GROUPS:-4}"
 DELTA_TARGET="${DELTA_TARGET:-timestep}"
 DELTA_DIM="${DELTA_DIM:-}"
+DELTA_TARGET_BLOCKS="${DELTA_TARGET_BLOCKS:-all}"
 
 # Delta-C specific
 DELTA_MODE="${DELTA_MODE:-per_channel}"
@@ -406,6 +407,7 @@ case "${METHOD}" in
     echo "  Num groups     : ${NUM_GROUPS}"
     echo "  Delta target   : ${DELTA_TARGET}"
     echo "  Delta dim      : ${DELTA_DIM:-full}"
+    echo "  Target blocks  : ${DELTA_TARGET_BLOCKS}"
     echo "=============================================================================="
 
     DELTA_DIM_FLAG=""
@@ -422,6 +424,7 @@ case "${METHOD}" in
         --delta-lr "${DELTA_LR}" \
         --num-groups "${NUM_GROUPS}" \
         --delta-target "${DELTA_TARGET}" \
+        --delta-target-blocks "${DELTA_TARGET_BLOCKS}" \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \

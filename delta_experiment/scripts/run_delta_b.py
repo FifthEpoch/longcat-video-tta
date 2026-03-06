@@ -29,6 +29,7 @@ import gc
 import json
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -73,6 +74,15 @@ from early_stopping import (
 )
 
 
+def _slugify_text(text: str, max_len: int = 64) -> str:
+    """Create a filesystem-safe prompt slug for output filenames."""
+    s = (text or "").lower().strip()
+    s = re.sub(r"[^a-z0-9\\s-]", "", s)
+    s = re.sub(r"[\\s]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s[:max_len] if s else "no_prompt"
+
+
 # ============================================================================
 # Delta-B wrapper: per-group modulation offsets
 # ============================================================================
@@ -105,12 +115,14 @@ class DeltaBWrapper(nn.Module):
         hidden_size: int = 4096,
         delta_target: str = "timestep",
         delta_dim: int = None,
+        target_blocks: str = "all",
     ):
         super().__init__()
         self.dit = dit
         self.num_groups = num_groups
         self.num_blocks = len(dit.blocks)
         self.delta_target = delta_target
+        self.target_block_indices = _parse_target_blocks(target_blocks, self.num_blocks)
 
         for p in self.dit.parameters():
             p.requires_grad = False
@@ -158,6 +170,8 @@ class DeltaBWrapper(nn.Module):
 
         if self.delta_target == "timestep":
             for i, block in enumerate(self.dit.blocks):
+                if self.target_block_indices is not None and i not in self.target_block_indices:
+                    continue
                 group_idx = self.block_to_group[i]
                 delta_vec = self.deltas[group_idx]
 
@@ -172,6 +186,8 @@ class DeltaBWrapper(nn.Module):
                 self._gen_hooks.append(h)
         else:
             for i, block in enumerate(self.dit.blocks):
+                if self.target_block_indices is not None and i not in self.target_block_indices:
+                    continue
                 group_idx = self.block_to_group[i]
                 delta_vec = self.deltas[group_idx]
 
@@ -254,11 +270,17 @@ class DeltaBWrapper(nn.Module):
         _ckpt = _ft.partial(_ckpt_fn, use_reentrant=False)
 
         for i, block in enumerate(dit.blocks):
+            active_block = (
+                self.target_block_indices is None or i in self.target_block_indices
+            )
             group_idx = self.block_to_group[i]
             delta = self._pad_delta(self.deltas[group_idx])
 
             if self.delta_target == "timestep":
-                t_modified = t_base + delta.unsqueeze(0).unsqueeze(0)
+                t_modified = (
+                    t_base + delta.unsqueeze(0).unsqueeze(0)
+                    if active_block else t_base
+                )
                 if torch.is_grad_enabled():
                     hidden_states = _ckpt(
                         block, hidden_states, encoder_hidden_states, t_modified,
@@ -284,7 +306,8 @@ class DeltaBWrapper(nn.Module):
                         y_seqlens, (N_t, N_h, N_w),
                         num_cond_latents=num_cond_latents,
                     )
-                hidden_states = hidden_states + delta.unsqueeze(0).unsqueeze(0).to(hidden_states.dtype)
+                if active_block:
+                    hidden_states = hidden_states + delta.unsqueeze(0).unsqueeze(0).to(hidden_states.dtype)
 
         # Final layer — apply delta_final in "hidden" mode
         if self.delta_target == "hidden" and self.delta_final is not None:
@@ -385,6 +408,29 @@ def optimize_delta_b(
     }
 
 
+def _parse_target_blocks(target_blocks: str, num_blocks: int) -> Optional[set]:
+    """Parse --delta-target-blocks into a set of block indices.
+
+    Accepts:
+      "all"    -> None (every block)
+      "last_N" -> last N block indices
+      "0,5,10" -> explicit comma-separated indices
+    """
+    target_blocks = target_blocks.strip().lower()
+    if target_blocks == "all":
+        return None
+    if target_blocks.startswith("last_"):
+        n = int(target_blocks.split("_", 1)[1])
+        if n <= 0 or n > num_blocks:
+            raise ValueError(f"last_{n} invalid for {num_blocks} blocks")
+        return set(range(num_blocks - n, num_blocks))
+    indices = set(int(x.strip()) for x in target_blocks.split(","))
+    for idx in indices:
+        if idx < 0 or idx >= num_blocks:
+            raise ValueError(f"Block index {idx} out of range [0, {num_blocks})")
+    return indices
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -408,6 +454,10 @@ def main():
                         help="Learn only the first k dimensions of the delta "
                              "vector, zero-padding the rest. Defaults to full "
                              "dim (512 for timestep, 4096 for hidden).")
+    parser.add_argument("--delta-target-blocks", type=str, default="all",
+                        help="Which DiT blocks to apply Delta-B to. "
+                             "'all' = every block, 'last_N' = last N blocks "
+                             "(e.g. 'last_4'), or comma-separated block indices.")
     parser.add_argument("--num-cond-frames", type=int, default=2)
     parser.add_argument("--num-frames", type=int, default=16)
     parser.add_argument("--gen-start-frame", type=int, default=32,
@@ -452,6 +502,7 @@ def main():
     print(f"Checkpoint dir : {args.checkpoint_dir}")
     print(f"Num groups     : {args.num_groups}")
     print(f"Delta target   : {args.delta_target}")
+    print(f"Target blocks  : {args.delta_target_blocks}")
     print(f"Delta steps    : {args.delta_steps}")
     print(f"Delta LR       : {args.delta_lr}")
     print(f"Augmentation   : {args.aug_enabled}")
@@ -609,6 +660,7 @@ def main():
                     hidden_size=dit.config.hidden_size,
                     delta_target=args.delta_target,
                     delta_dim=getattr(args, 'delta_dim', None),
+                target_blocks=args.delta_target_blocks,
                 ).to(args.device)
 
                 if early_stopper is not None and val_latents is not None:
@@ -709,10 +761,6 @@ def main():
                     )
                     gen_time = time.time() - gen_start
                     result["gen_time"] = gen_time
-                    output_path = os.path.join(videos_dir, f"{video_name}_delta_b.mp4")
-                    if not args.no_save_videos:
-                        save_video_from_numpy(gen_frames, output_path, fps=24)
-                        result["output_path"] = output_path
 
                     num_gen = args.num_frames - args.num_cond_frames
                     metrics = evaluate_generation_metrics(
@@ -724,6 +772,18 @@ def main():
                         device=args.device,
                     )
                     result.update(metrics)
+                    if not args.no_save_videos:
+                        prompt_slug = _slugify_text(caption)
+                        clip_tag = "clip-skip" if clip_gate_info.get("tta_skipped", False) else "clip-tta"
+                        output_name = (
+                            f"{idx+1:03d}_{clip_tag}_{prompt_slug}_"
+                            f"psnr-{metrics['psnr']:.3f}_"
+                            f"ssim-{metrics['ssim']:.3f}_"
+                            f"lpips-{metrics['lpips']:.3f}.mp4"
+                        )
+                        output_path = os.path.join(videos_dir, output_name)
+                        save_video_from_numpy(gen_frames, output_path, fps=24)
+                        result["output_path"] = output_path
                     print(f"  Gen: {gen_time:.1f}s, "
                           f"PSNR={metrics['psnr']:.2f}, "
                           f"SSIM={metrics['ssim']:.4f}, "
@@ -748,11 +808,6 @@ def main():
 
                         result["gen_time"] = gen_time
 
-                        output_path = os.path.join(videos_dir, f"{video_name}_delta_b.mp4")
-                        if not args.no_save_videos:
-                            save_video_from_numpy(gen_frames, output_path, fps=24)
-                            result["output_path"] = output_path
-
                         num_gen = args.num_frames - args.num_cond_frames
                         metrics = evaluate_generation_metrics(
                             gen_output=gen_frames,
@@ -763,6 +818,18 @@ def main():
                             device=args.device,
                         )
                         result.update(metrics)
+                        if not args.no_save_videos:
+                            prompt_slug = _slugify_text(caption)
+                            clip_tag = "clip-skip" if clip_gate_info.get("tta_skipped", False) else "clip-tta"
+                            output_name = (
+                                f"{idx+1:03d}_{clip_tag}_{prompt_slug}_"
+                                f"psnr-{metrics['psnr']:.3f}_"
+                                f"ssim-{metrics['ssim']:.3f}_"
+                                f"lpips-{metrics['lpips']:.3f}.mp4"
+                            )
+                            output_path = os.path.join(videos_dir, output_name)
+                            save_video_from_numpy(gen_frames, output_path, fps=24)
+                            result["output_path"] = output_path
                         print(f"  Gen: {gen_time:.1f}s, "
                               f"PSNR={metrics['psnr']:.2f}, "
                               f"SSIM={metrics['ssim']:.4f}, "
@@ -793,6 +860,7 @@ def main():
     summary = {
         "method": "delta_b",
         "delta_target": args.delta_target,
+        "delta_target_blocks": args.delta_target_blocks,
         "num_groups": args.num_groups,
         "delta_steps": args.delta_steps,
         "delta_lr": args.delta_lr,
