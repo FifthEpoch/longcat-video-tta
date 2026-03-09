@@ -40,13 +40,50 @@ PROJECT_ROOT = Path(os.environ.get(
     "PROJECT_ROOT",
     Path(__file__).resolve().parent.parent.parent,
 ))
-RESULTS_DIRS = [
-    PROJECT_ROOT / "sweep_experiment" / "results",
-    PROJECT_ROOT / "sweep_experiment" / "results_no_preempt",
-    PROJECT_ROOT / "baseline_experiment" / "results",
-    PROJECT_ROOT / "backbone_experiment" / "opensora" / "results",
-    PROJECT_ROOT / "backbone_experiment" / "cogvideo" / "results",
-]
+
+
+def discover_result_dirs(extra_dirs: Optional[List[str]] = None) -> List[Path]:
+    """Discover all result root directories to scan.
+
+    Includes:
+      - sweep_experiment/results* (auto-discovers custom roots such as
+        results_clip_gate_eval, results_noclip_matched, etc.)
+      - baseline and backbone result roots
+      - optional user-provided extra roots via CLI
+    """
+    sweep_root = PROJECT_ROOT / "sweep_experiment"
+    sweep_result_dirs: List[Path] = []
+    if sweep_root.exists():
+        for p in sorted(sweep_root.glob("results*")):
+            if p.is_dir():
+                sweep_result_dirs.append(p)
+
+    fixed_dirs = [
+        PROJECT_ROOT / "baseline_experiment" / "results",
+        PROJECT_ROOT / "backbone_experiment" / "opensora" / "results",
+        PROJECT_ROOT / "backbone_experiment" / "cogvideo" / "results",
+    ]
+
+    extra_paths: List[Path] = []
+    for d in extra_dirs or []:
+        p = Path(d)
+        if not p.is_absolute():
+            p = PROJECT_ROOT / p
+        extra_paths.append(p)
+
+    # Preserve order while deduplicating.
+    seen = set()
+    out: List[Path] = []
+    for p in sweep_result_dirs + fixed_dirs + extra_paths:
+        key = str(p.resolve()) if p.exists() else str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+RESULTS_DIRS = discover_result_dirs()
 CONFIG_DIR = PROJECT_ROOT / "sweep_experiment" / "configs"
 DEFAULT_OUTPUT = PROJECT_ROOT / "all_results.json"
 
@@ -229,12 +266,12 @@ def extract_run(run_dir: Path) -> Optional[dict]:
     return rec
 
 
-def collect_all_runs() -> List[dict]:
+def collect_all_runs(results_dirs: Optional[List[Path]] = None) -> List[dict]:
     """Phase 1: walk result directories and extract all runs."""
     all_records: List[dict] = []
     seen_paths: set = set()
 
-    for results_dir in RESULTS_DIRS:
+    for results_dir in (results_dirs or RESULTS_DIRS):
         if not results_dir.exists():
             continue
         for series_dir in sorted(results_dir.iterdir()):
@@ -1044,11 +1081,20 @@ def main():
                         help="Only write JSON to stdout, no console tables")
     parser.add_argument("--from-json", type=str, default=None,
                         help="Read runs from existing JSON instead of scanning result dirs")
+    parser.add_argument(
+        "--extra-results-dir",
+        action="append",
+        default=[],
+        help="Additional result root to scan (can be passed multiple times).",
+    )
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else DEFAULT_OUTPUT
 
     print("Phase 1: Collecting runs...", file=sys.stderr)
+    results_dirs = discover_result_dirs(args.extra_results_dir)
+    for d in results_dirs:
+        print(f"  scan root: {d}", file=sys.stderr)
 
     if args.from_json:
         src = Path(args.from_json)
@@ -1062,7 +1108,7 @@ def main():
             all_records = []
         print(f"  Loaded {len(all_records)} records from {src}", file=sys.stderr)
     else:
-        all_records = collect_all_runs()
+        all_records = collect_all_runs(results_dirs)
 
     complete = sum(1 for r in all_records if r.get("status") == "complete")
     in_prog = sum(1 for r in all_records if r.get("status") == "in_progress")
