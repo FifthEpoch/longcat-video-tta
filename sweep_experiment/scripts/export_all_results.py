@@ -181,7 +181,7 @@ def extract_run(run_dir: Path) -> Optional[dict]:
         "es_disable", "es_check_every", "es_patience",
         "es_anchor_sigmas", "es_noise_draws", "es_strategy",
         "es_holdout_fraction",
-        "clip_gate_enabled", "clip_gate_threshold", "clip_gate_model",
+        "clip_gate_enabled", "clip_gate_threshold", "clip_gate_backend", "clip_gate_model",
         "clip_gate_sample_frames", "clip_gate_aggregation",
         "clip_gate_sampling_mode", "clip_gate_late_fraction",
         "clip_gate_log_only", "clip_gate_fail_open",

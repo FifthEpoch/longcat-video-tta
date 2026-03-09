@@ -1221,10 +1221,18 @@ def add_clip_gate_args(parser):
         help="Skip TTA when CLIP alignment score is below this threshold.",
     )
     g.add_argument(
+        "--clip-gate-backend",
+        type=str,
+        default="clip",
+        choices=["clip", "xclip"],
+        help="Alignment backend: image CLIP (clip) or video-native X-CLIP (xclip).",
+    )
+    g.add_argument(
         "--clip-gate-model",
         type=str,
         default="openai/clip-vit-large-patch14",
-        help="HuggingFace CLIP model id for text-image alignment scoring.",
+        help="HF model id for selected backend "
+             "(e.g., openai/clip-vit-large-patch14 or microsoft/xclip-base-patch32).",
     )
     g.add_argument(
         "--clip-gate-sample-frames",
@@ -1307,6 +1315,8 @@ def add_augmentation_args(parser):
 
 
 _CLIP_SCORER_CACHE: Dict[Tuple[str, str], Tuple[Any, Any]] = {}
+_XCLIP_SCORER_CACHE: Dict[Tuple[str, str], Tuple[Any, Any]] = {}
+_XCLIP_DEFAULT_MODEL = "microsoft/xclip-base-patch32"
 
 
 def _get_clip_scorer(model_name: str, device: str):
@@ -1322,6 +1332,22 @@ def _get_clip_scorer(model_name: str, device: str):
     model = model.to(device)
     model.eval()
     _CLIP_SCORER_CACHE[key] = (model, processor)
+    return model, processor
+
+
+def _get_xclip_scorer(model_name: str, device: str):
+    """Lazy-load and cache an X-CLIP model+processor pair."""
+    key = (model_name, device)
+    if key in _XCLIP_SCORER_CACHE:
+        return _XCLIP_SCORER_CACHE[key]
+
+    from transformers import XCLIPModel, XCLIPProcessor
+
+    processor = XCLIPProcessor.from_pretrained(model_name)
+    model = XCLIPModel.from_pretrained(model_name)
+    model = model.to(device)
+    model.eval()
+    _XCLIP_SCORER_CACHE[key] = (model, processor)
     return model, processor
 
 
@@ -1394,6 +1420,7 @@ def evaluate_clip_gate(
     device: str = "cuda",
     enabled: bool = False,
     threshold: float = 0.0,
+    backend: str = "clip",
     model_name: str = "openai/clip-vit-large-patch14",
     sample_frames: int = 4,
     aggregation: str = "mean",
@@ -1412,6 +1439,7 @@ def evaluate_clip_gate(
 
     info: Dict[str, Any] = {
         "clip_gate_enabled": bool(enabled),
+        "clip_gate_backend": backend,
         "clip_gate_threshold": float(threshold),
         "clip_gate_model": model_name,
         "clip_gate_sample_frames": int(sample_frames),
@@ -1436,6 +1464,14 @@ def evaluate_clip_gate(
         return info
 
     try:
+        backend = (backend or "clip").lower()
+        if backend not in {"clip", "xclip"}:
+            raise ValueError(f"Unsupported clip gate backend: {backend}")
+        if backend == "xclip" and model_name == "openai/clip-vit-large-patch14":
+            model_name = _XCLIP_DEFAULT_MODEL
+            info["clip_gate_model"] = model_name
+        info["clip_gate_backend"] = backend
+
         window_start = info["clip_gate_window_start_frame"]
         window_len = max(1, int(tta_total_frames))
         window_frames = _decode_video_window_for_clip(
@@ -1457,16 +1493,31 @@ def evaluate_clip_gate(
         images = [window_frames[i] for i in offsets]
         info["clip_gate_sampled_frames"] = [window_start + i for i in offsets]
 
-        model, processor = _get_clip_scorer(model_name, device)
-        text_inputs = processor(text=[caption], return_tensors="pt", truncation=True).to(device)
-        image_inputs = processor(images=images, return_tensors="pt").to(device)
+        if backend == "xclip":
+            model, processor = _get_xclip_scorer(model_name, device)
+            video_np = np.stack([np.array(img.convert("RGB")) for img in images], axis=0)
+            text_inputs = processor(
+                text=[caption], return_tensors="pt", truncation=True, padding=True
+            ).to(device)
+            video_inputs = processor(videos=[video_np], return_tensors="pt").to(device)
 
-        with torch.no_grad():
-            text_feat = model.get_text_features(**text_inputs)
-            image_feat = model.get_image_features(**image_inputs)
-            text_feat = F.normalize(text_feat, dim=-1)
-            image_feat = F.normalize(image_feat, dim=-1)
-            frame_scores = (image_feat @ text_feat.T).squeeze(-1)
+            with torch.no_grad():
+                text_feat = model.get_text_features(**text_inputs)
+                video_feat = model.get_video_features(**video_inputs)
+                text_feat = F.normalize(text_feat, dim=-1)
+                video_feat = F.normalize(video_feat, dim=-1)
+                frame_scores = (video_feat @ text_feat.T).view(1)
+        else:
+            model, processor = _get_clip_scorer(model_name, device)
+            text_inputs = processor(text=[caption], return_tensors="pt", truncation=True).to(device)
+            image_inputs = processor(images=images, return_tensors="pt").to(device)
+
+            with torch.no_grad():
+                text_feat = model.get_text_features(**text_inputs)
+                image_feat = model.get_image_features(**image_inputs)
+                text_feat = F.normalize(text_feat, dim=-1)
+                image_feat = F.normalize(image_feat, dim=-1)
+                frame_scores = (image_feat @ text_feat.T).squeeze(-1)
 
         if aggregation == "min":
             score = frame_scores.min()

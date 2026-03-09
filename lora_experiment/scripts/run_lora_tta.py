@@ -849,6 +849,7 @@ def main():
         "max_videos": args.max_videos,
         "clip_gate_enabled": args.clip_gate_enabled,
         "clip_gate_threshold": args.clip_gate_threshold,
+        "clip_gate_backend": args.clip_gate_backend,
         "clip_gate_model": args.clip_gate_model,
         "clip_gate_sample_frames": args.clip_gate_sample_frames,
         "clip_gate_aggregation": args.clip_gate_aggregation,
@@ -859,6 +860,7 @@ def main():
         "clip_gate": {
             "enabled": args.clip_gate_enabled,
             "threshold": args.clip_gate_threshold,
+            "backend": args.clip_gate_backend,
             "model": args.clip_gate_model,
             "sample_frames": args.clip_gate_sample_frames,
             "aggregation": args.clip_gate_aggregation,
@@ -927,6 +929,7 @@ def main():
             device=args.device,
             enabled=args.clip_gate_enabled,
             threshold=args.clip_gate_threshold,
+            backend=args.clip_gate_backend,
             model_name=args.clip_gate_model,
             sample_frames=args.clip_gate_sample_frames,
             aggregation=args.clip_gate_aggregation,

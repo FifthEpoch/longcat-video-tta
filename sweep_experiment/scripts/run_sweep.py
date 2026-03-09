@@ -108,6 +108,7 @@ _KEY_TO_ENV = {
     # CLIP gate
     "clip_gate_enabled": "CLIP_GATE_ENABLED",
     "clip_gate_threshold": "CLIP_GATE_THRESHOLD",
+    "clip_gate_backend": "CLIP_GATE_BACKEND",
     "clip_gate_model": "CLIP_GATE_MODEL",
     "clip_gate_sample_frames": "CLIP_GATE_SAMPLE_FRAMES",
     "clip_gate_aggregation": "CLIP_GATE_AGGREGATION",

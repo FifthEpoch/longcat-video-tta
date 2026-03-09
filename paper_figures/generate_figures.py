@@ -163,6 +163,120 @@ def complete_runs(data: List[Dict]) -> List[Dict]:
 def by_series(data: List[Dict], series_name: str) -> List[Dict]:
     return [r for r in data if r.get("series") == series_name]
 
+
+def _infer_dataset(run: Dict) -> str:
+    ds = run.get("dataset")
+    if ds:
+        return str(ds)
+    s = str(run.get("series", ""))
+    if "ucf101" in s:
+        return "ucf101"
+    return "panda"
+
+
+def _cond_gen_from_results_run_id(run_id: str) -> Tuple[Optional[int], Optional[int]]:
+    parts = str(run_id).split("_")
+    cond = None
+    gen = None
+    for p in parts:
+        if p.startswith("cond"):
+            try:
+                cond = int(p[4:])
+            except ValueError:
+                pass
+        if p.startswith("gen"):
+            try:
+                gen = int(p[3:])
+            except ValueError:
+                pass
+    return cond, gen
+
+
+def _run_cond_gen(run: Dict) -> Tuple[Optional[int], Optional[int]]:
+    cond = run.get("num_cond_frames")
+    nframes = run.get("num_frames")
+    if cond is not None and nframes is not None:
+        try:
+            cond_i = int(cond)
+            nframes_i = int(nframes)
+            return cond_i, nframes_i - cond_i
+        except Exception:
+            pass
+
+    rid = str(run.get("run_id", ""))
+    if rid in EXP3_COND_FRAMES:
+        cond_i = EXP3_COND_FRAMES[rid]
+        return cond_i, 14
+    if rid in EXP4_GEN_FRAMES:
+        gen_i = EXP4_GEN_FRAMES[rid] - 14
+        return 14, gen_i
+    if rid in RATIO_SWEEP_COND:
+        return RATIO_SWEEP_COND[rid], 14
+
+    if "cond" in rid and "gen" in rid:
+        return _cond_gen_from_results_run_id(rid)
+    return None, None
+
+
+def _build_no_tta_lookup(data: List[Dict]) -> Dict[Tuple[str, int, int], Dict]:
+    lookup: Dict[Tuple[str, int, int], Dict] = {}
+    for r in complete_runs(data):
+        s = str(r.get("series", ""))
+        rid = str(r.get("run_id", ""))
+        ds = _infer_dataset(r)
+        cond = None
+        gen = None
+        if s == "results":
+            cond, gen = _cond_gen_from_results_run_id(rid)
+        if cond is None or gen is None:
+            continue
+        lookup[(ds, cond, gen)] = r
+    return lookup
+
+
+def _find_es_disable_baseline(data: List[Dict], run: Dict) -> Optional[Dict]:
+    ds = _infer_dataset(run)
+    method = run.get("method")
+    for r in complete_runs(data):
+        if r.get("series") != "es_ablation_disable":
+            continue
+        if _infer_dataset(r) != ds:
+            continue
+        if method and r.get("method") != method:
+            continue
+        return r
+    return None
+
+
+def baseline_value_for_run(
+    data: List[Dict],
+    run: Dict,
+    metric_key: str,
+    no_tta_lookup: Optional[Dict[Tuple[str, int, int], Dict]] = None,
+) -> Optional[float]:
+    metric_prefix = metric_key.split("_")[0]
+    baseline_field = f"baseline_{metric_prefix}"
+
+    # ES ablation should use same config with ES disabled.
+    if str(run.get("series", "")).startswith("es_ablation_") and run.get("series") != "es_ablation_disable":
+        es_disable = _find_es_disable_baseline(data, run)
+        if es_disable is not None:
+            return es_disable.get(metric_key)
+
+    ds = _infer_dataset(run)
+    cond, gen = _run_cond_gen(run)
+    lookup = no_tta_lookup if no_tta_lookup is not None else _build_no_tta_lookup(data)
+    if cond is not None and gen is not None:
+        no_tta = lookup.get((ds, cond, gen))
+        if no_tta is not None:
+            return no_tta.get(metric_key)
+
+    # Fallback to exported field if available.
+    if run.get(baseline_field) is not None:
+        return run.get(baseline_field)
+
+    return None
+
 # ═══════════════════════════════════════════════════════════════════════
 # PLOTTING HELPERS
 # ═══════════════════════════════════════════════════════════════════════
@@ -194,17 +308,17 @@ def titled(ax, title, fixed=None, fontsize=13):
                 fontsize=8.5, color="#777777", style="italic")
 
 
-def _draw_baseline_curve(ax, runs, x_key_fn, metric="psnr_mean"):
+def _draw_baseline_curve(ax, data, runs, x_key_fn, metric="psnr_mean"):
     """Draw a 'No TTA' baseline that varies per data point.
 
-    Uses the per-run baseline_psnr/ssim/lpips attached by export_all_results.
+    Uses resolver logic (dataset + cond/gen, ES-matched controls).
     x_key_fn(run) -> x-axis value for that run.
     """
-    bl_field = "baseline_" + metric.split("_")[0]
+    lookup = _build_no_tta_lookup(data)
     pts = {}
     for r in runs:
         x = x_key_fn(r)
-        bl = r.get(bl_field)
+        bl = baseline_value_for_run(data, r, metric, no_tta_lookup=lookup)
         if x is not None and bl is not None:
             pts[x] = bl
     if not pts:
@@ -238,9 +352,14 @@ def _get_standard_best(c):
         if md not in best_per or r["psnr_mean"] > best_per[md]["psnr_mean"]:
             best_per[md] = r
 
-    notta = [r for r in c if r["series"] == "panda_no_tta_continuation"]
+    # Use cond=14/gen=14 no-TTA as the standard baseline.
+    notta = [r for r in c if r.get("series") == "results" and r.get("run_id") == "cond14_gen14"]
     if notta:
         best_per["No TTA"] = notta[0]
+    else:
+        fallback = [r for r in c if r.get("series") == "panda_no_tta_continuation"]
+        if fallback:
+            best_per["No TTA"] = fallback[0]
     return best_per
 
 
@@ -441,9 +560,11 @@ def fig_lr_sweep(data):
 
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    lookup = _build_no_tta_lookup(c)
+    baseline_run = next(iter(by_series(c, "full_lr_sweep")), None)
+    bl_psnr = baseline_value_for_run(c, baseline_run, "psnr_mean", lookup) if baseline_run else None
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     for series_name, (label, lr_key) in series_map.items():
         runs = by_series(c, series_name)
@@ -467,8 +588,8 @@ def fig_lr_sweep(data):
 
     # AdaSteer LR sensitivity detail (combined B sweep + low-lr data)
     fig, ax = plt.subplots(figsize=(7, 5))
-    if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     db_all = by_series(c, "delta_b_lr_sweep") + by_series(c, "delta_b_low_lr")
     if db_all:
@@ -508,9 +629,11 @@ def fig_iter_sweep(data):
 
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    lookup = _build_no_tta_lookup(c)
+    baseline_run = next(iter(by_series(c, "full_iter_sweep")), None)
+    bl_psnr = baseline_value_for_run(c, baseline_run, "psnr_mean", lookup) if baseline_run else None
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
 
     for series_name, (label, step_key) in series_map.items():
         runs = by_series(c, series_name)
@@ -542,8 +665,7 @@ def fig_adasteer_groups(data):
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    bl_psnr = bl[0]["psnr_mean"] if bl else 22.07
+    lookup = _build_no_tta_lookup(c)
 
     # Panel A: delta_b_groups_sweep (20 steps)
     ax = axes[0]
@@ -553,7 +675,10 @@ def fig_adasteer_groups(data):
         xs, ys = zip(*pts)
         ax.plot(xs, ys, "-", color=C_ADASTEER, marker="D", markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2, label="20-step")
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    if runs:
+        bl_psnr = baseline_value_for_run(c, runs[0], "psnr_mean", lookup)
+        if bl_psnr is not None:
+            ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xlabel("Number of Groups (G)")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("AdaSteer Groups (20 steps)", fontweight="bold")
@@ -567,7 +692,10 @@ def fig_adasteer_groups(data):
         xs, ys = zip(*pts)
         ax.plot(xs, ys, "-", color=C_ADASTEER, marker="D", markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2, label="5-step")
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    if runs:
+        bl_psnr = baseline_value_for_run(c, runs[0], "psnr_mean", lookup)
+        if bl_psnr is not None:
+            ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xlabel("Number of Groups (G)")
     ax.set_title("AdaSteer Groups (5 steps, delta_lr=0.01)", fontweight="bold")
     ax.legend(frameon=False)
@@ -585,8 +713,9 @@ def fig_lora_analysis(data):
     print("\n[6] LoRA analysis")
     c = complete_runs(data)
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    bl_psnr = bl[0]["psnr_mean"] if bl else 22.07
+    lookup = _build_no_tta_lookup(c)
+    ref_run = next(iter(by_series(c, "lora_rank_sweep")), None)
+    bl_psnr = baseline_value_for_run(c, ref_run, "psnr_mean", lookup) if ref_run else None
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
@@ -598,7 +727,8 @@ def fig_lora_analysis(data):
         xs, ys = zip(*pts)
         ax.plot(xs, ys, "-", color=C_LORA, marker="o", markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2)
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xlabel("LoRA Rank")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("LoRA Rank Sweep", fontweight="bold")
@@ -618,7 +748,8 @@ def fig_lora_analysis(data):
         xs, ys = zip(*pts)
         ax.scatter(xs, ys, c=col, s=40, alpha=0.8, label=lab, zorder=5)
 
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1.0, alpha=0.55, zorder=0)
     ax.set_xscale("log")
     ax.set_xlabel("Trainable Parameters")
     ax.set_ylabel("PSNR (dB)")
@@ -646,39 +777,52 @@ def fig_cond_frames(data):
         "exp3_train_frames_lora":    "LoRA",
     }
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    metrics = [
+        ("psnr_mean", "PSNR (dB)", "cond_frames_psnr.png"),
+        ("ssim_mean", "SSIM", "cond_frames_ssim.png"),
+        ("lpips_mean", "LPIPS", "cond_frames_lpips.png"),
+    ]
 
     all_exp3_runs = []
     for sname in series_methods:
         all_exp3_runs.extend(by_series(c, sname))
-    _draw_baseline_curve(ax, all_exp3_runs,
-                         lambda r: EXP3_COND_FRAMES.get(r["run_id"]))
 
-    for sname, label in series_methods.items():
-        runs = by_series(c, sname)
-        if not runs:
-            continue
-        pts = []
-        for r in runs:
-            cond = EXP3_COND_FRAMES.get(r["run_id"])
-            if cond is not None:
-                pts.append((cond, r["psnr_mean"]))
-        if not pts:
-            continue
-        pts.sort()
-        xs, ys = zip(*pts)
-        color = METHOD_COLORS.get(label, "#999999")
-        marker = "D" if label == "AdaSteer" else "o"
-        ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
-                markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
+    for metric_key, ylabel, out_name in metrics:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        _draw_baseline_curve(
+            ax,
+            c,
+            all_exp3_runs,
+            lambda r: EXP3_COND_FRAMES.get(r["run_id"]),
+            metric=metric_key,
+        )
 
-    ax.set_xlabel("Conditioning Frames")
-    ax.set_ylabel("PSNR (dB)")
-    titled(ax, "Effect of Conditioning Frames",
-           fixed="20 steps, 14 gen frames, best LR per method")
-    ax.legend(frameon=False)
-    ax.set_xticks([2, 7, 14, 24])
-    save(fig, "07_cond_frames", "cond_frames_psnr.png")
+        for sname, label in series_methods.items():
+            runs = by_series(c, sname)
+            if not runs:
+                continue
+            pts = []
+            for r in runs:
+                cond = EXP3_COND_FRAMES.get(r["run_id"])
+                val = r.get(metric_key)
+                if cond is not None and val is not None:
+                    pts.append((cond, val))
+            if not pts:
+                continue
+            pts.sort()
+            xs, ys = zip(*pts)
+            color = METHOD_COLORS.get(label, "#999999")
+            marker = "D" if label == "AdaSteer" else "o"
+            ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
+                    markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
+
+        ax.set_xlabel("Conditioning Frames")
+        ax.set_ylabel(ylabel)
+        titled(ax, "Effect of Conditioning Frames",
+               fixed="20 steps, 14 gen frames, best LR per method")
+        ax.legend(frameon=False)
+        ax.set_xticks([2, 7, 14, 24])
+        save(fig, "07_cond_frames", out_name)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -696,39 +840,52 @@ def fig_gen_horizon(data):
         "exp4_gen_horizon_lora":    "LoRA",
     }
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    metrics = [
+        ("psnr_mean", "PSNR (dB)", "gen_horizon_psnr.png"),
+        ("ssim_mean", "SSIM", "gen_horizon_ssim.png"),
+        ("lpips_mean", "LPIPS", "gen_horizon_lpips.png"),
+    ]
 
     all_exp4_runs = []
     for sname in series_methods:
         all_exp4_runs.extend(by_series(c, sname))
-    _draw_baseline_curve(ax, all_exp4_runs,
-                         lambda r: EXP4_GEN_FRAMES.get(r["run_id"]))
 
-    for sname, label in series_methods.items():
-        runs = by_series(c, sname)
-        if not runs:
-            continue
-        pts = []
-        for r in runs:
-            gen = EXP4_GEN_FRAMES.get(r["run_id"])
-            if gen is not None:
-                pts.append((gen, r["psnr_mean"]))
-        if not pts:
-            continue
-        pts.sort()
-        xs, ys = zip(*pts)
-        color = METHOD_COLORS.get(label, "#999999")
-        marker = "D" if label == "AdaSteer" else "o"
-        ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
-                markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
+    for metric_key, ylabel, out_name in metrics:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        _draw_baseline_curve(
+            ax,
+            c,
+            all_exp4_runs,
+            lambda r: EXP4_GEN_FRAMES.get(r["run_id"]),
+            metric=metric_key,
+        )
 
-    ax.set_xlabel("Generation Frames")
-    ax.set_ylabel("PSNR (dB)")
-    titled(ax, "Effect of Generation Horizon",
-           fixed="20 steps, 14 cond frames, best LR per method")
-    ax.legend(frameon=False)
-    ax.set_xticks([16, 28, 44, 72])
-    save(fig, "08_gen_horizon", "gen_horizon_psnr.png")
+        for sname, label in series_methods.items():
+            runs = by_series(c, sname)
+            if not runs:
+                continue
+            pts = []
+            for r in runs:
+                gen = EXP4_GEN_FRAMES.get(r["run_id"])
+                val = r.get(metric_key)
+                if gen is not None and val is not None:
+                    pts.append((gen, val))
+            if not pts:
+                continue
+            pts.sort()
+            xs, ys = zip(*pts)
+            color = METHOD_COLORS.get(label, "#999999")
+            marker = "D" if label == "AdaSteer" else "o"
+            ax.plot(xs, ys, "-", color=color, marker=marker, markersize=6,
+                    markeredgecolor="white", markeredgewidth=0.8, lw=1.8, label=label)
+
+        ax.set_xlabel("Generation Frames")
+        ax.set_ylabel(ylabel)
+        titled(ax, "Effect of Generation Horizon",
+               fixed="20 steps, 14 cond frames, best LR per method")
+        ax.legend(frameon=False)
+        ax.set_xticks([16, 28, 44, 72])
+        save(fig, "08_gen_horizon", out_name)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -739,70 +896,169 @@ def fig_cross_dataset(data):
     print("\n[9] Cross-dataset comparison")
     c = complete_runs(data)
 
-    panda_best = _get_standard_best(c)
+    def _best_by_dataset(dataset: str) -> Dict[str, Dict]:
+        out = {}
+        for r in c:
+            if _infer_dataset(r) != dataset:
+                continue
+            md = method_display(r.get("method", ""))
+            if md == "No TTA":
+                continue
+            cond, gen = _run_cond_gen(r)
+            if cond != 14 or gen != 14:
+                continue
+            if r.get("n_ok", 0) < 80:
+                continue
+            if md not in out or r["psnr_mean"] > out[md]["psnr_mean"]:
+                out[md] = r
 
-    # UCF-101 results
-    ucf_best = {}
-    for r in c:
-        if "ucf101" not in r.get("series", ""):
-            continue
-        md = method_display(r.get("method", ""))
-        if r["series"] == "ucf101_no_tta":
-            md = "No TTA"
-        if md not in ucf_best or r["psnr_mean"] > ucf_best[md]["psnr_mean"]:
-            ucf_best[md] = r
+        # Attach no-TTA cond14/gen14 baseline for same dataset.
+        for r in c:
+            if _infer_dataset(r) != dataset:
+                continue
+            if r.get("series") != "results":
+                continue
+            if str(r.get("run_id")) in {"cond14_gen14", "ucf101_cond14_gen14"}:
+                out["No TTA"] = r
+                break
+        return out
 
-    common = [m for m in ["AdaSteer", "LoRA", "Full-model", "No TTA"]
-              if m in panda_best and m in ucf_best]
-
-    if not common:
-        print("  (skip: no common methods)")
-        return
-
-    # Same bar chart for PSNR, SSIM, and LPIPS
+    best_map = {"panda": _best_by_dataset("panda"), "ucf101": _best_by_dataset("ucf101")}
+    methods = ["AdaSteer", "LoRA", "Full-model", "No TTA"]
     metrics_config = [
         ("psnr_mean", "PSNR (dB)", "{:.1f}", True),
         ("ssim_mean", "SSIM", "{:.3f}", True),
         ("lpips_mean", "LPIPS", "{:.3f}", False),
     ]
-    bar_w = 0.38
-    xs = np.arange(len(common))
 
-    for key, ylabel, fmt, higher_better in metrics_config:
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-        panda_vals = [panda_best[m].get(key) for m in common]
-        ucf_vals = [ucf_best[m].get(key) for m in common]
-        if any(v is None for v in panda_vals + ucf_vals):
-            plt.close(fig)
+    for dataset_name, best in best_map.items():
+        available = [m for m in methods if m in best]
+        if len(available) < 2:
             continue
-        all_vals = panda_vals + ucf_vals
-        vrange = max(all_vals) - min(all_vals) if max(all_vals) != min(all_vals) else (0.1 if key == "psnr_mean" else 0.05)
-        # Offset for bar labels: proportional to data range so SSIM/LPIPS don't float way above bars
-        annot_offset = max(vrange * 0.05, 0.005)
-        bars_panda = ax.bar(xs - bar_w / 2, panda_vals, bar_w, color=C_ADASTEER, alpha=0.85,
-                            label="Panda-70M", zorder=3)
-        bars_ucf = ax.bar(xs + bar_w / 2, ucf_vals, bar_w, color=C_LORA, alpha=0.85,
-                          label="UCF-101", zorder=3)
-        for b in bars_panda:
-            annotate_bar(ax, b, b.get_height(), fmt=fmt, fontsize=8, offset=annot_offset)
-        for b in bars_ucf:
-            annotate_bar(ax, b, b.get_height(), fmt=fmt, fontsize=8, offset=annot_offset)
-        ax.set_xticks(xs)
-        ax.set_xticklabels(common)
-        ax.set_ylabel(ylabel)
-        titled(ax, "Cross-Dataset Generalization",
-               fixed="20 steps, 14 cond frames, 28 gen frames, best LR per method")
-        ax.legend(frameon=False)
-        ymin = min(all_vals) - vrange * 0.25
-        ymax = max(all_vals) + vrange * 0.45
-        if not higher_better:
-            ymin, ymax = max(ymin, 0), min(ymax, 1.0) if key == "lpips_mean" else ymax
+        xs = np.arange(len(available))
+        for key, ylabel, fmt, higher_better in metrics_config:
+            vals = [best[m].get(key) for m in available]
+            if any(v is None for v in vals):
+                continue
+            fig, ax = plt.subplots(figsize=(6.2, 4.5))
+            bars = []
+            for i, (m, v) in enumerate(zip(available, vals)):
+                color = METHOD_COLORS.get(m, "#999999")
+                bars.append(ax.bar(i, v, 0.8, color=color, zorder=3)[0])
+            vrange = max(vals) - min(vals) if max(vals) != min(vals) else (0.1 if key == "psnr_mean" else 0.02)
+            annot_offset = max(vrange * 0.05, 0.004)
+            for b, v in zip(bars, vals):
+                annotate_bar(ax, b, v, fmt=fmt, fontsize=8, offset=annot_offset)
+            ax.set_xticks(xs)
+            ax.set_xticklabels(available)
+            ax.set_ylabel(ylabel)
+            titled(
+                ax,
+                f"{'Panda-70M' if dataset_name == 'panda' else 'UCF-101'} Method Performance",
+                fixed="20 steps, 14 cond frames, 28 total frames",
+            )
+            ymin = min(vals) - vrange * 0.25
+            ymax = max(vals) + vrange * 0.45
+            if not higher_better and key == "lpips_mean":
+                ymax = min(ymax, 1.0)
+            ax.set_ylim(max(ymin, 0), ymax)
+            save(fig, "09_cross_dataset", f"{dataset_name}_{key.split('_')[0]}.png")
+
+
+CLIP_GATED_SUMMARY_ROWS = [
+    {
+        "method": "Full-model",
+        "run": "es_ablation_disable/ES_D1",
+        "noclip_psnr": 22.0502,
+        "clip_psnr": 17.0234,
+        "noclip_ssim": 0.7682,
+        "clip_ssim": 0.6398,
+        "noclip_lpips": 0.2380,
+        "clip_lpips": 0.3717,
+        "clip_skip_pct": 21.2,
+    },
+    {
+        "method": "LoRA",
+        "run": "lora_constrained_sweep/LA2",
+        "noclip_psnr": 22.0385,
+        "clip_psnr": 17.0111,
+        "noclip_ssim": 0.7673,
+        "clip_ssim": 0.6390,
+        "noclip_lpips": 0.2380,
+        "clip_lpips": 0.3734,
+        "clip_skip_pct": 21.2,
+    },
+    {
+        "method": "AdaSteer",
+        "run": "delta_b_low_lr/DBL4",
+        "noclip_psnr": 22.5883,
+        "clip_psnr": None,
+        "noclip_ssim": 0.7458,
+        "clip_ssim": None,
+        "noclip_lpips": 0.2209,
+        "clip_lpips": None,
+        "clip_skip_pct": None,
+    },
+]
+
+
+def fig_clip_gated_summary():
+    print("\n[15] CLIP-gated comparison")
+    rows = CLIP_GATED_SUMMARY_ROWS
+    methods = [r["method"] for r in rows]
+    keys = [
+        ("psnr", "PSNR"),
+        ("ssim", "SSIM"),
+        ("lpips", "LPIPS"),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+    axes = axes.flatten()
+
+    # Top-left/right + bottom-left: No-CLIP vs CLIP per metric
+    for ax, (k, label) in zip(axes[:3], keys):
+        x = np.arange(len(methods))
+        noclip_vals = [r[f"noclip_{k}"] for r in rows]
+        clip_vals = [r[f"clip_{k}"] if r[f"clip_{k}"] is not None else np.nan for r in rows]
+        bw = 0.38
+        b1 = ax.bar(x - bw / 2, noclip_vals, bw, color=C_BASELINE, label="No CLIP", zorder=3)
+        b2 = ax.bar(x + bw / 2, clip_vals, bw, color=C_ADASTEER, label="CLIP-gated", zorder=3)
+        for i, bar in enumerate(b1):
+            annotate_bar(ax, bar, noclip_vals[i], fmt="{:.3f}" if k != "psnr" else "{:.2f}", fontsize=8, offset=0.01)
+        for i, bar in enumerate(b2):
+            v = rows[i][f"clip_{k}"]
+            if v is not None:
+                annotate_bar(ax, bar, v, fmt="{:.3f}" if k != "psnr" else "{:.2f}", fontsize=8, offset=0.01)
+            else:
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() if not np.isnan(bar.get_height()) else 0.02,
+                        "pending", ha="center", va="bottom", fontsize=7, color="#666666")
+        ax.set_xticks(x)
+        ax.set_xticklabels(methods)
+        ax.set_ylabel(label)
+        ax.set_title(f"{label}: No-CLIP vs CLIP-gated", fontweight="bold", fontsize=11)
+        if k == "lpips":
+            ax.legend(frameon=False, fontsize=8)
+
+    # Bottom-right: skip rate
+    ax = axes[3]
+    skip_vals = [r["clip_skip_pct"] if r["clip_skip_pct"] is not None else np.nan for r in rows]
+    x = np.arange(len(methods))
+    bars = ax.bar(x, skip_vals, 0.6, color=C_LIGHT_T, zorder=3)
+    for i, bar in enumerate(bars):
+        v = skip_vals[i]
+        if not np.isnan(v):
+            annotate_bar(ax, bar, v, fmt="{:.1f}%", fontsize=8, offset=0.5)
         else:
-            ymin = max(ymin, 0)
-        ax.set_ylim(ymin, ymax)
-        fname = "cross_dataset_psnr.png" if key == "psnr_mean" else \
-                "cross_dataset_ssim.png" if key == "ssim_mean" else "cross_dataset_lpips.png"
-        save(fig, "09_cross_dataset", fname)
+            ax.text(bar.get_x() + bar.get_width() / 2, 0.5, "pending", ha="center", va="bottom", fontsize=7, color="#666666")
+    ax.set_xticks(x)
+    ax.set_xticklabels(methods)
+    ax.set_ylabel("Skip rate (%)")
+    ax.set_title("CLIP-gate skip rate", fontweight="bold", fontsize=11)
+    ax.set_ylim(0, max([v for v in skip_vals if not np.isnan(v)] + [25]) * 1.15)
+
+    fig.suptitle("CLIP-gated TTA vs Matched No-CLIP Baselines", fontweight="bold", y=1.02, fontsize=13)
+    fig.tight_layout()
+    save(fig, "15_clip_gated", "clip_gated_summary.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1300,6 +1556,7 @@ def fig_ratio_sweep(data):
 
     fig, ax = plt.subplots(figsize=(7, 5))
 
+    lookup = _build_no_tta_lookup(c)
     by_cond = defaultdict(list)
     bl_by_cond = {}
     for r in runs:
@@ -1307,7 +1564,7 @@ def fig_ratio_sweep(data):
         if cond is None:
             continue
         by_cond[cond].append((r.get("num_groups", 1), r["psnr_mean"]))
-        bl = r.get("baseline_psnr")
+        bl = baseline_value_for_run(c, r, "psnr_mean", lookup)
         if bl is not None:
             bl_by_cond[cond] = bl
 
@@ -1345,9 +1602,7 @@ def fig_all_runs_scatter(data):
 
     fig, ax = plt.subplots(figsize=(9, 6))
 
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    if bl:
-        ax.axhline(bl[0]["psnr_mean"], color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
+    # No single baseline line here: this plot mixes multiple cond/gen settings.
 
     seen_methods = set()
     for r in c:
@@ -1381,8 +1636,9 @@ def fig_naive_methods(data):
     """Naive TTA methods (Delta-C, NormTune, FiLM) in their own directory."""
     print("\n[Naive] Naive TTA methods (Delta-C, NormTune, FiLM)")
     c = complete_runs(data)
-    bl = [r for r in c if r["series"] == "panda_no_tta_continuation"]
-    bl_psnr = bl[0]["psnr_mean"] if bl else 22.07
+    lookup = _build_no_tta_lookup(c)
+    ref_run = next(iter(by_series(c, "norm_tune_sweep")), None)
+    bl_psnr = baseline_value_for_run(c, ref_run, "psnr_mean", lookup) if ref_run else None
     best_per = _get_standard_best(c)
 
     # --- Comparison bar chart ---
@@ -1412,7 +1668,8 @@ def fig_naive_methods(data):
             ax.scatter(lr, psnr, c=C_NORMTUNE, s=65, zorder=5, edgecolors="white", lw=0.8)
             ax.annotate(f"{params/1e3:.0f}K", (lr, psnr), textcoords="offset points",
                         xytext=(6, 6), fontsize=7, color="#555555")
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
     ax.set_xscale("log")
     ax.set_xlabel("Learning Rate")
     ax.set_ylabel("PSNR (dB)")
@@ -1430,7 +1687,8 @@ def fig_naive_methods(data):
             ax.scatter(lr, psnr, c=C_FILM, s=65, zorder=5, edgecolors="white", lw=0.8)
             ax.annotate(f"{params/1e3:.0f}K", (lr, psnr), textcoords="offset points",
                         xytext=(6, 6), fontsize=7, color="#555555")
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
     ax.set_xscale("log")
     ax.set_xlabel("Learning Rate")
     ax.set_ylabel("PSNR (dB)")
@@ -1445,7 +1703,8 @@ def fig_naive_methods(data):
         xs, ys = zip(*pts)
         ax.plot(xs, ys, "-o", color=C_DELTAC, markersize=7,
                 markeredgecolor="white", markeredgewidth=0.8, lw=2)
-    ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
+    if bl_psnr is not None:
+        ax.axhline(bl_psnr, color=C_BASELINE_LINE, ls="--", lw=1, alpha=0.5, zorder=0)
     ax.set_xlabel("Training Steps")
     ax.set_ylabel("PSNR (dB)")
     ax.set_title("Delta-C (Output Residual) Iteration Sweep", fontweight="bold")
@@ -1537,6 +1796,7 @@ def main():
     fig_ratio_sweep(data)
     fig_all_runs_scatter(data)
     fig_naive_methods(data)
+    fig_clip_gated_summary()
     fig_summary_table(data)
 
     # Loss curve figures (from separate export)
