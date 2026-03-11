@@ -1495,11 +1495,31 @@ def evaluate_clip_gate(
 
         if backend == "xclip":
             model, processor = _get_xclip_scorer(model_name, device)
-            video_np = np.stack([np.array(img.convert("RGB")) for img in images], axis=0)
-            text_inputs = processor(
-                text=[caption], return_tensors="pt", truncation=True, padding=True
-            ).to(device)
-            video_inputs = processor(videos=[video_np], return_tensors="pt").to(device)
+            # X-CLIP expects each video as a list of RGB frames, not a stacked
+            # ndarray batch. Passing a stacked array can trigger PIL conversion
+            # shape errors in some transformers versions.
+            frames_rgb = [img.convert("RGB") for img in images]
+            proc = processor(
+                text=[caption],
+                videos=[frames_rgb],
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+            )
+            proc = {
+                k: (v.to(device) if torch.is_tensor(v) else v)
+                for k, v in proc.items()
+            }
+            text_inputs = {
+                k: proc[k]
+                for k in ("input_ids", "attention_mask")
+                if k in proc
+            }
+            video_inputs = {
+                k: proc[k]
+                for k in ("pixel_values", "pixel_mask")
+                if k in proc
+            }
 
             with torch.no_grad():
                 text_feat = model.get_text_features(**text_inputs)
