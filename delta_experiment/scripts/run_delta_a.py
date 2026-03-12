@@ -244,6 +244,7 @@ def optimize_delta_a(
     wrapper.train()
     losses = []
 
+    es_check_time = 0.0
     for step in range(num_steps):
         optimizer.zero_grad()
 
@@ -269,9 +270,11 @@ def optimize_delta_a(
 
         # Early stopping check
         if early_stopper is not None:
+            es_t0 = time.time()
             should_stop, es_info = early_stopper.step(
                 step + 1, save_fn=_save_fn,
             )
+            es_check_time += time.time() - es_t0
             if should_stop:
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
@@ -287,6 +290,7 @@ def optimize_delta_a(
     return {
         "losses": losses,
         "delta_norm": wrapper.delta.detach().norm().item(),
+        "es_check_time": es_check_time,
         "early_stopping_info": es_state,
     }
 
@@ -344,6 +348,7 @@ def _optimize_delta_a_batch(
     return {
         "losses": losses,
         "delta_norm": wrapper.delta.detach().norm().item(),
+        "es_check_time": 0.0,
         "early_stopping_info": None,
     }
 
@@ -548,6 +553,7 @@ def main():
                 opt_result = {
                     "losses": [],
                     "delta_norm": 0.0,
+                    "es_check_time": 0.0,
                     "early_stopping_info": None,
                 }
                 train_time = 0.0
@@ -709,6 +715,7 @@ def main():
                 "video_path": eval_entry["video_path"],
                 "caption": eval_entry["caption"],
                 "train_time": train_time,
+                "es_check_time": opt_result.get("es_check_time", 0.0),
                 "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
                 "delta_norm": opt_result["delta_norm"],
                 "batch_size": len(training_entries),
@@ -809,7 +816,11 @@ def main():
                 del gen_pf
                 torch_gc()
 
-            result["total_time"] = train_time + gen_time
+            result["total_time"] = (
+                float(clip_gate_info.get("clip_gate_eval_time", 0.0))
+                + train_time
+                + gen_time
+            )
             all_results.append(result)
 
             save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
@@ -847,6 +858,18 @@ def main():
         "num_videos": len(all_results),
         "num_successful": len(successful),
         "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,
+        "avg_clip_gate_eval_time": (
+            np.mean([r.get("clip_gate_eval_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_es_check_time": (
+            np.mean([r.get("es_check_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_gen_time": (
+            np.mean([r.get("gen_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_total_time": (
+            np.mean([r.get("total_time", 0.0) for r in successful]) if successful else 0
+        ),
         "clip_gate_enabled": args.clip_gate_enabled,
         "clip_gate_threshold": args.clip_gate_threshold,
         "clip_gate_backend": args.clip_gate_backend,
@@ -863,7 +886,11 @@ def main():
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
     print(f"\nResults saved to {args.output_dir}/summary.json")
     if successful:
+        print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")
+        print(f"Avg ES check time : {summary['avg_es_check_time']:.2f}s")
         print(f"Avg train time: {summary['avg_train_time']:.1f}s")
+        print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
+        print(f"Avg total time: {summary['avg_total_time']:.1f}s")
 
 
 if __name__ == "__main__":

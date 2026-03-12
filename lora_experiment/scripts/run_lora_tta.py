@@ -471,6 +471,7 @@ def finetune_lora_on_conditioning(
     losses = []
     train_start = time.time()
 
+    es_check_time = 0.0
     for step in range(num_steps):
         optimizer.zero_grad(set_to_none=True)
 
@@ -504,9 +505,11 @@ def finetune_lora_on_conditioning(
             torch.cuda.empty_cache()
 
         if early_stopper is not None:
+            es_t0 = time.time()
             should_stop, es_info = early_stopper.step(
                 step + 1, save_fn=_save_fn,
             )
+            es_check_time += time.time() - es_t0
             if should_stop:
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
@@ -524,6 +527,7 @@ def finetune_lora_on_conditioning(
     return {
         "losses": losses,
         "train_time": train_time,
+        "es_check_time": es_check_time,
         "early_stopping_info": es_state,
     }
 
@@ -610,6 +614,7 @@ def finetune_lora_batch(
     return {
         "losses": losses,
         "train_time": train_time,
+        "es_check_time": 0.0,
         "early_stopping_info": None,
     }
 
@@ -969,6 +974,7 @@ def main():
                 train_result = {
                     "losses": [],
                     "train_time": 0.0,
+                    "es_check_time": 0.0,
                     "early_stopping_info": None,
                 }
             elif batch_level:
@@ -1114,6 +1120,7 @@ def main():
                 "video_path": video_path,
                 "caption": caption,
                 "train_time": train_result["train_time"],
+                "es_check_time": train_result.get("es_check_time", 0.0),
                 "final_loss": train_result["losses"][-1] if train_result["losses"] else None,
                 "num_train_steps": len(train_result["losses"]),
                 "batch_size": len(training_entries),
@@ -1174,13 +1181,20 @@ def main():
                 del gen_pixel_frames
                 torch_gc()
 
-            result["total_time"] = train_result["train_time"] + gen_time
+            result["total_time"] = (
+                float(clip_gate_info.get("clip_gate_eval_time", 0.0))
+                + train_result["train_time"]
+                + gen_time
+            )
 
             if args.save_lora_weights:
                 lora_path = os.path.join(lora_dir, f"{video_name}_lora.pt")
                 save_lora_weights(lora_modules, lora_path)
 
-            print(f"  Train: {train_result['train_time']:.1f}s, "
+            print(
+                  f"  CLIP: {clip_gate_info.get('clip_gate_eval_time', 0.0):.2f}s, "
+                  f"ES: {train_result.get('es_check_time', 0.0):.2f}s, "
+                  f"Train: {train_result['train_time']:.1f}s, "
                   + (f"Loss: {result['final_loss']:.4f}"
                      if result.get("final_loss") is not None else "Loss: N/A (skipped)")
                   + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else ""))
@@ -1217,6 +1231,18 @@ def main():
         "avg_train_time": (
             np.mean([r["train_time"] for r in successful]) if successful else 0
         ),
+        "avg_clip_gate_eval_time": (
+            np.mean([r.get("clip_gate_eval_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_es_check_time": (
+            np.mean([r.get("es_check_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_gen_time": (
+            np.mean([r.get("gen_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_total_time": (
+            np.mean([r.get("total_time", 0.0) for r in successful]) if successful else 0
+        ),
         "avg_final_loss": (
             np.mean([r["final_loss"] for r in successful if r.get("final_loss") is not None])
             if successful else 0
@@ -1240,7 +1266,11 @@ def main():
     print("=" * 70)
     print(f"Successful: {len(successful)}/{len(all_results)}")
     if successful:
+        print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")
+        print(f"Avg ES check time : {summary['avg_es_check_time']:.2f}s")
         print(f"Avg train time: {summary['avg_train_time']:.1f}s")
+        print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
+        print(f"Avg total time: {summary['avg_total_time']:.1f}s")
         print(f"Avg final loss: {summary['avg_final_loss']:.4f}")
     print(f"Results saved to: {args.output_dir}")
     print("=" * 70)
