@@ -142,6 +142,7 @@ def finetune_full_on_conditioning(
     losses = []
     train_start = time.time()
 
+    es_check_time = 0.0
     for step in range(num_steps):
         optimizer.zero_grad(set_to_none=True)
 
@@ -175,7 +176,9 @@ def finetune_full_on_conditioning(
             torch.cuda.empty_cache()
 
         if early_stopper is not None:
+            es_t0 = time.time()
             should_stop, es_info = early_stopper.step(step + 1)
+            es_check_time += time.time() - es_t0
             if should_stop:
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
@@ -201,6 +204,7 @@ def finetune_full_on_conditioning(
     return {
         "losses": losses,
         "train_time": train_time,
+        "es_check_time": es_check_time,
         "early_stopping_info": es_state,
     }
 
@@ -285,6 +289,7 @@ def finetune_full_batch(
     return {
         "losses": losses,
         "train_time": train_time,
+        "es_check_time": 0.0,
         "early_stopping_info": None,
     }
 
@@ -575,6 +580,7 @@ def main():
                 train_result = {
                     "losses": [],
                     "train_time": 0.0,
+                    "es_check_time": 0.0,
                     "early_stopping_info": None,
                 }
             elif batch_level:
@@ -715,6 +721,7 @@ def main():
                 "video_path": video_path,
                 "caption": caption,
                 "train_time": train_result["train_time"],
+                "es_check_time": train_result.get("es_check_time", 0.0),
                 "final_loss": train_result["losses"][-1] if train_result["losses"] else None,
                 "num_train_steps": len(train_result["losses"]),
                 "batch_size": len(training_entries),
@@ -772,10 +779,16 @@ def main():
                 del gen_pixel_frames
                 torch_gc()
 
-            result["total_time"] = train_result["train_time"] + gen_time
+            result["total_time"] = (
+                float(clip_gate_info.get("clip_gate_eval_time", 0.0))
+                + train_result["train_time"]
+                + gen_time
+            )
 
             loss_str = f"Loss: {result['final_loss']:.4f}" if result.get('final_loss') is not None else "Loss: N/A (0 steps)"
-            print(f"  Train: {train_result['train_time']:.1f}s, "
+            print(
+                  f"  CLIP: {clip_gate_info.get('clip_gate_eval_time', 0.0):.2f}s, "
+                  f"Train: {train_result['train_time']:.1f}s, "
                   f"{loss_str}"
                   + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else "")
                   + (f", PSNR={result.get('psnr', 'N/A')}" if 'psnr' in result else ""))
@@ -812,6 +825,18 @@ def main():
         "avg_train_time": (
             np.mean([r["train_time"] for r in successful]) if successful else 0
         ),
+        "avg_clip_gate_eval_time": (
+            np.mean([r.get("clip_gate_eval_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_es_check_time": (
+            np.mean([r.get("es_check_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_gen_time": (
+            np.mean([r.get("gen_time", 0.0) for r in successful]) if successful else 0
+        ),
+        "avg_total_time": (
+            np.mean([r.get("total_time", 0.0) for r in successful]) if successful else 0
+        ),
         "avg_final_loss": (
             float(np.mean(valid_losses))
             if (valid_losses := [r["final_loss"] for r in successful
@@ -837,7 +862,11 @@ def main():
     print("=" * 70)
     print(f"Successful: {len(successful)}/{len(all_results)}")
     if successful:
+        print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")
+        print(f"Avg ES check time : {summary['avg_es_check_time']:.2f}s")
         print(f"Avg train time: {summary['avg_train_time']:.1f}s")
+        print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
+        print(f"Avg total time: {summary['avg_total_time']:.1f}s")
         avg_loss = summary['avg_final_loss']
         if avg_loss is not None and not np.isnan(avg_loss):
             print(f"Avg final loss: {avg_loss:.4f}")

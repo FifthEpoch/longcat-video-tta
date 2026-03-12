@@ -1437,6 +1437,7 @@ def evaluate_clip_gate(
     if late_only:
         sampling_mode = "late_only"
 
+    t_eval_start = time.time()
     info: Dict[str, Any] = {
         "clip_gate_enabled": bool(enabled),
         "clip_gate_backend": backend,
@@ -1455,12 +1456,15 @@ def evaluate_clip_gate(
         "clip_gate_decision": "run_tta",
         "clip_gate_reason": "gate_disabled",
         "tta_skipped": False,
+        "clip_gate_eval_time": 0.0,
     }
 
     if not enabled:
+        info["clip_gate_eval_time"] = float(time.time() - t_eval_start)
         return info
     if not caption or not caption.strip():
         info["clip_gate_reason"] = "empty_caption"
+        info["clip_gate_eval_time"] = float(time.time() - t_eval_start)
         return info
 
     try:
@@ -1561,6 +1565,7 @@ def evaluate_clip_gate(
             info["clip_gate_decision"] = "run_tta"
             info["clip_gate_reason"] = "passed_threshold"
             info["tta_skipped"] = False
+        info["clip_gate_eval_time"] = float(time.time() - t_eval_start)
         return info
     except Exception as exc:
         if fail_open:
@@ -1568,6 +1573,7 @@ def evaluate_clip_gate(
             info["clip_gate_reason"] = "fail_open_error"
             info["clip_gate_error"] = str(exc)
             info["tta_skipped"] = False
+            info["clip_gate_eval_time"] = float(time.time() - t_eval_start)
             return info
         raise
 
