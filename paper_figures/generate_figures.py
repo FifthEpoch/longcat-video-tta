@@ -1001,6 +1001,29 @@ CLIP_GATED_SUMMARY_ROWS = [
     },
 ]
 
+# Threshold sweep table used for CLIP-gated vs baseline threshold curves.
+# Values come from matched comparisons for:
+# - AdaSteer (Delta-B): delta_b_low_lr/DBL4
+# - LoRA: lora_constrained_sweep/LA2
+CLIP_THRESHOLD_SWEEP_ROWS = [
+    # threshold, adasteer_gate_psnr, adasteer_base_psnr, adasteer_gate_ssim,
+    # adasteer_base_ssim, adasteer_gate_lpips, adasteer_base_lpips,
+    # lora_gate_psnr, lora_base_psnr, lora_gate_ssim, lora_base_ssim,
+    # lora_gate_lpips, lora_base_lpips
+    (0.10, 17.271922, 17.217300, 0.622014, 0.616571, 0.367639, 0.369018,
+     17.037699, 17.007828, 0.639095, 0.638083, 0.372242, 0.374726),
+    (0.12, 17.288925, 17.195822, 0.622291, 0.616623, 0.369137, 0.371698,
+     17.048967, 17.016148, 0.639509, 0.638391, 0.373139, 0.373756),
+    (0.14, 17.429874, 17.184707, 0.632930, 0.616884, 0.363184, 0.369226,
+     17.023643, 17.015098, 0.639290, 0.639096, 0.372217, 0.372596),
+    (0.16, 17.104898, 17.236992, 0.630152, 0.616104, 0.372972, 0.371281,
+     17.023810, 17.036958, 0.639330, 0.639947, 0.372568, 0.372585),
+    (0.18, 17.074353, 17.185424, 0.631383, 0.617577, 0.375646, 0.368676,
+     17.027587, 17.037722, 0.639289, 0.639007, 0.371902, 0.372134),
+    (0.20, 16.491797, 17.171335, 0.632324, 0.616557, 0.380797, 0.370931,
+     16.909219, 17.031016, 0.638053, 0.638522, 0.375527, 0.373865),
+]
+
 
 def fig_clip_gated_summary():
     print("\n[15] CLIP-gated comparison")
@@ -1059,6 +1082,75 @@ def fig_clip_gated_summary():
     fig.suptitle("CLIP-gated TTA vs Matched No-CLIP Baselines", fontweight="bold", y=1.02, fontsize=13)
     fig.tight_layout()
     save(fig, "15_clip_gated", "clip_gated_summary.png")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FIG 16: CLIP THRESHOLD SWEEP CURVES (Baseline vs Gated)
+# ═══════════════════════════════════════════════════════════════════════
+def fig_clip_threshold_curves():
+    print("\n[16] CLIP threshold sweep curves")
+    rows = CLIP_THRESHOLD_SWEEP_ROWS
+    if not rows:
+        print("  (no threshold sweep rows)")
+        return
+
+    thr = [r[0] for r in rows]
+
+    # AdaSteer (global vector / Delta-B)
+    a_psnr_gate = [r[1] for r in rows]
+    a_psnr_base = [r[2] for r in rows]
+    a_ssim_gate = [r[3] for r in rows]
+    a_ssim_base = [r[4] for r in rows]
+    a_lpips_gate = [r[5] for r in rows]
+    a_lpips_base = [r[6] for r in rows]
+
+    # LoRA
+    l_psnr_gate = [r[7] for r in rows]
+    l_psnr_base = [r[8] for r in rows]
+    l_ssim_gate = [r[9] for r in rows]
+    l_ssim_base = [r[10] for r in rows]
+    l_lpips_gate = [r[11] for r in rows]
+    l_lpips_base = [r[12] for r in rows]
+
+    plots = [
+        ("psnr", "PSNR (dB)", a_psnr_gate, a_psnr_base, l_psnr_gate, l_psnr_base),
+        ("ssim", "SSIM", a_ssim_gate, a_ssim_base, l_ssim_gate, l_ssim_base),
+        ("lpips", "LPIPS", a_lpips_gate, a_lpips_base, l_lpips_gate, l_lpips_base),
+    ]
+
+    for key, ylabel, ag, ab, lg, lb in plots:
+        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+        # Gated curves
+        ax.plot(
+            thr, ag, "-", color=C_ADASTEER, marker="D", markersize=6,
+            markeredgecolor="white", markeredgewidth=0.8, lw=2.0,
+            label="Global Vector (AdaSteer) - CLIP gated",
+        )
+        ax.plot(
+            thr, lg, "-", color=C_LORA, marker="o", markersize=6,
+            markeredgecolor="white", markeredgewidth=0.8, lw=2.0,
+            label="LoRA - CLIP gated",
+        )
+        # Baseline curves
+        ax.plot(
+            thr, ab, "--", color=C_ADASTEER, alpha=0.7, marker="D",
+            markersize=4, lw=1.4, label="Global Vector (AdaSteer) - baseline",
+        )
+        ax.plot(
+            thr, lb, "--", color=C_LORA, alpha=0.7, marker="o",
+            markersize=4, lw=1.4, label="LoRA - baseline",
+        )
+
+        ax.set_xlabel("CLIP Gate Threshold")
+        ax.set_ylabel(ylabel)
+        titled(
+            ax,
+            f"{ylabel} vs CLIP Threshold",
+            fixed="14 cond frames, 28 total frames, 20 steps, matched baseline per threshold",
+        )
+        ax.set_xticks(thr)
+        ax.legend(frameon=False, fontsize=8)
+        save(fig, "16_clip_threshold_curves", f"clip_threshold_{key}.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1797,6 +1889,7 @@ def main():
     fig_all_runs_scatter(data)
     fig_naive_methods(data)
     fig_clip_gated_summary()
+    fig_clip_threshold_curves()
     fig_summary_table(data)
 
     # Loss curve figures (from separate export)

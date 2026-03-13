@@ -29,12 +29,20 @@ sweep:
   - run_id: TF_L1
     num_cond_frames: 2
     num_frames: 16
+    tta_total_frames: 2
+    tta_context_frames: 2
   - run_id: TF_L2
     num_cond_frames: 7
     num_frames: 21
+    tta_total_frames: 7
+    tta_context_frames: 7
   - run_id: TF_L3
     num_cond_frames: 14
     num_frames: 28
+    tta_total_frames: 14
+    tta_context_frames: 14
   - run_id: TF_L4
     num_cond_frames: 24
     num_frames: 38
+    tta_total_frames: 24
+    tta_context_frames: 24

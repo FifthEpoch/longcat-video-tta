@@ -277,6 +277,15 @@ def main():
     # Default tta_context_frames to match generation conditioning
     if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.num_cond_frames
+    # Safety: never let TTA include anchor/future GT frames.
+    if args.tta_total_frames > args.gen_start_frame:
+        print(
+            f"[WARN] tta_total_frames ({args.tta_total_frames}) exceeds "
+            f"gen_start_frame ({args.gen_start_frame}); clamping to avoid GT leakage."
+        )
+        args.tta_total_frames = args.gen_start_frame
+    if args.tta_context_frames > args.tta_total_frames:
+        args.tta_context_frames = args.tta_total_frames
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
