@@ -360,7 +360,7 @@ def main():
     args = parser.parse_args()
 
     if args.tta_total_frames is None:
-        args.tta_total_frames = args.gen_start_frame
+        args.tta_total_frames = args.num_cond_frames
     if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.num_cond_frames
 

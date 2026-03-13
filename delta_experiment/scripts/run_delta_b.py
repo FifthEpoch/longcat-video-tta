@@ -483,9 +483,9 @@ def main():
     add_clip_gate_args(parser)
     args = parser.parse_args()
 
-    # Default tta_total_frames to gen_start_frame (all pre-anchor frames)
+    # Default tta_total_frames to num_cond_frames (historical behavior)
     if args.tta_total_frames is None:
-        args.tta_total_frames = args.gen_start_frame
+        args.tta_total_frames = args.num_cond_frames
     # Default tta_context_frames to match generation conditioning
     if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.num_cond_frames
