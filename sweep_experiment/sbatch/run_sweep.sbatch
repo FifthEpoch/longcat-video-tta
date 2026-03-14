@@ -152,7 +152,32 @@ echo "  Infer steps    : ${NUM_INFERENCE_STEPS}"
 echo "  Guidance       : ${GUIDANCE_SCALE}"
 echo "  Max videos     : ${MAX_VIDEOS}"
 echo "  Data dir       : ${DATA_DIR}"
+echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
+if [ -d "${PROJECT_ROOT}/.git" ]; then
+  echo "  TTA repo commit: $(cd "${PROJECT_ROOT}" && git rev-parse --short HEAD)"
+fi
+if [ -d "${PROJECT_ROOT}/LongCat-Video/.git" ]; then
+  echo "  LongCat commit : $(cd "${PROJECT_ROOT}/LongCat-Video" && git rev-parse --short HEAD)"
+else
+  echo "  LongCat commit : <not-a-git-repo>"
+fi
+python3 - <<'PY'
+import platform
+try:
+    import torch
+    torch_v = torch.__version__
+except Exception:
+    torch_v = "unavailable"
+try:
+    import transformers
+    hf_v = transformers.__version__
+except Exception:
+    hf_v = "unavailable"
+print(f"  Python         : {platform.python_version()}")
+print(f"  Torch          : {torch_v}")
+print(f"  Transformers   : {hf_v}")
+PY
 
 # ============================================================================
 # Environment Setup
