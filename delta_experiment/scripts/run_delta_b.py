@@ -61,6 +61,7 @@ from common import (
     add_augmentation_args,
     add_tta_frame_args,
     add_caption_guard_args,
+    add_caption_override_args,
     add_clip_gate_args,
     parse_speed_factors,
     split_tta_latents,
@@ -68,6 +69,7 @@ from common import (
     evaluate_clip_gate,
     summarize_clip_gate_stats,
     validate_caption_quality,
+    apply_fixed_caption,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -483,6 +485,7 @@ def main():
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
     add_caption_guard_args(parser)
+    add_caption_override_args(parser)
     add_clip_gate_args(parser)
     args = parser.parse_args()
 
@@ -547,6 +550,7 @@ def main():
     videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
     )
+    videos = apply_fixed_caption(videos, args.fixed_caption, context="eval")
     validate_caption_quality(
         videos,
         mode=args.caption_guard_mode,

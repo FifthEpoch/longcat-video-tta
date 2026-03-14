@@ -1068,6 +1068,22 @@ def validate_caption_quality(
     return stats
 
 
+def apply_fixed_caption(
+    video_entries: List[Dict[str, Any]],
+    fixed_caption: Optional[str],
+    *,
+    context: str = "eval",
+) -> List[Dict[str, Any]]:
+    """Override all captions with one fixed caption string."""
+    if fixed_caption is None:
+        return video_entries
+    cap = str(fixed_caption)
+    for row in video_entries:
+        row["caption"] = cap
+    print(f"[caption_override:{context}] applied fixed caption to {len(video_entries)} videos: {cap!r}")
+    return video_entries
+
+
 # ============================================================================
 # Data augmentation for TTA
 # ============================================================================
@@ -1367,6 +1383,18 @@ def add_caption_guard_args(parser):
         type=int,
         default=5,
         help="How many top captions to print in guard diagnostics.",
+    )
+    return parser
+
+
+def add_caption_override_args(parser):
+    """Add global caption override CLI flag used for controlled ablations."""
+    g = parser.add_argument_group("Caption override")
+    g.add_argument(
+        "--fixed-caption",
+        type=str,
+        default=None,
+        help="If set, override every sample caption with this exact string.",
     )
     return parser
 

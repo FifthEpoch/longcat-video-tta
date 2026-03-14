@@ -67,6 +67,7 @@ from common import (
     add_augmentation_args,
     add_tta_frame_args,
     add_caption_guard_args,
+    add_caption_override_args,
     add_clip_gate_args,
     parse_speed_factors,
     split_tta_latents,
@@ -76,6 +77,7 @@ from common import (
     evaluate_clip_gate,
     summarize_clip_gate_stats,
     validate_caption_quality,
+    apply_fixed_caption,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -720,6 +722,7 @@ def main():
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
     add_caption_guard_args(parser)
+    add_caption_override_args(parser)
     add_clip_gate_args(parser)
 
     args = parser.parse_args()
@@ -894,6 +897,7 @@ def main():
     eval_videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
     )
+    eval_videos = apply_fixed_caption(eval_videos, args.fixed_caption, context="eval")
     validate_caption_quality(
         eval_videos,
         mode=args.caption_guard_mode,
@@ -918,6 +922,7 @@ def main():
             print(f"\nWARNING: --retrieval-pool-dir not set; using --data-dir as pool.",
                   file=sys.stderr)
         pool_entries = load_ucf101_video_list(pool_dir, max_videos=999999, seed=args.seed)
+        pool_entries = apply_fixed_caption(pool_entries, args.fixed_caption, context="retrieval_pool")
         validate_caption_quality(
             pool_entries,
             mode=args.caption_guard_mode,
