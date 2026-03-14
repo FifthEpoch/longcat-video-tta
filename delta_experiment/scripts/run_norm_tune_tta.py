@@ -46,9 +46,11 @@ from common import (
     torch_gc,
     add_augmentation_args,
     add_tta_frame_args,
+    add_caption_guard_args,
     parse_speed_factors,
     split_tta_latents,
     evaluate_generation_metrics,
+    validate_caption_quality,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -303,6 +305,7 @@ def main():
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
+    add_caption_guard_args(parser)
     args = parser.parse_args()
 
     if args.tta_total_frames is None:
@@ -388,6 +391,16 @@ def main():
     from common import load_ucf101_video_list
     videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
+    )
+    validate_caption_quality(
+        videos,
+        mode=args.caption_guard_mode,
+        min_nonempty_ratio=args.caption_guard_min_nonempty_ratio,
+        min_unique_ratio=args.caption_guard_min_unique_ratio,
+        max_top1_ratio=args.caption_guard_max_top1_ratio,
+        max_generic_top1_ratio=args.caption_guard_max_generic_top1_ratio,
+        top_k=args.caption_guard_topk,
+        context="eval",
     )
     print(f"\nTotal videos: {len(videos)}")
 

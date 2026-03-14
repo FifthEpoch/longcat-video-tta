@@ -947,6 +947,128 @@ def load_panda70m_video_list(
 
 
 # ============================================================================
+# Caption quality guard
+# ============================================================================
+
+_GENERIC_CAPTIONS = {
+    "",
+    "video",
+    "videos",
+    "a video",
+    "a video clip",
+    "video clip",
+    "unknown",
+    "none",
+    "nan",
+}
+
+
+def analyze_caption_quality(
+    video_entries: List[Dict[str, Any]],
+    top_k: int = 5,
+) -> Dict[str, Any]:
+    """Compute caption quality stats for a list of video entries."""
+    from collections import Counter
+
+    total = len(video_entries)
+    captions = [str(v.get("caption", "")).strip() for v in video_entries]
+    nonempty = [c for c in captions if c]
+    lower = [c.lower() for c in nonempty]
+
+    counter = Counter(lower)
+    unique_count = len(counter)
+    nonempty_count = len(nonempty)
+    nonempty_ratio = (nonempty_count / total) if total else 0.0
+    unique_ratio = (unique_count / nonempty_count) if nonempty_count else 0.0
+
+    top_items = counter.most_common(max(int(top_k), 1))
+    top1_caption = top_items[0][0] if top_items else ""
+    top1_count = top_items[0][1] if top_items else 0
+    top1_ratio = (top1_count / nonempty_count) if nonempty_count else 0.0
+
+    avg_len = float(np.mean([len(c) for c in nonempty])) if nonempty else 0.0
+
+    return {
+        "total": total,
+        "nonempty_count": nonempty_count,
+        "nonempty_ratio": nonempty_ratio,
+        "unique_count": unique_count,
+        "unique_ratio": unique_ratio,
+        "top1_caption": top1_caption,
+        "top1_count": top1_count,
+        "top1_ratio": top1_ratio,
+        "avg_caption_len": avg_len,
+        "top_captions": top_items,
+    }
+
+
+def validate_caption_quality(
+    video_entries: List[Dict[str, Any]],
+    *,
+    mode: str = "fail",
+    min_nonempty_ratio: float = 0.95,
+    min_unique_ratio: float = 0.10,
+    max_top1_ratio: float = 0.50,
+    max_generic_top1_ratio: float = 0.20,
+    top_k: int = 5,
+    context: str = "",
+) -> Dict[str, Any]:
+    """Validate caption quality and optionally fail-fast on suspicious inputs."""
+    mode = (mode or "fail").lower()
+    if mode not in {"fail", "warn", "off"}:
+        raise ValueError(f"Invalid caption guard mode: {mode}")
+
+    stats = analyze_caption_quality(video_entries, top_k=top_k)
+    total = stats["total"]
+    prefix = f"[caption_guard:{context}]" if context else "[caption_guard]"
+
+    print(
+        f"{prefix} total={total} nonempty_ratio={stats['nonempty_ratio']:.4f} "
+        f"unique_ratio={stats['unique_ratio']:.4f} top1_ratio={stats['top1_ratio']:.4f} "
+        f"avg_len={stats['avg_caption_len']:.1f}"
+    )
+    if stats["top_captions"]:
+        print(f"{prefix} top captions:")
+        for cap, count in stats["top_captions"]:
+            print(f"  - {count:4d} | {cap[:180]}")
+
+    if mode == "off" or total < 20:
+        return stats
+
+    reasons: List[str] = []
+    if stats["nonempty_ratio"] < float(min_nonempty_ratio):
+        reasons.append(
+            f"nonempty_ratio={stats['nonempty_ratio']:.4f} < {float(min_nonempty_ratio):.4f}"
+        )
+    if stats["unique_ratio"] < float(min_unique_ratio):
+        reasons.append(
+            f"unique_ratio={stats['unique_ratio']:.4f} < {float(min_unique_ratio):.4f}"
+        )
+    if stats["top1_ratio"] > float(max_top1_ratio):
+        reasons.append(
+            f"top1_ratio={stats['top1_ratio']:.4f} > {float(max_top1_ratio):.4f}"
+        )
+    if (
+        stats["top1_caption"] in _GENERIC_CAPTIONS
+        and stats["top1_ratio"] > float(max_generic_top1_ratio)
+    ):
+        reasons.append(
+            "generic top caption dominates "
+            f"('{stats['top1_caption']}' ratio={stats['top1_ratio']:.4f} > "
+            f"{float(max_generic_top1_ratio):.4f})"
+        )
+
+    if reasons:
+        msg = f"{prefix} suspicious captions detected: " + "; ".join(reasons)
+        if mode == "warn":
+            print(f"WARNING: {msg}")
+        else:
+            raise RuntimeError(msg)
+
+    return stats
+
+
+# ============================================================================
 # Data augmentation for TTA
 # ============================================================================
 
@@ -1202,6 +1324,49 @@ def add_tta_frame_args(parser):
         "--tta-context-frames", type=int, default=None,
         help="Number of leading pixel frames treated as clean context "
              "(timestep=0). Defaults to --num-cond-frames."
+    )
+    return parser
+
+
+def add_caption_guard_args(parser):
+    """Add caption quality guard CLI flags used across all TTA runners."""
+    g = parser.add_argument_group("Caption quality guard")
+    g.add_argument(
+        "--caption-guard-mode",
+        type=str,
+        default="fail",
+        choices=["fail", "warn", "off"],
+        help="How to handle suspicious caption distributions.",
+    )
+    g.add_argument(
+        "--caption-guard-min-nonempty-ratio",
+        type=float,
+        default=0.95,
+        help="Fail/warn if non-empty caption ratio drops below this.",
+    )
+    g.add_argument(
+        "--caption-guard-min-unique-ratio",
+        type=float,
+        default=0.10,
+        help="Fail/warn if unique/non-empty caption ratio drops below this.",
+    )
+    g.add_argument(
+        "--caption-guard-max-top1-ratio",
+        type=float,
+        default=0.50,
+        help="Fail/warn if top-1 caption ratio exceeds this.",
+    )
+    g.add_argument(
+        "--caption-guard-max-generic-top1-ratio",
+        type=float,
+        default=0.20,
+        help="Fail/warn if generic top caption dominates above this ratio.",
+    )
+    g.add_argument(
+        "--caption-guard-topk",
+        type=int,
+        default=5,
+        help="How many top captions to print in guard diagnostics.",
     )
     return parser
 

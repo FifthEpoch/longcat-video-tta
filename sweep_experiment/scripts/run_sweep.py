@@ -117,6 +117,13 @@ _KEY_TO_ENV = {
     "clip_gate_late_only": "CLIP_GATE_LATE_ONLY",
     "clip_gate_fail_open": "CLIP_GATE_FAIL_OPEN",
     "clip_gate_log_only": "CLIP_GATE_LOG_ONLY",
+    # Caption quality guard
+    "caption_guard_mode": "CAPTION_GUARD_MODE",
+    "caption_guard_min_nonempty_ratio": "CAPTION_GUARD_MIN_NONEMPTY_RATIO",
+    "caption_guard_min_unique_ratio": "CAPTION_GUARD_MIN_UNIQUE_RATIO",
+    "caption_guard_max_top1_ratio": "CAPTION_GUARD_MAX_TOP1_RATIO",
+    "caption_guard_max_generic_top1_ratio": "CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO",
+    "caption_guard_topk": "CAPTION_GUARD_TOPK",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
 }

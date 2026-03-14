@@ -66,6 +66,7 @@ from common import (
     build_augmented_latent_variants,
     add_augmentation_args,
     add_tta_frame_args,
+    add_caption_guard_args,
     add_clip_gate_args,
     parse_speed_factors,
     split_tta_latents,
@@ -74,6 +75,7 @@ from common import (
     retrieve_neighbors,
     evaluate_clip_gate,
     summarize_clip_gate_stats,
+    validate_caption_quality,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -717,6 +719,7 @@ def main():
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
+    add_caption_guard_args(parser)
     add_clip_gate_args(parser)
 
     args = parser.parse_args()
@@ -891,6 +894,16 @@ def main():
     eval_videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed
     )
+    validate_caption_quality(
+        eval_videos,
+        mode=args.caption_guard_mode,
+        min_nonempty_ratio=args.caption_guard_min_nonempty_ratio,
+        min_unique_ratio=args.caption_guard_min_unique_ratio,
+        max_top1_ratio=args.caption_guard_max_top1_ratio,
+        max_generic_top1_ratio=args.caption_guard_max_generic_top1_ratio,
+        top_k=args.caption_guard_topk,
+        context="eval",
+    )
     print(f"\nEvaluation videos: {len(eval_videos)}")
 
     # Build retrieval pool for batch-level TTA
@@ -905,6 +918,16 @@ def main():
             print(f"\nWARNING: --retrieval-pool-dir not set; using --data-dir as pool.",
                   file=sys.stderr)
         pool_entries = load_ucf101_video_list(pool_dir, max_videos=999999, seed=args.seed)
+        validate_caption_quality(
+            pool_entries,
+            mode=args.caption_guard_mode,
+            min_nonempty_ratio=args.caption_guard_min_nonempty_ratio,
+            min_unique_ratio=args.caption_guard_min_unique_ratio,
+            max_top1_ratio=args.caption_guard_max_top1_ratio,
+            max_generic_top1_ratio=args.caption_guard_max_generic_top1_ratio,
+            top_k=args.caption_guard_topk,
+            context="retrieval_pool",
+        )
         print(f"Retrieval pool: {len(pool_entries)} videos from {pool_dir}")
         pool_embeddings, st_model = build_retrieval_pool(pool_entries)
 

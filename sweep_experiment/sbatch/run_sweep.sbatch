@@ -119,6 +119,14 @@ CLIP_GATE_LATE_ONLY="${CLIP_GATE_LATE_ONLY:-}"
 CLIP_GATE_FAIL_OPEN="${CLIP_GATE_FAIL_OPEN:-1}"
 CLIP_GATE_LOG_ONLY="${CLIP_GATE_LOG_ONLY:-}"
 
+# Caption quality guard
+CAPTION_GUARD_MODE="${CAPTION_GUARD_MODE:-fail}"
+CAPTION_GUARD_MIN_NONEMPTY_RATIO="${CAPTION_GUARD_MIN_NONEMPTY_RATIO:-0.95}"
+CAPTION_GUARD_MIN_UNIQUE_RATIO="${CAPTION_GUARD_MIN_UNIQUE_RATIO:-0.10}"
+CAPTION_GUARD_MAX_TOP1_RATIO="${CAPTION_GUARD_MAX_TOP1_RATIO:-0.50}"
+CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO="${CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO:-0.20}"
+CAPTION_GUARD_TOPK="${CAPTION_GUARD_TOPK:-5}"
+
 # Norm-tuning specific
 NORM_STEPS="${NORM_STEPS:-20}"
 NORM_LR="${NORM_LR:-1e-3}"
@@ -154,6 +162,7 @@ echo "  Max videos     : ${MAX_VIDEOS}"
 echo "  Data dir       : ${DATA_DIR}"
 echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
+echo "  Caption guard  : mode=${CAPTION_GUARD_MODE}, min_nonempty=${CAPTION_GUARD_MIN_NONEMPTY_RATIO}, min_unique=${CAPTION_GUARD_MIN_UNIQUE_RATIO}, max_top1=${CAPTION_GUARD_MAX_TOP1_RATIO}"
 if [ -d "${PROJECT_ROOT}/.git" ]; then
   echo "  TTA repo commit: $(cd "${PROJECT_ROOT}" && git rev-parse --short HEAD)"
 fi
@@ -278,6 +287,14 @@ else
     CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-fail-closed"
 fi
 
+# Build caption guard flags (shared across methods)
+CAPTION_FLAGS="--caption-guard-mode ${CAPTION_GUARD_MODE}"
+CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-min-nonempty-ratio ${CAPTION_GUARD_MIN_NONEMPTY_RATIO}"
+CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-min-unique-ratio ${CAPTION_GUARD_MIN_UNIQUE_RATIO}"
+CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-max-top1-ratio ${CAPTION_GUARD_MAX_TOP1_RATIO}"
+CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-max-generic-top1-ratio ${CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO}"
+CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-topk ${CAPTION_GUARD_TOPK}"
+
 # ============================================================================
 # Dispatch to the appropriate method script
 # ============================================================================
@@ -326,6 +343,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -388,6 +406,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -426,6 +445,7 @@ case "${METHOD}" in
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -466,6 +486,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${DELTA_DIM_FLAG} \
         ${SAVE_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -495,6 +516,7 @@ case "${METHOD}" in
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -531,6 +553,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -561,6 +584,7 @@ case "${METHOD}" in
         --resolution "${RESOLUTION}" \
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
+        ${CAPTION_FLAGS} \
         ${ES_FLAGS}
     ;;
 
