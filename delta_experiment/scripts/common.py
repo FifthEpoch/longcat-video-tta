@@ -1466,6 +1466,132 @@ def add_caption_override_args(parser):
     return parser
 
 
+def add_feature_frame_guard_args(parser):
+    """Add guard mode for feature frame-budget validation."""
+    g = parser.add_argument_group("Feature frame budget guard")
+    g.add_argument(
+        "--feature-frame-guard-mode",
+        type=str,
+        default="fail",
+        choices=["fail", "warn", "off"],
+        help="How to handle incompatible TTA frame geometry for enabled features (ES/CLIP).",
+    )
+    return parser
+
+
+def _estimate_latent_len(num_pixel_frames: int, vae_t_scale: int = 4) -> int:
+    n = max(1, int(num_pixel_frames))
+    return 1 + (n - 1) // int(vae_t_scale)
+
+
+def estimate_tta_split_budget(
+    tta_total_frames: int,
+    tta_context_frames: int,
+    holdout_fraction: float = 0.25,
+    vae_t_scale: int = 4,
+) -> Dict[str, int]:
+    """Estimate latent split sizes used by split_tta_latents()."""
+    t_total = _estimate_latent_len(tta_total_frames, vae_t_scale=vae_t_scale)
+    t_ctx_req = _estimate_latent_len(tta_context_frames, vae_t_scale=vae_t_scale)
+
+    # Mirror split_tta_latents() behavior
+    t_cond = min(t_ctx_req, t_total - 1)
+    remainder = t_total - t_cond
+    t_val = max(1, int(remainder * float(holdout_fraction)))
+    t_train = remainder - t_val
+    if t_train < 1:
+        t_train = remainder
+        t_val = 0
+
+    return {
+        "total_latents": int(t_total),
+        "cond_latents": int(t_cond),
+        "train_latents": int(t_train),
+        "val_latents": int(t_val),
+    }
+
+
+def _estimate_clip_candidate_frames(
+    tta_total_frames: int,
+    sampling_mode: str,
+    late_fraction: float,
+) -> int:
+    window_len = max(1, int(tta_total_frames))
+    mode = (sampling_mode or "full_window").lower()
+    if mode == "late_only":
+        frac = min(max(float(late_fraction), 1e-6), 1.0)
+        return max(1, int(round(window_len * frac)))
+    return window_len
+
+
+def validate_tta_feature_budget(args, context: str = "") -> Dict[str, Any]:
+    """Validate that enabled ES/CLIP features have sufficient TTA frame budget."""
+    mode = str(getattr(args, "feature_frame_guard_mode", "fail")).lower()
+    if mode not in {"fail", "warn", "off"}:
+        mode = "fail"
+
+    info: Dict[str, Any] = {}
+    issues: List[str] = []
+    prefix = f"[feature_budget:{context}]" if context else "[feature_budget]"
+
+    tta_total = int(getattr(args, "tta_total_frames", 0) or 0)
+    tta_context = int(getattr(args, "tta_context_frames", 0) or 0)
+    holdout = float(getattr(args, "es_holdout_fraction", 0.25) or 0.25)
+    split = estimate_tta_split_budget(tta_total, tta_context, holdout_fraction=holdout)
+    info["split_budget"] = split
+
+    es_enabled = not bool(getattr(args, "es_disable", False))
+    if es_enabled and split["val_latents"] < 1:
+        issues.append(
+            "ES is enabled but estimated val_latents=0 "
+            f"(tta_total_frames={tta_total}, tta_context_frames={tta_context}, "
+            f"holdout={holdout}). Increase tta_total_frames and/or reduce tta_context_frames."
+        )
+
+    clip_enabled = bool(getattr(args, "clip_gate_enabled", False))
+    if clip_enabled:
+        sampling_mode = str(getattr(args, "clip_gate_sampling_mode", "full_window"))
+        if bool(getattr(args, "clip_gate_late_only", False)):
+            sampling_mode = "late_only"
+        late_fraction = float(getattr(args, "clip_gate_late_fraction", 0.4) or 0.4)
+        sample_frames = int(getattr(args, "clip_gate_sample_frames", 4) or 4)
+        backend = str(getattr(args, "clip_gate_backend", "clip") or "clip").lower()
+        required_frames = sample_frames if backend != "xclip" else 8
+        candidates = _estimate_clip_candidate_frames(
+            tta_total_frames=tta_total,
+            sampling_mode=sampling_mode,
+            late_fraction=late_fraction,
+        )
+        info["clip_candidates"] = int(candidates)
+        info["clip_required_frames"] = int(required_frames)
+        if candidates < required_frames:
+            issues.append(
+                "CLIP gate is enabled but candidate frames are fewer than required "
+                f"(candidates={candidates}, required={required_frames}, "
+                f"tta_total_frames={tta_total}, sampling_mode={sampling_mode}, "
+                f"late_fraction={late_fraction}). Increase tta_total_frames and/or adjust sampling."
+            )
+
+    if mode != "off":
+        print(
+            f"{prefix} split(total={split['total_latents']}, cond={split['cond_latents']}, "
+            f"train={split['train_latents']}, val={split['val_latents']})"
+        )
+        if "clip_candidates" in info:
+            print(
+                f"{prefix} clip_candidates={info['clip_candidates']} "
+                f"required={info['clip_required_frames']}"
+            )
+
+    if issues:
+        msg = f"{prefix} " + " | ".join(issues)
+        if mode == "warn":
+            print(f"WARNING: {msg}")
+        elif mode == "fail":
+            raise RuntimeError(msg)
+    return info
+
+
 def add_clip_gate_args(parser):
     """Add CLIP gate CLI flags used across all TTA runners."""
     g = parser.add_argument_group("CLIP gate")
@@ -1759,6 +1885,20 @@ def evaluate_clip_gate(
 
         if backend == "xclip":
             model, processor = _get_xclip_scorer(model_name, device)
+            required_frames = int(getattr(model.config, "num_frames", len(images)) or len(images))
+            if required_frames > 0 and len(images) != required_frames:
+                if len(images) < required_frames:
+                    pad_n = required_frames - len(images)
+                    images = images + [images[-1].copy() for _ in range(pad_n)]
+                    if info["clip_gate_sampled_frames"]:
+                        last_idx = info["clip_gate_sampled_frames"][-1]
+                        info["clip_gate_sampled_frames"].extend([last_idx] * pad_n)
+                else:
+                    keep = np.linspace(0, len(images) - 1, num=required_frames, dtype=int).tolist()
+                    images = [images[i] for i in keep]
+                    info["clip_gate_sampled_frames"] = [
+                        info["clip_gate_sampled_frames"][i] for i in keep
+                    ]
             # X-CLIP expects each video as a list of RGB frames, not a stacked
             # ndarray batch. Passing a stacked array can trigger PIL conversion
             # shape errors in some transformers versions.

@@ -52,11 +52,13 @@ from common import (
     add_tta_frame_args,
     add_caption_guard_args,
     add_caption_override_args,
+    add_feature_frame_guard_args,
     parse_speed_factors,
     split_tta_latents,
     evaluate_generation_metrics,
     validate_caption_quality,
     apply_fixed_caption,
+    validate_tta_feature_budget,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -363,6 +365,7 @@ def main():
     add_tta_frame_args(parser)
     add_caption_guard_args(parser)
     add_caption_override_args(parser)
+    add_feature_frame_guard_args(parser)
     args = parser.parse_args()
 
     if args.tta_total_frames is None:
@@ -378,6 +381,7 @@ def main():
         args.tta_total_frames = args.gen_start_frame
     if args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.tta_total_frames
+    validate_tta_feature_budget(args, context="film")
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():

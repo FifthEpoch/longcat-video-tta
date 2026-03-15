@@ -125,6 +125,7 @@ _KEY_TO_ENV = {
     "caption_guard_max_generic_top1_ratio": "CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO",
     "caption_guard_topk": "CAPTION_GUARD_TOPK",
     "fixed_caption": "FIXED_CAPTION",
+    "feature_frame_guard_mode": "FEATURE_FRAME_GUARD_MODE",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
 }

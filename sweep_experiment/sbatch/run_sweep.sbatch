@@ -127,6 +127,7 @@ CAPTION_GUARD_MAX_TOP1_RATIO="${CAPTION_GUARD_MAX_TOP1_RATIO:-0.50}"
 CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO="${CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO:-0.20}"
 CAPTION_GUARD_TOPK="${CAPTION_GUARD_TOPK:-5}"
 FIXED_CAPTION="${FIXED_CAPTION:-}"
+FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-fail}"
 
 # Norm-tuning specific
 NORM_STEPS="${NORM_STEPS:-20}"
@@ -165,6 +166,7 @@ echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
 echo "  Caption guard  : mode=${CAPTION_GUARD_MODE}, min_nonempty=${CAPTION_GUARD_MIN_NONEMPTY_RATIO}, min_unique=${CAPTION_GUARD_MIN_UNIQUE_RATIO}, max_top1=${CAPTION_GUARD_MAX_TOP1_RATIO}"
 echo "  Fixed caption  : ${FIXED_CAPTION:-<none>}"
+echo "  Feature guard  : ${FEATURE_FRAME_GUARD_MODE}"
 if [ -d "${PROJECT_ROOT}/.git" ]; then
   echo "  TTA repo commit: $(cd "${PROJECT_ROOT}" && git rev-parse --short HEAD)"
 fi
@@ -300,6 +302,7 @@ if [ -n "${FIXED_CAPTION}" ]; then
     FIXED_CAPTION_ESCAPED="$(printf '%q' "${FIXED_CAPTION}")"
     CAPTION_FLAGS="${CAPTION_FLAGS} --fixed-caption ${FIXED_CAPTION_ESCAPED}"
 fi
+FEATURE_FLAGS="--feature-frame-guard-mode ${FEATURE_FRAME_GUARD_MODE}"
 
 # ============================================================================
 # Dispatch to the appropriate method script
@@ -350,6 +353,7 @@ case "${METHOD}" in
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -413,6 +417,7 @@ case "${METHOD}" in
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -452,6 +457,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -493,6 +499,7 @@ case "${METHOD}" in
         ${DELTA_DIM_FLAG} \
         ${SAVE_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -523,6 +530,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${ES_FLAGS}
     ;;
@@ -560,6 +568,7 @@ case "${METHOD}" in
         ${SAVE_FLAGS} \
         ${EXTRA_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -591,6 +600,7 @@ case "${METHOD}" in
         --seed "${SEED}" \
         ${SAVE_FLAGS} \
         ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
         ${ES_FLAGS}
     ;;
 
