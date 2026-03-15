@@ -816,6 +816,7 @@ def load_ucf101_video_list(
     max_videos: int = 100,
     seed: int = 42,
     stratified: bool = True,
+    validate_decodable: bool = False,
 ) -> List[Dict]:
     """Load a list of video entries from a dataset directory.
 
@@ -863,6 +864,38 @@ def load_ucf101_video_list(
 
     if not video_entries:
         raise FileNotFoundError(f"No video files found in {data_dir}")
+
+    if validate_decodable:
+        valid_entries = []
+        bad_examples: List[str] = []
+        for entry in video_entries:
+            vp = entry.get("video_path")
+            ok = True
+            try:
+                import av
+                container = av.open(str(vp))
+                try:
+                    next(container.decode(video=0))
+                except StopIteration:
+                    ok = False
+                finally:
+                    container.close()
+            except Exception:
+                ok = False
+            if ok:
+                valid_entries.append(entry)
+            elif len(bad_examples) < 5:
+                bad_examples.append(str(vp))
+
+        dropped = len(video_entries) - len(valid_entries)
+        if dropped > 0:
+            print(f"  Dropped {dropped} undecodable videos during dataset load.")
+            for ex in bad_examples:
+                print(f"    bad_video: {ex}")
+        video_entries = valid_entries
+
+    if not video_entries:
+        raise FileNotFoundError(f"No decodable video files found in {data_dir}")
 
     rng = np.random.RandomState(seed)
     # Panda datasets should use plain random sampling to honor max_videos.
@@ -913,6 +946,7 @@ def load_panda70m_video_list(
     meta_path: Optional[str] = None,
     max_videos: int = 100,
     seed: int = 42,
+    validate_decodable: bool = False,
 ) -> List[Dict]:
     """Load video list from a Panda-70M style dataset."""
     data_dir = Path(data_dir)
@@ -940,6 +974,35 @@ def load_panda70m_video_list(
                 "caption": "A video clip",
                 "class_name": "panda70m",
             })
+
+    if validate_decodable:
+        valid_entries = []
+        bad_examples: List[str] = []
+        for entry in video_entries:
+            vp = entry.get("video_path")
+            ok = True
+            try:
+                import av
+                container = av.open(str(vp))
+                try:
+                    next(container.decode(video=0))
+                except StopIteration:
+                    ok = False
+                finally:
+                    container.close()
+            except Exception:
+                ok = False
+            if ok:
+                valid_entries.append(entry)
+            elif len(bad_examples) < 5:
+                bad_examples.append(str(vp))
+
+        dropped = len(video_entries) - len(valid_entries)
+        if dropped > 0:
+            print(f"  Dropped {dropped} undecodable Panda videos during dataset load.")
+            for ex in bad_examples:
+                print(f"    bad_video: {ex}")
+        video_entries = valid_entries
 
     rng = np.random.RandomState(seed)
     rng.shuffle(video_entries)

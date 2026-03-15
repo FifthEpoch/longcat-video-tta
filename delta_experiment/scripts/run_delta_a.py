@@ -468,7 +468,7 @@ def main():
     # Load evaluation videos (always from --data-dir, same 100 as usual)
     from common import load_ucf101_video_list
     eval_videos = load_ucf101_video_list(
-        args.data_dir, max_videos=args.max_videos, seed=args.seed
+        args.data_dir, max_videos=args.max_videos, seed=args.seed, validate_decodable=True
     )
     eval_videos = apply_fixed_caption(eval_videos, args.fixed_caption, context="eval")
     validate_caption_quality(
