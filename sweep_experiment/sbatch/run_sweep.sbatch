@@ -297,7 +297,8 @@ CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-max-top1-ratio ${CAPTION_GUARD_M
 CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-max-generic-top1-ratio ${CAPTION_GUARD_MAX_GENERIC_TOP1_RATIO}"
 CAPTION_FLAGS="${CAPTION_FLAGS} --caption-guard-topk ${CAPTION_GUARD_TOPK}"
 if [ -n "${FIXED_CAPTION}" ]; then
-    CAPTION_FLAGS="${CAPTION_FLAGS} --fixed-caption \"${FIXED_CAPTION}\""
+    FIXED_CAPTION_ESCAPED="$(printf '%q' "${FIXED_CAPTION}")"
+    CAPTION_FLAGS="${CAPTION_FLAGS} --fixed-caption ${FIXED_CAPTION_ESCAPED}"
 fi
 
 # ============================================================================

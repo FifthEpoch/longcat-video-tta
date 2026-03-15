@@ -1077,7 +1077,11 @@ def apply_fixed_caption(
     """Override all captions with one fixed caption string."""
     if fixed_caption is None:
         return video_entries
-    cap = str(fixed_caption)
+    cap = str(fixed_caption).strip()
+    # If callers accidentally pass shell-quoted literals (e.g. '"videos"'),
+    # normalize back to plain text to avoid silent caption drift.
+    if len(cap) >= 2 and cap[0] == cap[-1] and cap[0] in ("'", '"'):
+        cap = cap[1:-1]
     for row in video_entries:
         row["caption"] = cap
     print(f"[caption_override:{context}] applied fixed caption to {len(video_entries)} videos: {cap!r}")
