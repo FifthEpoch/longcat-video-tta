@@ -470,6 +470,11 @@ def finetune_lora_on_conditioning(
         return [p.data.clone() for p in lora_params]
 
     def _restore_from_snapshot(snapshot):
+        # Backward/interop safety: older callers may provide a state_dict-like
+        # snapshot while current flow stores an ordered list of tensors.
+        if isinstance(snapshot, dict):
+            _restore_lora_from_state(dit, snapshot)
+            return
         for p, saved in zip(lora_params, snapshot):
             p.data.copy_(saved)
 
@@ -1122,7 +1127,9 @@ def main():
                         )
 
                     def _save_fn():
-                        return {k: v.clone() for k, v in dit.state_dict().items() if "lora" in k}
+                        # Keep snapshot format consistent with finetune_lora_on_conditioning()
+                        # so restore_fn can always replay tensors in parameter order.
+                        return [p.data.clone() for p in _get_lora_params()]
 
                     early_stopper.setup(
                         model=dit,
