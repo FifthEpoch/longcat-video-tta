@@ -339,7 +339,9 @@ def estimate_mem(method: str) -> str:
     if method == "full":
         return "256G"
     elif method == "lora":
-        return "192G"
+        # LoRA runs can spike host RAM with ES/CLIP enabled (extra snapshots,
+        # validation passes, and feature buffers). Keep parity with template.
+        return "256G"
     else:  # delta_a, delta_b, delta_c, norm_tune, film
         return "192G"
 
