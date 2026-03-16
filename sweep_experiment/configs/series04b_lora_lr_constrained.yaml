@@ -1,0 +1,41 @@
+# Series 4b: LoRA -- Learning Rate Sweep (Constrained: last_2 blocks)
+# Goal: Find optimal LR for best-performing LoRA config
+#        (rank=1, alpha=0.05, last_2 blocks, 73K params).
+# Fixed: lora_rank=1, lora_alpha=0.05, target_blocks=last_2, steps=20
+# Swept: learning_rate
+
+method: lora
+series: 4
+series_name: lora_lr_sweep_constrained
+description: "LoRA LR sweep — constrained config (rank=1, last_2 blocks)"
+
+fixed:
+  lora_rank: 1
+  lora_alpha: 0.05
+  lora_target_blocks: "last_2"
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_modules: "qkv"
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: LC1
+    learning_rate: 5.0e-5
+  - run_id: LC2
+    learning_rate: 1.0e-4
+  - run_id: LC3
+    learning_rate: 2.0e-4
+  - run_id: LC4
+    learning_rate: 5.0e-4
+  - run_id: LC5
+    learning_rate: 1.0e-3

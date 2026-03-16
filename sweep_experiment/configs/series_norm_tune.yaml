@@ -1,0 +1,57 @@
+# Series 21: Norm Layer Tuning Sweep
+#
+# Inspired by TENT (Wang et al., ICLR 2021): freeze entire model and only
+# unfreeze the affine parameters (gamma/beta) of normalization layers.
+#
+# LongCat has three types of tunable norm layers per block:
+#   - pre_crs_attn_norm (LayerNorm, affine=True): weight + bias = 8,192 per block
+#   - attn.q_norm / k_norm (RMSNorm): weight = 128 each
+#   - cross_attn.q_norm / k_norm (RMSNorm): weight = 128 each
+#
+# Modes:
+#   cross_attn_norm: 48 blocks x 8,192 = 393,216 params
+#   qk_norm:         48 blocks x 512   = 24,576 params
+#   all_norm:         both              = 417,792 params
+
+method: norm_tune
+series: 21
+series_name: norm_tune_sweep
+description: "Norm layer tuning TTA (TENT-style) with LR and target sweep"
+
+fixed:
+  norm_steps: 20
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # ── cross_attn_norm LR sweep (~393K params) ──
+  - run_id: NT1
+    norm_target: cross_attn_norm
+    norm_lr: 1.0e-4
+  - run_id: NT2
+    norm_target: cross_attn_norm
+    norm_lr: 1.0e-3
+  - run_id: NT3
+    norm_target: cross_attn_norm
+    norm_lr: 1.0e-2
+
+  # ── qk_norm only (~24K params) ──
+  - run_id: NT4
+    norm_target: qk_norm
+    norm_lr: 1.0e-3
+
+  # ── all_norm (~418K params) ──
+  - run_id: NT5
+    norm_target: all_norm
+    norm_lr: 1.0e-3
+  - run_id: NT6
+    norm_target: all_norm
+    norm_lr: 1.0e-4
