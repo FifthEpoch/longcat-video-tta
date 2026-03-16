@@ -254,51 +254,83 @@ def submit_job(
 def estimate_time(method: str, run_overrides: dict, fixed: dict) -> str:
     """Estimate wall-clock time for a run based on method and step count."""
     merged = {**fixed, **{k: v for k, v in run_overrides.items() if k != "run_id"}}
+    es_enabled = not bool(merged.get("es_disable", False))
+    clip_enabled = bool(merged.get("clip_gate_enabled", False))
+    tta_total = merged.get("tta_total_frames")
+    num_cond = merged.get("num_cond_frames", 14)
+    try:
+        tta_total = int(tta_total if tta_total is not None else num_cond)
+    except Exception:
+        tta_total = int(num_cond)
 
     if method == "full":
         steps = merged.get("num_steps", 20)
         if steps <= 10:
-            return "12:00:00"
+            hours = 12
         elif steps <= 40:
-            return "18:00:00"
+            hours = 18
         else:
-            return "24:00:00"
+            hours = 24
+        if es_enabled:
+            hours += 6
+        if clip_enabled:
+            hours += 2
+        if tta_total > num_cond:
+            hours += 2
+        return f"{min(hours, 48):02d}:00:00"
     elif method == "lora":
         steps = merged.get("num_steps", 20)
         if steps <= 10:
-            return "10:00:00"
+            hours = 10
         elif steps <= 40:
-            return "18:00:00"
+            hours = 18
         else:
-            return "24:00:00"
+            hours = 24
+        if es_enabled:
+            hours += 6
+        if clip_enabled:
+            hours += 2
+        if tta_total > num_cond:
+            hours += 2
+        return f"{min(hours, 48):02d}:00:00"
     elif method in ("delta_a", "delta_b", "delta_c"):
         steps = merged.get("delta_steps", 20)
-        tta_total = merged.get("tta_total_frames", 32)
         extended_factor = max(1, tta_total / 32)
         if steps <= 20 and extended_factor <= 2:
-            return "8:00:00"
+            hours = 8
         elif steps <= 20 and extended_factor <= 5:
-            return "12:00:00"
+            hours = 12
         elif steps <= 50:
-            return "18:00:00"
+            hours = 18
         else:
-            return "24:00:00"
+            hours = 24
+        if es_enabled:
+            hours += 8
+        if clip_enabled:
+            hours += 2
+        return f"{min(hours, 48):02d}:00:00"
     elif method == "norm_tune":
         steps = merged.get("norm_steps", 20)
         if steps <= 20:
-            return "8:00:00"
+            hours = 8
         elif steps <= 50:
-            return "12:00:00"
+            hours = 12
         else:
-            return "18:00:00"
+            hours = 18
+        if es_enabled:
+            hours += 4
+        return f"{min(hours, 48):02d}:00:00"
     elif method == "film":
         steps = merged.get("film_steps", 20)
         if steps <= 20:
-            return "8:00:00"
+            hours = 8
         elif steps <= 50:
-            return "12:00:00"
+            hours = 12
         else:
-            return "18:00:00"
+            hours = 18
+        if es_enabled:
+            hours += 4
+        return f"{min(hours, 48):02d}:00:00"
     return "24:00:00"
 
 
