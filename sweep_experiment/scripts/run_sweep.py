@@ -126,6 +126,11 @@ _KEY_TO_ENV = {
     "caption_guard_topk": "CAPTION_GUARD_TOPK",
     "fixed_caption": "FIXED_CAPTION",
     "feature_frame_guard_mode": "FEATURE_FRAME_GUARD_MODE",
+    # Online distributional metrics
+    "compute_fvd": "COMPUTE_FVD",
+    "compute_fid": "COMPUTE_FID",
+    "compute_vbench": "COMPUTE_VBENCH",
+    "min_fvd_videos": "MIN_FVD_VIDEOS",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
 }
@@ -339,7 +344,9 @@ def estimate_mem(method: str) -> str:
     if method == "full":
         return "256G"
     elif method == "lora":
-        return "192G"
+        # LoRA runs can spike host RAM with ES/CLIP enabled (extra snapshots,
+        # validation passes, and feature buffers). Keep parity with template.
+        return "256G"
     else:  # delta_a, delta_b, delta_c, norm_tune, film
         return "192G"
 

@@ -129,6 +129,12 @@ CAPTION_GUARD_TOPK="${CAPTION_GUARD_TOPK:-5}"
 FIXED_CAPTION="${FIXED_CAPTION:-}"
 FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-fail}"
 
+# Online FVD / FID / VBench++
+COMPUTE_FVD="${COMPUTE_FVD:-0}"
+COMPUTE_FID="${COMPUTE_FID:-0}"
+COMPUTE_VBENCH="${COMPUTE_VBENCH:-0}"
+MIN_FVD_VIDEOS="${MIN_FVD_VIDEOS:-256}"
+
 # Norm-tuning specific
 NORM_STEPS="${NORM_STEPS:-20}"
 NORM_LR="${NORM_LR:-1e-3}"
@@ -167,6 +173,7 @@ echo "  Output dir     : ${OUTPUT_DIR}"
 echo "  Caption guard  : mode=${CAPTION_GUARD_MODE}, min_nonempty=${CAPTION_GUARD_MIN_NONEMPTY_RATIO}, min_unique=${CAPTION_GUARD_MIN_UNIQUE_RATIO}, max_top1=${CAPTION_GUARD_MAX_TOP1_RATIO}"
 echo "  Fixed caption  : ${FIXED_CAPTION:-<none>}"
 echo "  Feature guard  : ${FEATURE_FRAME_GUARD_MODE}"
+echo "  Online FVD     : ${COMPUTE_FVD}  FID: ${COMPUTE_FID}  VBench: ${COMPUTE_VBENCH}  min_videos: ${MIN_FVD_VIDEOS}"
 if [ -d "${PROJECT_ROOT}/.git" ]; then
   echo "  TTA repo commit: $(cd "${PROJECT_ROOT}" && git rev-parse --short HEAD)"
 fi
@@ -304,6 +311,12 @@ if [ -n "${FIXED_CAPTION}" ]; then
 fi
 FEATURE_FLAGS="--feature-frame-guard-mode ${FEATURE_FRAME_GUARD_MODE}"
 
+EVAL_FLAGS=""
+[ "${COMPUTE_FVD}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fvd"
+[ "${COMPUTE_FID}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fid"
+[ "${COMPUTE_VBENCH}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-vbench"
+EVAL_FLAGS="${EVAL_FLAGS} --min-fvd-videos ${MIN_FVD_VIDEOS}"
+
 # ============================================================================
 # Dispatch to the appropriate method script
 # ============================================================================
@@ -355,6 +368,7 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -419,6 +433,7 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -459,6 +474,7 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -501,6 +517,7 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -532,6 +549,7 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -569,6 +587,7 @@ case "${METHOD}" in
         ${EXTRA_FLAGS} \
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 
@@ -601,6 +620,7 @@ case "${METHOD}" in
         ${SAVE_FLAGS} \
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
+        ${EVAL_FLAGS} \
         ${ES_FLAGS}
     ;;
 

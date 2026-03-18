@@ -69,6 +69,9 @@ from common import (
     validate_caption_quality,
     apply_fixed_caption,
     validate_tta_feature_budget,
+    add_online_eval_args,
+    OnlineFrechetAccumulator,
+    finalize_online_eval,
 )
 from early_stopping import (
     AnchoredEarlyStopper,
@@ -403,6 +406,7 @@ def main():
     add_caption_guard_args(parser)
     add_caption_override_args(parser)
     add_feature_frame_guard_args(parser)
+    add_online_eval_args(parser)
     add_clip_gate_args(parser)
     args = parser.parse_args()
 
@@ -523,6 +527,10 @@ def main():
     # Results
     all_results = []
     videos_dir = os.path.join(args.output_dir, "videos")
+    fvd_accumulator = OnlineFrechetAccumulator(
+        device=args.device, compute_fid=args.compute_fid,
+        min_videos=args.min_fvd_videos,
+    ) if args.compute_fvd else None
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
@@ -810,6 +818,9 @@ def main():
                         device=args.device,
                     )
                     result.update(metrics)
+                    if fvd_accumulator is not None:
+                        fvd_accumulator.update(gen_frames, eval_entry["video_path"],
+                                               args.num_cond_frames, num_gen, args.gen_start_frame)
                     print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
                           f"SSIM={metrics['ssim']:.4f}, "
                           f"LPIPS={metrics['lpips']:.4f}")
@@ -848,6 +859,9 @@ def main():
                             device=args.device,
                         )
                         result.update(metrics)
+                        if fvd_accumulator is not None:
+                            fvd_accumulator.update(gen_frames, eval_entry["video_path"],
+                                                   args.num_cond_frames, num_gen, args.gen_start_frame)
                         print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
                               f"SSIM={metrics['ssim']:.4f}, "
                               f"LPIPS={metrics['lpips']:.4f}")
@@ -924,6 +938,7 @@ def main():
         "clip_gate_stats": summarize_clip_gate_stats(successful),
         "results": all_results,
     }
+    finalize_online_eval(fvd_accumulator, summary, videos_dir, args)
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
     print(f"\nResults saved to {args.output_dir}/summary.json")
     if successful:

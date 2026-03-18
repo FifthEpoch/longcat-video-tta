@@ -2118,3 +2118,383 @@ def torch_gc():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
+
+
+# ============================================================================
+# Online FVD / FID accumulator  (no video files required on disk)
+# ============================================================================
+
+_I3D_HF_REPO = "kiwhansong/DFoT"
+_I3D_HF_FILE = "metrics_models/i3d_torchscript.pt"
+_I3D_FEATURE_DIM = 400
+_FID_FEATURE_DIM = 2048
+_MIN_I3D_FRAMES = 9
+_DEFAULT_MIN_FVD_VIDEOS = 256
+_COV_EPS = 1e-6
+
+
+def _load_i3d_model(device: str) -> "torch.jit.ScriptModule":
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download(repo_id=_I3D_HF_REPO, filename=_I3D_HF_FILE)
+    model = torch.jit.load(path, map_location=device)
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
+    return model
+
+
+def _load_inception_v3_model(device: str) -> nn.Module:
+    from torchvision.models import inception_v3, Inception_V3_Weights
+
+    model = inception_v3(weights=Inception_V3_Weights.DEFAULT)
+    model.fc = nn.Identity()
+    model = model.to(device).eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
+    return model
+
+
+def _pad_for_i3d(x: torch.Tensor) -> torch.Tensor:
+    """Symmetric first/last-frame padding to >= 9 frames (DFoT protocol)."""
+    T = x.shape[1]
+    if T < _MIN_I3D_FRAMES:
+        pad = (10 - T) // 2
+        x = torch.cat(
+            [
+                x[:, 0:1].expand(-1, pad, -1, -1, -1).clone(),
+                x,
+                x[:, -1:].expand(-1, pad, -1, -1, -1).clone(),
+            ],
+            dim=1,
+        )
+    return x
+
+
+def _frames_np_to_i3d_tensor(
+    frames_np: np.ndarray, size: int = 224,
+) -> torch.Tensor:
+    """Convert [T, H, W, 3] float32 in [0,1] -> [1, T, C, H, W] tensor."""
+    from torchvision.transforms import functional as TF
+    from PIL import Image
+
+    tensors = []
+    for i in range(frames_np.shape[0]):
+        img = Image.fromarray(
+            (np.clip(frames_np[i], 0, 1) * 255).astype(np.uint8)
+        )
+        img = TF.resize(img, size, interpolation=TF.InterpolationMode.BILINEAR)
+        img = TF.center_crop(img, size)
+        tensors.append(TF.to_tensor(img))
+    return torch.stack(tensors, dim=0).unsqueeze(0)  # [1, T, C, H, W]
+
+
+def _compute_frechet_distance(
+    sum_a: np.ndarray,
+    cov_sum_a: np.ndarray,
+    n_a: int,
+    sum_b: np.ndarray,
+    cov_sum_b: np.ndarray,
+    n_b: int,
+    eps: float = _COV_EPS,
+) -> float:
+    """Frechet distance from running sums (float64)."""
+    from scipy.linalg import sqrtm
+
+    mu_a = sum_a / n_a
+    mu_b = sum_b / n_b
+    sigma_a = cov_sum_a / n_a - np.outer(mu_a, mu_a)
+    sigma_b = cov_sum_b / n_b - np.outer(mu_b, mu_b)
+
+    sigma_a += eps * np.eye(sigma_a.shape[0])
+    sigma_b += eps * np.eye(sigma_b.shape[0])
+
+    diff = mu_a - mu_b
+    covmean, _ = sqrtm(sigma_a @ sigma_b, disp=False)
+    if np.iscomplexobj(covmean):
+        covmean = covmean.real
+
+    return float(diff @ diff + np.trace(sigma_a + sigma_b - 2 * covmean))
+
+
+class OnlineFrechetAccumulator:
+    """Incrementally accumulate I3D (and optionally InceptionV3) features
+    for online FVD / FID computation.  No video files on disk required."""
+
+    def __init__(
+        self,
+        device: str = "cuda",
+        compute_fid: bool = False,
+        min_videos: int = _DEFAULT_MIN_FVD_VIDEOS,
+    ):
+        self.device = device
+        self.compute_fid = compute_fid
+        self.min_videos = min_videos
+
+        self._i3d: Optional["torch.jit.ScriptModule"] = None
+        self._inception: Optional[nn.Module] = None
+
+        d = _I3D_FEATURE_DIM
+        self._gen_sum = np.zeros(d, dtype=np.float64)
+        self._gen_cov = np.zeros((d, d), dtype=np.float64)
+        self._ref_sum = np.zeros(d, dtype=np.float64)
+        self._ref_cov = np.zeros((d, d), dtype=np.float64)
+        self._count = 0
+
+        if compute_fid:
+            fd = _FID_FEATURE_DIM
+            self._fid_gen_sum = np.zeros(fd, dtype=np.float64)
+            self._fid_gen_cov = np.zeros((fd, fd), dtype=np.float64)
+            self._fid_ref_sum = np.zeros(fd, dtype=np.float64)
+            self._fid_ref_cov = np.zeros((fd, fd), dtype=np.float64)
+            self._fid_gen_frames = 0
+            self._fid_ref_frames = 0
+
+    def _ensure_models(self):
+        if self._i3d is None:
+            print("[FVD] Loading I3D (Kinetics-400 TorchScript)...")
+            self._i3d = _load_i3d_model(self.device)
+        if self.compute_fid and self._inception is None:
+            print("[FID] Loading InceptionV3...")
+            self._inception = _load_inception_v3_model(self.device)
+
+    def _i3d_features(self, clip: torch.Tensor) -> np.ndarray:
+        """clip: [1, T, C, H, W] in [0, 1] -> 400-dim feature (float64)."""
+        clip = _pad_for_i3d(clip.to(self.device))
+        clip = torch.clamp(2.0 * clip - 1.0, -1.0, 1.0)
+        clip = clip.permute(0, 2, 1, 3, 4).contiguous()
+        with torch.no_grad():
+            feats = self._i3d(clip, rescale=False, resize=True, return_features=True)
+        return feats.cpu().to(torch.float64).numpy().squeeze(0)  # (400,)
+
+    def _inception_features(self, frames_np: np.ndarray) -> np.ndarray:
+        """frames_np: [T, H, W, 3] in [0,1] -> [T, 2048] float64."""
+        from torchvision.transforms import functional as TF
+        from PIL import Image
+
+        feats_list = []
+        with torch.no_grad():
+            for i in range(frames_np.shape[0]):
+                img = Image.fromarray(
+                    (np.clip(frames_np[i], 0, 1) * 255).astype(np.uint8)
+                )
+                img = TF.resize(img, 299, interpolation=TF.InterpolationMode.BILINEAR)
+                img = TF.center_crop(img, 299)
+                t = TF.normalize(
+                    TF.to_tensor(img),
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ).unsqueeze(0).to(self.device)
+                f = self._inception(t).cpu().to(torch.float64).numpy()  # (1, 2048)
+                feats_list.append(f)
+        return np.concatenate(feats_list, axis=0)  # (T, 2048)
+
+    @staticmethod
+    def _accumulate(
+        feats: np.ndarray, feat_sum: np.ndarray, cov_sum: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Add a single feature vector (or rows of a matrix) to running stats."""
+        if feats.ndim == 1:
+            feat_sum += feats
+            cov_sum += np.outer(feats, feats)
+        else:
+            feat_sum += feats.sum(axis=0)
+            cov_sum += feats.T @ feats
+        return feat_sum, cov_sum
+
+    def update(
+        self,
+        gen_output: np.ndarray,
+        video_path: str,
+        num_cond_frames: int,
+        num_gen_frames: int,
+        gen_start_frame: int,
+    ):
+        """Feed one video's generated output + GT source for feature accumulation.
+
+        Parameters match ``evaluate_generation_metrics`` so callers can pass
+        the same arguments to both functions.
+        """
+        import av
+        from PIL import Image
+
+        self._ensure_models()
+
+        gen_frames = gen_output[num_cond_frames:num_cond_frames + num_gen_frames]
+        if gen_frames.shape[0] == 0:
+            return
+
+        try:
+            container = av.open(video_path)
+            gt_pil: list = []
+            decoded = 0
+            for frame in container.decode(video=0):
+                if decoded < gen_start_frame:
+                    decoded += 1
+                    continue
+                if len(gt_pil) >= num_gen_frames:
+                    break
+                gt_pil.append(frame.to_image())
+                decoded += 1
+            container.close()
+        except Exception:
+            return
+
+        if len(gt_pil) == 0:
+            return
+
+        out_h, out_w = gen_frames.shape[1], gen_frames.shape[2]
+        n_compare = min(len(gen_frames), len(gt_pil))
+        gt_np = np.stack([
+            np.array(img.resize((out_w, out_h), Image.LANCZOS)) / 255.0
+            for img in gt_pil[:n_compare]
+        ], axis=0).astype(np.float32)
+        gen_np = gen_frames[:n_compare].astype(np.float32)
+
+        gen_clip = _frames_np_to_i3d_tensor(gen_np)
+        ref_clip = _frames_np_to_i3d_tensor(gt_np)
+
+        gen_feat = self._i3d_features(gen_clip)
+        ref_feat = self._i3d_features(ref_clip)
+
+        self._gen_sum, self._gen_cov = self._accumulate(
+            gen_feat, self._gen_sum, self._gen_cov,
+        )
+        self._ref_sum, self._ref_cov = self._accumulate(
+            ref_feat, self._ref_sum, self._ref_cov,
+        )
+        self._count += 1
+
+        if self.compute_fid and self._inception is not None:
+            gen_fid = self._inception_features(gen_np)
+            ref_fid = self._inception_features(gt_np)
+            self._fid_gen_sum, self._fid_gen_cov = self._accumulate(
+                gen_fid, self._fid_gen_sum, self._fid_gen_cov,
+            )
+            self._fid_ref_sum, self._fid_ref_cov = self._accumulate(
+                ref_fid, self._fid_ref_sum, self._fid_ref_cov,
+            )
+            self._fid_gen_frames += gen_fid.shape[0]
+            self._fid_ref_frames += ref_fid.shape[0]
+
+    def compute(self) -> Dict[str, Any]:
+        """Return FVD (and FID) metrics from accumulated statistics."""
+        result: Dict[str, Any] = {}
+
+        if self._count < 2:
+            result["fvd"] = None
+            result["fvd_num_videos"] = self._count
+            result["fvd_error"] = "Need at least 2 videos for FVD"
+            return result
+
+        fvd = _compute_frechet_distance(
+            self._gen_sum, self._gen_cov, self._count,
+            self._ref_sum, self._ref_cov, self._count,
+        )
+        result["fvd"] = round(fvd, 6)
+        result["fvd_num_videos"] = self._count
+        result["fvd_feature_extractor"] = "i3d_kinetics400_torchscript"
+        result["fvd_feature_dim"] = _I3D_FEATURE_DIM
+
+        if self._count < self.min_videos:
+            result["fvd_sample_size_warning"] = (
+                f"FVD computed with {self._count} videos "
+                f"(recommended >= {self.min_videos}). "
+                f"Covariance estimate may be unreliable."
+            )
+
+        if self.compute_fid and self._fid_gen_frames >= 2:
+            fid = _compute_frechet_distance(
+                self._fid_gen_sum, self._fid_gen_cov, self._fid_gen_frames,
+                self._fid_ref_sum, self._fid_ref_cov, self._fid_ref_frames,
+            )
+            result["fid"] = round(fid, 6)
+            result["fid_num_frames_gen"] = self._fid_gen_frames
+            result["fid_num_frames_ref"] = self._fid_ref_frames
+            result["fid_feature_extractor"] = "inception_v3_imagenet"
+            result["fid_feature_dim"] = _FID_FEATURE_DIM
+
+        return result
+
+
+# ============================================================================
+# Online eval CLI args + finalization
+# ============================================================================
+
+def add_online_eval_args(parser: "argparse.ArgumentParser"):
+    """Add --compute-fvd, --compute-fid, --compute-vbench, --min-fvd-videos."""
+    grp = parser.add_argument_group("Online distributional metrics")
+    grp.add_argument("--compute-fvd", action="store_true",
+                     help="Compute FVD online (no saved videos needed)")
+    grp.add_argument("--compute-fid", action="store_true",
+                     help="Compute per-frame FID online (requires --compute-fvd)")
+    grp.add_argument("--compute-vbench", action="store_true",
+                     help="Run VBench++ at end of job (requires saved videos)")
+    grp.add_argument("--min-fvd-videos", type=int,
+                     default=_DEFAULT_MIN_FVD_VIDEOS,
+                     help="Minimum videos before FVD is considered reliable "
+                          f"(default: {_DEFAULT_MIN_FVD_VIDEOS})")
+
+
+def finalize_online_eval(
+    accumulator: Optional[OnlineFrechetAccumulator],
+    summary: dict,
+    videos_dir: str,
+    args,
+):
+    """Compute FVD/FID from the accumulator and optionally run VBench++.
+
+    Merges results into *summary* in-place so they are saved alongside
+    existing PSNR / SSIM / LPIPS metrics.
+    """
+    if accumulator is not None:
+        print("\n[Online eval] Computing FVD/FID from accumulated features...")
+        fvd_results = accumulator.compute()
+        summary.update(fvd_results)
+        for k, v in fvd_results.items():
+            print(f"  {k}: {v}")
+
+    vbench_skipped = True
+    if getattr(args, "compute_vbench", False):
+        mp4s = sorted(Path(videos_dir).glob("*.mp4")) if os.path.isdir(videos_dir) else []
+        if mp4s:
+            print(f"\n[VBench++] Running on {len(mp4s)} videos in {videos_dir}...")
+            try:
+                from vbench import VBench
+
+                _VBENCH_DIMS = [
+                    "subject_consistency",
+                    "motion_smoothness",
+                    "temporal_flickering",
+                    "aesthetic_quality",
+                    "imaging_quality",
+                ]
+                vb = VBench(device="cuda", full_json_dir=None)
+                vbench_scores: Dict[str, Any] = {}
+                video_paths = [str(p) for p in mp4s]
+                for dim in _VBENCH_DIMS:
+                    try:
+                        score = vb.evaluate(
+                            videos_path=video_paths,
+                            name=dim,
+                            dimension_list=[dim],
+                            mode="i2v",
+                        )
+                        vbench_scores[dim] = (
+                            float(score) if isinstance(score, (int, float)) else score
+                        )
+                        print(f"  {dim}: {vbench_scores[dim]}")
+                    except Exception as exc:
+                        print(f"  WARNING: VBench++ {dim} failed: {exc}",
+                              file=sys.stderr)
+                        vbench_scores[dim] = None
+                summary["vbench"] = vbench_scores
+                vbench_skipped = False
+            except ImportError:
+                print("  WARNING: vbench not installed, skipping VBench++",
+                      file=sys.stderr)
+        else:
+            print("[VBench++] No saved videos found; skipping "
+                  "(requires NO_SAVE_VIDEOS=0).")
+
+    summary["vbench_skipped"] = vbench_skipped
