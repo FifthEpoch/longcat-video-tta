@@ -40,12 +40,29 @@ case "${EVAL_MODE}" in
     GEN_DIR="${GEN_DIR:?ERROR: GEN_DIR required for FVD}"
     REF_DIR="${REF_DIR:?ERROR: REF_DIR required for FVD}"
     OUTPUT="${OUTPUT:-${GEN_DIR}/fvd_score.json}"
+    NUM_FRAMES="${NUM_FRAMES:-16}"
+    BATCH_SIZE="${BATCH_SIZE:-4}"
+    MIN_VIDEOS="${MIN_VIDEOS:-256}"
+    FORCE_FVD="${FORCE_FVD:-0}"
+    COMPUTE_FID="${COMPUTE_FID:-0}"
+    SELF_CHECK="${SELF_CHECK:-0}"
+
+    EXTRA_FLAGS=""
+    [ "${FORCE_FVD}" = "1" ] && EXTRA_FLAGS="${EXTRA_FLAGS} --force"
+    [ "${COMPUTE_FID}" = "1" ] && EXTRA_FLAGS="${EXTRA_FLAGS} --compute-fid"
+    [ "${SELF_CHECK}" = "1" ] && EXTRA_FLAGS="${EXTRA_FLAGS} --self-check"
 
     echo "Computing FVD: ${GEN_DIR} vs ${REF_DIR}"
+    echo "  num_frames=${NUM_FRAMES} batch_size=${BATCH_SIZE} min_videos=${MIN_VIDEOS}"
+    echo "  force=${FORCE_FVD} compute_fid=${COMPUTE_FID} self_check=${SELF_CHECK}"
     python sweep_experiment/scripts/eval_fvd.py \
         --gen-dir "${GEN_DIR}" \
         --ref-dir "${REF_DIR}" \
-        --output "${OUTPUT}"
+        --num-frames "${NUM_FRAMES}" \
+        --batch-size "${BATCH_SIZE}" \
+        --min-videos "${MIN_VIDEOS}" \
+        --output "${OUTPUT}" \
+        ${EXTRA_FLAGS}
     ;;
 
   vbench)
