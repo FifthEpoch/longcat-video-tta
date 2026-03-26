@@ -1,0 +1,31 @@
+# Series 12: Delta-C -- Iteration Sweep
+# Goal: Overfitting dynamics for the 16-param method.
+# Fixed: delta_lr=1e-2 (best from DC1)
+# Swept: delta_steps
+
+method: delta_c
+series: 12
+series_name: delta_c_iter_sweep
+description: "Delta-C iteration sweep at best LR"
+
+fixed:
+  delta_lr: 1.0e-2
+  delta_mode: per_channel
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: DC6
+    delta_steps: 5
+  - run_id: DC7
+    delta_steps: 10
+  - run_id: DC8
+    delta_steps: 40
+  - run_id: DC9
+    delta_steps: 80

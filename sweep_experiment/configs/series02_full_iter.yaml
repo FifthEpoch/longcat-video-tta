@@ -1,0 +1,38 @@
+# Series 2: Full-Model TTA -- Iteration Sweep
+# Goal: Map loss curve over training steps at best LR from Series 1.
+#        Determine overfitting onset and optimal step count.
+# Fixed: learning_rate=1e-5 (best from Series 1, F3)
+# Swept: num_steps, warmup_steps
+
+method: full
+series: 2
+series_name: full_iter_sweep
+description: "Full-model TTA iteration sweep at best LR"
+
+fixed:
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  optimizer: sgd
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: F6
+    num_steps: 5
+    warmup_steps: 1
+  - run_id: F7
+    num_steps: 10
+    warmup_steps: 2
+  - run_id: F8
+    num_steps: 40
+    warmup_steps: 5
+  - run_id: F9
+    num_steps: 80
+    warmup_steps: 10

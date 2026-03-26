@@ -1,0 +1,46 @@
+# Series 31: Full-Model Long-Train on 100 Videos
+#
+# Goal: Confirm FLT1's +0.78 dB improvement at full scale (100 videos)
+# and test whether higher LR converges to the same peak faster.
+#
+# FLT1 (30 vids): PSNR=24.56, baseline=23.78 → +0.78 dB
+#   - 30/30 stopped early, best_step mean=20.2, range 1-90
+#   - Train time: 168.4 ± 121.7s (high variance due to variable ES)
+#
+# F4 (lr=5e-5, 20 steps): PSNR=22.05, best_step=19.5, 1/99 stopped.
+# At 5x the LR, the method might converge faster but risk more overfitting.
+# ES should handle this.
+
+method: full
+series: 31
+series_name: full_long_train_100v
+description: "Full-model TTA long-train on 100 videos with ES"
+
+fixed:
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  optimizer: sgd
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 10
+  es_noise_draws: 2
+  es_anchor_sigmas: "0.25,0.5,0.75"
+  es_holdout_fraction: 0.25
+
+sweep:
+  - run_id: FLT2
+    learning_rate: 1.0e-5
+    num_steps: 500
+    warmup_steps: 10
+
+  - run_id: FLT3
+    learning_rate: 5.0e-5
+    num_steps: 200
+    warmup_steps: 5

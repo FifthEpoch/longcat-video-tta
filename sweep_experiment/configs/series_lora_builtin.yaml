@@ -1,0 +1,49 @@
+# Built-in LoRA Comparison Sweep
+#
+# Purpose: Rule out implementation bugs in our custom LoRA by directly
+# comparing against LongCat-Video's native LoRAModule + forward-hook system.
+#
+# Key difference from custom LoRA:
+#   - Native uses n_separate=3 for fused qkv (independent Q/K/V LoRA heads)
+#   - Native uses n_separate=2 for fused kv_linear
+#   - Native uses forward hooks instead of module replacement
+#   - Same kaiming/zero init, same alpha/rank scaling
+#
+# LN1 matches L1 (original LoRA sweep best: all blocks, rank=1, qkv+proj)
+# LN2 matches LA1 (Option A best candidate: last_4, qkv, alpha=0.1)
+
+method: lora
+series: 15
+series_name: lora_builtin_comparison
+description: "Built-in LoRA vs custom LoRA implementation comparison"
+
+fixed:
+  lora_rank: 1
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_ffn: false
+  use_builtin_lora: true
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  # Match L1: all blocks, rank=1, alpha=2, qkv+proj
+  - run_id: LN1
+    lora_target_blocks: "all"
+    target_modules: "qkv,proj"
+    lora_alpha: 2.0
+
+  # Match LA1: last_4, rank=1, alpha=0.1, qkv-only
+  - run_id: LN2
+    lora_target_blocks: "last_4"
+    target_modules: "qkv"
+    lora_alpha: 0.1

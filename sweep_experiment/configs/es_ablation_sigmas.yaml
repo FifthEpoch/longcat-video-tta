@@ -1,0 +1,35 @@
+# Series 16: Early Stopping Ablation -- Anchor Sigmas
+# Goal: Vary the noise levels (sigmas) used for early stopping evaluation.
+# Fixed: Full-model best config (lr=1e-5, steps=20, warmup=3, optimizer=sgd)
+# Swept: es_anchor_sigmas
+
+method: full
+series: 16
+series_name: es_ablation_sigmas
+description: "Early stopping ablation: anchor sigmas sweep"
+
+fixed:
+  learning_rate: 1.0e-5
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  optimizer: sgd
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: ES_S1
+    es_anchor_sigmas: "0.5"
+  - run_id: ES_S2
+    es_anchor_sigmas: "0.25,0.75"
+  - run_id: ES_S3
+    es_anchor_sigmas: "0.25,0.5,0.75"
+  - run_id: ES_S4
+    es_anchor_sigmas: "0.1,0.3,0.5,0.7,0.9"

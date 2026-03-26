@@ -1,0 +1,62 @@
+# Series 30: AdaSteer-1 Long-Train with Early Stopping
+#
+# Goal: Demonstrate that AdaSteer-1 continues improving beyond 20 steps
+# at lower learning rates, and that early stopping catches the peak.
+#
+# Previous results show:
+#   DA1 (lr=1e-3, 20 steps) = 22.23, best_step=19.2 → hasn't converged
+#   DA2 (lr=5e-3, 20 steps) = 22.38, best_step=20.0 → at max
+#   DAO1 (24 cond, lr=5e-3, 20 steps) = 22.97, best_step=19.8 → at max
+#
+# DALT1 (lr=5e-3, 200 steps, ES p=10) failed catastrophically (11.22 dB)
+# because the high LR overshoots too fast for ES to detect. Lower LRs
+# (1e-3, 2.5e-3) produce gradual overfitting that ES can reliably catch.
+#
+# ALES1, ALES3 are highest priority (lowest LR, most room to improve).
+
+method: delta_a
+series: 30
+series_name: adasteer_long_train_es
+description: "AdaSteer-1 long-train with lower LR and aggressive ES"
+
+fixed:
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+  es_noise_draws: 2
+  es_anchor_sigmas: "0.25,0.5,0.75"
+  es_holdout_fraction: 0.25
+
+sweep:
+  # ── 14 conditioning frames ──
+  - run_id: ALES1
+    delta_lr: 1.0e-3
+    delta_steps: 200
+    num_cond_frames: 14
+
+  - run_id: ALES2
+    delta_lr: 2.5e-3
+    delta_steps: 100
+    num_cond_frames: 14
+
+  # ── 24 conditioning frames (more training data) ──
+  - run_id: ALES3
+    delta_lr: 1.0e-3
+    delta_steps: 200
+    num_cond_frames: 24
+
+  - run_id: ALES4
+    delta_lr: 2.5e-3
+    delta_steps: 100
+    num_cond_frames: 24
+
+  - run_id: ALES5
+    delta_lr: 5.0e-3
+    delta_steps: 100
+    num_cond_frames: 24
