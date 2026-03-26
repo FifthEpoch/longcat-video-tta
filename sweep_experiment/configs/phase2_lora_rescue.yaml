@@ -1,0 +1,55 @@
+# Phase 2: LoRA -- Rescue Sweep
+# Goal: Fix LoRA's catastrophic overfitting (mean dPSNR = -11.8 dB).
+# Phase 1 showed: rank=8, all blocks, LR=2e-4 -> 99.8% videos degraded.
+# Strategy: Drastically reduce LR (20-200x), lower rank, target last_4 blocks only.
+# Fixed: steps=30, ES ON, last_4 blocks, FVD/FID ON, 500 videos
+
+method: lora
+series: phase2
+series_name: phase2_lora_rescue
+description: "Phase 2: LoRA rescue sweep (reduced LR, rank, blocks)"
+
+fixed:
+  num_steps: 30
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  lora_target_blocks: last_4
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 500
+  es_check_every: 2
+  es_patience: 3
+  compute_fvd: true
+  compute_fid: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: LORA_R4_LR1e5
+    lora_rank: 4
+    lora_alpha: 8
+    learning_rate: 1.0e-5
+  - run_id: LORA_R4_LR5e6
+    lora_rank: 4
+    lora_alpha: 8
+    learning_rate: 5.0e-6
+  - run_id: LORA_R4_LR1e6
+    lora_rank: 4
+    lora_alpha: 8
+    learning_rate: 1.0e-6
+  - run_id: LORA_R2_LR1e5
+    lora_rank: 2
+    lora_alpha: 4
+    learning_rate: 1.0e-5
+  - run_id: LORA_R2_LR5e6
+    lora_rank: 2
+    lora_alpha: 4
+    learning_rate: 5.0e-6

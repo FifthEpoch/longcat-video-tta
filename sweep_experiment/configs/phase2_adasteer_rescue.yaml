@@ -1,0 +1,43 @@
+# Phase 2: AdaSteer (Delta-B) -- Rescue Sweep
+# Goal: Fix AdaSteer's systematic degradation (mean dPSNR = -1.87 dB, 86% degraded).
+# Phase 1 showed: LR=0.01, 50 steps -> delta norms uniform (~10.2), no adaptation
+#   to individual video content. ES was OFF in the ES+CLIP variant.
+# Strategy: Reduce LR by 10-200x, enable ES properly, keep last_4 blocks.
+# Fixed: steps=30, ES ON (check_every=2, patience=3), FVD/FID ON, 500 videos
+
+method: delta_b
+series: phase2
+series_name: phase2_adasteer_rescue
+description: "Phase 2: AdaSteer rescue sweep (reduced LR 1e-3 to 5e-5)"
+
+fixed:
+  delta_steps: 30
+  delta_target_blocks: last_4
+  num_groups: 4
+  delta_target: timestep
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 500
+  es_check_every: 2
+  es_patience: 3
+  compute_fvd: true
+  compute_fid: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: ADA_LR1e3
+    delta_lr: 1.0e-3
+  - run_id: ADA_LR5e4
+    delta_lr: 5.0e-4
+  - run_id: ADA_LR1e4
+    delta_lr: 1.0e-4
+  - run_id: ADA_LR5e5
+    delta_lr: 5.0e-5
