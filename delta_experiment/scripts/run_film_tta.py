@@ -679,20 +679,4 @@ def main():
         "num_groups": args.num_groups,
         "film_steps": args.film_steps,
         "film_lr": args.film_lr,
-        "num_cond_frames": args.num_cond_frames,
-        "num_frames": args.num_frames,
-        "gen_start_frame": args.gen_start_frame,
-        "trainable_params": trainable,
-        "num_videos": len(all_results),
-        "num_successful": len(successful),
-        "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,
-        "results": all_results,
-    }
-    aggregate_quality_metrics(summary)
-    finalize_online_eval(fvd_accumulator, summary, videos_dir, args)
-    save_results(summary, os.path.join(args.output_dir, "summary.json"))
-    print(f"\nResults saved to {args.output_dir}/summary.json")
-
-
-if __name__ == "__main__":
-    main()
+        "num_cond_frames": args.num_c

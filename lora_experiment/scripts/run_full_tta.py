@@ -917,19 +917,4 @@ def main():
     print("=" * 70)
     print(f"Successful: {len(successful)}/{len(all_results)}")
     if successful:
-        print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")
-        print(f"Avg ES check time : {summary['avg_es_check_time']:.2f}s")
-        print(f"Avg train time: {summary['avg_train_time']:.1f}s")
-        print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
-        print(f"Avg total time: {summary['avg_total_time']:.1f}s")
-        avg_loss = summary['avg_final_loss']
-        if avg_loss is not None and not np.isnan(avg_loss):
-            print(f"Avg final loss: {avg_loss:.4f}")
-        else:
-            print("Avg final loss: N/A (0 training steps)")
-    print(f"Results saved to: {args.output_dir}")
-    print("=" * 70)
-
-
-if __name__ == "__main__":
-    main()
+        print(f"Avg CLIP gate time: {summary['

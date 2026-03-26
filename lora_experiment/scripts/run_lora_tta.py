@@ -1324,19 +1324,4 @@ def main():
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
 
     print("\n" + "=" * 70)
-    print("LoRA TTA Complete!")
-    print("=" * 70)
-    print(f"Successful: {len(successful)}/{len(all_results)}")
-    if successful:
-        print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")
-        print(f"Avg ES check time : {summary['avg_es_check_time']:.2f}s")
-        print(f"Avg train time: {summary['avg_train_time']:.1f}s")
-        print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
-        print(f"Avg total time: {summary['avg_total_time']:.1f}s")
-        print(f"Avg final loss: {summary['avg_final_loss']:.4f}")
-    print(f"Results saved to: {args.output_dir}")
-    print("=" * 70)
-
-
-if __name__ == "__main__":
-    main()
+    print("LoR
