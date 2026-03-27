@@ -912,9 +912,27 @@ def main():
     finalize_online_eval(fvd_accumulator, summary, videos_dir, args)
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
 
+    n_ok = len(successful)
+    n_all = len(all_results)
     print("\n" + "=" * 70)
     print("Full-Model TTA Complete!")
     print("=" * 70)
-    print(f"Successful: {len(successful)}/{len(all_results)}")
+    print("Successful: %d/%d" % (n_ok, n_all))
     if successful:
-        print(f"Avg CLIP gate time: {summary['
+        clip_t = summary.get("avg_clip_gate_eval_time", 0)
+        es_t = summary.get("avg_es_check_time", 0)
+        train_t = summary.get("avg_train_time", 0)
+        gen_t = summary.get("avg_gen_time", 0)
+        total_t = summary.get("avg_total_time", 0)
+        avg_loss = summary.get("avg_final_loss")
+        print("Avg CLIP gate time: %.2fs" % clip_t)
+        print("Avg ES check time : %.2fs" % es_t)
+        print("Avg train time: %.1fs" % train_t)
+        print("Avg gen time: %.1fs" % gen_t)
+        print("Avg total time: %.1fs" % total_t)
+        if avg_loss is not None and not np.isnan(avg_loss):
+            print("Avg final loss: %.4f" % avg_loss)
+        else:
+            print("Avg final loss: N/A (0 training steps)")
+    print("Results saved to: %s" % args.output_dir)
+    print("=" * 70)

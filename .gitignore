@@ -44,3 +44,9 @@ sweep_experiment/docs/
 
 all_results.json
 loss_curves.json
+
+# Comparison methods (cloned repos + results)
+comparison_methods/PVDM/
+comparison_methods/DFoT/
+comparison_methods/results/
+comparison_methods/slurm_log/
