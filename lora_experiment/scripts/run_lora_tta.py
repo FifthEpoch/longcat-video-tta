@@ -1347,3 +1347,6 @@ def main():
             print("Avg final loss: N/A")
     print("Results saved to: %s" % args.output_dir)
     print("=" * 70)
+
+if __name__ == "__main__":
+    main()
