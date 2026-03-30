@@ -88,12 +88,22 @@ def main():
     print("Minimum frames: %d" % args.min_frames)
     print()
 
+    # Detect column names (handle both "category" and "class_name")
+    sample_keys = rows[0].keys() if rows else []
+    print("CSV columns: %s" % list(sample_keys))
+
+    def get_category(row):
+        return row.get("category", row.get("class_name", "unknown"))
+
+    def get_filename(row):
+        return row.get("filename", row.get("video_path", ""))
+
     metadata_entries = []
     converted = skipped = failed = 0
 
     for i, row in enumerate(rows):
-        filename = row["filename"]
-        category = row["category"]
+        filename = get_filename(row)
+        category = get_category(row)
         src_path = src_dir / "videos" / filename
         if not src_path.exists():
             src_path = src_dir / filename

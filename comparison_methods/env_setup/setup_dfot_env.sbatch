@@ -32,6 +32,14 @@ module purge
 module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 
+# --- Clean corrupted conda cache ---
+echo "Cleaning conda package cache..."
+conda clean --all -y 2>/dev/null || true
+
+# --- Clean corrupted conda cache ---
+echo "Cleaning conda package cache..."
+conda clean --all -y 2>/dev/null || true
+
 # --- Create conda environment ---
 echo "Creating conda environment (Python 3.10)..."
 if [ -d "${ENV_PATH}" ]; then

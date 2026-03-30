@@ -79,11 +79,21 @@ def main():
     print("Minimum frames: %d" % args.min_frames)
     print()
 
+    # Detect column names (handle both "category" and "class_name")
+    sample_keys = rows[0].keys() if rows else []
+    print("CSV columns: %s" % list(sample_keys))
+
+    def get_category(row):
+        return row.get("category", row.get("class_name", "unknown"))
+
+    def get_filename(row):
+        return row.get("filename", row.get("video_path", ""))
+
     converted = skipped_frames = failed = 0
 
     for i, row in enumerate(rows):
-        filename = row["filename"]
-        category = row["category"]
+        filename = get_filename(row)
+        category = get_category(row)
         src_path = src_dir / "videos" / filename
         if not src_path.exists():
             src_path = src_dir / filename
@@ -130,8 +140,10 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["pvdm_path", "original_filename", "category", "caption"])
         for row in rows:
-            pvdm_rel = "UCF-101/%s/%s.mp4" % (row["category"], Path(row["filename"]).stem)
-            writer.writerow([pvdm_rel, row["filename"], row["category"], row.get("caption", "")])
+            cat = get_category(row)
+            fname = get_filename(row)
+            pvdm_rel = "UCF-101/%s/%s.mp4" % (cat, Path(fname).stem)
+            writer.writerow([pvdm_rel, fname, cat, row.get("caption", "")])
     print("  Mapping: %s" % mapping_path)
 
 
