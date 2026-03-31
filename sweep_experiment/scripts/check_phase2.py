@@ -24,6 +24,21 @@ def load_summary(path):
     except Exception:
         return None
 
+
+def get_metric(summary, key):
+    """Get metric from summary, falling back to per-video average."""
+    val = summary.get(key)
+    if val is not None:
+        return val
+    # Compute from per-video results
+    results = summary.get("results", [])
+    vals = [r[key] for r in results if r.get("success") and r.get(key) is not None]
+    if vals:
+        return sum(vals) / len(vals)
+    # Try avg_ prefix
+    val = summary.get("avg_" + key)
+    return val
+
 def main():
     out_path = "sweep_experiment/phase2_status_report.txt"
     out = open(out_path, "w")
@@ -33,9 +48,14 @@ def main():
 
     notta = load_summary(NO_TTA_REF)
     if notta:
-        pr(f"No-TTA baseline: PSNR={notta.get('psnr')}, SSIM={notta.get('ssim')}, "
-           f"LPIPS={notta.get('lpips')}, FVD={notta.get('fvd')}, FID={notta.get('fid')}, "
-           f"n={notta.get('num_successful')}")
+        n_psnr = get_metric(notta, "psnr")
+        n_ssim = get_metric(notta, "ssim")
+        n_lpips = get_metric(notta, "lpips")
+        n_fvd = notta.get("fvd")
+        n_fid = notta.get("fid")
+        pr("No-TTA baseline: PSNR=%.4f, SSIM=%.4f, LPIPS=%.4f, FVD=%.2f, FID=%.2f, n=%s" % (
+            n_psnr or 0, n_ssim or 0, n_lpips or 0, n_fvd or 0, n_fid or 0,
+            notta.get("num_successful")))
     else:
         pr("No-TTA baseline: NOT FOUND")
 
@@ -45,7 +65,7 @@ def main():
        f"{'AvgSteps':>9s} {'ES_early':>9s}")
     pr("-" * 130)
 
-    notta_psnr = notta.get("psnr") if notta else None
+    notta_psnr = get_metric(notta, "psnr") if notta else None
 
     for series, run_ids in EXPECTED_RUNS.items():
         for run_id in run_ids:
@@ -74,9 +94,9 @@ def main():
                 continue
 
             n_ok = s.get("num_successful", "?")
-            psnr = s.get("psnr")
-            ssim = s.get("ssim")
-            lpips = s.get("lpips")
+            psnr = get_metric(s, "psnr")
+            ssim = get_metric(s, "ssim")
+            lpips = get_metric(s, "lpips")
             fvd = s.get("fvd")
             fid = s.get("fid")
             avg_train = s.get("avg_train_time", 0)
@@ -98,15 +118,18 @@ def main():
             avg_steps = f"{sum(total_steps_list)/len(total_steps_list):.1f}" if total_steps_list else "?"
             es_pct = f"{100*es_stopped/len(successful):.0f}%" if successful else "?"
 
-            dpsnr = f"{psnr - notta_psnr:+.4f}" if (psnr is not None and notta_psnr is not None) else "?"
+            dpsnr = "%+.4f" % (psnr - notta_psnr) if (psnr is not None and notta_psnr is not None) else "?"
 
-            pr(f"{run_id:<20s} {'OK':<10s} {n_ok:>5} "
-               f"{psnr:>8.4f} {dpsnr:>8s} "
-               f"{ssim:>7.4f} {lpips:>7.4f} "
-               f"{fvd:>9.2f} {fid:>9.2f} "
-               f"{avg_train:>8.1f}s "
-               f"{avg_steps:>9s} "
-               f"{es_pct:>9s}")
+            psnr_s = "%8.4f" % psnr if psnr is not None else "    None"
+            ssim_s = "%7.4f" % ssim if ssim is not None else "   None"
+            lpips_s = "%7.4f" % lpips if lpips is not None else "   None"
+            fvd_s = "%9.2f" % fvd if fvd is not None else "     None"
+            fid_s = "%9.2f" % fid if fid is not None else "     None"
+
+            pr("%s %s %5s %s %8s %s %s %s %s %8.1fs %9s %9s" % (
+                run_id.ljust(20), "OK".ljust(10), str(n_ok),
+                psnr_s, dpsnr, ssim_s, lpips_s, fvd_s, fid_s,
+                avg_train, avg_steps, es_pct))
 
     pr()
     pr("Legend: dPSNR = PSNR - NoTTA_PSNR (positive = improvement)")

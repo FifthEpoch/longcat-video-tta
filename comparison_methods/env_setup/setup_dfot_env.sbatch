@@ -39,10 +39,10 @@ conda clean --all -y 2>/dev/null || true
 # --- Create conda environment ---
 echo "Creating conda environment (Python 3.10)..."
 if [ -d "${ENV_PATH}" ]; then
-    echo "Environment already exists at ${ENV_PATH}, reusing."
-else
-    conda create -p "${ENV_PATH}" python=3.10 -y
+    echo "Removing old (broken) environment at ${ENV_PATH}..."
+    conda env remove -p "${ENV_PATH}" -y 2>/dev/null || rm -rf "${ENV_PATH}"
 fi
+conda create -p "${ENV_PATH}" python=3.10 -y
 echo "Ensuring setuptools is available..."
 conda activate "${ENV_PATH}"
 export PATH="${ENV_PATH}/bin:${PATH}"
@@ -69,7 +69,9 @@ python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA:', to
 echo "Installing DFoT requirements..."
 cd "${DFOT_DIR}"
 pip install -r requirements.txt
-pip install setuptools
+# Fix: torchmetrics 0.11.4 needs pkg_resources which setuptools>=78 removed
+pip install "setuptools<70"
+pip install "torchmetrics>=1.0"
 cd "${PROJECT_ROOT}"
 
 # --- Download pretrained K600 checkpoint ---

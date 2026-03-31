@@ -320,17 +320,39 @@ def main():
 
     method_name = "pvdm_baseline" if args.no_optimize else "savi_dno"
     print("Processing %d videos (%s)..." % (len(video_list), method_name))
+    print("  data_dir: %s" % args.data_dir)
+    print("  mapping_csv: %s" % args.mapping_csv)
+    if video_list:
+        sample = video_list[0]
+        sample_path = os.path.join(args.data_dir, sample["pvdm_path"])
+        print("  First entry pvdm_path: %s" % sample["pvdm_path"])
+        print("  Full resolved path: %s" % sample_path)
+        print("  File exists: %s" % os.path.exists(sample_path))
+        # Check parent directory
+        parent = os.path.dirname(sample_path)
+        print("  Parent dir exists: %s" % os.path.isdir(parent))
+        if os.path.isdir(parent):
+            files = os.listdir(parent)[:5]
+            print("  Parent dir contents (first 5): %s" % files)
+        # Also check data_dir itself
+        if os.path.isdir(args.data_dir):
+            print("  data_dir contents: %s" % os.listdir(args.data_dir)[:10])
+    sys.stdout.flush()
 
     results = []
     total_psnr = total_ssim = 0.0
     n_ok = 0
+    not_found_count = 0
 
     for idx, entry in enumerate(tqdm(video_list, desc=method_name)):
         pvdm_path = os.path.join(args.data_dir, entry["pvdm_path"])
         original = entry["original_filename"]
 
         if not os.path.exists(pvdm_path):
-            results.append({"video": original, "success": False, "error": "not_found"})
+            if not_found_count < 3:
+                print("  NOT FOUND [%d]: %s" % (idx, pvdm_path), file=sys.stderr)
+            not_found_count += 1
+            results.append({"video": original, "success": False, "error": "not_found: %s" % pvdm_path})
             continue
 
         try:
@@ -369,10 +391,14 @@ def main():
         except Exception as e:
             results.append({"video": original, "success": False, "error": str(e)})
 
+    if not_found_count > 0:
+        print("WARNING: %d/%d videos not found!" % (not_found_count, len(video_list)))
+
     summary = {
         "method": method_name,
         "num_videos": len(video_list),
         "num_successful": n_ok,
+        "num_not_found": not_found_count,
         "avg_psnr": total_psnr / max(n_ok, 1),
         "avg_ssim": total_ssim / max(n_ok, 1),
         "ddim_steps": args.ddim_steps,
