@@ -58,7 +58,9 @@ fi
 if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "2" ] || [ "${PHASE}" = "2" ]; then
     echo ">>> Phase 2: Submitting data preparation jobs..."
 
-    # These run on CPU partition since they only need ffmpeg
+    # Data prep needs conda env for av/torch/ffmpeg (not available on bare cpu nodes)
+    CONDA_INIT="module purge && module load anaconda3/2025.06 && source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh && conda activate /scratch/wc3013/conda-envs/longcat"
+
     PVDM_DEP=""
     DFOT_DEP=""
     if [ -n "${PVDM_ENV_JOB:-}" ]; then
@@ -72,13 +74,13 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "2" ] || [
         --parsable \
         --partition=cpu_short \
         --job-name=prep_pvdm \
-        --time=01:00:00 \
+        --time=02:00:00 \
         --cpus-per-task=8 \
-        --mem=16GB \
+        --mem=32GB \
         --output=comparison_methods/slurm_log/prep_pvdm_%j.out \
         --error=comparison_methods/slurm_log/prep_pvdm_%j.err \
         ${PVDM_DEP} \
-        --wrap="cd ${PROJECT_ROOT} && \
+        --wrap="${CONDA_INIT} && cd ${PROJECT_ROOT} && \
                 python comparison_methods/data/prepare_ucf101_pvdm.py \
                     --src-dir datasets/ucf101_500_480p \
                     --dst-dir comparison_methods/data/ucf101_pvdm")
@@ -88,13 +90,13 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "2" ] || [
         --parsable \
         --partition=cpu_short \
         --job-name=prep_dfot \
-        --time=01:00:00 \
+        --time=02:00:00 \
         --cpus-per-task=8 \
-        --mem=16GB \
+        --mem=32GB \
         --output=comparison_methods/slurm_log/prep_dfot_%j.out \
         --error=comparison_methods/slurm_log/prep_dfot_%j.err \
         ${DFOT_DEP} \
-        --wrap="cd ${PROJECT_ROOT} && \
+        --wrap="${CONDA_INIT} && cd ${PROJECT_ROOT} && \
                 python comparison_methods/data/prepare_ucf101_dfot.py \
                     --src-dir datasets/ucf101_500_480p \
                     --dst-dir comparison_methods/data/ucf101_dfot")

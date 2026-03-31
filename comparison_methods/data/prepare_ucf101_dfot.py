@@ -9,16 +9,12 @@ DFoT expects:
   - At least 17 frames (context_length=5 + 12 prediction)
 
 Reads ucf101_500_480p/metadata.csv and creates DFoT-compatible data.
-
-Usage:
-    python prepare_ucf101_dfot.py \
-        --src-dir /scratch/wc3013/longcat-video-tta/datasets/ucf101_500_480p \
-        --dst-dir /scratch/wc3013/longcat-video-tta/comparison_methods/data/ucf101_dfot
 """
 
 import argparse
 import csv
 import subprocess
+import shutil
 import sys
 from pathlib import Path
 
@@ -32,7 +28,22 @@ MIN_FRAMES = 17
 TARGET_FPS = 10
 
 
-def get_frame_count(video_path):
+def get_frame_count_csv(row):
+    """Get frame count from metadata CSV (preferred over ffprobe)."""
+    for key in ("num_frames", "n_frames", "frame_count"):
+        val = row.get(key)
+        if val is not None:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
+def get_frame_count_ffprobe(video_path):
+    """Fallback: count frames via ffprobe (only if available)."""
+    if not shutil.which("ffprobe"):
+        return 0
     cmd = [
         "ffprobe", "-v", "error", "-count_frames",
         "-select_streams", "v:0",
@@ -46,18 +57,99 @@ def get_frame_count(video_path):
         return 0
 
 
-def center_crop_resize(src, dst, size, fps):
-    cmd = [
-        "ffmpeg", "-y", "-i", str(src),
-        "-vf", "fps=%d,crop=min(iw\\,ih):min(iw\\,ih),scale=%d:%d" % (fps, size, size),
-        "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-an",
-        str(dst),
-    ]
+def get_frame_count_av(video_path):
+    """Fallback: count frames via Python av library."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        return r.returncode == 0
+        import av
+        with av.open(str(video_path)) as container:
+            stream = container.streams.video[0]
+            if stream.frames > 0:
+                return stream.frames
+            count = 0
+            for _ in container.decode(video=0):
+                count += 1
+            return count
+    except Exception:
+        return 0
+
+
+def center_crop_resize(src, dst, size, fps):
+    """Center-crop, resize, and re-fps. Tries ffmpeg, falls back to av."""
+    if shutil.which("ffmpeg"):
+        vf = "fps=%d,crop=min(iw\\,ih):min(iw\\,ih),scale=%d:%d" % (
+            fps, size, size)
+        cmd = [
+            "ffmpeg", "-y", "-i", str(src),
+            "-vf", vf,
+            "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-an",
+            str(dst),
+        ]
+        try:
+            r = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    try:
+        return _center_crop_resize_av(src, dst, size, fps)
     except Exception:
         return False
+
+
+def _center_crop_resize_av(src, dst, size, fps):
+    """Pure-Python fallback using av."""
+    import av
+    from PIL import Image
+
+    in_c = av.open(str(src))
+    in_s = in_c.streams.video[0]
+    src_fps = float(in_s.average_rate) if in_s.average_rate else 30.0
+
+    out_c = av.open(str(dst), mode='w')
+    out_s = out_c.add_stream('libx264', rate=fps)
+    out_s.width = size
+    out_s.height = size
+    out_s.pix_fmt = 'yuv420p'
+    out_s.options = {'crf': '18', 'preset': 'fast'}
+
+    interval = src_fps / fps
+    target = 0.0
+
+    for idx, frame in enumerate(in_c.decode(video=0)):
+        if idx >= target:
+            img = frame.to_image()
+            w, h = img.size
+            s = min(w, h)
+            left = (w - s) // 2
+            top = (h - s) // 2
+            img = img.crop((left, top, left + s, top + s))
+            img = img.resize((size, size), Image.BILINEAR)
+            of = av.VideoFrame.from_image(img)
+            for pkt in out_s.encode(of):
+                out_c.mux(pkt)
+            target += interval
+
+    for pkt in out_s.encode():
+        out_c.mux(pkt)
+    out_c.close()
+    in_c.close()
+    return True
+
+
+def resolve_src_path(src_dir, filename):
+    """Resolve video path, handling 'videos/' prefix in filename."""
+    basename = Path(filename).name
+    candidates = [
+        src_dir / filename,
+        src_dir / "videos" / basename,
+        src_dir / "videos" / filename,
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
 
 
 def main():
@@ -86,11 +178,15 @@ def main():
     print("Found %d videos in metadata.csv" % len(rows))
     print("Target: %dx%d @ %d FPS" % (TARGET_SIZE, TARGET_SIZE, TARGET_FPS))
     print("Minimum frames: %d" % args.min_frames)
-    print()
 
-    # Detect column names (handle both "category" and "class_name")
-    sample_keys = rows[0].keys() if rows else []
-    print("CSV columns: %s" % list(sample_keys))
+    sample_keys = list(rows[0].keys()) if rows else []
+    print("CSV columns: %s" % sample_keys)
+
+    has_ffprobe = shutil.which("ffprobe") is not None
+    has_ffmpeg = shutil.which("ffmpeg") is not None
+    print("ffprobe available: %s" % has_ffprobe)
+    print("ffmpeg available: %s" % has_ffmpeg)
+    print()
 
     def get_category(row):
         return row.get("category", row.get("class_name", "unknown"))
@@ -104,11 +200,11 @@ def main():
     for i, row in enumerate(rows):
         filename = get_filename(row)
         category = get_category(row)
-        src_path = src_dir / "videos" / filename
-        if not src_path.exists():
-            src_path = src_dir / filename
-        if not src_path.exists():
-            print("  [%d/%d] SKIP (not found): %s" % (i+1, len(rows), filename))
+
+        src_path = resolve_src_path(src_dir, filename)
+        if src_path is None:
+            print("  [%d/%d] SKIP (not found): %s" % (
+                i + 1, len(rows), filename))
             failed += 1
             continue
 
@@ -116,15 +212,27 @@ def main():
         dst_path = video_dir / dst_name
 
         if not dst_path.exists():
-            ok = center_crop_resize(str(src_path), str(dst_path), TARGET_SIZE, TARGET_FPS)
+            ok = center_crop_resize(
+                str(src_path), str(dst_path),
+                TARGET_SIZE, TARGET_FPS)
             if not ok:
-                print("  [%d/%d] FAIL: %s" % (i+1, len(rows), filename))
+                print("  [%d/%d] FAIL: %s" % (
+                    i + 1, len(rows), filename))
                 failed += 1
                 continue
 
-        nframes = get_frame_count(str(dst_path))
+        # Use CSV num_frames first; only fall back to probing the output
+        nframes_csv = get_frame_count_csv(row)
+        if nframes_csv is not None and nframes_csv >= args.min_frames:
+            nframes = nframes_csv
+        elif has_ffprobe:
+            nframes = get_frame_count_ffprobe(str(dst_path))
+        else:
+            nframes = get_frame_count_av(str(dst_path))
+
         if nframes < args.min_frames:
-            print("  [%d/%d] SKIP (%d frames): %s" % (i+1, len(rows), nframes, filename))
+            print("  [%d/%d] SKIP (%d frames): %s" % (
+                i + 1, len(rows), nframes, filename))
             dst_path.unlink(missing_ok=True)
             skipped += 1
             continue
@@ -138,7 +246,8 @@ def main():
         })
         converted += 1
         if converted % 50 == 0:
-            print("  [%d/%d] Converted %d videos..." % (i+1, len(rows), converted))
+            print("  [%d/%d] Converted %d videos..." % (
+                i + 1, len(rows), converted))
 
     print()
     print("=" * 60)
@@ -159,7 +268,9 @@ def main():
     mapping_path = dst_dir / "video_mapping.csv"
     with open(mapping_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["dfot_filename", "original_filename", "category", "num_frames"])
+        writer.writerow([
+            "dfot_filename", "original_filename",
+            "category", "num_frames"])
         for entry in metadata_entries:
             writer.writerow([
                 entry["relative_path"],

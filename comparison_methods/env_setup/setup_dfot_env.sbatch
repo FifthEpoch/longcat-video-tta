@@ -36,10 +36,6 @@ source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 echo "Cleaning conda package cache..."
 conda clean --all -y 2>/dev/null || true
 
-# --- Clean corrupted conda cache ---
-echo "Cleaning conda package cache..."
-conda clean --all -y 2>/dev/null || true
-
 # --- Create conda environment ---
 echo "Creating conda environment (Python 3.10)..."
 if [ -d "${ENV_PATH}" ]; then
@@ -47,6 +43,7 @@ if [ -d "${ENV_PATH}" ]; then
 else
     conda create -p "${ENV_PATH}" python=3.10 -y
 fi
+echo "Ensuring setuptools is available..."
 conda activate "${ENV_PATH}"
 export PATH="${ENV_PATH}/bin:${PATH}"
 python --version
@@ -72,6 +69,7 @@ python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA:', to
 echo "Installing DFoT requirements..."
 cd "${DFOT_DIR}"
 pip install -r requirements.txt
+pip install setuptools
 cd "${PROJECT_ROOT}"
 
 # --- Download pretrained K600 checkpoint ---
@@ -101,7 +99,7 @@ import sys, torch
 print('Python:', sys.version.split()[0])
 print('PyTorch:', torch.__version__)
 print('CUDA:', torch.cuda.is_available())
-import hydra, omegaconf, einops, lightning, scipy, transformers
+import setuptools, hydra, omegaconf, einops, lightning, scipy, transformers
 print('hydra:', hydra.__version__ if hasattr(hydra, '__version__') else 'OK')
 print('lightning:', lightning.__version__)
 print('All DFoT deps OK')
