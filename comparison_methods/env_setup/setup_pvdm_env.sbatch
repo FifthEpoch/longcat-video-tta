@@ -33,27 +33,26 @@ module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 
 # --- Create conda environment ---
-echo "Creating conda environment (Python 3.8)..."
+echo "Creating conda environment (Python 3.10)..."
 if [ -d "${ENV_PATH}" ]; then
-    echo "Environment already exists at ${ENV_PATH}, reusing."
-else
-    conda create -p "${ENV_PATH}" python=3.8 -y
+    echo "Removing old env (PyTorch 1.12 incompatible with H200)..."
+    conda env remove -p "${ENV_PATH}" -y 2>/dev/null || rm -rf "${ENV_PATH}"
 fi
+conda create -p "${ENV_PATH}" python=3.10 -y
 conda activate "${ENV_PATH}"
 export PATH="${ENV_PATH}/bin:${PATH}"
 python --version
 python -m pip install -U pip setuptools wheel
 
-# --- PyTorch 1.12.1 + CUDA 11.6 ---
-echo "Installing PyTorch 1.12.1+cu116..."
-pip install torch==1.12.1+cu116 torchvision==0.13.1+cu116 torchaudio==0.12.1 \
-    --extra-index-url https://download.pytorch.org/whl/cu116
+# --- PyTorch 2.6 + CUDA 12.4 (H200/Hopper-compatible) ---
+echo "Installing PyTorch 2.6.0+cu124..."
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA:', torch.cuda.is_available())"
 
 # --- PVDM dependencies ---
 echo "Installing PVDM dependencies..."
-pip install numpy natsort tqdm gdown omegaconf einops lpips pyspng \
+pip install numpy natsort tqdm gdown omegaconf einops lpips \
     tensorboard imageio av moviepy pillow scipy
 
 # --- Clone PVDM ---
