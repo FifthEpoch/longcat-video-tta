@@ -68,8 +68,8 @@ class SAViDNO:
         self.num_timesteps = int(ddpm_config.timesteps)
 
         self.diffusion_model = diffusion_model.to(device).eval()
-        for param in self.diffusion_model.parameters():
-            param.requires_grad = False
+        # Keep requires_grad=True so gradient flows through to eps_optimized.
+        # The optimizer only updates eps_optimized, not model weights.
 
         self.feature_model = None
         if feature_model is not None:
@@ -132,8 +132,9 @@ class SAViDNO:
 
     def decode(self, z):
         """Decode latent to pixel frames in [0,1]."""
-        x = self.autoencoder.decode_from_sample(z)
-        x = (x.clamp(-1, 1) + 1) / 2
+        with torch.enable_grad():
+            x = self.autoencoder.decode_from_sample(z)
+            x = (x.clamp(-1, 1) + 1) / 2
         return x
 
     def predict_and_optimize(self, z_cond, gt_frames_next, latent_shape):
@@ -168,6 +169,12 @@ class SAViDNO:
             total_loss.backward()
             self.optimizer.step()
             loss_val = total_loss.item()
+
+            # Clear model param grads to save memory (only eps_optimized matters)
+            self.diffusion_model.zero_grad(set_to_none=True)
+            self.autoencoder.zero_grad(set_to_none=True)
+            if self.feature_model is not None:
+                self.feature_model.zero_grad(set_to_none=True)
 
         return pred_frames.detach(), loss_val
 
