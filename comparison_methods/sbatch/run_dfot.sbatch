@@ -13,7 +13,7 @@ set -euo pipefail
 export PYTHONNOUSERSITE=1
 
 echo "=============================================================================="
-echo "DFoT Evaluation (K600 pretrained on UCF-101)"
+echo "DFoT Evaluation (K600 pretrained)"
 echo "=============================================================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
@@ -24,10 +24,11 @@ SCRATCH_BASE="/scratch/wc3013"
 ENV_PATH="${SCRATCH_BASE}/conda-envs/dfot"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 DFOT_DIR="${PROJECT_ROOT}/comparison_methods/DFoT"
-DATA_DIR="${PROJECT_ROOT}/comparison_methods/data/ucf101_dfot"
+DATA_DIR="${DFOT_DATA_DIR:-${PROJECT_ROOT}/comparison_methods/data/ucf101_dfot}"
 MAPPING="${DATA_DIR}/video_mapping.csv"
 CKPT="${DFOT_DIR}/pretrained/pretrained_models/DFoT_K600.ckpt"
-OUTPUT_DIR="${PROJECT_ROOT}/comparison_methods/results/dfot_k600"
+OUTPUT_DIR="${DFOT_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/dfot_k600}"
+MAX_VIDEOS="${DFOT_MAX_VIDEOS:-500}"
 
 module purge
 module load anaconda3/2025.06
@@ -47,7 +48,7 @@ python comparison_methods/scripts/run_dfot_eval.py \
     --mapping-csv "${MAPPING}" \
     --context-length 5 \
     --pred-length 12 \
-    --max-videos 500 \
+    --max-videos "${MAX_VIDEOS}" \
     --seed 42
 
 echo ""

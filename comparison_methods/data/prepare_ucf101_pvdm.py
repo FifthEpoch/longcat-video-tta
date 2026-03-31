@@ -28,7 +28,7 @@ MIN_FRAMES = 32
 
 def get_frame_count_csv(row):
     """Get frame count from metadata CSV (preferred over ffprobe)."""
-    for key in ("num_frames", "n_frames", "frame_count"):
+    for key in ("num_frames", "n_frames", "frame_count", "frames"):
         val = row.get(key)
         if val is not None:
             try:

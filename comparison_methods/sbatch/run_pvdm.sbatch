@@ -24,9 +24,10 @@ SCRATCH_BASE="/scratch/wc3013"
 ENV_PATH="${SCRATCH_BASE}/conda-envs/pvdm"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 PVDM_DIR="${PROJECT_ROOT}/comparison_methods/PVDM"
-DATA_DIR="${PROJECT_ROOT}/comparison_methods/data/ucf101_pvdm"
+DATA_DIR="${PVDM_DATA_DIR:-${PROJECT_ROOT}/comparison_methods/data/ucf101_pvdm}"
 MAPPING="${DATA_DIR}/video_mapping.csv"
-OUTPUT_DIR="${PROJECT_ROOT}/comparison_methods/results/pvdm_baseline"
+OUTPUT_DIR="${PVDM_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/pvdm_baseline}"
+MAX_VIDEOS="${PVDM_MAX_VIDEOS:-500}"
 
 module purge
 module load anaconda3/2025.06
@@ -45,7 +46,7 @@ python comparison_methods/scripts/savi_dno.py \
     --data-dir "${DATA_DIR}" \
     --output-dir "${OUTPUT_DIR}" \
     --mapping-csv "${MAPPING}" \
-    --max-videos 500 \
+    --max-videos "${MAX_VIDEOS}" \
     --ddim-steps 10 \
     --no-optimize \
     --seed 42
