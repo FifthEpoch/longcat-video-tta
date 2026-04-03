@@ -282,15 +282,21 @@ _COV_EPS = 1e-6
 
 
 def load_lpips_model(device):
-    import lpips
-    model = lpips.LPIPS(net="alex").to(device).eval()
-    for p in model.parameters():
-        p.requires_grad = False
-    return model
+    try:
+        import lpips
+        model = lpips.LPIPS(net="alex", verbose=False).to(device).eval()
+        for p in model.parameters():
+            p.requires_grad = False
+        return model
+    except ImportError:
+        print("WARNING: lpips not installed, LPIPS will be NaN")
+        return None
 
 
 def compute_lpips(lpips_model, pred_np, gt_np, device):
     """pred_np, gt_np: [(B*T), C, H, W] in [0,1]. Returns mean LPIPS."""
+    if lpips_model is None:
+        return float("nan")
     vals = []
     with torch.no_grad():
         for t in range(pred_np.shape[0]):
