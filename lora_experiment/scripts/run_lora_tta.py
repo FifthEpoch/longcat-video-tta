@@ -433,7 +433,7 @@ def finetune_lora_on_conditioning(
     lr: float = 2e-4,
     warmup_steps: int = 3,
     weight_decay: float = 0.01,
-    max_grad_norm: float = 1.0,
+    max_grad_norm: float = 10.0,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
@@ -450,7 +450,7 @@ def finetune_lora_on_conditioning(
 
     Returns
     -------
-    dict with keys: losses, train_time, early_stopping_info
+    dict with keys: losses, train_time, early_stopping_info, grad_norms, lora_delta_l2
     """
     if lora_param_fn is not None:
         lora_params = lora_param_fn()
@@ -484,6 +484,7 @@ def finetune_lora_on_conditioning(
 
     dit.train()
     losses = []
+    grad_norms = []
     train_start = time.time()
 
     es_check_time = 0.0
@@ -510,7 +511,15 @@ def finetune_lora_on_conditioning(
         )
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(lora_params, max_grad_norm)
+
+        raw_grad_norm = torch.nn.utils.clip_grad_norm_(lora_params, float("inf"))
+        grad_norms.append(raw_grad_norm.item())
+        if raw_grad_norm > max_grad_norm:
+            scale = max_grad_norm / (raw_grad_norm + 1e-6)
+            for p in lora_params:
+                if p.grad is not None:
+                    p.grad.mul_(scale)
+
         optimizer.step()
 
         losses.append(loss.item())
@@ -537,6 +546,18 @@ def finetune_lora_on_conditioning(
         early_stopper.restore(restore_fn=_restore_from_snapshot)
         es_state = early_stopper.state
 
+    lora_delta_l2 = 0.0
+    with torch.no_grad():
+        for p in lora_params:
+            lora_delta_l2 += p.data.float().pow(2).sum().item()
+    lora_delta_l2 = lora_delta_l2 ** 0.5
+
+    if grad_norms:
+        print(f"  Grad norm stats: min={min(grad_norms):.4f}, "
+              f"max={max(grad_norms):.4f}, "
+              f"mean={sum(grad_norms)/len(grad_norms):.4f}")
+    print(f"  LoRA param L2 norm = {lora_delta_l2:.6f}")
+
     torch.cuda.empty_cache()
 
     return {
@@ -544,6 +565,8 @@ def finetune_lora_on_conditioning(
         "train_time": train_time,
         "es_check_time": es_check_time,
         "early_stopping_info": es_state,
+        "grad_norms": grad_norms,
+        "lora_delta_l2": lora_delta_l2,
     }
 
 
@@ -695,7 +718,7 @@ def main():
     parser.add_argument("--num-steps", type=int, default=20)
     parser.add_argument("--warmup-steps", type=int, default=3)
     parser.add_argument("--weight-decay", type=float, default=0.01)
-    parser.add_argument("--max-grad-norm", type=float, default=1.0)
+    parser.add_argument("--max-grad-norm", type=float, default=10.0)
 
     # Video continuation arguments
     parser.add_argument("--num-cond-frames", type=int, default=2,
@@ -1183,6 +1206,8 @@ def main():
                 "batch_size": len(training_entries),
                 "num_neighbors": len(training_entries) - 1,
                 "early_stopping_info": train_result.get("early_stopping_info"),
+                "lora_delta_l2": train_result.get("lora_delta_l2"),
+                "mean_grad_norm": (sum(train_result.get("grad_norms", [])) / len(train_result["grad_norms"])) if train_result.get("grad_norms") else None,
                 "success": True,
             }
             result.update(clip_gate_info)

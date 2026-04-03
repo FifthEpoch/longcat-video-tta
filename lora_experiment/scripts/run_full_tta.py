@@ -107,7 +107,8 @@ def finetune_full_on_conditioning(
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
     train_latents_variants: Optional[List[Dict]] = None,
-    optimizer_type: str = "sgd",
+    optimizer_type: str = "adamw",
+    base_state: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict:
     """Fine-tune all DiT parameters using conditioning-aware loss.
 
@@ -145,11 +146,9 @@ def finetune_full_on_conditioning(
     if train_latents_variants is None:
         train_latents_variants = [{"latents": train_latents, "name": "orig"}]
 
-    # Note: For full TTA, snapshotting entire model is expensive.
-    # We rely on the early stopper's internal snapshotting if needed.
-
     dit.train()
     losses = []
+    grad_norms = []
     train_start = time.time()
 
     es_check_time = 0.0
@@ -176,7 +175,15 @@ def finetune_full_on_conditioning(
         )
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
+
+        raw_grad_norm = torch.nn.utils.clip_grad_norm_(params, float("inf"))
+        grad_norms.append(raw_grad_norm.item())
+        if raw_grad_norm > max_grad_norm:
+            scale = max_grad_norm / (raw_grad_norm + 1e-6)
+            for p in params:
+                if p.grad is not None:
+                    p.grad.mul_(scale)
+
         optimizer.step()
 
         losses.append(loss.item())
@@ -209,6 +216,23 @@ def finetune_full_on_conditioning(
         early_stopper.restore(restore_fn=_restore_full)
         es_state = early_stopper.state
 
+    weight_delta_l2 = None
+    if base_state is not None:
+        delta_sq_sum = 0.0
+        with torch.no_grad():
+            for name, param in dit.named_parameters():
+                if name in base_state:
+                    diff = param.data.float().cpu() - base_state[name].float()
+                    delta_sq_sum += diff.pow(2).sum().item()
+        weight_delta_l2 = delta_sq_sum ** 0.5
+
+    if grad_norms:
+        print(f"  Grad norm stats: min={min(grad_norms):.4f}, "
+              f"max={max(grad_norms):.4f}, "
+              f"mean={sum(grad_norms)/len(grad_norms):.4f}")
+    if weight_delta_l2 is not None:
+        print(f"  Weight delta ||w - w0||_2 = {weight_delta_l2:.6f}")
+
     torch.cuda.empty_cache()
 
     return {
@@ -216,6 +240,8 @@ def finetune_full_on_conditioning(
         "train_time": train_time,
         "es_check_time": es_check_time,
         "early_stopping_info": es_state,
+        "grad_norms": grad_norms,
+        "weight_delta_l2": weight_delta_l2,
     }
 
 
@@ -237,7 +263,8 @@ def finetune_full_batch(
     max_grad_norm: float = 1.0,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
-    optimizer_type: str = "sgd",
+    optimizer_type: str = "adamw",
+    base_state: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict:
     """Fine-tune all DiT parameters across multiple videos (round-robin).
 
@@ -283,7 +310,15 @@ def finetune_full_batch(
         )
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
+
+        raw_grad_norm = torch.nn.utils.clip_grad_norm_(params, float("inf"))
+        grad_norms.append(raw_grad_norm.item())
+        if raw_grad_norm > max_grad_norm:
+            scale = max_grad_norm / (raw_grad_norm + 1e-6)
+            for p in params:
+                if p.grad is not None:
+                    p.grad.mul_(scale)
+
         optimizer.step()
 
         losses.append(loss.item())
@@ -345,10 +380,10 @@ def main():
     parser.add_argument("--warmup-steps", type=int, default=2)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
-    parser.add_argument("--optimizer", type=str, default="sgd",
+    parser.add_argument("--optimizer", type=str, default="adamw",
                         choices=["sgd", "adamw"],
-                        help="Optimizer for full-model TTA. SGD uses no state "
-                             "(fits on single GPU); AdamW may OOM.")
+                        help="Optimizer for full-model TTA. AdamW uses adaptive "
+                             "scaling (recommended); SGD uses no state.")
 
     # Video continuation arguments
     parser.add_argument("--num-cond-frames", type=int, default=2)
@@ -670,6 +705,7 @@ def main():
                     max_grad_norm=args.max_grad_norm,
                     device=args.device, dtype=torch.bfloat16,
                     optimizer_type=args.optimizer,
+                    base_state=base_state,
                 )
                 del batch_data
 
@@ -759,6 +795,7 @@ def main():
                     early_stopper=early_stopper if val_latents is not None else None,
                     train_latents_variants=train_latents_variants,
                     optimizer_type=args.optimizer,
+                    base_state=base_state,
                 )
 
                 del all_latents, cond_latents, train_latents, val_latents
@@ -777,6 +814,8 @@ def main():
                 "batch_size": len(training_entries),
                 "num_neighbors": len(training_entries) - 1,
                 "early_stopping_info": train_result.get("early_stopping_info"),
+                "weight_delta_l2": train_result.get("weight_delta_l2"),
+                "mean_grad_norm": (sum(train_result.get("grad_norms", [])) / len(train_result.get("grad_norms", [1]))) if train_result.get("grad_norms") else None,
                 "success": True,
             }
             result.update(clip_gate_info)

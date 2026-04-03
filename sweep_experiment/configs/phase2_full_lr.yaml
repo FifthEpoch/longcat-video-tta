@@ -1,20 +1,21 @@
 # Phase 2: Full-Model TTA -- Micro-Adaptation LR Sweep
 # Goal: Find whether ultra-low LR can yield consistent PSNR gains.
 # Phase 1 showed: best_step peaks at 0-6, LR=1e-5 gives noise-level changes.
-# Strategy: Reduce LR further so 30 steps of adaptation stays near pretrained.
+# Root cause: SGD + grad clip 1.0 on 13.6B params -> effectively zero updates.
+# Fix: Switch to AdamW for adaptive per-param scaling.
 # Fixed: steps=30, ES ON (check_every=2, patience=3), FVD/FID ON, 500 videos
 
 method: full
 series: phase2
 series_name: phase2_full_lr
-description: "Phase 2: Full-model micro-adaptation LR sweep (5e-6 to 5e-7)"
+description: "Phase 2: Full-model micro-adaptation LR sweep (AdamW, 5e-6 to 5e-7)"
 
 fixed:
   num_steps: 30
   warmup_steps: 3
   weight_decay: 0.01
   max_grad_norm: 1.0
-  optimizer: sgd
+  optimizer: adamw
   num_cond_frames: 14
   num_frames: 28
   gen_start_frame: 48

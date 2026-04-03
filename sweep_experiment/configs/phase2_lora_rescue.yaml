@@ -1,19 +1,20 @@
 # Phase 2: LoRA -- Rescue Sweep
 # Goal: Fix LoRA's catastrophic overfitting (mean dPSNR = -11.8 dB).
 # Phase 1 showed: rank=8, all blocks, LR=2e-4 -> 99.8% videos degraded.
-# Strategy: Drastically reduce LR (20-200x), lower rank, target last_4 blocks only.
+# Root cause: AdamW lr=2e-4 + rank=8 + all 48 blocks too aggressive.
+# Fix: Reduce LR 20-200x, lower rank, target last_4 blocks, raise grad clip to 10.
 # Fixed: steps=30, ES ON, last_4 blocks, FVD/FID ON, 500 videos
 
 method: lora
 series: phase2
 series_name: phase2_lora_rescue
-description: "Phase 2: LoRA rescue sweep (reduced LR, rank, blocks)"
+description: "Phase 2: LoRA rescue sweep (reduced LR, rank, blocks, grad_clip=10)"
 
 fixed:
   num_steps: 30
   warmup_steps: 3
   weight_decay: 0.01
-  max_grad_norm: 1.0
+  max_grad_norm: 10.0
   lora_target_blocks: last_4
   num_cond_frames: 14
   num_frames: 28
