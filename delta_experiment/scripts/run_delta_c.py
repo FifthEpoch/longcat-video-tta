@@ -361,6 +361,7 @@ def main():
     fvd_accumulator = OnlineFrechetAccumulator(
         device=args.device, compute_fid=args.compute_fid,
         min_videos=args.min_fvd_videos,
+        gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
@@ -701,4 +702,23 @@ def main():
         "clip_gate_sample_frames": args.clip_gate_sample_frames,
         "clip_gate_aggregation": args.clip_gate_aggregation,
         "clip_gate_sampling_mode": "late_only" if args.clip_gate_late_only else args.clip_gate_sampling_mode,
-        "clip_gate_late_fraction": args.cl
+        "clip_gate_late_fraction": args.clip_gate_late_fraction,
+        "clip_gate_log_only": args.clip_gate_log_only,
+        "clip_gate_fail_open": args.clip_gate_fail_open,
+        "clip_gate_stats": summarize_clip_gate_stats(successful),
+        "results": all_results,
+    }
+    aggregate_quality_metrics(summary)
+    finalize_online_eval(fvd_accumulator, summary, videos_dir, args)
+    save_results(summary, os.path.join(args.output_dir, "summary.json"))
+    print(f"\nResults saved to {args.output_dir}/summary.json")
+    if successful:
+        print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")
+        print(f"Avg ES check time : {summary['avg_es_check_time']:.2f}s")
+        print(f"Avg train time: {summary['avg_train_time']:.1f}s")
+        print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
+        print(f"Avg total time: {summary['avg_total_time']:.1f}s")
+
+
+if __name__ == "__main__":
+    main()

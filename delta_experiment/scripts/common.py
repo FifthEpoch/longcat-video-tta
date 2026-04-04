@@ -2233,17 +2233,25 @@ def _compute_frechet_distance(
 
 class OnlineFrechetAccumulator:
     """Incrementally accumulate I3D (and optionally InceptionV3) features
-    for online FVD / FID computation.  No video files on disk required."""
+    for online FVD / FID computation.  No video files on disk required.
+
+    When *gt_cache_path* is provided (an .npz from ``precompute_gt_features.py``),
+    the reference distribution is loaded once at init and never re-extracted.
+    Only generated features are accumulated per video, ensuring the GT
+    distribution is identical across all runs.
+    """
 
     def __init__(
         self,
         device: str = "cuda",
         compute_fid: bool = False,
         min_videos: int = _DEFAULT_MIN_FVD_VIDEOS,
+        gt_cache_path: Optional[str] = None,
     ):
         self.device = device
         self.compute_fid = compute_fid
         self.min_videos = min_videos
+        self._gt_cached = False
 
         self._i3d: Optional["torch.jit.ScriptModule"] = None
         self._inception: Optional[nn.Module] = None
@@ -2253,7 +2261,8 @@ class OnlineFrechetAccumulator:
         self._gen_cov = np.zeros((d, d), dtype=np.float64)
         self._ref_sum = np.zeros(d, dtype=np.float64)
         self._ref_cov = np.zeros((d, d), dtype=np.float64)
-        self._count = 0
+        self._gen_count = 0
+        self._ref_count = 0
 
         if compute_fid:
             fd = _FID_FEATURE_DIM
@@ -2263,6 +2272,27 @@ class OnlineFrechetAccumulator:
             self._fid_ref_cov = np.zeros((fd, fd), dtype=np.float64)
             self._fid_gen_frames = 0
             self._fid_ref_frames = 0
+
+        if gt_cache_path is not None:
+            self._load_gt_cache(gt_cache_path)
+
+    def _load_gt_cache(self, path: str):
+        """Load pre-computed GT features from .npz and freeze the ref side."""
+        print(f"[FVD/FID] Loading GT feature cache from {path}")
+        cache = np.load(path, allow_pickle=True)
+
+        self._ref_sum = cache["ref_fvd_sum"].astype(np.float64)
+        self._ref_cov = cache["ref_fvd_cov"].astype(np.float64)
+        self._ref_count = int(cache["ref_fvd_count"])
+
+        if self.compute_fid and "ref_fid_sum" in cache:
+            self._fid_ref_sum = cache["ref_fid_sum"].astype(np.float64)
+            self._fid_ref_cov = cache["ref_fid_cov"].astype(np.float64)
+            self._fid_ref_frames = int(cache["ref_fid_count"])
+
+        self._gt_cached = True
+        print(f"[FVD/FID] GT cache loaded: {self._ref_count} videos, "
+              f"FID ref frames: {getattr(self, '_fid_ref_frames', 'N/A')}")
 
     def _ensure_models(self):
         if self._i3d is None:
@@ -2328,6 +2358,9 @@ class OnlineFrechetAccumulator:
 
         Parameters match ``evaluate_generation_metrics`` so callers can pass
         the same arguments to both functions.
+
+        When GT features are cached (``_gt_cached``), only the generated side
+        is extracted and accumulated; the reference side is already frozen.
         """
         import av
         from PIL import Image
@@ -2336,6 +2369,23 @@ class OnlineFrechetAccumulator:
 
         gen_frames = gen_output[num_cond_frames:num_cond_frames + num_gen_frames]
         if gen_frames.shape[0] == 0:
+            return
+
+        if self._gt_cached:
+            gen_np = gen_frames.astype(np.float32)
+            gen_clip = _frames_np_to_i3d_tensor(gen_np)
+            gen_feat = self._i3d_features(gen_clip)
+            self._gen_sum, self._gen_cov = self._accumulate(
+                gen_feat, self._gen_sum, self._gen_cov,
+            )
+            self._gen_count += 1
+
+            if self.compute_fid and self._inception is not None:
+                gen_fid = self._inception_features(gen_np)
+                self._fid_gen_sum, self._fid_gen_cov = self._accumulate(
+                    gen_fid, self._fid_gen_sum, self._fid_gen_cov,
+                )
+                self._fid_gen_frames += gen_fid.shape[0]
             return
 
         try:
@@ -2377,7 +2427,8 @@ class OnlineFrechetAccumulator:
         self._ref_sum, self._ref_cov = self._accumulate(
             ref_feat, self._ref_sum, self._ref_cov,
         )
-        self._count += 1
+        self._gen_count += 1
+        self._ref_count += 1
 
         if self.compute_fid and self._inception is not None:
             gen_fid = self._inception_features(gen_np)
@@ -2395,24 +2446,26 @@ class OnlineFrechetAccumulator:
         """Return FVD (and FID) metrics from accumulated statistics."""
         result: Dict[str, Any] = {}
 
-        if self._count < 2:
+        if self._gen_count < 2:
             result["fvd"] = None
-            result["fvd_num_videos"] = self._count
+            result["fvd_num_videos"] = self._gen_count
             result["fvd_error"] = "Need at least 2 videos for FVD"
             return result
 
         fvd = _compute_frechet_distance(
-            self._gen_sum, self._gen_cov, self._count,
-            self._ref_sum, self._ref_cov, self._count,
+            self._gen_sum, self._gen_cov, self._gen_count,
+            self._ref_sum, self._ref_cov, self._ref_count,
         )
         result["fvd"] = round(fvd, 6)
-        result["fvd_num_videos"] = self._count
+        result["fvd_num_videos"] = self._gen_count
+        result["fvd_num_ref_videos"] = self._ref_count
+        result["fvd_gt_cached"] = self._gt_cached
         result["fvd_feature_extractor"] = "i3d_kinetics400_torchscript"
         result["fvd_feature_dim"] = _I3D_FEATURE_DIM
 
-        if self._count < self.min_videos:
+        if self._gen_count < self.min_videos:
             result["fvd_sample_size_warning"] = (
-                f"FVD computed with {self._count} videos "
+                f"FVD computed with {self._gen_count} videos "
                 f"(recommended >= {self.min_videos}). "
                 f"Covariance estimate may be unreliable."
             )
@@ -2436,7 +2489,7 @@ class OnlineFrechetAccumulator:
 # ============================================================================
 
 def add_online_eval_args(parser: "argparse.ArgumentParser"):
-    """Add --compute-fvd, --compute-fid, --compute-vbench, --min-fvd-videos."""
+    """Add --compute-fvd, --compute-fid, --compute-vbench, --min-fvd-videos, --gt-features-cache."""
     grp = parser.add_argument_group("Online distributional metrics")
     grp.add_argument("--compute-fvd", action="store_true",
                      help="Compute FVD online (no saved videos needed)")
@@ -2448,6 +2501,10 @@ def add_online_eval_args(parser: "argparse.ArgumentParser"):
                      default=_DEFAULT_MIN_FVD_VIDEOS,
                      help="Minimum videos before FVD is considered reliable "
                           f"(default: {_DEFAULT_MIN_FVD_VIDEOS})")
+    grp.add_argument("--gt-features-cache", type=str, default=None,
+                     help="Path to pre-computed GT features .npz from "
+                          "precompute_gt_features.py. When set, the GT "
+                          "distribution is loaded once and never re-extracted.")
 
 
 def aggregate_quality_metrics(summary: dict):

@@ -486,6 +486,8 @@ def main():
                         help="Skip video generation (only train delta)")
     parser.add_argument("--no-save-videos", action="store_true",
                         help="Delete generated videos after evaluation to save disk space")
+    parser.add_argument("--save-only-list", type=str, default=None,
+                        help="Path to retain_videos.json; save MP4s only for listed videos")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -577,8 +579,17 @@ def main():
     fvd_accumulator = OnlineFrechetAccumulator(
         device=args.device, compute_fid=args.compute_fid,
         min_videos=args.min_fvd_videos,
+        gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
-    if not args.skip_generation and not args.no_save_videos:
+    retain_set = set()
+    if args.save_only_list:
+        import json as _json
+        with open(args.save_only_list) as _f:
+            _retain = _json.load(_f)
+        retain_set = set(_retain.get("all", []))
+        print("[Retain] Will save %d videos from %s" % (len(retain_set), args.save_only_list))
+
+    if not args.skip_generation and (not args.no_save_videos or retain_set):
         os.makedirs(videos_dir, exist_ok=True)
 
     for idx, entry in enumerate(videos):
@@ -823,7 +834,7 @@ def main():
                     if fvd_accumulator is not None:
                         fvd_accumulator.update(gen_frames, video_path,
                                                args.num_cond_frames, num_gen, args.gen_start_frame)
-                    if not args.no_save_videos:
+                    if (not args.no_save_videos) or (video_name in retain_set):
                         prompt_slug = _slugify_text(caption)
                         clip_tag = "clip-skip" if clip_gate_info.get("tta_skipped", False) else "clip-tta"
                         output_name = (
@@ -872,7 +883,7 @@ def main():
                         if fvd_accumulator is not None:
                             fvd_accumulator.update(gen_frames, video_path,
                                                    args.num_cond_frames, num_gen, args.gen_start_frame)
-                        if not args.no_save_videos:
+                        if (not args.no_save_videos) or (video_name in retain_set):
                             prompt_slug = _slugify_text(caption)
                             clip_tag = "clip-skip" if clip_gate_info.get("tta_skipped", False) else "clip-tta"
                             output_name = (

@@ -221,12 +221,14 @@ def compute_frechet_distance(sum_a, cov_a, n_a, sum_b, cov_b, n_b, eps=_COV_EPS)
 
 def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_dir,
                                   mapping_csv, context_length=5, pred_length=12,
-                                  max_videos=500, seed=42, batch_size=1):
+                                  max_videos=500, seed=42, batch_size=1,
+                                  save_only_list=None, save_dir=None,
+                                  rollout_steps=1, gt_features_cache=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    total_frames = context_length + pred_length
+    total_frames = context_length + rollout_steps * pred_length
 
     with open(mapping_csv) as f:
         reader = csv.DictReader(f)
@@ -288,6 +290,7 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
     ref_fvd_sum = np.zeros(d_fvd, dtype=np.float64)
     ref_fvd_cov = np.zeros((d_fvd, d_fvd), dtype=np.float64)
     fvd_count = 0
+    ref_fvd_count = 0
 
     d_fid = _FID_FEATURE_DIM
     gen_fid_sum = np.zeros(d_fid, dtype=np.float64)
@@ -297,7 +300,32 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
     fid_gen_frames = 0
     fid_ref_frames = 0
 
+    gt_cached = False
+    if gt_features_cache:
+        print("[FVD/FID] Loading GT cache from %s" % gt_features_cache)
+        cache = np.load(gt_features_cache, allow_pickle=True)
+        ref_fvd_sum = cache["ref_fvd_sum"].astype(np.float64)
+        ref_fvd_cov = cache["ref_fvd_cov"].astype(np.float64)
+        ref_fvd_count = int(cache["ref_fvd_count"])
+        ref_fid_sum = cache["ref_fid_sum"].astype(np.float64)
+        ref_fid_cov = cache["ref_fid_cov"].astype(np.float64)
+        fid_ref_frames = int(cache["ref_fid_count"])
+        gt_cached = True
+        print("[FVD/FID] GT cache: %d ref videos, %d ref FID frames" %
+              (ref_fvd_count, fid_ref_frames))
+
     video_dir = os.path.join(data_dir, "test")
+
+    retain_set = set()
+    if save_only_list:
+        with open(save_only_list) as _f:
+            _retain = json.load(_f)
+        retain_set = set(_retain.get("all", []))
+        print("[Retain] Will save %d videos from %s" % (len(retain_set), save_only_list))
+
+    _save_dir = Path(save_dir) if save_dir else Path(output_dir) / "videos"
+    if retain_set:
+        _save_dir.mkdir(parents=True, exist_ok=True)
 
     for idx, entry in enumerate(tqdm(video_list, desc="DFoT eval")):
         dfot_filename = entry["dfot_filename"]
@@ -310,50 +338,84 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
 
         try:
             all_frames = load_video_frames(video_path, total_frames, size=128)
-            context = all_frames[:context_length]
-            gt = all_frames[context_length:total_frames]
+            if all_frames.shape[0] < total_frames:
+                results.append({"video": original, "success": False,
+                                "error": "too_short: %d < %d" % (all_frames.shape[0], total_frames)})
+                continue
 
             t_start = time.time()
 
-            if use_native:
-                with torch.no_grad():
-                    context_batch = context.unsqueeze(0).to(device)
-                    pred = model.predict(context_batch, pred_length)
-                    if pred.dim() == 5:
-                        pred = pred[0]
-                    pred = pred.clamp(0, 1).cpu()
-            else:
-                pred = context[-1:].repeat(pred_length, 1, 1, 1)
+            all_step_psnr = []
+            all_step_ssim = []
+            all_step_lpips = []
+            first_pred_np = None
+            first_gt_np = None
+            current_context = all_frames[:context_length]
+
+            for step_i in range(rollout_steps):
+                gt_start = context_length + step_i * pred_length
+                gt_end = gt_start + pred_length
+                gt = all_frames[gt_start:gt_end]
+
+                if use_native:
+                    with torch.no_grad():
+                        context_batch = current_context.unsqueeze(0).to(device)
+                        pred = model.predict(context_batch, pred_length)
+                        if pred.dim() == 5:
+                            pred = pred[0]
+                        pred = pred.clamp(0, 1).cpu()
+                else:
+                    pred = current_context[-1:].repeat(pred_length, 1, 1, 1)
+
+                pred_np = pred.numpy()
+                gt_np = gt.numpy()
+
+                step_psnr, step_ssim = compute_metrics(pred_np, gt_np)
+                step_lpips = compute_lpips(lpips_model, pred_np, gt_np, device)
+
+                all_step_psnr.append(step_psnr)
+                all_step_ssim.append(step_ssim)
+                all_step_lpips.append(step_lpips)
+
+                if step_i == 0:
+                    first_pred_np = pred_np
+                    first_gt_np = gt_np
+
+                current_context = pred[-context_length:]
 
             elapsed = time.time() - t_start
 
-            pred_np = pred.numpy()
-            gt_np = gt.numpy()
-            psnr, ssim = compute_metrics(pred_np, gt_np)
-            lpips_val = compute_lpips(lpips_model, pred_np, gt_np, device)
+            psnr = float(np.mean(all_step_psnr))
+            ssim = float(np.mean(all_step_ssim))
+            valid_lpips = [v for v in all_step_lpips if v == v]
+            lpips_val = float(np.mean(valid_lpips)) if valid_lpips else float("nan")
 
-            # FVD: accumulate I3D features
-            gen_clip = frames_to_i3d_tensor(pred_np)
-            ref_clip = frames_to_i3d_tensor(gt_np)
-            gen_feat = i3d_features(i3d_model, gen_clip, device)
-            ref_feat = i3d_features(i3d_model, ref_clip, device)
-            gen_fvd_sum += gen_feat
-            gen_fvd_cov += np.outer(gen_feat, gen_feat)
-            ref_fvd_sum += ref_feat
-            ref_fvd_cov += np.outer(ref_feat, ref_feat)
-            fvd_count += 1
+            # FVD/FID: accumulate from step 1 only
+            if first_pred_np is not None:
+                gen_clip = frames_to_i3d_tensor(first_pred_np)
+                gen_feat = i3d_features(i3d_model, gen_clip, device)
+                gen_fvd_sum += gen_feat
+                gen_fvd_cov += np.outer(gen_feat, gen_feat)
+                fvd_count += 1
 
-            # FID: accumulate InceptionV3 features
-            gen_fid_feat = inception_features(incep_model, pred_np, device)
-            ref_fid_feat = inception_features(incep_model, gt_np, device)
-            gen_fid_sum += gen_fid_feat.sum(axis=0)
-            gen_fid_cov += gen_fid_feat.T @ gen_fid_feat
-            ref_fid_sum += ref_fid_feat.sum(axis=0)
-            ref_fid_cov += ref_fid_feat.T @ ref_fid_feat
-            fid_gen_frames += gen_fid_feat.shape[0]
-            fid_ref_frames += ref_fid_feat.shape[0]
+                gen_fid_feat = inception_features(incep_model, first_pred_np, device)
+                gen_fid_sum += gen_fid_feat.sum(axis=0)
+                gen_fid_cov += gen_fid_feat.T @ gen_fid_feat
+                fid_gen_frames += gen_fid_feat.shape[0]
 
-            results.append({
+                if not gt_cached:
+                    ref_clip = frames_to_i3d_tensor(first_gt_np)
+                    ref_feat = i3d_features(i3d_model, ref_clip, device)
+                    ref_fvd_sum += ref_feat
+                    ref_fvd_cov += np.outer(ref_feat, ref_feat)
+                    ref_fvd_count += 1
+
+                    ref_fid_feat = inception_features(incep_model, first_gt_np, device)
+                    ref_fid_sum += ref_fid_feat.sum(axis=0)
+                    ref_fid_cov += ref_fid_feat.T @ ref_fid_feat
+                    fid_ref_frames += ref_fid_feat.shape[0]
+
+            entry_result = {
                 "video": original,
                 "success": True,
                 "psnr": psnr,
@@ -361,7 +423,27 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
                 "lpips": lpips_val,
                 "time": elapsed,
                 "native_model": use_native,
-            })
+                "rollout_steps": rollout_steps,
+            }
+            for si in range(len(all_step_psnr)):
+                entry_result["step_%d_psnr" % (si + 1)] = all_step_psnr[si]
+                entry_result["step_%d_ssim" % (si + 1)] = all_step_ssim[si]
+                entry_result["step_%d_lpips" % (si + 1)] = all_step_lpips[si]
+            results.append(entry_result)
+
+            video_stem = Path(original).stem
+            if video_stem in retain_set and first_pred_np is not None:
+                import imageio
+                frames_hwc = first_pred_np.transpose(0, 2, 3, 1)
+                frames_uint8 = np.clip(frames_hwc * 255, 0, 255).astype(np.uint8)
+                out_path = _save_dir / ("%s_dfot.mp4" % video_stem)
+                writer = imageio.get_writer(str(out_path), fps=24, codec="libx264",
+                                            output_params=["-crf", "23"])
+                for frame in frames_uint8:
+                    writer.append_data(frame)
+                writer.close()
+                print("  [Retain] Saved %s" % out_path)
+
             total_psnr += psnr
             total_ssim += ssim
             total_lpips += lpips_val
@@ -375,11 +457,13 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
     # Compute FVD and FID
     fvd_val = None
     fid_val = None
+    effective_ref_fvd_count = ref_fvd_count if gt_cached else fvd_count
     if fvd_count >= 2:
         fvd_val = compute_frechet_distance(
             gen_fvd_sum, gen_fvd_cov, fvd_count,
-            ref_fvd_sum, ref_fvd_cov, fvd_count)
-        print("[Online FVD] FVD = %.4f (%d videos)" % (fvd_val, fvd_count))
+            ref_fvd_sum, ref_fvd_cov, effective_ref_fvd_count)
+        print("[Online FVD] FVD = %.4f (%d gen / %d ref videos)" %
+              (fvd_val, fvd_count, effective_ref_fvd_count))
     if fid_gen_frames >= 2:
         fid_val = compute_frechet_distance(
             gen_fid_sum, gen_fid_cov, fid_gen_frames,
@@ -396,6 +480,8 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
         "avg_lpips": total_lpips / max(n_ok, 1),
         "fvd": round(fvd_val, 6) if fvd_val is not None else None,
         "fvd_num_videos": fvd_count,
+        "fvd_num_ref_videos": effective_ref_fvd_count,
+        "fvd_gt_cached": gt_cached,
         "fvd_feature_extractor": "i3d_kinetics400_torchscript",
         "fid": round(fid_val, 6) if fid_val is not None else None,
         "fid_num_frames_gen": fid_gen_frames,
@@ -405,6 +491,7 @@ def run_dfot_inference_standalone(dfot_dir, checkpoint_path, data_dir, output_di
         "pred_length": pred_length,
         "resolution": 128,
         "native_model_loaded": use_native,
+        "rollout_steps": rollout_steps,
         "results": results,
     }
 
@@ -440,6 +527,14 @@ def main():
     parser.add_argument("--pred-length", type=int, default=12)
     parser.add_argument("--max-videos", type=int, default=500)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--save-only-list", type=str, default=None,
+                        help="Path to retain_videos.json; save MP4s only for listed videos")
+    parser.add_argument("--save-dir", type=str, default=None,
+                        help="Directory to save retained video MP4s (defaults to output-dir/videos)")
+    parser.add_argument("--rollout-steps", type=int, default=1,
+                        help="Number of autoregressive prediction steps (default 1 = single-step)")
+    parser.add_argument("--gt-features-cache", type=str, default=None,
+                        help="Path to pre-computed GT features .npz; freezes reference distribution")
     args = parser.parse_args()
 
     run_dfot_inference_standalone(
@@ -452,6 +547,10 @@ def main():
         pred_length=args.pred_length,
         max_videos=args.max_videos,
         seed=args.seed,
+        save_only_list=args.save_only_list,
+        save_dir=args.save_dir,
+        rollout_steps=args.rollout_steps,
+        gt_features_cache=args.gt_features_cache,
     )
 
 

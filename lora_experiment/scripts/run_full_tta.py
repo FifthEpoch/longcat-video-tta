@@ -398,6 +398,10 @@ def main():
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument("--no-save-videos", action="store_true",
                         help="Skip saving generated videos to disk (metrics still computed in-memory)")
+    parser.add_argument("--save-only-list", type=str, default=None,
+                        help="Path to retain_videos.json; save MP4s only for listed videos")
+    parser.add_argument("--rollout-steps", type=int, default=1,
+                        help="Number of autoregressive generation steps (default 1 = single-step)")
 
     # Retrieval-augmented batch TTA
     parser.add_argument("--batch-videos", type=int, default=1,
@@ -601,8 +605,17 @@ def main():
     fvd_accumulator = OnlineFrechetAccumulator(
         device=args.device, compute_fid=args.compute_fid,
         min_videos=args.min_fvd_videos,
+        gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
-    if not args.no_save_videos:
+    retain_set = set()
+    if args.save_only_list:
+        import json as _json
+        with open(args.save_only_list) as _f:
+            _retain = _json.load(_f)
+        retain_set = set(_retain.get("all", []))
+        print("[Retain] Will save %d videos from %s" % (len(retain_set), args.save_only_list))
+
+    if not args.no_save_videos or retain_set:
         os.makedirs(videos_dir, exist_ok=True)
 
     for idx, eval_entry in enumerate(tqdm(eval_videos, desc="Full TTA")):
@@ -825,6 +838,9 @@ def main():
             if not args.skip_generation:
                 from PIL import Image
 
+                num_gen = args.num_frames - args.num_cond_frames
+                rollout_steps = args.rollout_steps
+
                 gen_cond_start = args.gen_start_frame - args.num_cond_frames
                 gen_pixel_frames = load_video_frames(
                     video_path, args.num_cond_frames, height=480, width=832,
@@ -838,35 +854,70 @@ def main():
                     frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
                     cond_images.append(Image.fromarray(frame_np))
 
-                gen_start = time.time()
-                gen_frames = generate_video_continuation(
-                    pipe=pipe, video_frames=cond_images, prompt=caption,
-                    num_cond_frames=args.num_cond_frames,
-                    num_frames=args.num_frames,
-                    num_inference_steps=args.num_inference_steps,
-                    guidance_scale=args.guidance_scale,
-                    seed=args.seed + idx,
-                    resolution=args.resolution, device=args.device,
-                )
-                gen_time = time.time() - gen_start
+                all_step_metrics = []
+                prev_gen_frames = None
+
+                for step_i in range(rollout_steps):
+                    step_gen_start_frame = args.gen_start_frame + step_i * num_gen
+
+                    if step_i > 0:
+                        tail = prev_gen_frames[num_gen:]
+                        cond_images = []
+                        for t_idx in range(tail.shape[0]):
+                            frame_np = (np.clip(tail[t_idx], 0, 1) * 255).astype(np.uint8)
+                            cond_images.append(Image.fromarray(frame_np))
+
+                    gen_start = time.time()
+                    gen_frames = generate_video_continuation(
+                        pipe=pipe, video_frames=cond_images, prompt=caption,
+                        num_cond_frames=args.num_cond_frames,
+                        num_frames=args.num_frames,
+                        num_inference_steps=args.num_inference_steps,
+                        guidance_scale=args.guidance_scale,
+                        seed=args.seed + idx + step_i,
+                        resolution=args.resolution, device=args.device,
+                    )
+                    step_gen_time = time.time() - gen_start
+                    gen_time += step_gen_time
+
+                    step_metrics = evaluate_generation_metrics(
+                        gen_output=gen_frames, video_path=video_path,
+                        num_cond_frames=args.num_cond_frames,
+                        num_gen_frames=num_gen,
+                        gen_start_frame=step_gen_start_frame, device=args.device,
+                    )
+                    all_step_metrics.append(step_metrics)
+
+                    if step_i == 0 and fvd_accumulator is not None:
+                        fvd_accumulator.update(gen_frames, video_path,
+                                               args.num_cond_frames, num_gen, args.gen_start_frame)
+
+                    if step_i == 0:
+                        output_path = os.path.join(videos_dir, f"{video_name}_full.mp4")
+                        should_save = (not args.no_save_videos) or (video_name in retain_set)
+                        if should_save:
+                            save_video_from_numpy(gen_frames, output_path, fps=24)
+                            result["output_path"] = output_path
+
+                    prev_gen_frames = gen_frames
+
                 result["gen_time"] = gen_time
+                result["rollout_steps"] = rollout_steps
 
-                output_path = os.path.join(videos_dir, f"{video_name}_full.mp4")
-                if not args.no_save_videos:
-                    save_video_from_numpy(gen_frames, output_path, fps=24)
-                    result["output_path"] = output_path
+                for si, sm in enumerate(all_step_metrics):
+                    for mk in ("psnr", "ssim", "lpips"):
+                        result["step_%d_%s" % (si + 1, mk)] = sm.get(mk)
 
-                num_gen = args.num_frames - args.num_cond_frames
-                metrics = evaluate_generation_metrics(
-                    gen_output=gen_frames, video_path=video_path,
-                    num_cond_frames=args.num_cond_frames,
-                    num_gen_frames=num_gen,
-                    gen_start_frame=args.gen_start_frame, device=args.device,
-                )
-                result.update(metrics)
-                if fvd_accumulator is not None:
-                    fvd_accumulator.update(gen_frames, video_path,
-                                           args.num_cond_frames, num_gen, args.gen_start_frame)
+                avg_metrics = {}
+                for mk in ("psnr", "ssim", "lpips"):
+                    vals = [sm[mk] for sm in all_step_metrics if sm.get(mk) is not None and sm[mk] == sm[mk]]
+                    avg_metrics[mk] = float(np.mean(vals)) if vals else float("nan")
+                result.update(avg_metrics)
+
+                if rollout_steps > 1:
+                    print("    Rollout: " + ", ".join(
+                        "step%d PSNR=%.2f" % (si + 1, sm.get("psnr", float("nan")))
+                        for si, sm in enumerate(all_step_metrics)))
 
                 del gen_pixel_frames
                 torch_gc()

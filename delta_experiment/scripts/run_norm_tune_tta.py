@@ -423,6 +423,7 @@ def main():
     fvd_accumulator = OnlineFrechetAccumulator(
         device=args.device, compute_fid=args.compute_fid,
         min_videos=args.min_fvd_videos,
+        gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
@@ -633,4 +634,20 @@ def main():
         "norm_target": args.norm_target,
         "norm_steps": args.norm_steps,
         "norm_lr": args.norm_lr,
-        "num_cond_frames": args.num_c
+        "num_cond_frames": args.num_cond_frames,
+        "num_frames": args.num_frames,
+        "gen_start_frame": args.gen_start_frame,
+        "trainable_params": trainable,
+        "num_videos": len(all_results),
+        "num_successful": len(successful),
+        "avg_train_time": np.mean([r.get("train_time", 0) for r in successful]) if successful else 0,
+        "results": all_results,
+    }
+    aggregate_quality_metrics(summary)
+    finalize_online_eval(fvd_accumulator, summary, videos_dir, args)
+    save_results(summary, os.path.join(args.output_dir, "summary.json"))
+    print(f"\nResults saved to {args.output_dir}/summary.json")
+
+
+if __name__ == "__main__":
+    main()

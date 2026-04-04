@@ -417,6 +417,14 @@ def main():
     parser.add_argument("--no-optimize", action="store_true",
                         help="Run PVDM baseline without noise optimization")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--save-only-list", type=str, default=None,
+                        help="Path to retain_videos.json; save MP4s only for listed videos")
+    parser.add_argument("--save-dir", type=str, default=None,
+                        help="Directory to save retained video MP4s (defaults to output-dir/videos)")
+    parser.add_argument("--rollout-steps", type=int, default=1,
+                        help="Number of autoregressive prediction steps (default 1 = single-step)")
+    parser.add_argument("--gt-features-cache", type=str, default=None,
+                        help="Path to pre-computed GT features .npz; freezes reference distribution")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -427,6 +435,17 @@ def main():
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    retain_set = set()
+    if args.save_only_list:
+        with open(args.save_only_list) as _f:
+            _retain = json.load(_f)
+        retain_set = set(_retain.get("all", []))
+        print("[Retain] Will save %d videos from %s" % (len(retain_set), args.save_only_list))
+
+    save_dir = Path(args.save_dir) if args.save_dir else output_dir / "videos"
+    if retain_set:
+        save_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading PVDM models...")
     autoencoder, diff_model, ae_config, diff_config = load_pvdm_models(
@@ -481,6 +500,7 @@ def main():
     ref_fvd_sum = np.zeros(d_fvd, dtype=np.float64)
     ref_fvd_cov = np.zeros((d_fvd, d_fvd), dtype=np.float64)
     fvd_count = 0
+    ref_fvd_count = 0
 
     d_fid = _FID_FEATURE_DIM
     gen_fid_sum = np.zeros(d_fid, dtype=np.float64)
@@ -489,6 +509,20 @@ def main():
     ref_fid_cov = np.zeros((d_fid, d_fid), dtype=np.float64)
     fid_gen_frames = 0
     fid_ref_frames = 0
+
+    gt_cached = False
+    if args.gt_features_cache:
+        print("[FVD/FID] Loading GT cache from %s" % args.gt_features_cache)
+        cache = np.load(args.gt_features_cache, allow_pickle=True)
+        ref_fvd_sum = cache["ref_fvd_sum"].astype(np.float64)
+        ref_fvd_cov = cache["ref_fvd_cov"].astype(np.float64)
+        ref_fvd_count = int(cache["ref_fvd_count"])
+        ref_fid_sum = cache["ref_fid_sum"].astype(np.float64)
+        ref_fid_cov = cache["ref_fid_cov"].astype(np.float64)
+        fid_ref_frames = int(cache["ref_fid_count"])
+        gt_cached = True
+        print("[FVD/FID] GT cache: %d ref videos, %d ref FID frames" %
+              (ref_fvd_count, fid_ref_frames))
 
     for idx, entry in enumerate(tqdm(video_list, desc=method_name)):
         pvdm_path = os.path.join(args.data_dir, entry["pvdm_path"])
@@ -502,58 +536,128 @@ def main():
             continue
 
         try:
-            all_frames = load_video_frames(pvdm_path, 32, size=256)
-            cond_frames = all_frames[:16].unsqueeze(0).to(device)
-            gt_frames = all_frames[16:32].unsqueeze(0).to(device)
+            rollout_steps = args.rollout_steps
+            total_needed = 16 + rollout_steps * 16
+            all_frames = load_video_frames(pvdm_path, total_needed, size=256)
+            if all_frames.shape[0] < total_needed:
+                results.append({"video": original, "success": False,
+                                "error": "too_short: %d < %d" % (all_frames.shape[0], total_needed)})
+                continue
 
             savi.reset()
-            z_cond = savi.encode(cond_frames)
-            latent_shape = (1, z_cond.shape[1], z_cond.shape[2])
-
             t_start = time.time()
-            if args.no_optimize:
-                with torch.no_grad():
-                    eps = torch.randn(latent_shape, device=device)
-                    z_pred = savi._ddim_sample_differentiable(z_cond, eps)
-                    pred_frames = savi.decode(z_pred)
-                loss_val = None
-            else:
-                pred_frames, loss_val = savi.predict_and_optimize(
-                    z_cond, gt_frames, latent_shape)
+
+            all_step_psnr = []
+            all_step_ssim = []
+            all_step_lpips = []
+            step_losses = []
+            first_pred_np = None
+            first_gt_np = None
+
+            prev_pred_frames = None
+
+            for step_i in range(rollout_steps):
+                cond_start = step_i * 16
+                cond_end = cond_start + 16
+                gt_start = cond_end
+                gt_end = gt_start + 16
+
+                if step_i == 0:
+                    cond_frames = all_frames[cond_start:cond_end].unsqueeze(0).to(device)
+                else:
+                    cond_frames = prev_pred_frames.unsqueeze(0) if prev_pred_frames.dim() == 4 else prev_pred_frames
+                    if cond_frames.dim() == 4:
+                        cond_frames = rearrange(cond_frames, '(b t) c h w -> b t c h w', b=1)
+
+                gt_frames = all_frames[gt_start:gt_end].unsqueeze(0).to(device)
+
+                z_cond = savi.encode(cond_frames)
+                latent_shape = (1, z_cond.shape[1], z_cond.shape[2])
+
+                if args.no_optimize:
+                    with torch.no_grad():
+                        eps = torch.randn(latent_shape, device=device)
+                        z_pred = savi._ddim_sample_differentiable(z_cond, eps)
+                        pred_frames = savi.decode(z_pred)
+                    loss_val = None
+                else:
+                    pred_frames, loss_val = savi.predict_and_optimize(
+                        z_cond, gt_frames, latent_shape)
+
+                pred_np = pred_frames.cpu().numpy()
+                gt_np = rearrange(gt_frames, 'b t c h w -> (b t) c h w').cpu().numpy()
+
+                step_psnr, step_ssim = compute_metrics(pred_np, gt_np)
+                step_lpips = compute_lpips(lpips_model, pred_np, gt_np, device)
+
+                all_step_psnr.append(step_psnr)
+                all_step_ssim.append(step_ssim)
+                all_step_lpips.append(step_lpips)
+                step_losses.append(loss_val)
+
+                if step_i == 0:
+                    first_pred_np = pred_np
+                    first_gt_np = gt_np
+
+                prev_pred_frames = pred_frames.detach()
+
             elapsed = time.time() - t_start
 
-            pred_np = pred_frames.cpu().numpy()  # [(B*T), C, H, W]
-            gt_np = rearrange(gt_frames, 'b t c h w -> (b t) c h w').cpu().numpy()
+            psnr = float(np.mean(all_step_psnr))
+            ssim = float(np.mean(all_step_ssim))
+            valid_lpips = [v for v in all_step_lpips if v == v]
+            lpips_val = float(np.mean(valid_lpips)) if valid_lpips else float("nan")
 
-            psnr, ssim = compute_metrics(pred_np, gt_np)
-            lpips_val = compute_lpips(lpips_model, pred_np, gt_np, device)
+            # FVD/FID: accumulate from step 1 only
+            if first_pred_np is not None:
+                gen_clip = frames_to_i3d_tensor(first_pred_np)
+                gen_feat = i3d_features(i3d_model, gen_clip, device)
+                gen_fvd_sum += gen_feat
+                gen_fvd_cov += np.outer(gen_feat, gen_feat)
+                fvd_count += 1
 
-            # FVD: accumulate I3D features
-            gen_clip = frames_to_i3d_tensor(pred_np)
-            ref_clip = frames_to_i3d_tensor(gt_np)
-            gen_feat = i3d_features(i3d_model, gen_clip, device)
-            ref_feat = i3d_features(i3d_model, ref_clip, device)
-            gen_fvd_sum += gen_feat
-            gen_fvd_cov += np.outer(gen_feat, gen_feat)
-            ref_fvd_sum += ref_feat
-            ref_fvd_cov += np.outer(ref_feat, ref_feat)
-            fvd_count += 1
+                gen_fid_feat = inception_features(incep_model, first_pred_np, device)
+                gen_fid_sum += gen_fid_feat.sum(axis=0)
+                gen_fid_cov += gen_fid_feat.T @ gen_fid_feat
+                fid_gen_frames += gen_fid_feat.shape[0]
 
-            # FID: accumulate InceptionV3 features
-            gen_fid_feat = inception_features(incep_model, pred_np, device)
-            ref_fid_feat = inception_features(incep_model, gt_np, device)
-            gen_fid_sum += gen_fid_feat.sum(axis=0)
-            gen_fid_cov += gen_fid_feat.T @ gen_fid_feat
-            ref_fid_sum += ref_fid_feat.sum(axis=0)
-            ref_fid_cov += ref_fid_feat.T @ ref_fid_feat
-            fid_gen_frames += gen_fid_feat.shape[0]
-            fid_ref_frames += ref_fid_feat.shape[0]
+                if not gt_cached:
+                    ref_clip = frames_to_i3d_tensor(first_gt_np)
+                    ref_feat = i3d_features(i3d_model, ref_clip, device)
+                    ref_fvd_sum += ref_feat
+                    ref_fvd_cov += np.outer(ref_feat, ref_feat)
+                    ref_fvd_count += 1
 
-            results.append({
+                    ref_fid_feat = inception_features(incep_model, first_gt_np, device)
+                    ref_fid_sum += ref_fid_feat.sum(axis=0)
+                    ref_fid_cov += ref_fid_feat.T @ ref_fid_feat
+                    fid_ref_frames += ref_fid_feat.shape[0]
+
+            entry_result = {
                 "video": original, "success": True,
                 "psnr": psnr, "ssim": ssim, "lpips": lpips_val,
-                "loss": loss_val, "time": elapsed,
-            })
+                "loss": step_losses[0], "time": elapsed,
+                "rollout_steps": rollout_steps,
+            }
+            for si in range(len(all_step_psnr)):
+                entry_result["step_%d_psnr" % (si + 1)] = all_step_psnr[si]
+                entry_result["step_%d_ssim" % (si + 1)] = all_step_ssim[si]
+                entry_result["step_%d_lpips" % (si + 1)] = all_step_lpips[si]
+            results.append(entry_result)
+
+            video_stem = Path(original).stem
+            if video_stem in retain_set and first_pred_np is not None:
+                import imageio
+                frames_hwc = first_pred_np.transpose(0, 2, 3, 1)
+                frames_uint8 = np.clip(frames_hwc * 255, 0, 255).astype(np.uint8)
+                out_path = save_dir / ("%s_%s.mp4" % (video_stem, method_name))
+                writer = imageio.get_writer(str(out_path), fps=24, codec="libx264",
+                                            output_params=["-crf", "23"])
+                for frame in frames_uint8:
+                    writer.append_data(frame)
+                writer.close()
+                print("  [Retain] Saved %s" % out_path)
+
             total_psnr += psnr
             total_ssim += ssim
             total_lpips += lpips_val
@@ -570,11 +674,13 @@ def main():
     # Compute FVD and FID
     fvd_val = None
     fid_val = None
+    effective_ref_fvd_count = ref_fvd_count if gt_cached else fvd_count
     if fvd_count >= 2:
         fvd_val = compute_frechet_distance(
             gen_fvd_sum, gen_fvd_cov, fvd_count,
-            ref_fvd_sum, ref_fvd_cov, fvd_count)
-        print("[Online FVD] FVD = %.4f (%d videos)" % (fvd_val, fvd_count))
+            ref_fvd_sum, ref_fvd_cov, effective_ref_fvd_count)
+        print("[Online FVD] FVD = %.4f (%d gen / %d ref videos)" %
+              (fvd_val, fvd_count, effective_ref_fvd_count))
     if fid_gen_frames >= 2:
         fid_val = compute_frechet_distance(
             gen_fid_sum, gen_fid_cov, fid_gen_frames,
@@ -592,6 +698,8 @@ def main():
         "avg_lpips": total_lpips / max(n_ok, 1),
         "fvd": round(fvd_val, 6) if fvd_val is not None else None,
         "fvd_num_videos": fvd_count,
+        "fvd_num_ref_videos": effective_ref_fvd_count,
+        "fvd_gt_cached": gt_cached,
         "fvd_feature_extractor": "i3d_kinetics400_torchscript",
         "fid": round(fid_val, 6) if fid_val is not None else None,
         "fid_num_frames_gen": fid_gen_frames,
@@ -602,6 +710,7 @@ def main():
         "lr": args.lr,
         "lam": args.lam,
         "p": args.p,
+        "rollout_steps": args.rollout_steps,
         "results": results,
     }
 

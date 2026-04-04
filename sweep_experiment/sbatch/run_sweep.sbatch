@@ -66,6 +66,15 @@ ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
 # Disk-saving: skip writing generated .mp4 files (metrics still computed in-memory)
 NO_SAVE_VIDEOS="${NO_SAVE_VIDEOS:-1}"
 
+# Selective video retention: path to retain_videos.json (save only listed videos)
+SAVE_ONLY_LIST="${SAVE_ONLY_LIST:-}"
+
+# Multi-step autoregressive rollout (default 1 = single-step, backward-compatible)
+ROLLOUT_STEPS="${ROLLOUT_STEPS:-1}"
+
+# Pre-cached GT features for FVD/FID (path to .npz from precompute_gt_features.py)
+GT_FEATURES_CACHE="${GT_FEATURES_CACHE:-}"
+
 # ============================================================================
 # Method-specific hyperparameters (only used by their respective methods)
 # ============================================================================
@@ -272,6 +281,15 @@ ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
 SAVE_FLAGS=""
 if [ "${NO_SAVE_VIDEOS}" = "1" ]; then
     SAVE_FLAGS="--no-save-videos"
+fi
+if [ -n "${SAVE_ONLY_LIST}" ]; then
+    SAVE_FLAGS="${SAVE_FLAGS} --save-only-list ${SAVE_ONLY_LIST}"
+fi
+if [ "${ROLLOUT_STEPS}" != "1" ]; then
+    SAVE_FLAGS="${SAVE_FLAGS} --rollout-steps ${ROLLOUT_STEPS}"
+fi
+if [ -n "${GT_FEATURES_CACHE}" ]; then
+    SAVE_FLAGS="${SAVE_FLAGS} --gt-features-cache ${GT_FEATURES_CACHE}"
 fi
 
 # Build CLIP gate flags (shared across methods)

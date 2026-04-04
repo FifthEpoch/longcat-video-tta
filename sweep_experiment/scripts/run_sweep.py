@@ -133,6 +133,13 @@ _KEY_TO_ENV = {
     "min_fvd_videos": "MIN_FVD_VIDEOS",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
+    # Selective video retention
+    "save_only_list": "SAVE_ONLY_LIST",
+    "no_save_videos": "NO_SAVE_VIDEOS",
+    # Multi-step rollout
+    "rollout_steps": "ROLLOUT_STEPS",
+    # Pre-cached GT features
+    "gt_features_cache": "GT_FEATURES_CACHE",
 }
 
 # Method name mapping (config -> env)
@@ -370,6 +377,10 @@ def main():
                         help="Override output base directory")
     parser.add_argument("--time", type=str, default=None,
                         help="Override SLURM time limit (e.g. 24:00:00)")
+    parser.add_argument("--save-only-list", type=str, default=None,
+                        help="Path to retain_videos.json for selective video saving")
+    parser.add_argument("--gt-features-cache", type=str, default=None,
+                        help="Path to pre-computed GT features .npz for frozen FVD/FID reference")
     parser.add_argument("--sbatch-template", type=str,
                         default="sweep_experiment/sbatch/run_sweep.sbatch",
                         help="Path to sbatch template")
@@ -416,6 +427,11 @@ def main():
             data_dir=args.data_dir,
             output_base=args.output_base,
         )
+
+        if args.save_only_list:
+            env_vars["SAVE_ONLY_LIST"] = args.save_only_list
+        if args.gt_features_cache:
+            env_vars["GT_FEATURES_CACHE"] = args.gt_features_cache
 
         time_limit = args.time or estimate_time(method, row, fixed)
         mem = estimate_mem(method)
