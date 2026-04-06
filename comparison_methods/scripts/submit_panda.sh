@@ -15,6 +15,9 @@ ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 PROJECT_ROOT="/scratch/wc3013/longcat-video-tta"
 PANDA_SRC="datasets/panda_1000_480p"
 MAX_VIDEOS=1000
+GT_CACHE_PVDM="${PROJECT_ROOT}/gt_caches/panda_1000_pvdm.npz"
+GT_CACHE_DFOT="${PROJECT_ROOT}/gt_caches/panda_1000_dfot.npz"
+SAVE_LIST="${PROJECT_ROOT}/sweep_experiment/reports/panda_retain_videos.json"
 
 cd "${PROJECT_ROOT}"
 mkdir -p comparison_methods/slurm_log
@@ -84,7 +87,7 @@ echo ">>> Phase 2: Submitting evaluation jobs (with data-prep dependencies)..."
 PVDM_EVAL_JOB=$(sbatch --account="${ACCOUNT}" \
     --parsable \
     --dependency=afterok:${PVDM_DATA_JOB} \
-    --export=ALL,PVDM_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_pvdm,PVDM_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_pvdm_baseline,PVDM_MAX_VIDEOS=${MAX_VIDEOS} \
+    --export=ALL,PVDM_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_pvdm,PVDM_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_pvdm_baseline,PVDM_MAX_VIDEOS=${MAX_VIDEOS},GT_FEATURES_CACHE=${GT_CACHE_PVDM},SAVE_ONLY_LIST=${SAVE_LIST} \
     comparison_methods/sbatch/run_pvdm.sbatch)
 echo "  PVDM baseline eval: Job ${PVDM_EVAL_JOB}"
 
@@ -92,7 +95,7 @@ echo "  PVDM baseline eval: Job ${PVDM_EVAL_JOB}"
 SAVI_10_JOB=$(sbatch --account="${ACCOUNT}" \
     --parsable \
     --dependency=afterok:${PVDM_DATA_JOB} \
-    --export=ALL,DDIM_STEPS=10,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,PVDM_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_pvdm,SAVI_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_savi_dno_s10,PVDM_MAX_VIDEOS=${MAX_VIDEOS} \
+    --export=ALL,DDIM_STEPS=10,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,PVDM_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_pvdm,SAVI_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_savi_dno_s10,PVDM_MAX_VIDEOS=${MAX_VIDEOS},GT_FEATURES_CACHE=${GT_CACHE_PVDM},SAVE_ONLY_LIST=${SAVE_LIST} \
     comparison_methods/sbatch/run_savi_dno.sbatch)
 echo "  SAVi-DNO (10 steps): Job ${SAVI_10_JOB}"
 
@@ -100,7 +103,7 @@ echo "  SAVi-DNO (10 steps): Job ${SAVI_10_JOB}"
 SAVI_50_JOB=$(sbatch --account="${ACCOUNT}" \
     --parsable \
     --dependency=afterok:${PVDM_DATA_JOB} \
-    --export=ALL,DDIM_STEPS=50,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,PVDM_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_pvdm,SAVI_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_savi_dno_s50,PVDM_MAX_VIDEOS=${MAX_VIDEOS} \
+    --export=ALL,DDIM_STEPS=50,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,PVDM_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_pvdm,SAVI_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_savi_dno_s50,PVDM_MAX_VIDEOS=${MAX_VIDEOS},GT_FEATURES_CACHE=${GT_CACHE_PVDM},SAVE_ONLY_LIST=${SAVE_LIST} \
     comparison_methods/sbatch/run_savi_dno.sbatch)
 echo "  SAVi-DNO (50 steps): Job ${SAVI_50_JOB}"
 
@@ -108,7 +111,7 @@ echo "  SAVi-DNO (50 steps): Job ${SAVI_50_JOB}"
 DFOT_EVAL_JOB=$(sbatch --account="${ACCOUNT}" \
     --parsable \
     --dependency=afterok:${DFOT_DATA_JOB} \
-    --export=ALL,DFOT_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_dfot,DFOT_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_dfot_k600,DFOT_MAX_VIDEOS=${MAX_VIDEOS} \
+    --export=ALL,DFOT_DATA_DIR=${PROJECT_ROOT}/comparison_methods/data/panda_dfot,DFOT_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/panda_dfot_k600,DFOT_MAX_VIDEOS=${MAX_VIDEOS},GT_FEATURES_CACHE=${GT_CACHE_DFOT},SAVE_ONLY_LIST=${SAVE_LIST} \
     comparison_methods/sbatch/run_dfot.sbatch)
 echo "  DFoT eval: Job ${DFOT_EVAL_JOB}"
 

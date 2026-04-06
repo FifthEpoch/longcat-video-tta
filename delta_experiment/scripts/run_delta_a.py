@@ -411,9 +411,9 @@ def main():
     add_clip_gate_args(parser)
     args = parser.parse_args()
 
-    # Default tta_total_frames to num_cond_frames (historical behavior)
+    # Default tta_total_frames to gen_start_frame (use all pre-anchor frames)
     if args.tta_total_frames is None:
-        args.tta_total_frames = args.num_cond_frames
+        args.tta_total_frames = args.gen_start_frame
     # Default tta_context_frames to match generation conditioning
     if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.num_cond_frames
@@ -610,6 +610,7 @@ def main():
                 train_time = 0.0
             else:
                 # ── Pre-encode all videos in the training batch ──
+                _cached_gen_cond_frames = None
                 batch_data = []
                 for entry in training_entries:
                     video_path = entry["video_path"]
@@ -646,15 +647,20 @@ def main():
                         "prompt_mask": prompt_mask.cpu() if prompt_mask is not None else None,
                     })
 
+                    if _cached_gen_cond_frames is None and args.tta_total_frames >= args.num_cond_frames:
+                        _cached_gen_cond_frames = pixel_frames[:, :, -args.num_cond_frames:].clone()
                     del all_latents, pixel_frames
                     torch_gc()
 
-                # Pre-encode generation conditioning for the eval video only
-                gen_cond_start = args.gen_start_frame - args.num_cond_frames
-                gen_pixel_frames = load_video_frames(
-                    eval_entry["video_path"], args.num_cond_frames,
-                    height=480, width=832, start_frame=max(0, gen_cond_start),
-                ).to(args.device, torch.bfloat16).cpu()
+                if _cached_gen_cond_frames is not None:
+                    gen_pixel_frames = _cached_gen_cond_frames
+                    _cached_gen_cond_frames = None
+                else:
+                    gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                    gen_pixel_frames = load_video_frames(
+                        eval_entry["video_path"], args.num_cond_frames,
+                        height=480, width=832, start_frame=max(0, gen_cond_start),
+                    ).to(args.device, torch.bfloat16).cpu()
 
                 # ── Create fresh delta ──
                 wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
@@ -818,11 +824,14 @@ def main():
                         num_gen_frames=num_gen,
                         gen_start_frame=args.gen_start_frame,
                         device=args.device,
+                        return_gt_frames=(fvd_accumulator is not None),
                     )
+                    _gt_for_fvd = metrics.pop("gt_frames_hwc", None)
                     result.update(metrics)
                     if fvd_accumulator is not None:
                         fvd_accumulator.update(gen_frames, eval_entry["video_path"],
-                                               args.num_cond_frames, num_gen, args.gen_start_frame)
+                                               args.num_cond_frames, num_gen, args.gen_start_frame,
+                                               gt_frames_hwc=_gt_for_fvd)
                     print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
                           f"SSIM={metrics['ssim']:.4f}, "
                           f"LPIPS={metrics['lpips']:.4f}")
@@ -859,11 +868,14 @@ def main():
                             num_gen_frames=num_gen,
                             gen_start_frame=args.gen_start_frame,
                             device=args.device,
+                            return_gt_frames=(fvd_accumulator is not None),
                         )
+                        _gt_for_fvd = metrics.pop("gt_frames_hwc", None)
                         result.update(metrics)
                         if fvd_accumulator is not None:
                             fvd_accumulator.update(gen_frames, eval_entry["video_path"],
-                                                   args.num_cond_frames, num_gen, args.gen_start_frame)
+                                                   args.num_cond_frames, num_gen, args.gen_start_frame,
+                                                   gt_frames_hwc=_gt_for_fvd)
                         print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
                               f"SSIM={metrics['ssim']:.4f}, "
                               f"LPIPS={metrics['lpips']:.4f}")

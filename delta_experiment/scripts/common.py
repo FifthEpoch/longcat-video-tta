@@ -615,6 +615,29 @@ def generate_video_continuation(
 # Evaluation metrics
 # ============================================================================
 
+_LPIPS_MODEL_CACHE: Dict[str, Any] = {}
+_SSIM_FN_CACHE: Dict[str, Any] = {}
+
+
+def _get_lpips_model(device: str = "cuda"):
+    """Return a cached LPIPS AlexNet model, loading it once on first call."""
+    if device not in _LPIPS_MODEL_CACHE:
+        import lpips as lpips_lib
+        _LPIPS_MODEL_CACHE[device] = lpips_lib.LPIPS(net="alex", verbose=False).to(device)
+    return _LPIPS_MODEL_CACHE[device]
+
+
+def _get_ssim_fn():
+    """Return a cached StructuralSimilarityIndexMeasure instance."""
+    if "fn" not in _SSIM_FN_CACHE:
+        try:
+            from torchmetrics.image import StructuralSimilarityIndexMeasure
+            _SSIM_FN_CACHE["fn"] = StructuralSimilarityIndexMeasure(data_range=1.0)
+        except ImportError:
+            _SSIM_FN_CACHE["fn"] = None
+    return _SSIM_FN_CACHE["fn"]
+
+
 def compute_psnr(pred: torch.Tensor, target: torch.Tensor) -> float:
     """Compute PSNR between pred and target tensors (both in [0, 1])."""
     mse = F.mse_loss(pred.float(), target.float())
@@ -625,32 +648,28 @@ def compute_psnr(pred: torch.Tensor, target: torch.Tensor) -> float:
 
 def compute_ssim_batch(pred: torch.Tensor, target: torch.Tensor) -> float:
     """Compute average SSIM across frames. Tensors shape [T, C, H, W] in [0,1]."""
-    try:
-        from torchmetrics.image import StructuralSimilarityIndexMeasure
-        ssim_fn = StructuralSimilarityIndexMeasure(data_range=1.0).to(pred.device)
-        return ssim_fn(pred, target).item()
-    except ImportError:
-        # Fallback: simple SSIM approximation
-        mu_pred = pred.mean(dim=[2, 3], keepdim=True)
-        mu_target = target.mean(dim=[2, 3], keepdim=True)
-        sigma_pred_sq = ((pred - mu_pred) ** 2).mean(dim=[2, 3], keepdim=True)
-        sigma_target_sq = ((target - mu_target) ** 2).mean(dim=[2, 3], keepdim=True)
-        sigma_cross = ((pred - mu_pred) * (target - mu_target)).mean(dim=[2, 3], keepdim=True)
-        c1, c2 = 0.01 ** 2, 0.03 ** 2
-        ssim_map = (
-            (2 * mu_pred * mu_target + c1) * (2 * sigma_cross + c2)
-        ) / (
-            (mu_pred ** 2 + mu_target ** 2 + c1) * (sigma_pred_sq + sigma_target_sq + c2)
-        )
-        return ssim_map.mean().item()
+    ssim_fn = _get_ssim_fn()
+    if ssim_fn is not None:
+        return ssim_fn.to(pred.device)(pred, target).item()
+    mu_pred = pred.mean(dim=[2, 3], keepdim=True)
+    mu_target = target.mean(dim=[2, 3], keepdim=True)
+    sigma_pred_sq = ((pred - mu_pred) ** 2).mean(dim=[2, 3], keepdim=True)
+    sigma_target_sq = ((target - mu_target) ** 2).mean(dim=[2, 3], keepdim=True)
+    sigma_cross = ((pred - mu_pred) * (target - mu_target)).mean(dim=[2, 3], keepdim=True)
+    c1, c2 = 0.01 ** 2, 0.03 ** 2
+    ssim_map = (
+        (2 * mu_pred * mu_target + c1) * (2 * sigma_cross + c2)
+    ) / (
+        (mu_pred ** 2 + mu_target ** 2 + c1) * (sigma_pred_sq + sigma_target_sq + c2)
+    )
+    return ssim_map.mean().item()
 
 
 def compute_lpips_batch(pred: torch.Tensor, target: torch.Tensor) -> float:
     """Compute average LPIPS across frames. Tensors [T, C, H, W] in [0,1]."""
     try:
-        import lpips
-        loss_fn = lpips.LPIPS(net="alex", verbose=False).to(pred.device)
-        # LPIPS expects [-1, 1]
+        device = str(pred.device)
+        loss_fn = _get_lpips_model(device)
         pred_scaled = pred * 2.0 - 1.0
         target_scaled = target * 2.0 - 1.0
         with torch.no_grad():
@@ -667,7 +686,8 @@ def evaluate_generation_metrics(
     num_gen_frames: int,
     gen_start_frame: int,
     device: str = "cuda",
-) -> Dict[str, float]:
+    return_gt_frames: bool = False,
+) -> Dict[str, Any]:
     """Compute PSNR, SSIM, LPIPS between generated and ground truth frames.
 
     Parameters
@@ -685,10 +705,14 @@ def evaluate_generation_metrics(
         Anchor frame index — GT starts at this frame in the source video.
     device : str
         Device for LPIPS computation.
+    return_gt_frames : bool
+        If True, include ``"gt_frames_hwc"`` (np.ndarray [T,H,W,3] in [0,1])
+        in the returned dict so callers can reuse decoded GT without
+        re-opening the video.
 
     Returns
     -------
-    dict with keys: psnr, ssim, lpips
+    dict with keys: psnr, ssim, lpips, and optionally gt_frames_hwc
     """
     from PIL import Image
     import av
@@ -711,7 +735,10 @@ def evaluate_generation_metrics(
 
     n_compare = min(len(gen_frames), len(gt_pil))
     if n_compare == 0:
-        return {"psnr": float("nan"), "ssim": float("nan"), "lpips": float("nan")}
+        result: Dict[str, Any] = {"psnr": float("nan"), "ssim": float("nan"), "lpips": float("nan")}
+        if return_gt_frames:
+            result["gt_frames_hwc"] = None
+        return result
 
     gt_np = np.stack([
         np.array(img.resize((out_w, out_h), Image.LANCZOS)) / 255.0
@@ -737,10 +764,9 @@ def evaluate_generation_metrics(
         ssim_vals.append(_ssim_single(p, g))
     ssim = float(np.mean(ssim_vals))
 
-    # LPIPS
+    # LPIPS (uses cached model)
     try:
-        import lpips as lpips_lib
-        loss_fn = lpips_lib.LPIPS(net="alex", verbose=False).to(device)
+        loss_fn = _get_lpips_model(device)
         lpips_vals = []
         for i in range(n_compare):
             p = torch.from_numpy(gen_np[i]).permute(2, 0, 1).unsqueeze(0).float().to(device)
@@ -748,32 +774,31 @@ def evaluate_generation_metrics(
             with torch.no_grad():
                 s = loss_fn(p * 2 - 1, g * 2 - 1)
             lpips_vals.append(s.item())
-        del loss_fn
-        torch.cuda.empty_cache()
         lpips_val = float(np.mean(lpips_vals))
     except ImportError:
         lpips_val = float("nan")
 
-    return {"psnr": psnr, "ssim": ssim, "lpips": lpips_val}
+    result = {"psnr": psnr, "ssim": ssim, "lpips": lpips_val}
+    if return_gt_frames:
+        result["gt_frames_hwc"] = gt_np
+    return result
 
 
 def _ssim_single(pred: torch.Tensor, target: torch.Tensor) -> float:
     """Compute SSIM for a single frame pair. Both [1, C, H, W] in [0, 1]."""
-    try:
-        from torchmetrics.image import StructuralSimilarityIndexMeasure
-        ssim_fn = StructuralSimilarityIndexMeasure(data_range=1.0)
+    ssim_fn = _get_ssim_fn()
+    if ssim_fn is not None:
         return ssim_fn(pred, target).item()
-    except ImportError:
-        mu_p = pred.mean(dim=[2, 3], keepdim=True)
-        mu_g = target.mean(dim=[2, 3], keepdim=True)
-        sig_p = ((pred - mu_p) ** 2).mean(dim=[2, 3], keepdim=True)
-        sig_g = ((target - mu_g) ** 2).mean(dim=[2, 3], keepdim=True)
-        sig_pg = ((pred - mu_p) * (target - mu_g)).mean(dim=[2, 3], keepdim=True)
-        c1, c2 = 0.01 ** 2, 0.03 ** 2
-        ssim_map = ((2 * mu_p * mu_g + c1) * (2 * sig_pg + c2)) / (
-            (mu_p ** 2 + mu_g ** 2 + c1) * (sig_p + sig_g + c2)
-        )
-        return ssim_map.mean().item()
+    mu_p = pred.mean(dim=[2, 3], keepdim=True)
+    mu_g = target.mean(dim=[2, 3], keepdim=True)
+    sig_p = ((pred - mu_p) ** 2).mean(dim=[2, 3], keepdim=True)
+    sig_g = ((target - mu_g) ** 2).mean(dim=[2, 3], keepdim=True)
+    sig_pg = ((pred - mu_p) * (target - mu_g)).mean(dim=[2, 3], keepdim=True)
+    c1, c2 = 0.01 ** 2, 0.03 ** 2
+    ssim_map = ((2 * mu_p * mu_g + c1) * (2 * sig_pg + c2)) / (
+        (mu_p ** 2 + mu_g ** 2 + c1) * (sig_p + sig_g + c2)
+    )
+    return ssim_map.mean().item()
 
 
 # ============================================================================
@@ -2353,16 +2378,19 @@ class OnlineFrechetAccumulator:
         num_cond_frames: int,
         num_gen_frames: int,
         gen_start_frame: int,
+        gt_frames_hwc: Optional[np.ndarray] = None,
     ):
         """Feed one video's generated output + GT source for feature accumulation.
 
         Parameters match ``evaluate_generation_metrics`` so callers can pass
         the same arguments to both functions.
 
+        When *gt_frames_hwc* is provided (np.ndarray [T,H,W,3] in [0,1]),
+        it is reused directly instead of re-decoding the source video.
+
         When GT features are cached (``_gt_cached``), only the generated side
         is extracted and accumulated; the reference side is already frozen.
         """
-        import av
         from PIL import Image
 
         self._ensure_models()
@@ -2388,31 +2416,37 @@ class OnlineFrechetAccumulator:
                 self._fid_gen_frames += gen_fid.shape[0]
             return
 
-        try:
-            container = av.open(video_path)
-            gt_pil: list = []
-            decoded = 0
-            for frame in container.decode(video=0):
-                if decoded < gen_start_frame:
+        if gt_frames_hwc is not None:
+            gt_np = gt_frames_hwc.astype(np.float32)
+        else:
+            import av
+            try:
+                container = av.open(video_path)
+                gt_pil: list = []
+                decoded = 0
+                for frame in container.decode(video=0):
+                    if decoded < gen_start_frame:
+                        decoded += 1
+                        continue
+                    if len(gt_pil) >= num_gen_frames:
+                        break
+                    gt_pil.append(frame.to_image())
                     decoded += 1
-                    continue
-                if len(gt_pil) >= num_gen_frames:
-                    break
-                gt_pil.append(frame.to_image())
-                decoded += 1
-            container.close()
-        except Exception:
-            return
+                container.close()
+            except Exception:
+                return
 
-        if len(gt_pil) == 0:
-            return
+            if len(gt_pil) == 0:
+                return
 
-        out_h, out_w = gen_frames.shape[1], gen_frames.shape[2]
-        n_compare = min(len(gen_frames), len(gt_pil))
-        gt_np = np.stack([
-            np.array(img.resize((out_w, out_h), Image.LANCZOS)) / 255.0
-            for img in gt_pil[:n_compare]
-        ], axis=0).astype(np.float32)
+            out_h, out_w = gen_frames.shape[1], gen_frames.shape[2]
+            gt_np = np.stack([
+                np.array(img.resize((out_w, out_h), Image.LANCZOS)) / 255.0
+                for img in gt_pil
+            ], axis=0).astype(np.float32)
+
+        n_compare = min(len(gen_frames), len(gt_np))
+        gt_np = gt_np[:n_compare]
         gen_np = gen_frames[:n_compare].astype(np.float32)
 
         gen_clip = _frames_np_to_i3d_tensor(gen_np)

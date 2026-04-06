@@ -245,6 +245,10 @@ class AnchoredEarlyStopper:
     def restore(self, restore_fn: Optional[Callable] = None):
         """Restore the best checkpoint found during training.
 
+        Only restores if a trained checkpoint actually beat the pretrained
+        baseline (best_step > 0).  When best_step == 0 the snapshot is the
+        pretrained/reset state — restoring it would silently undo all TTA.
+
         Parameters
         ----------
         restore_fn : callable that takes the saved state and applies it.
@@ -252,6 +256,9 @@ class AnchoredEarlyStopper:
                      If None, uses model.load_state_dict.
         """
         if self.best_state is None:
+            return
+
+        if self.best_step == 0:
             return
 
         if restore_fn is not None:

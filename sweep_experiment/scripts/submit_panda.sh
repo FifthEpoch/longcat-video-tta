@@ -11,6 +11,8 @@ set -euo pipefail
 
 ACCOUNT="torch_pr_36_mren"
 DATA_DIR="/scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p"
+GT_CACHE="/scratch/wc3013/longcat-video-tta/gt_caches/panda_1000_longcat.npz"
+SAVE_LIST="/scratch/wc3013/longcat-video-tta/sweep_experiment/reports/panda_retain_videos.json"
 TIME_LIMIT="48:00:00"
 EXTRA_ARGS="${@}"
 
@@ -37,6 +39,23 @@ echo "Dataset check: $(wc -l < "${DATA_DIR}/metadata.csv") lines in metadata.csv
 echo "Videos: $(ls "${DATA_DIR}/videos/"*.mp4 2>/dev/null | wc -l) files"
 echo ""
 
+# Common flags for GT cache and selective saving
+CACHE_FLAGS=""
+if [ -f "${GT_CACHE}" ]; then
+    CACHE_FLAGS="${CACHE_FLAGS} --gt-features-cache ${GT_CACHE}"
+    echo "GT cache : ${GT_CACHE}"
+else
+    echo "WARNING: GT cache not found at ${GT_CACHE}"
+    echo "  Run precompute_gt_features.py first for frozen FVD/FID reference."
+fi
+if [ -f "${SAVE_LIST}" ]; then
+    CACHE_FLAGS="${CACHE_FLAGS} --save-only-list ${SAVE_LIST}"
+    echo "Save list: ${SAVE_LIST}"
+else
+    echo "INFO: No save-only-list at ${SAVE_LIST} (all/no videos will be saved based on NO_SAVE_VIDEOS)"
+fi
+echo ""
+
 # --- No-TTA baseline (1 run) ---
 echo ">>> Submitting No-TTA baseline (1 run)..."
 python3 sweep_experiment/scripts/run_sweep.py \
@@ -44,6 +63,7 @@ python3 sweep_experiment/scripts/run_sweep.py \
     --account "${ACCOUNT}" \
     --data-dir "${DATA_DIR}" \
     --time "${TIME_LIMIT}" \
+    ${CACHE_FLAGS} \
     ${EXTRA_ARGS}
 
 echo ""
@@ -55,6 +75,7 @@ python3 sweep_experiment/scripts/run_sweep.py \
     --account "${ACCOUNT}" \
     --data-dir "${DATA_DIR}" \
     --time "${TIME_LIMIT}" \
+    ${CACHE_FLAGS} \
     ${EXTRA_ARGS}
 
 echo ""
@@ -66,6 +87,7 @@ python3 sweep_experiment/scripts/run_sweep.py \
     --account "${ACCOUNT}" \
     --data-dir "${DATA_DIR}" \
     --time "${TIME_LIMIT}" \
+    ${CACHE_FLAGS} \
     ${EXTRA_ARGS}
 
 echo ""

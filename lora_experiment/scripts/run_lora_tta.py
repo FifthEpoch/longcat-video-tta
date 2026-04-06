@@ -767,9 +767,9 @@ def main():
 
     args = parser.parse_args()
 
-    # Default tta_total_frames to num_cond_frames (historical behavior)
+    # Default tta_total_frames to gen_start_frame (use all pre-anchor frames)
     if args.tta_total_frames is None:
-        args.tta_total_frames = args.num_cond_frames
+        args.tta_total_frames = args.gen_start_frame
     # Default tta_context_frames to match generation conditioning
     if args.tta_context_frames is None or args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.num_cond_frames
@@ -1203,6 +1203,10 @@ def main():
                     lora_param_fn=_get_lora_params,
                 )
 
+                if args.tta_total_frames >= args.num_cond_frames:
+                    _cached_gen_cond_frames = pixel_frames[:, :, -args.num_cond_frames:].clone()
+                else:
+                    _cached_gen_cond_frames = None
                 del all_latents, cond_latents, train_latents, val_latents
                 del pixel_frames, prompt_embeds, prompt_mask
                 torch_gc()
@@ -1233,11 +1237,15 @@ def main():
                 num_gen = args.num_frames - args.num_cond_frames
                 rollout_steps = args.rollout_steps
 
-                gen_cond_start = args.gen_start_frame - args.num_cond_frames
-                gen_pixel_frames = load_video_frames(
-                    video_path, args.num_cond_frames, height=480, width=832,
-                    start_frame=max(0, gen_cond_start),
-                ).to(args.device, torch.bfloat16)
+                if _cached_gen_cond_frames is not None:
+                    gen_pixel_frames = _cached_gen_cond_frames
+                    _cached_gen_cond_frames = None
+                else:
+                    gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                    gen_pixel_frames = load_video_frames(
+                        video_path, args.num_cond_frames, height=480, width=832,
+                        start_frame=max(0, gen_cond_start),
+                    ).to(args.device, torch.bfloat16)
 
                 pf = gen_pixel_frames.squeeze(0)
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
@@ -1277,12 +1285,15 @@ def main():
                         num_cond_frames=args.num_cond_frames,
                         num_gen_frames=num_gen,
                         gen_start_frame=step_gen_start_frame, device=args.device,
+                        return_gt_frames=(step_i == 0 and fvd_accumulator is not None),
                     )
+                    _gt_for_fvd = step_metrics.pop("gt_frames_hwc", None)
                     all_step_metrics.append(step_metrics)
 
                     if step_i == 0 and fvd_accumulator is not None:
                         fvd_accumulator.update(gen_frames, video_path,
-                                               args.num_cond_frames, num_gen, args.gen_start_frame)
+                                               args.num_cond_frames, num_gen, args.gen_start_frame,
+                                               gt_frames_hwc=_gt_for_fvd)
 
                     if step_i == 0:
                         output_path = os.path.join(videos_dir, f"{video_name}_lora.mp4")

@@ -20,6 +20,9 @@ set -euo pipefail
 
 ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 PROJECT_ROOT="/scratch/wc3013/longcat-video-tta"
+GT_CACHE_PVDM="${PROJECT_ROOT}/gt_caches/ucf101_500_pvdm.npz"
+GT_CACHE_DFOT="${PROJECT_ROOT}/gt_caches/ucf101_500_dfot.npz"
+SAVE_LIST="${PROJECT_ROOT}/sweep_experiment/reports/ucf101_retain_videos.json"
 PHASE="${1:---all}"
 
 cd "${PROJECT_ROOT}"
@@ -124,6 +127,7 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "3" ] || [
     PVDM_EVAL_JOB=$(sbatch --account="${ACCOUNT}" \
         --parsable \
         ${PVDM_EVAL_DEP} \
+        --export=ALL,GT_FEATURES_CACHE=${GT_CACHE_PVDM},SAVE_ONLY_LIST=${SAVE_LIST} \
         comparison_methods/sbatch/run_pvdm.sbatch)
     echo "  PVDM baseline eval: Job ${PVDM_EVAL_JOB}"
 
@@ -131,7 +135,7 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "3" ] || [
     SAVI_10_JOB=$(sbatch --account="${ACCOUNT}" \
         --parsable \
         ${PVDM_EVAL_DEP} \
-        --export=ALL,DDIM_STEPS=10,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9 \
+        --export=ALL,DDIM_STEPS=10,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,GT_FEATURES_CACHE=${GT_CACHE_PVDM},SAVE_ONLY_LIST=${SAVE_LIST} \
         comparison_methods/sbatch/run_savi_dno.sbatch)
     echo "  SAVi-DNO (10 steps): Job ${SAVI_10_JOB}"
 
@@ -139,7 +143,7 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "3" ] || [
     SAVI_50_JOB=$(sbatch --account="${ACCOUNT}" \
         --parsable \
         ${PVDM_EVAL_DEP} \
-        --export=ALL,DDIM_STEPS=50,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9 \
+        --export=ALL,DDIM_STEPS=50,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,GT_FEATURES_CACHE=${GT_CACHE_PVDM},SAVE_ONLY_LIST=${SAVE_LIST} \
         comparison_methods/sbatch/run_savi_dno.sbatch)
     echo "  SAVi-DNO (50 steps): Job ${SAVI_50_JOB}"
 
@@ -147,6 +151,7 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "3" ] || [
     DFOT_EVAL_JOB=$(sbatch --account="${ACCOUNT}" \
         --parsable \
         ${DFOT_EVAL_DEP} \
+        --export=ALL,GT_FEATURES_CACHE=${GT_CACHE_DFOT},SAVE_ONLY_LIST=${SAVE_LIST} \
         comparison_methods/sbatch/run_dfot.sbatch)
     echo "  DFoT eval: Job ${DFOT_EVAL_JOB}"
 

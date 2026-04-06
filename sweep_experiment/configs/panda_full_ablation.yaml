@@ -11,8 +11,8 @@ fixed:
   num_steps: 30
   warmup_steps: 3
   weight_decay: 0.01
-  max_grad_norm: 1.0
-  optimizer: sgd
+  max_grad_norm: 10.0
+  optimizer: adamw
   num_cond_frames: 14
   num_frames: 28
   gen_start_frame: 48

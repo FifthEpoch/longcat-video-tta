@@ -381,6 +381,8 @@ def main():
                         help="Path to retain_videos.json for selective video saving")
     parser.add_argument("--gt-features-cache", type=str, default=None,
                         help="Path to pre-computed GT features .npz for frozen FVD/FID reference")
+    parser.add_argument("--max-videos", type=int, default=None,
+                        help="Override max_videos from config (e.g. 100 for quick sanity check)")
     parser.add_argument("--sbatch-template", type=str,
                         default="sweep_experiment/sbatch/run_sweep.sbatch",
                         help="Path to sbatch template")
@@ -432,6 +434,8 @@ def main():
             env_vars["SAVE_ONLY_LIST"] = args.save_only_list
         if args.gt_features_cache:
             env_vars["GT_FEATURES_CACHE"] = args.gt_features_cache
+        if args.max_videos is not None:
+            env_vars["MAX_VIDEOS"] = str(args.max_videos)
 
         time_limit = args.time or estimate_time(method, row, fixed)
         mem = estimate_mem(method)

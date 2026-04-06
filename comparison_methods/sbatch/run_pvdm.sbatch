@@ -40,6 +40,15 @@ unset PYTHONPATH
 cd "${PROJECT_ROOT}"
 export PYTHONPATH="${PVDM_DIR}:${PYTHONPATH:-}"
 
+GT_CACHE_FLAG=""
+if [ -n "${GT_FEATURES_CACHE:-}" ] && [ -f "${GT_FEATURES_CACHE}" ]; then
+    GT_CACHE_FLAG="--gt-features-cache ${GT_FEATURES_CACHE}"
+fi
+SAVE_LIST_FLAG=""
+if [ -n "${SAVE_ONLY_LIST:-}" ] && [ -f "${SAVE_ONLY_LIST}" ]; then
+    SAVE_LIST_FLAG="--save-only-list ${SAVE_ONLY_LIST}"
+fi
+
 python comparison_methods/scripts/savi_dno.py \
     --pvdm-dir "${PVDM_DIR}" \
     --pretrained-dir "${PVDM_DIR}/pretrained" \
@@ -49,7 +58,9 @@ python comparison_methods/scripts/savi_dno.py \
     --max-videos "${MAX_VIDEOS}" \
     --ddim-steps 10 \
     --no-optimize \
-    --seed 42
+    --seed 42 \
+    ${GT_CACHE_FLAG} \
+    ${SAVE_LIST_FLAG}
 
 echo ""
 echo "=============================================================================="
