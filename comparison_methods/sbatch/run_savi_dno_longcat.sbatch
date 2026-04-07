@@ -81,6 +81,10 @@ NO_OPT_FLAG=""
 if [ -n "${SAVI_NO_OPTIMIZE:-}" ] && [ "${SAVI_NO_OPTIMIZE}" = "1" ]; then
     NO_OPT_FLAG="--no-optimize"
 fi
+DNO_CFG_FLAG=""
+if [ "${SAVI_DNO_NO_CFG:-1}" = "1" ]; then
+    DNO_CFG_FLAG="--dno-no-cfg"
+fi
 
 # ============================================================================
 # Run SAVi-DNO with LongCat backbone
@@ -97,6 +101,7 @@ fi
     --p "${SAVI_P:-0.9}" \
     --seed 42 \
     ${NO_OPT_FLAG} \
+    ${DNO_CFG_FLAG} \
     ${GT_CACHE_FLAG} \
     ${SAVE_LIST_FLAG}
 

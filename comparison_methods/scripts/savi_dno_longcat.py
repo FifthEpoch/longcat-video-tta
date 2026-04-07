@@ -247,6 +247,7 @@ class SAViDNO_LongCat:
         p: float = 0.9,
         feature_model: Optional[nn.Module] = None,
         gradient_checkpointing: bool = True,
+        dno_no_cfg: bool = False,
     ):
         self.device = device
         self.dtype = dtype
@@ -262,6 +263,7 @@ class SAViDNO_LongCat:
         self.lam = lam
         self.p = p
         self.gradient_checkpointing = gradient_checkpointing
+        self.dno_no_cfg = dno_no_cfg
 
         self.feature_model = None
         if feature_model is not None:
@@ -361,14 +363,19 @@ class SAViDNO_LongCat:
         eps_init: torch.Tensor,
         prompt_embeds: torch.Tensor,
         prompt_mask: torch.Tensor,
+        use_cfg: bool = True,
     ) -> torch.Tensor:
         """Euler flow-matching sampling with gradient flow to eps_init.
 
         Starts from pure noise (eps_init at t=1.0) and steps toward clean
         signal (t=0.0) using the velocity prediction from the DiT.
+
+        When use_cfg=False, runs a single DiT pass per step (halves memory).
         """
         sigmas = self._build_sigmas()
         x_t = eps_init
+
+        step_fn = self._dit_forward_step_cfg if use_cfg else self._dit_forward_step
 
         for i in range(len(sigmas) - 1):
             t_curr = sigmas[i].item()
@@ -377,12 +384,12 @@ class SAViDNO_LongCat:
 
             if self.gradient_checkpointing:
                 v_pred = ckpt_fn(
-                    self._dit_forward_step_cfg,
+                    step_fn,
                     x_t, cond_latents, t_curr, prompt_embeds, prompt_mask,
                     use_reentrant=False,
                 )
             else:
-                v_pred = self._dit_forward_step_cfg(
+                v_pred = step_fn(
                     x_t, cond_latents, t_curr, prompt_embeds, prompt_mask,
                 )
 
@@ -447,6 +454,7 @@ class SAViDNO_LongCat:
 
         z_pred = self._flow_euler_sample_differentiable(
             cond_latents, eps_mixed, prompt_embeds, prompt_mask,
+            use_cfg=not self.dno_no_cfg,
         )
 
         pred_pixels = self.decode(z_pred)
@@ -533,6 +541,8 @@ def main():
                         help="Noise interpolation parameter")
     parser.add_argument("--no-optimize", action="store_true",
                         help="LongCat baseline without noise optimization")
+    parser.add_argument("--dno-no-cfg", action="store_true",
+                        help="Skip CFG during DNO optimization (halves GPU memory)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-cond-frames", type=int, default=14)
     parser.add_argument("--num-frames", type=int, default=28,
@@ -583,6 +593,7 @@ def main():
     print("  Feature lam  : %g" % args.lam)
     print("  Noise interp : %.2f" % args.p)
     print("  No-optimize  : %s" % args.no_optimize)
+    print("  DNO no-CFG   : %s" % args.dno_no_cfg)
     print("  Grad ckpt    : %s" % (not args.no_gradient_checkpointing))
     print("=" * 70)
 
@@ -623,6 +634,7 @@ def main():
         lr=args.lr, lam=args.lam, p=args.p,
         feature_model=feature_model,
         gradient_checkpointing=not args.no_gradient_checkpointing,
+        dno_no_cfg=args.dno_no_cfg,
     )
 
     # --- Load metric models ---

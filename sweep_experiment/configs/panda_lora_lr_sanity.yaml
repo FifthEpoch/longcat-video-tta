@@ -1,10 +1,10 @@
 # Panda-70M: LoRA LR sanity check (100 videos)
-# Post-bugfix sanity: use LR=2e-4 (best from original UCF-101 Series 4 sweep)
-# at 20 steps, no-ES, to verify TTA improvements after the audit fixes.
+# LR=2e-4 overfits at R4/last_4 (PSNR dropped 1.17 dB).
+# Try LR=5e-5: midpoint between failed 2e-4 and near-neutral 1e-6.
 method: lora
 series: panda
 series_name: panda_lora_lr_sanity
-description: "Panda-70M: LoRA LR sanity (R4, LR=2e-4, 20 steps, 100 videos)"
+description: "Panda-70M: LoRA LR sanity (R4, LR=5e-5, 20 steps, 100 videos)"
 
 fixed:
   lora_rank: 4
@@ -30,6 +30,6 @@ fixed:
   feature_frame_guard_mode: warn
 
 sweep:
-  - run_id: LR2e4_S20
-    learning_rate: 2.0e-4
+  - run_id: LR5e5_S20
+    learning_rate: 5.0e-5
     num_steps: 20

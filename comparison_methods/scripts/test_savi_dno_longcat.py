@@ -132,6 +132,7 @@ def test_full_pipeline(args):
         lr=0.01, lam=0.0012, p=0.9,
         feature_model=feature_model,
         gradient_checkpointing=True,
+        dno_no_cfg=True,
     )
 
     # Find a video to test with
