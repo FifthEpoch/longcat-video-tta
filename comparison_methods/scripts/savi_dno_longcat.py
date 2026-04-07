@@ -240,14 +240,14 @@ class SAViDNO_LongCat:
         text_encoder,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
-        num_inference_steps: int = 10,
+        num_inference_steps: int = 5,
         guidance_scale: float = 4.0,
         lr: float = 0.01,
         lam: float = 0.0012,
         p: float = 0.9,
         feature_model: Optional[nn.Module] = None,
         gradient_checkpointing: bool = True,
-        dno_no_cfg: bool = False,
+        latent_loss: bool = True,
     ):
         self.device = device
         self.dtype = dtype
@@ -263,10 +263,10 @@ class SAViDNO_LongCat:
         self.lam = lam
         self.p = p
         self.gradient_checkpointing = gradient_checkpointing
-        self.dno_no_cfg = dno_no_cfg
+        self.latent_loss = latent_loss
 
         self.feature_model = None
-        if feature_model is not None:
+        if feature_model is not None and not latent_loss:
             self.feature_model = feature_model
             for param in self.feature_model.parameters():
                 param.requires_grad = False
@@ -363,19 +363,17 @@ class SAViDNO_LongCat:
         eps_init: torch.Tensor,
         prompt_embeds: torch.Tensor,
         prompt_mask: torch.Tensor,
-        use_cfg: bool = True,
     ) -> torch.Tensor:
         """Euler flow-matching sampling with gradient flow to eps_init.
 
         Starts from pure noise (eps_init at t=1.0) and steps toward clean
         signal (t=0.0) using the velocity prediction from the DiT.
-
-        When use_cfg=False, runs a single DiT pass per step (halves memory).
+        Always uses CFG (two DiT passes per step) to match inference conditions.
         """
         sigmas = self._build_sigmas()
         x_t = eps_init
 
-        step_fn = self._dit_forward_step_cfg if use_cfg else self._dit_forward_step
+        step_fn = self._dit_forward_step_cfg
 
         for i in range(len(sigmas) - 1):
             t_curr = sigmas[i].item()
@@ -454,44 +452,67 @@ class SAViDNO_LongCat:
 
         z_pred = self._flow_euler_sample_differentiable(
             cond_latents, eps_mixed, prompt_embeds, prompt_mask,
-            use_cfg=not self.dno_no_cfg,
         )
-
-        pred_pixels = self.decode(z_pred)
 
         loss_val = None
         if gt_frames is not None:
-            gt = gt_frames.to(self.device)
-            # VAE decode may produce fewer frames than GT due to temporal
-            # factor rounding (e.g. 14 frames → 4 latents → 13 decoded).
-            T_pred = pred_pixels.shape[2]
-            T_gt = gt.shape[2]
-            if T_pred < T_gt:
-                gt = gt[:, :, :T_pred]
-            elif T_gt < T_pred:
-                pred_pixels = pred_pixels[:, :, :T_gt]
+            if self.latent_loss:
+                # Vista-style: L1 loss in latent space (Eq. 6 from SAVi-DNO).
+                # Avoids decoding during optimization, saving significant memory
+                # for large models. Matches the paper's methodology for Vista.
+                gt_for_vae = (gt_frames.to(self.device) * 2.0 - 1.0).to(self.dtype)
+                with torch.no_grad():
+                    z_gt = encode_video(self.vae, gt_for_vae, normalize=True)
 
-            loss_pixel = F.l1_loss(pred_pixels, gt, reduction="mean")
+                total_loss = F.l1_loss(z_pred, z_gt.to(z_pred.dtype), reduction="mean")
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                self.optimizer.step()
+                loss_val = total_loss.item()
 
-            loss_feature = torch.tensor(0.0, device=self.device)
-            if self.feature_model is not None and self.lam > 0:
-                B, C, T, H, W = pred_pixels.shape
-                pred_3d = pred_pixels.float()
-                gt_3d = gt.float()
-                feat_pred = self.feature_model(pred_3d)
-                feat_gt = self.feature_model(gt_3d)
-                loss_feature = F.mse_loss(feat_pred, feat_gt, reduction="mean")
+                self.dit.zero_grad(set_to_none=True)
 
-            total_loss = loss_pixel + self.lam * loss_feature
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            self.optimizer.step()
-            loss_val = total_loss.item()
+                with torch.no_grad():
+                    pred_pixels = decode_latents(
+                        self.vae, z_pred.detach(), denorm=True,
+                    )
+            else:
+                # PVDM-style: pixel + feature loss (Eq. 3+4 from SAVi-DNO).
+                pred_pixels = self.decode(z_pred)
 
-            self.dit.zero_grad(set_to_none=True)
-            self.vae.zero_grad(set_to_none=True)
-            if self.feature_model is not None:
-                self.feature_model.zero_grad(set_to_none=True)
+                gt = gt_frames.to(self.device)
+                T_pred = pred_pixels.shape[2]
+                T_gt = gt.shape[2]
+                if T_pred < T_gt:
+                    gt = gt[:, :, :T_pred]
+                elif T_gt < T_pred:
+                    pred_pixels = pred_pixels[:, :, :T_gt]
+
+                loss_pixel = F.l1_loss(pred_pixels, gt, reduction="mean")
+
+                loss_feature = torch.tensor(0.0, device=self.device)
+                if self.feature_model is not None and self.lam > 0:
+                    pred_3d = pred_pixels.float()
+                    gt_3d = gt.float()
+                    feat_pred = self.feature_model(pred_3d)
+                    feat_gt = self.feature_model(gt_3d)
+                    loss_feature = F.mse_loss(feat_pred, feat_gt, reduction="mean")
+
+                total_loss = loss_pixel + self.lam * loss_feature
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                self.optimizer.step()
+                loss_val = total_loss.item()
+
+                self.dit.zero_grad(set_to_none=True)
+                self.vae.zero_grad(set_to_none=True)
+                if self.feature_model is not None:
+                    self.feature_model.zero_grad(set_to_none=True)
+        else:
+            with torch.no_grad():
+                pred_pixels = decode_latents(
+                    self.vae, z_pred.detach(), denorm=True,
+                )
 
         return pred_pixels.detach(), loss_val
 
@@ -530,19 +551,21 @@ def main():
                         help="Dataset directory with videos/ and metadata.csv")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-videos", type=int, default=100)
-    parser.add_argument("--num-inference-steps", type=int, default=10,
-                        help="Number of Euler steps for flow-matching sampling")
+    parser.add_argument("--num-inference-steps", type=int, default=5,
+                        help="Euler steps (default 5 to match SAVi-DNO Vista)")
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--lr", type=float, default=0.01,
                         help="Adam LR for noise optimization")
     parser.add_argument("--lam", type=float, default=0.0012,
-                        help="Feature loss weight")
+                        help="Feature loss weight (only used with pixel loss)")
     parser.add_argument("--p", type=float, default=0.9,
                         help="Noise interpolation parameter")
     parser.add_argument("--no-optimize", action="store_true",
                         help="LongCat baseline without noise optimization")
-    parser.add_argument("--dno-no-cfg", action="store_true",
-                        help="Skip CFG during DNO optimization (halves GPU memory)")
+    parser.add_argument("--latent-loss", action="store_true",
+                        help="Use latent-space L1 loss (SAVi-DNO Vista style)")
+    parser.add_argument("--pixel-loss", action="store_true",
+                        help="Use pixel + feature loss (SAVi-DNO PVDM style)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-cond-frames", type=int, default=14)
     parser.add_argument("--num-frames", type=int, default=28,
@@ -580,6 +603,13 @@ def main():
     width = 832 if args.resolution == "480p" else 1280
     vae_t_factor = 4
 
+    # Resolve loss mode: --latent-loss and --pixel-loss are mutually exclusive.
+    # Default to latent loss (Vista-style) when neither is specified.
+    use_latent_loss = not args.pixel_loss
+    if args.latent_loss:
+        use_latent_loss = True
+    loss_mode = "latent (Vista-style)" if use_latent_loss else "pixel+feature (PVDM-style)"
+
     print("=" * 70)
     print("SAVi-DNO with LongCat Backbone")
     print("=" * 70)
@@ -588,12 +618,12 @@ def main():
     print("  Cond frames  : %d" % args.num_cond_frames)
     print("  Gen frames   : %d" % num_gen_frames)
     print("  Euler steps  : %d" % args.num_inference_steps)
-    print("  Guidance     : %.1f" % args.guidance_scale)
+    print("  Guidance     : %.1f (CFG always on)" % args.guidance_scale)
     print("  DNO LR       : %g" % args.lr)
-    print("  Feature lam  : %g" % args.lam)
+    print("  Loss mode    : %s" % loss_mode)
+    print("  Feature lam  : %g%s" % (args.lam, " (unused — latent loss)" if use_latent_loss else ""))
     print("  Noise interp : %.2f" % args.p)
     print("  No-optimize  : %s" % args.no_optimize)
-    print("  DNO no-CFG   : %s" % args.dno_no_cfg)
     print("  Grad ckpt    : %s" % (not args.no_gradient_checkpointing))
     print("=" * 70)
 
@@ -619,9 +649,9 @@ def main():
     vae.eval()
     text_encoder.eval()
 
-    # Feature model for DNO loss
+    # Feature model only needed for pixel-loss mode
     feature_model = None
-    if not args.no_optimize and args.lam > 0:
+    if not args.no_optimize and not use_latent_loss and args.lam > 0:
         print("Loading ResNet3D feature extractor...")
         feature_model = load_feature_model(device)
 
@@ -634,7 +664,7 @@ def main():
         lr=args.lr, lam=args.lam, p=args.p,
         feature_model=feature_model,
         gradient_checkpointing=not args.no_gradient_checkpointing,
-        dno_no_cfg=args.dno_no_cfg,
+        latent_loss=use_latent_loss,
     )
 
     # --- Load metric models ---

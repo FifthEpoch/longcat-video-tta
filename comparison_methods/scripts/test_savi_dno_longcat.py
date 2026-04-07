@@ -122,7 +122,7 @@ def test_full_pipeline(args):
     feature_model = load_feature_model(device)
     print("  Feature model loaded")
 
-    # Create SAViDNO_LongCat instance
+    # Create SAViDNO_LongCat instance (Vista-style: CFG on, latent loss)
     savi = SAViDNO_LongCat(
         dit=dit, vae=vae, scheduler=scheduler,
         tokenizer=tokenizer, text_encoder=text_encoder,
@@ -132,7 +132,7 @@ def test_full_pipeline(args):
         lr=0.01, lam=0.0012, p=0.9,
         feature_model=feature_model,
         gradient_checkpointing=True,
-        dno_no_cfg=True,
+        latent_loss=True,
     )
 
     # Find a video to test with
