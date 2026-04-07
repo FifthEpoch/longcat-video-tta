@@ -1,9 +1,10 @@
 # Panda-70M: LoRA LR sanity check (100 videos)
-# Quick sweep over LR and step count to find a working config
+# Post-bugfix sanity: use LR=2e-4 (best from original UCF-101 Series 4 sweep)
+# at 20 steps, no-ES, to verify TTA improvements after the audit fixes.
 method: lora
 series: panda
 series_name: panda_lora_lr_sanity
-description: "Panda-70M: LoRA LR sanity (R4, 100 videos, no-ES)"
+description: "Panda-70M: LoRA LR sanity (R4, LR=2e-4, 20 steps, 100 videos)"
 
 fixed:
   lora_rank: 4
@@ -29,14 +30,6 @@ fixed:
   feature_frame_guard_mode: warn
 
 sweep:
-  - run_id: LR1e6_S20
-    learning_rate: 1.0e-6
-    num_steps: 20
-
-  - run_id: LR1e5_S20
-    learning_rate: 1.0e-5
-    num_steps: 20
-
-  - run_id: LR1e4_S20
-    learning_rate: 1.0e-4
+  - run_id: LR2e4_S20
+    learning_rate: 2.0e-4
     num_steps: 20
