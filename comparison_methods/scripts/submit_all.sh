@@ -22,6 +22,7 @@ ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 PROJECT_ROOT="/scratch/wc3013/longcat-video-tta"
 GT_CACHE_PVDM="${PROJECT_ROOT}/gt_caches/ucf101_500_pvdm.npz"
 GT_CACHE_DFOT="${PROJECT_ROOT}/gt_caches/ucf101_500_dfot.npz"
+GT_CACHE_LONGCAT="${PROJECT_ROOT}/gt_caches/ucf101_500_longcat.npz"
 SAVE_LIST="${PROJECT_ROOT}/sweep_experiment/reports/ucf101_retain_videos.json"
 PHASE="${1:---all}"
 
@@ -154,6 +155,20 @@ if [ "${PHASE}" = "--all" ] || [ "${PHASE}" = "--phase" -a "${2:-}" = "3" ] || [
         --export=ALL,GT_FEATURES_CACHE=${GT_CACHE_DFOT},SAVE_ONLY_LIST=${SAVE_LIST} \
         comparison_methods/sbatch/run_dfot.sbatch)
     echo "  DFoT eval: Job ${DFOT_EVAL_JOB}"
+
+    # SAVi-DNO with LongCat backbone (no data prep needed — uses 480p directly)
+    SAVI_LC_JOB=$(sbatch --account="${ACCOUNT}" \
+        --parsable \
+        --export=ALL,SAVI_EULER_STEPS=10,SAVI_LR=0.01,SAVI_LAM=0.0012,SAVI_P=0.9,SAVI_GUIDANCE=4.0,SAVI_LC_DATA_DIR=${PROJECT_ROOT}/datasets/ucf101_500_480p,SAVI_LC_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/savi_dno_longcat_s10,SAVI_LC_MAX_VIDEOS=500,GT_FEATURES_CACHE=${GT_CACHE_LONGCAT},SAVE_ONLY_LIST=${SAVE_LIST} \
+        comparison_methods/sbatch/run_savi_dno_longcat.sbatch)
+    echo "  SAVi-DNO LongCat (10 steps): Job ${SAVI_LC_JOB}"
+
+    # LongCat baseline (no noise optimization — random noise generation)
+    LC_BASE_JOB=$(sbatch --account="${ACCOUNT}" \
+        --parsable \
+        --export=ALL,SAVI_NO_OPTIMIZE=1,SAVI_EULER_STEPS=10,SAVI_LC_DATA_DIR=${PROJECT_ROOT}/datasets/ucf101_500_480p,SAVI_LC_OUTPUT_DIR=${PROJECT_ROOT}/comparison_methods/results/longcat_baseline,SAVI_LC_MAX_VIDEOS=500,GT_FEATURES_CACHE=${GT_CACHE_LONGCAT},SAVE_ONLY_LIST=${SAVE_LIST} \
+        comparison_methods/sbatch/run_savi_dno_longcat.sbatch)
+    echo "  LongCat baseline: Job ${LC_BASE_JOB}"
 
     echo ""
 fi
