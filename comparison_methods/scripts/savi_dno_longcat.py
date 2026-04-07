@@ -454,6 +454,15 @@ class SAViDNO_LongCat:
         loss_val = None
         if gt_frames is not None:
             gt = gt_frames.to(self.device)
+            # VAE decode may produce fewer frames than GT due to temporal
+            # factor rounding (e.g. 14 frames → 4 latents → 13 decoded).
+            T_pred = pred_pixels.shape[2]
+            T_gt = gt.shape[2]
+            if T_pred < T_gt:
+                gt = gt[:, :, :T_pred]
+            elif T_gt < T_pred:
+                pred_pixels = pred_pixels[:, :, :T_gt]
+
             loss_pixel = F.l1_loss(pred_pixels, gt, reduction="mean")
 
             loss_feature = torch.tensor(0.0, device=self.device)
