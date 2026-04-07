@@ -1,0 +1,42 @@
+# Panda-70M: LoRA LR sanity check (100 videos)
+# Quick sweep over LR and step count to find a working config
+method: lora
+series: panda
+series_name: panda_lora_lr_sanity
+description: "Panda-70M: LoRA LR sanity (R4, 100 videos, no-ES)"
+
+fixed:
+  lora_rank: 4
+  lora_alpha: 8
+  lora_target_blocks: last_4
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 10.0
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: LR1e6_S20
+    learning_rate: 1.0e-6
+    num_steps: 20
+
+  - run_id: LR1e5_S20
+    learning_rate: 1.0e-5
+    num_steps: 20
+
+  - run_id: LR1e4_S20
+    learning_rate: 1.0e-4
+    num_steps: 20
