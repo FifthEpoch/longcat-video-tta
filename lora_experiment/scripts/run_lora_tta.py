@@ -103,7 +103,7 @@ def gpu_mem_stats(device="cuda"):
     alloc = torch.cuda.memory_allocated(device) / (1024 ** 3)
     reserved = torch.cuda.memory_reserved(device) / (1024 ** 3)
     peak = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
-    total = torch.cuda.get_device_properties(device).total_mem / (1024 ** 3)
+    total = torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)
     return {
         "allocated_gib": round(alloc, 2),
         "reserved_gib": round(reserved, 2),

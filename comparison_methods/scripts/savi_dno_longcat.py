@@ -240,7 +240,7 @@ class SAViDNO_LongCat:
         text_encoder,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
-        num_inference_steps: int = 10,
+        num_inference_steps: int = 5,
         guidance_scale: float = 4.0,
         lr: float = 0.01,
         lam: float = 0.0012,
@@ -555,8 +555,8 @@ def main():
                         help="Dataset directory with videos/ and metadata.csv")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-videos", type=int, default=100)
-    parser.add_argument("--num-inference-steps", type=int, default=10,
-                        help="Euler steps (default 10 to match SAVi-DNO PVDM)")
+    parser.add_argument("--num-inference-steps", type=int, default=5,
+                        help="Euler steps (4 confirmed to fit on H200, 10 OOMs)")
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--lr", type=float, default=0.01,
                         help="Adam LR for noise optimization")
