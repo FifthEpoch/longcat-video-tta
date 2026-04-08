@@ -18,12 +18,12 @@ echo "==========================================================================
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "Start time: $(date)"
-echo "Euler steps: ${SAVI_EULER_STEPS:-5}"
+echo "Euler steps: ${SAVI_EULER_STEPS:-10}"
 echo "LR: ${SAVI_LR:-0.01}"
 echo "Lambda: ${SAVI_LAM:-0.0012}"
 echo "p: ${SAVI_P:-0.9}"
-echo "Guidance: ${SAVI_GUIDANCE:-4.0} (CFG always on)"
-echo "Loss mode: ${SAVI_LOSS_MODE:-latent}"
+echo "Guidance: ${SAVI_GUIDANCE:-4.0}"
+echo "Loss mode: ${SAVI_LOSS_MODE:-pixel} (PVDM-style: pixel+feature, no CFG)"
 echo "No-optimize: ${SAVI_NO_OPTIMIZE:-}"
 echo "=============================================================================="
 
@@ -31,7 +31,7 @@ SCRATCH_BASE="/scratch/wc3013"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
 DATA_DIR="${SAVI_LC_DATA_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
-OUTPUT_DIR="${SAVI_LC_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/savi_dno_longcat_s${SAVI_EULER_STEPS:-5}}"
+OUTPUT_DIR="${SAVI_LC_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/savi_dno_longcat_s${SAVI_EULER_STEPS:-10}}"
 MAX_VIDEOS="${SAVI_LC_MAX_VIDEOS:-1000}"
 
 # ============================================================================
@@ -83,10 +83,10 @@ if [ -n "${SAVI_NO_OPTIMIZE:-}" ] && [ "${SAVI_NO_OPTIMIZE}" = "1" ]; then
     NO_OPT_FLAG="--no-optimize"
 fi
 LOSS_FLAG=""
-if [ "${SAVI_LOSS_MODE:-latent}" = "pixel" ]; then
-    LOSS_FLAG="--pixel-loss"
-else
+if [ "${SAVI_LOSS_MODE:-pixel}" = "latent" ]; then
     LOSS_FLAG="--latent-loss"
+else
+    LOSS_FLAG="--pixel-loss"
 fi
 
 # ============================================================================
@@ -97,7 +97,7 @@ fi
     --data-dir "${DATA_DIR}" \
     --output-dir "${OUTPUT_DIR}" \
     --max-videos "${MAX_VIDEOS}" \
-    --num-inference-steps "${SAVI_EULER_STEPS:-5}" \
+    --num-inference-steps "${SAVI_EULER_STEPS:-10}" \
     --guidance-scale "${SAVI_GUIDANCE:-4.0}" \
     --lr "${SAVI_LR:-0.01}" \
     --lam "${SAVI_LAM:-0.0012}" \

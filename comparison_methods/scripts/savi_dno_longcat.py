@@ -240,14 +240,14 @@ class SAViDNO_LongCat:
         text_encoder,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
-        num_inference_steps: int = 5,
+        num_inference_steps: int = 10,
         guidance_scale: float = 4.0,
         lr: float = 0.01,
         lam: float = 0.0012,
         p: float = 0.9,
         feature_model: Optional[nn.Module] = None,
         gradient_checkpointing: bool = True,
-        latent_loss: bool = True,
+        latent_loss: bool = False,
     ):
         self.device = device
         self.dtype = dtype
@@ -363,17 +363,21 @@ class SAViDNO_LongCat:
         eps_init: torch.Tensor,
         prompt_embeds: torch.Tensor,
         prompt_mask: torch.Tensor,
+        use_cfg: bool = False,
     ) -> torch.Tensor:
         """Euler flow-matching sampling with gradient flow to eps_init.
 
         Starts from pure noise (eps_init at t=1.0) and steps toward clean
         signal (t=0.0) using the velocity prediction from the DiT.
-        Always uses CFG (two DiT passes per step) to match inference conditions.
+
+        PVDM-style (default): single DiT pass per step, no CFG.
+        Matches SAVi-DNO paper: "For PVDM, we do not use guidance during
+        inference."
         """
         sigmas = self._build_sigmas()
         x_t = eps_init
 
-        step_fn = self._dit_forward_step_cfg
+        step_fn = self._dit_forward_step_cfg if use_cfg else self._dit_forward_step
 
         for i in range(len(sigmas) - 1):
             t_curr = sigmas[i].item()
@@ -551,21 +555,21 @@ def main():
                         help="Dataset directory with videos/ and metadata.csv")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-videos", type=int, default=100)
-    parser.add_argument("--num-inference-steps", type=int, default=5,
-                        help="Euler steps (default 5 to match SAVi-DNO Vista)")
+    parser.add_argument("--num-inference-steps", type=int, default=10,
+                        help="Euler steps (default 10 to match SAVi-DNO PVDM)")
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--lr", type=float, default=0.01,
                         help="Adam LR for noise optimization")
     parser.add_argument("--lam", type=float, default=0.0012,
-                        help="Feature loss weight (only used with pixel loss)")
+                        help="Feature loss weight (PVDM-style pixel+feature loss)")
     parser.add_argument("--p", type=float, default=0.9,
                         help="Noise interpolation parameter")
     parser.add_argument("--no-optimize", action="store_true",
                         help="LongCat baseline without noise optimization")
     parser.add_argument("--latent-loss", action="store_true",
-                        help="Use latent-space L1 loss (SAVi-DNO Vista style)")
+                        help="Use latent-space L1 loss (Vista style, for OOM)")
     parser.add_argument("--pixel-loss", action="store_true",
-                        help="Use pixel + feature loss (SAVi-DNO PVDM style)")
+                        help="Use pixel + feature loss (default, PVDM style)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-cond-frames", type=int, default=14)
     parser.add_argument("--num-frames", type=int, default=28,
@@ -604,11 +608,9 @@ def main():
     vae_t_factor = 4
 
     # Resolve loss mode: --latent-loss and --pixel-loss are mutually exclusive.
-    # Default to latent loss (Vista-style) when neither is specified.
-    use_latent_loss = not args.pixel_loss
-    if args.latent_loss:
-        use_latent_loss = True
-    loss_mode = "latent (Vista-style)" if use_latent_loss else "pixel+feature (PVDM-style)"
+    # Default to pixel+feature loss (PVDM-style) when neither is specified.
+    use_latent_loss = args.latent_loss and not args.pixel_loss
+    loss_mode = "latent (Vista-style)" if use_latent_loss else "pixel+feature (PVDM-style, no CFG)"
 
     print("=" * 70)
     print("SAVi-DNO with LongCat Backbone")
@@ -618,7 +620,8 @@ def main():
     print("  Cond frames  : %d" % args.num_cond_frames)
     print("  Gen frames   : %d" % num_gen_frames)
     print("  Euler steps  : %d" % args.num_inference_steps)
-    print("  Guidance     : %.1f (CFG always on)" % args.guidance_scale)
+    print("  Guidance     : %.1f%s" % (args.guidance_scale,
+          " (CFG off — PVDM-style)" if not use_latent_loss else " (CFG on — Vista-style)"))
     print("  DNO LR       : %g" % args.lr)
     print("  Loss mode    : %s" % loss_mode)
     print("  Feature lam  : %g%s" % (args.lam, " (unused — latent loss)" if use_latent_loss else ""))
