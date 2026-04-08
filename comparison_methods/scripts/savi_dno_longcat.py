@@ -231,7 +231,6 @@ def split_dit_across_gpus(dit, split_block=24, device0="cuda:0", device1="cuda:1
     both GPUs seamlessly.
     """
     import types
-    from torch.cuda import amp
 
     for i in range(split_block, len(dit.blocks)):
         dit.blocks[i] = dit.blocks[i].to(device1)
@@ -268,7 +267,7 @@ def split_dit_across_gpus(dit, split_block=24, device0="cuda:0", device1="cuda:1
 
         hidden_states = self.x_embedder(hidden_states)
 
-        with amp.autocast(device_type="cuda", dtype=torch.float32):
+        with torch.amp.autocast("cuda", dtype=torch.float32):
             t = self.t_embedder(
                 timestep.float().flatten(), dtype=torch.float32
             ).reshape(B, N_t, -1)
