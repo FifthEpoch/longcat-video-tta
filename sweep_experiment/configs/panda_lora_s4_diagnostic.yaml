@@ -1,0 +1,47 @@
+# Panda-70M: Diagnose LoRA TTA regression (100 videos)
+#
+# Series 4 on UCF-101 showed real TTA gains with:
+#   rank=1, all blocks, grad_norm=1.0, LR=2e-4
+# Current Panda configs (rank=4, last_4, grad_norm=10) show no gains.
+#
+# Run A: Exact Series 4 hypers on Panda — isolates dataset vs config.
+# Run B: rank=1 all blocks, but keep grad_norm=10, LR scaled down to 2e-5
+#         (10x lower to compensate for 10x looser gradient clipping).
+method: lora
+series: panda
+series_name: panda_lora_s4_diagnostic
+description: "Panda-70M: Series 4 config diagnostic (rank=1, all blocks, 100 videos)"
+
+fixed:
+  lora_rank: 1
+  lora_alpha: 2.0
+  lora_target_blocks: all
+  warmup_steps: 3
+  weight_decay: 0.01
+  num_steps: 20
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # Run A: Exact Series 4 settings (grad_norm=1.0, LR=2e-4)
+  - run_id: S4_GN1_LR2e4
+    max_grad_norm: 1.0
+    learning_rate: 2.0e-4
+
+  # Run B: All blocks but grad_norm=10, LR=2e-5 (scaled 10x lower)
+  - run_id: S4_GN10_LR2e5
+    max_grad_norm: 10.0
+    learning_rate: 2.0e-5
