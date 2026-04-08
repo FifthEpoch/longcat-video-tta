@@ -219,6 +219,115 @@ def torch_gc():
 
 
 # ============================================================================
+# 2-GPU model parallelism for DiT
+# ============================================================================
+
+def split_dit_across_gpus(dit, split_block=24, device0="cuda:0", device1="cuda:1"):
+    """Split the DiT transformer blocks across 2 GPUs.
+
+    Moves blocks[split_block:] and final_layer to device1, keeps embedders
+    and blocks[:split_block] on device0.  Monkey-patches dit.forward to
+    insert device transfers at the split boundary so gradients flow through
+    both GPUs seamlessly.
+    """
+    import types
+    from torch.cuda import amp
+
+    for i in range(split_block, len(dit.blocks)):
+        dit.blocks[i] = dit.blocks[i].to(device1)
+    dit.final_layer = dit.final_layer.to(device1)
+
+    print(f"[2-GPU] Blocks 0-{split_block - 1} on {device0}, "
+          f"blocks {split_block}-{len(dit.blocks) - 1} + final_layer on {device1}")
+
+    _split = split_block
+    _dev0 = device0
+    _dev1 = device1
+
+    def _forward_2gpu(
+        self,
+        hidden_states,
+        timestep,
+        encoder_hidden_states,
+        encoder_attention_mask=None,
+        num_cond_latents=0,
+        **kwargs,
+    ):
+        B, _, T, H, W = hidden_states.shape
+        N_t = T // self.patch_size[0]
+        N_h = H // self.patch_size[1]
+        N_w = W // self.patch_size[2]
+
+        if len(timestep.shape) == 1:
+            timestep = timestep.unsqueeze(1).expand(-1, N_t)
+
+        dtype = self.x_embedder.proj.weight.dtype
+        hidden_states = hidden_states.to(dtype)
+        timestep = timestep.to(dtype)
+        encoder_hidden_states = encoder_hidden_states.to(dtype)
+
+        hidden_states = self.x_embedder(hidden_states)
+
+        with amp.autocast(device_type="cuda", dtype=torch.float32):
+            t = self.t_embedder(
+                timestep.float().flatten(), dtype=torch.float32
+            ).reshape(B, N_t, -1)
+
+        encoder_hidden_states = self.y_embedder(encoder_hidden_states)
+
+        if self.text_tokens_zero_pad and encoder_attention_mask is not None:
+            encoder_hidden_states = (
+                encoder_hidden_states * encoder_attention_mask[:, None, :, None]
+            )
+            encoder_attention_mask = (
+                (encoder_attention_mask * 0 + 1).to(encoder_attention_mask.dtype)
+            )
+
+        if encoder_attention_mask is not None:
+            encoder_attention_mask = encoder_attention_mask.squeeze(1).squeeze(1)
+            encoder_hidden_states = (
+                encoder_hidden_states.squeeze(1)
+                .masked_select(encoder_attention_mask.unsqueeze(-1) != 0)
+                .view(1, -1, hidden_states.shape[-1])
+            )
+            y_seqlens = encoder_attention_mask.sum(dim=1).tolist()
+        else:
+            y_seqlens = [encoder_hidden_states.shape[2]] * encoder_hidden_states.shape[0]
+            encoder_hidden_states = encoder_hidden_states.squeeze(1).view(
+                1, -1, hidden_states.shape[-1]
+            )
+
+        latent_shape = (N_t, N_h, N_w)
+
+        for i, block in enumerate(self.blocks):
+            if i == _split:
+                hidden_states = hidden_states.to(_dev1)
+                t = t.to(_dev1)
+                encoder_hidden_states = encoder_hidden_states.to(_dev1)
+
+            if torch.is_grad_enabled() and self.gradient_checkpointing:
+                hidden_states = self._gradient_checkpointing_func(
+                    block, hidden_states, encoder_hidden_states, t,
+                    y_seqlens, latent_shape, num_cond_latents,
+                    False, None, False,
+                )
+            else:
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, t,
+                    y_seqlens, latent_shape, num_cond_latents,
+                )
+
+        hidden_states = self.final_layer(hidden_states, t, latent_shape)
+        hidden_states = self.unpatchify(hidden_states, N_t, N_h, N_w)
+        hidden_states = hidden_states.to(torch.float32)
+
+        return hidden_states.to(_dev0)
+
+    dit.forward = types.MethodType(_forward_2gpu, dit)
+    return dit
+
+
+# ============================================================================
 # SAViDNO_LongCat — core class
 # ============================================================================
 
@@ -240,7 +349,7 @@ class SAViDNO_LongCat:
         text_encoder,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
-        num_inference_steps: int = 5,
+        num_inference_steps: int = 10,
         guidance_scale: float = 4.0,
         lr: float = 0.01,
         lam: float = 0.0012,
@@ -555,8 +664,10 @@ def main():
                         help="Dataset directory with videos/ and metadata.csv")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-videos", type=int, default=100)
-    parser.add_argument("--num-inference-steps", type=int, default=5,
-                        help="Euler steps (4 confirmed to fit on H200, 10 OOMs)")
+    parser.add_argument("--num-inference-steps", type=int, default=10,
+                        help="Euler steps (10 matches SAVi-DNO paper, needs 2 GPUs)")
+    parser.add_argument("--num-gpus", type=int, default=1,
+                        help="Number of GPUs (2 for model-parallel DiT)")
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--lr", type=float, default=0.01,
                         help="Adam LR for noise optimization")
@@ -628,6 +739,7 @@ def main():
     print("  Noise interp : %.2f" % args.p)
     print("  No-optimize  : %s" % args.no_optimize)
     print("  Grad ckpt    : %s" % (not args.no_gradient_checkpointing))
+    print("  Num GPUs     : %d" % args.num_gpus)
     print("=" * 70)
 
     # --- Load LongCat model ---
@@ -651,6 +763,11 @@ def main():
     dit.eval()
     vae.eval()
     text_encoder.eval()
+
+    # 2-GPU model parallelism: split DiT blocks across devices
+    if args.num_gpus >= 2 and torch.cuda.device_count() >= 2:
+        split_dit_across_gpus(dit, split_block=24,
+                              device0="cuda:0", device1="cuda:1")
 
     # Feature model only needed for pixel-loss mode
     feature_model = None
