@@ -252,6 +252,15 @@ def split_dit_across_gpus(dit, split_block=24, device0="cuda:0", device1="cuda:1
         num_cond_latents=0,
         **kwargs,
     ):
+        # Pin inputs to device0 — during checkpoint recomputation the
+        # default CUDA device may have shifted to device1, which would
+        # cause tensors created with device="cuda" to land on the wrong GPU.
+        hidden_states = hidden_states.to(_dev0)
+        timestep = timestep.to(_dev0)
+        encoder_hidden_states = encoder_hidden_states.to(_dev0)
+        if encoder_attention_mask is not None:
+            encoder_attention_mask = encoder_attention_mask.to(_dev0)
+
         B, _, T, H, W = hidden_states.shape
         N_t = T // self.patch_size[0]
         N_h = H // self.patch_size[1]
