@@ -845,6 +845,7 @@ def main():
     results = []
     total_psnr = total_ssim = total_lpips = 0.0
     n_ok = 0
+    gpu_peak_per_video = []
 
     for idx, entry in enumerate(tqdm(video_list, desc=method_name)):
         video_name = entry.get("video_name", entry.get("filename", ""))
@@ -909,6 +910,20 @@ def main():
                 )
 
             elapsed = time.time() - t_start
+
+            # Track GPU peak memory
+            if torch.cuda.is_available():
+                peaks = {}
+                for gi in range(torch.cuda.device_count()):
+                    peaks[gi] = torch.cuda.max_memory_allocated(gi) / (1024**3)
+                    torch.cuda.reset_peak_memory_stats(gi)
+                gpu_peak_per_video.append(peaks)
+                if idx == 0:
+                    total_per_gpu = {gi: torch.cuda.get_device_properties(gi).total_memory / (1024**3)
+                                     for gi in range(torch.cuda.device_count())}
+                    print("\n  [GPU mem] First video peaks: %s" %
+                          ", ".join("GPU%d=%.1f/%.1f GiB" % (gi, peaks[gi], total_per_gpu[gi])
+                                   for gi in sorted(peaks)))
 
             # Convert to numpy [T, C, H, W] for metrics
             pred_np = pred_pixels.squeeze(0).float().cpu().numpy()
@@ -1031,8 +1046,22 @@ def main():
         "lam": args.lam,
         "p": args.p,
         "rollout_steps": args.rollout_steps,
-        "results": results,
+        "num_gpus": args.num_gpus,
     }
+    if gpu_peak_per_video:
+        num_devs = max(len(p) for p in gpu_peak_per_video)
+        gpu_mem = {}
+        for gi in range(num_devs):
+            dev_peaks = [p[gi] for p in gpu_peak_per_video if gi in p]
+            total_gib = torch.cuda.get_device_properties(gi).total_memory / (1024**3)
+            gpu_mem["gpu%d" % gi] = {
+                "total_gib": round(total_gib, 1),
+                "peak_mean_gib": round(sum(dev_peaks) / len(dev_peaks), 2),
+                "peak_max_gib": round(max(dev_peaks), 2),
+                "headroom_gib": round(total_gib - max(dev_peaks), 1),
+            }
+        summary["gpu_memory"] = gpu_mem
+    summary["results"] = results
     with open(output_dir / "summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=str)
 
@@ -1048,6 +1077,10 @@ def main():
         print("  FVD:       %.4f" % fvd_val)
     if fid_val is not None:
         print("  FID:       %.4f" % fid_val)
+    if "gpu_memory" in summary:
+        for gname, ginfo in summary["gpu_memory"].items():
+            print("  %s: peak %.1f / %.1f GiB (headroom %.1f GiB)" %
+                  (gname, ginfo["peak_max_gib"], ginfo["total_gib"], ginfo["headroom_gib"]))
     print("  Results: %s" % str(output_dir / "summary.json"))
     print("=" * 70)
 
