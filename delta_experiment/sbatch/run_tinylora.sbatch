@@ -135,7 +135,7 @@ if [ -n "${ES_DISABLE}" ]; then
 fi
 ES_FLAGS="${ES_FLAGS} --es-check-every ${ES_CHECK_EVERY}"
 ES_FLAGS="${ES_FLAGS} --es-patience ${ES_PATIENCE}"
-ES_FLAGS="${ES_FLAGS} --es-anchor-timesteps ${ES_ANCHOR_TIMESTEPS}"
+ES_FLAGS="${ES_FLAGS} --es-anchor-sigmas ${ES_ANCHOR_TIMESTEPS}"
 ES_FLAGS="${ES_FLAGS} --es-noise-draws ${ES_NOISE_DRAWS}"
 ES_FLAGS="${ES_FLAGS} --es-strategy ${ES_STRATEGY}"
 ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
