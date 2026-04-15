@@ -42,7 +42,8 @@ from common import (
     load_video_frames,
     encode_video,
     encode_prompt,
-    compute_flow_matching_loss,
+    compute_flow_matching_loss_conditioned,
+    split_tta_latents,
     save_results,
     load_checkpoint,
     save_checkpoint,
@@ -67,7 +68,8 @@ from tinylora_layers import (
 
 def optimize_tinylora(
     wrapper: TinyLoRAWrapper,
-    latents: torch.Tensor,
+    cond_latents: torch.Tensor,
+    train_latents: torch.Tensor,
     prompt_embeds: torch.Tensor,
     prompt_mask: torch.Tensor,
     num_steps: int = 20,
@@ -80,15 +82,19 @@ def optimize_tinylora(
     trainable = wrapper.get_trainable_params()
     optimizer = AdamW(trainable, lr=lr, betas=(0.9, 0.999), eps=1e-15)
 
+    def _save_fn():
+        return {n: p.detach().clone() for n, p in wrapper.named_parameters() if p.requires_grad}
+
     wrapper.train()
     losses = []
 
     for step in range(num_steps):
         optimizer.zero_grad()
 
-        loss = compute_flow_matching_loss(
+        loss = compute_flow_matching_loss_conditioned(
             dit=wrapper,
-            latents=latents,
+            cond_latents=cond_latents,
+            target_latents=train_latents,
             prompt_embeds=prompt_embeds,
             prompt_mask=prompt_mask,
             device=device,
@@ -102,7 +108,9 @@ def optimize_tinylora(
         losses.append(loss.item())
 
         if early_stopper is not None:
-            should_stop, es_info = early_stopper.step(step + 1)
+            should_stop, es_info = early_stopper.step(
+                step + 1, save_fn=_save_fn,
+            )
             if should_stop:
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
@@ -285,40 +293,60 @@ def main():
                 video_path, args.num_cond_frames, height=480, width=832
             ).to(args.device, torch.bfloat16)
 
-            latents = encode_video(vae, pixel_frames, normalize=True)
+            all_latents = encode_video(vae, pixel_frames, normalize=True)
+
+            vae_t_scale = 4
+            num_ctx_lat = 1 + (args.num_cond_frames - 1) // vae_t_scale
+            cond_latents, train_latents, val_latents = split_tta_latents(
+                all_latents, num_ctx_lat,
+                holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+            )
 
             prompt_embeds, prompt_mask = encode_prompt(
                 tokenizer, text_encoder, caption,
                 device=args.device, dtype=torch.bfloat16,
             )
 
-            if early_stopper is not None:
+            if early_stopper is not None and val_latents is not None:
+                pe, pm = prompt_embeds, prompt_mask
+
+                def _es_forward_fn(hs, ts, ncl):
+                    return wrapper(
+                        hidden_states=hs,
+                        timestep=ts,
+                        encoder_hidden_states=pe,
+                        encoder_attention_mask=pm,
+                        num_cond_latents=ncl,
+                    )
+
                 early_stopper.setup(
                     model=wrapper,
-                    latents=latents,
+                    cond_latents=cond_latents,
+                    val_latents=val_latents,
                     prompt_embeds=prompt_embeds,
                     prompt_mask=prompt_mask,
                     device=args.device,
                     dtype=torch.bfloat16,
-                    forward_fn=lambda nl, ts: wrapper(
-                        hidden_states=nl,
-                        timestep=ts,
-                        encoder_hidden_states=prompt_embeds,
-                        encoder_attention_mask=prompt_mask,
-                    ),
+                    forward_fn=_es_forward_fn,
+                    video_id=video_name,
+                    save_fn=lambda: {
+                        n: p.detach().clone()
+                        for n, p in wrapper.named_parameters() if p.requires_grad
+                    },
                 )
 
             t0 = time.time()
             opt_result = optimize_tinylora(
                 wrapper=wrapper,
-                latents=latents,
+                cond_latents=cond_latents,
+                train_latents=train_latents,
                 prompt_embeds=prompt_embeds,
                 prompt_mask=prompt_mask,
                 num_steps=args.tta_steps,
                 lr=args.tta_lr,
                 device=args.device,
                 dtype=torch.bfloat16,
-                early_stopper=early_stopper,
+                early_stopper=early_stopper if val_latents is not None else None,
             )
             train_time = time.time() - t0
 
@@ -342,7 +370,8 @@ def main():
 
             all_results.append(result)
 
-            del latents, pixel_frames, prompt_embeds, prompt_mask
+            del all_latents, cond_latents, train_latents, val_latents
+            del pixel_frames, prompt_embeds, prompt_mask
             torch_gc()
 
         except Exception as e:
