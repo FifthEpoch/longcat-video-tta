@@ -6,6 +6,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --mem=192G
 #SBATCH --gres=gpu:h200:1
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=delta_experiment/sbatch/slurm_log/tinylora_%j.out
 #SBATCH --error=delta_experiment/sbatch/slurm_log/tinylora_%j.err
 
