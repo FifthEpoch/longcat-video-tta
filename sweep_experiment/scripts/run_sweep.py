@@ -131,6 +131,16 @@ _KEY_TO_ENV = {
     "compute_fid": "COMPUTE_FID",
     "compute_vbench": "COMPUTE_VBENCH",
     "min_fvd_videos": "MIN_FVD_VIDEOS",
+    # Data augmentation
+    "aug_enabled": "AUG_ENABLED",
+    "aug_flip": "AUG_FLIP",
+    "aug_rotate_deg": "AUG_ROTATE_DEG",
+    "aug_rotate_random_min": "AUG_ROTATE_RANDOM_MIN",
+    "aug_rotate_random_max": "AUG_ROTATE_RANDOM_MAX",
+    "aug_rotate_random_count": "AUG_ROTATE_RANDOM_COUNT",
+    "aug_rotate_random_step": "AUG_ROTATE_RANDOM_STEP",
+    "aug_rotate_zoom": "AUG_ROTATE_ZOOM",
+    "aug_speed_factors": "AUG_SPEED_FACTORS",
     # Control flags
     "skip_generation": "SKIP_GENERATION",
     # Selective video retention

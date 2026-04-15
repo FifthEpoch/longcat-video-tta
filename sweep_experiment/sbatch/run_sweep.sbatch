@@ -63,6 +63,17 @@ ES_NOISE_DRAWS="${ES_NOISE_DRAWS:-2}"
 ES_STRATEGY="${ES_STRATEGY:-patience}"
 ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
 
+# Data augmentation (enabled by default for all TTA methods)
+AUG_ENABLED="${AUG_ENABLED:-1}"
+AUG_FLIP="${AUG_FLIP:-1}"
+AUG_ROTATE_DEG="${AUG_ROTATE_DEG:-10.0}"
+AUG_ROTATE_RANDOM_MIN="${AUG_ROTATE_RANDOM_MIN:-5.0}"
+AUG_ROTATE_RANDOM_MAX="${AUG_ROTATE_RANDOM_MAX:-15.0}"
+AUG_ROTATE_RANDOM_COUNT="${AUG_ROTATE_RANDOM_COUNT:-2}"
+AUG_ROTATE_RANDOM_STEP="${AUG_ROTATE_RANDOM_STEP:-1.0}"
+AUG_ROTATE_ZOOM="${AUG_ROTATE_ZOOM:-1}"
+AUG_SPEED_FACTORS="${AUG_SPEED_FACTORS:-}"
+
 # Disk-saving: skip writing generated .mp4 files (metrics still computed in-memory)
 NO_SAVE_VIDEOS="${NO_SAVE_VIDEOS:-1}"
 
@@ -182,6 +193,7 @@ echo "  Output dir     : ${OUTPUT_DIR}"
 echo "  Caption guard  : mode=${CAPTION_GUARD_MODE}, min_nonempty=${CAPTION_GUARD_MIN_NONEMPTY_RATIO}, min_unique=${CAPTION_GUARD_MIN_UNIQUE_RATIO}, max_top1=${CAPTION_GUARD_MAX_TOP1_RATIO}"
 echo "  Fixed caption  : ${FIXED_CAPTION:-<none>}"
 echo "  Feature guard  : ${FEATURE_FRAME_GUARD_MODE}"
+echo "  Augmentation   : enabled=${AUG_ENABLED:-0}, flip=${AUG_FLIP:-0}, rotate_deg=${AUG_ROTATE_DEG}"
 echo "  Online FVD     : ${COMPUTE_FVD}  FID: ${COMPUTE_FID}  VBench: ${COMPUTE_VBENCH}  min_videos: ${MIN_FVD_VIDEOS}"
 if [ -d "${PROJECT_ROOT}/.git" ]; then
   echo "  TTA repo commit: $(cd "${PROJECT_ROOT}" && git rev-parse --short HEAD)"
@@ -335,6 +347,26 @@ EVAL_FLAGS=""
 [ "${COMPUTE_VBENCH}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-vbench"
 EVAL_FLAGS="${EVAL_FLAGS} --min-fvd-videos ${MIN_FVD_VIDEOS}"
 
+# Build augmentation flags (shared across all methods)
+AUG_FLAGS=""
+if [ -n "${AUG_ENABLED}" ]; then
+    AUG_FLAGS="${AUG_FLAGS} --aug-enabled"
+fi
+if [ -n "${AUG_FLIP}" ]; then
+    AUG_FLAGS="${AUG_FLAGS} --aug-flip"
+fi
+AUG_FLAGS="${AUG_FLAGS} --aug-rotate-deg ${AUG_ROTATE_DEG}"
+AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-min ${AUG_ROTATE_RANDOM_MIN}"
+AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-max ${AUG_ROTATE_RANDOM_MAX}"
+AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-count ${AUG_ROTATE_RANDOM_COUNT}"
+AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-step ${AUG_ROTATE_RANDOM_STEP}"
+if [ "${AUG_ROTATE_ZOOM}" != "1" ]; then
+    AUG_FLAGS="${AUG_FLAGS} --no-aug-rotate-zoom"
+fi
+if [ -n "${AUG_SPEED_FACTORS}" ]; then
+    AUG_FLAGS="${AUG_FLAGS} --aug-speed-factors ${AUG_SPEED_FACTORS}"
+fi
+
 # ============================================================================
 # Dispatch to the appropriate method script
 # ============================================================================
@@ -387,7 +419,8 @@ case "${METHOD}" in
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   lora)
@@ -452,7 +485,8 @@ case "${METHOD}" in
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   delta_a)
@@ -493,7 +527,8 @@ case "${METHOD}" in
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   delta_b)
@@ -536,7 +571,8 @@ case "${METHOD}" in
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   delta_c)
@@ -568,7 +604,8 @@ case "${METHOD}" in
         ${FEATURE_FLAGS} \
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   norm_tune)
@@ -606,7 +643,8 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   film)
@@ -639,7 +677,8 @@ case "${METHOD}" in
         ${CAPTION_FLAGS} \
         ${FEATURE_FLAGS} \
         ${EVAL_FLAGS} \
-        ${ES_FLAGS}
+        ${ES_FLAGS} \
+        ${AUG_FLAGS}
     ;;
 
   *)

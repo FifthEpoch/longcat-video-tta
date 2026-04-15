@@ -25,6 +25,8 @@ fixed:
   es_disable: true
   caption_guard_mode: warn
   feature_frame_guard_mode: warn
+  aug_enabled: true
+  aug_flip: true
 
 sweep:
   # Guidance scale baselines
