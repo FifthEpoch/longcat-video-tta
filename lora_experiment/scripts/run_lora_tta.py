@@ -93,6 +93,37 @@ from early_stopping import (
 
 
 # ============================================================================
+# GPU memory tracking
+# ============================================================================
+
+def gpu_mem_stats(device="cuda"):
+    """Return a dict of current GPU memory usage in GiB."""
+    if not torch.cuda.is_available():
+        return {"allocated_gib": 0, "reserved_gib": 0, "peak_gib": 0, "total_gib": 0, "free_gib": 0}
+    alloc = torch.cuda.memory_allocated(device) / (1024 ** 3)
+    reserved = torch.cuda.memory_reserved(device) / (1024 ** 3)
+    peak = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+    total = torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)
+    return {
+        "allocated_gib": round(alloc, 2),
+        "reserved_gib": round(reserved, 2),
+        "peak_gib": round(peak, 2),
+        "total_gib": round(total, 2),
+        "free_gib": round(total - alloc, 2),
+    }
+
+
+def log_gpu_mem(label, device="cuda"):
+    stats = gpu_mem_stats(device)
+    print(f"  [GPU] {label}: "
+          f"alloc={stats['allocated_gib']:.2f} GiB, "
+          f"peak={stats['peak_gib']:.2f} GiB, "
+          f"free={stats['free_gib']:.2f} GiB / "
+          f"{stats['total_gib']:.1f} GiB total")
+    return stats
+
+
+# ============================================================================
 # Built-in LoRA support (uses LongCat-Video's native LoRAModule)
 # ============================================================================
 
@@ -487,6 +518,9 @@ def finetune_lora_on_conditioning(
     grad_norms = []
     train_start = time.time()
 
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
     es_check_time = 0.0
     for step in range(num_steps):
         optimizer.zero_grad(set_to_none=True)
@@ -552,11 +586,16 @@ def finetune_lora_on_conditioning(
             lora_delta_l2 += p.data.float().pow(2).sum().item()
     lora_delta_l2 = lora_delta_l2 ** 0.5
 
+    train_mem = gpu_mem_stats(device) if torch.cuda.is_available() else {}
+
     if grad_norms:
         print(f"  Grad norm stats: min={min(grad_norms):.4f}, "
               f"max={max(grad_norms):.4f}, "
               f"mean={sum(grad_norms)/len(grad_norms):.4f}")
     print(f"  LoRA param L2 norm = {lora_delta_l2:.6f}")
+    if train_mem:
+        print(f"  Train peak GPU: {train_mem.get('peak_gib', 0):.2f} GiB "
+              f"/ {train_mem.get('total_gib', 0):.1f} GiB")
 
     torch.cuda.empty_cache()
 
@@ -567,6 +606,7 @@ def finetune_lora_on_conditioning(
         "early_stopping_info": es_state,
         "grad_norms": grad_norms,
         "lora_delta_l2": lora_delta_l2,
+        "gpu_mem_train": train_mem,
     }
 
 
@@ -837,6 +877,8 @@ def main():
     dit._gradient_checkpointing_func = functools.partial(_ckpt_fn, use_reentrant=False)
     print("Gradient checkpointing: ENABLED (use_reentrant=False)")
 
+    mem_after_load = log_gpu_mem("After model load")
+
     # Freeze all DiT parameters
     for p in dit.parameters():
         p.requires_grad = False
@@ -877,6 +919,8 @@ def main():
     print(f"LoRA trainable params: {param_counts['trainable']:,}")
     print(f"Total DiT params     : {total_dit_params:,}")
     print(f"Trainable %          : {100 * param_counts['trainable'] / total_dit_params:.4f}%")
+
+    mem_after_lora = log_gpu_mem("After LoRA injection")
 
     # Save experiment config
     exp_config = {
@@ -1225,6 +1269,7 @@ def main():
                 "early_stopping_info": train_result.get("early_stopping_info"),
                 "lora_delta_l2": train_result.get("lora_delta_l2"),
                 "mean_grad_norm": (sum(train_result.get("grad_norms", [])) / len(train_result["grad_norms"])) if train_result.get("grad_norms") else None,
+                "gpu_mem_train": train_result.get("gpu_mem_train"),
                 "success": True,
             }
             result.update(clip_gate_info)
@@ -1256,6 +1301,9 @@ def main():
 
                 all_step_metrics = []
                 prev_gen_frames = None
+
+                if torch.cuda.is_available():
+                    torch.cuda.reset_peak_memory_stats(args.device)
 
                 for step_i in range(rollout_steps):
                     step_gen_start_frame = args.gen_start_frame + step_i * num_gen
@@ -1304,8 +1352,10 @@ def main():
 
                     prev_gen_frames = gen_frames
 
+                gen_mem = gpu_mem_stats(args.device) if torch.cuda.is_available() else {}
                 result["gen_time"] = gen_time
                 result["rollout_steps"] = rollout_steps
+                result["gpu_mem_gen"] = gen_mem
 
                 for si, sm in enumerate(all_step_metrics):
                     for mk in ("psnr", "ssim", "lpips"):
@@ -1337,13 +1387,16 @@ def main():
                 lora_path = os.path.join(lora_dir, f"{video_name}_lora.pt")
                 save_lora_weights(lora_modules, lora_path)
 
+            train_peak = train_result.get("gpu_mem_train", {}).get("peak_gib", 0)
+            gen_peak = result.get("gpu_mem_gen", {}).get("peak_gib", 0)
             print(
                   f"  CLIP: {clip_gate_info.get('clip_gate_eval_time', 0.0):.2f}s, "
                   f"ES: {train_result.get('es_check_time', 0.0):.2f}s, "
                   f"Train: {train_result['train_time']:.1f}s, "
                   + (f"Loss: {result['final_loss']:.4f}"
                      if result.get("final_loss") is not None else "Loss: N/A (skipped)")
-                  + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else ""))
+                  + (f", Gen: {gen_time:.1f}s" if not args.skip_generation else "")
+                  + f" | GPU peak: train={train_peak:.1f}G gen={gen_peak:.1f}G")
 
             all_results.append(result)
 
@@ -1360,6 +1413,13 @@ def main():
 
     # Save final results
     successful = [r for r in all_results if r.get("success", False)]
+    # Aggregate GPU memory stats
+    train_peaks = [r.get("gpu_mem_train", {}).get("peak_gib", 0)
+                   for r in successful if r.get("gpu_mem_train")]
+    gen_peaks = [r.get("gpu_mem_gen", {}).get("peak_gib", 0)
+                 for r in successful if r.get("gpu_mem_gen")]
+    gpu_total = successful[0].get("gpu_mem_train", {}).get("total_gib", 0) if successful else 0
+
     summary = {
         "method": "lora_tta",
         "lora_rank": args.lora_rank,
@@ -1403,6 +1463,15 @@ def main():
         "clip_gate_log_only": args.clip_gate_log_only,
         "clip_gate_fail_open": args.clip_gate_fail_open,
         "clip_gate_stats": summarize_clip_gate_stats(successful),
+        "gpu_memory": {
+            "total_gib": gpu_total,
+            "model_load_gib": mem_after_load.get("allocated_gib", 0),
+            "after_lora_gib": mem_after_lora.get("allocated_gib", 0),
+            "train_peak_mean_gib": round(float(np.mean(train_peaks)), 2) if train_peaks else 0,
+            "train_peak_max_gib": round(float(np.max(train_peaks)), 2) if train_peaks else 0,
+            "gen_peak_mean_gib": round(float(np.mean(gen_peaks)), 2) if gen_peaks else 0,
+            "gen_peak_max_gib": round(float(np.max(gen_peaks)), 2) if gen_peaks else 0,
+        },
         "results": all_results,
     }
     aggregate_quality_metrics(summary)
@@ -1431,6 +1500,20 @@ def main():
             print("Avg final loss: %.4f" % avg_loss)
         else:
             print("Avg final loss: N/A")
+    gpu_info = summary.get("gpu_memory", {})
+    if gpu_info:
+        print("--- GPU Memory ---")
+        print("  GPU total:       %.1f GiB" % gpu_info.get("total_gib", 0))
+        print("  Model load:      %.2f GiB" % gpu_info.get("model_load_gib", 0))
+        print("  After LoRA:      %.2f GiB" % gpu_info.get("after_lora_gib", 0))
+        print("  Train peak (avg): %.2f GiB" % gpu_info.get("train_peak_mean_gib", 0))
+        print("  Train peak (max): %.2f GiB" % gpu_info.get("train_peak_max_gib", 0))
+        print("  Gen peak (avg):  %.2f GiB" % gpu_info.get("gen_peak_mean_gib", 0))
+        print("  Gen peak (max):  %.2f GiB" % gpu_info.get("gen_peak_max_gib", 0))
+        if gpu_info.get("total_gib"):
+            headroom = gpu_info["total_gib"] - gpu_info.get("train_peak_max_gib", 0)
+            print("  Headroom:        %.1f GiB (%.0f%%)" % (
+                headroom, 100 * headroom / gpu_info["total_gib"]))
     print("Results saved to: %s" % args.output_dir)
     print("=" * 70)
 

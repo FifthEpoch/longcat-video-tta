@@ -1,10 +1,11 @@
 # Panda-70M: LoRA LR sanity check (100 videos)
-# LR=2e-4 overfits at R4/last_4 (PSNR dropped 1.17 dB).
-# Try LR=5e-5: midpoint between failed 2e-4 and near-neutral 1e-6.
+# LR=2e-4 catastrophically overfits at R4/last_4/grad_norm=10 (PSNR -1.17 dB).
+# LR=1e-6 at 30 steps was near-neutral (PSNR -0.04 dB).
+# Bracket the gap: test 1e-5 and 5e-5 at 20 steps.
 method: lora
 series: panda
 series_name: panda_lora_lr_sanity
-description: "Panda-70M: LoRA LR sanity (R4, LR=5e-5, 20 steps, 100 videos)"
+description: "Panda-70M: LoRA LR bracket (R4, 1e-5 vs 5e-5, 20 steps, 100 videos)"
 
 fixed:
   lora_rank: 4
@@ -30,6 +31,10 @@ fixed:
   feature_frame_guard_mode: warn
 
 sweep:
+  - run_id: LR1e5_S20
+    learning_rate: 1.0e-5
+    num_steps: 20
+
   - run_id: LR5e5_S20
     learning_rate: 5.0e-5
     num_steps: 20

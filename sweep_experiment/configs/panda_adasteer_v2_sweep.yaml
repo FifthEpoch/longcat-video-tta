@@ -1,0 +1,97 @@
+# Panda-70M: AdaSteer v2 hyperparameter sweep (100 videos)
+#
+# Goal: Find configurations that improve PSNR/SSIM/LPIPS while preserving FVD gains.
+#
+# Prior results (all on panda_1000_480p, guidance=4.0, infer=50):
+#   - Best FVD:  10 steps, lr=0.005 → ΔFVD=-72.4, ΔLPIPS=-0.004, ΔSSIM=+0.002
+#   - Best PSNR: 5 steps, lr=0.005  → ΔPSNR=-0.009, ΔFVD=-69.9
+#   - Already tested: steps {5,10,20} × lr {0.001,0.005,0.01,0.05}
+#
+# This sweep adds:
+#   A) Steps=15 (untested) with lr {0.001, 0.005, 0.01}
+#   B) Guidance scale {2.0, 3.0, 5.0, 6.0} at best step/LR
+#   C) Inference steps {25, 100} at best step/LR
+#
+# IMPORTANT: Run with --data-dir datasets/panda_1000_480p --output-base sweep_experiment/results/sanity_100
+method: delta_a
+series: panda
+series_name: panda_adasteer_v2
+description: "Panda-70M: AdaSteer v2 sweep — steps, guidance, inference (100 videos)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # ═══════════════════════════════════════════════════════════════════
+  # A) Steps=15 × LR sweep (fills gap between 10 and 20)
+  # ═══════════════════════════════════════════════════════════════════
+
+  - run_id: S15_LR001
+    delta_steps: 15
+    delta_lr: 0.001
+
+  - run_id: S15_LR005
+    delta_steps: 15
+    delta_lr: 0.005
+
+  - run_id: S15_LR01
+    delta_steps: 15
+    delta_lr: 0.01
+
+  # ═══════════════════════════════════════════════════════════════════
+  # B) Guidance scale sweep (10 steps, lr=0.005)
+  #    Default is 4.0. Testing 0.0 (no CFG) through 10.0.
+  # ═══════════════════════════════════════════════════════════════════
+
+  - run_id: G0_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    guidance_scale: 0.0
+
+  - run_id: G2p5_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    guidance_scale: 2.5
+
+  - run_id: G5_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    guidance_scale: 5.0
+
+  - run_id: G7p5_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    guidance_scale: 7.5
+
+  - run_id: G10_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    guidance_scale: 10.0
+
+  # ═══════════════════════════════════════════════════════════════════
+  # C) Inference steps sweep (10 steps, lr=0.005, guidance=4.0)
+  # ═══════════════════════════════════════════════════════════════════
+
+  - run_id: I25_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    num_inference_steps: 25
+
+  - run_id: I100_S10
+    delta_steps: 10
+    delta_lr: 0.005
+    num_inference_steps: 100

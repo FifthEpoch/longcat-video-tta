@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=savi_dno_lc
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:h200:2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
@@ -19,10 +19,12 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "Start time: $(date)"
 echo "Euler steps: ${SAVI_EULER_STEPS:-10}"
+echo "Num GPUs: ${NUM_GPUS:-2}"
 echo "LR: ${SAVI_LR:-0.01}"
 echo "Lambda: ${SAVI_LAM:-0.0012}"
 echo "p: ${SAVI_P:-0.9}"
 echo "Guidance: ${SAVI_GUIDANCE:-4.0}"
+echo "Loss mode: ${SAVI_LOSS_MODE:-pixel} (PVDM-style: pixel+feature, no CFG)"
 echo "No-optimize: ${SAVI_NO_OPTIMIZE:-}"
 echo "=============================================================================="
 
@@ -81,9 +83,11 @@ NO_OPT_FLAG=""
 if [ -n "${SAVI_NO_OPTIMIZE:-}" ] && [ "${SAVI_NO_OPTIMIZE}" = "1" ]; then
     NO_OPT_FLAG="--no-optimize"
 fi
-DNO_CFG_FLAG=""
-if [ "${SAVI_DNO_NO_CFG:-1}" = "1" ]; then
-    DNO_CFG_FLAG="--dno-no-cfg"
+LOSS_FLAG=""
+if [ "${SAVI_LOSS_MODE:-pixel}" = "latent" ]; then
+    LOSS_FLAG="--latent-loss"
+else
+    LOSS_FLAG="--pixel-loss"
 fi
 
 # ============================================================================
@@ -95,13 +99,14 @@ fi
     --output-dir "${OUTPUT_DIR}" \
     --max-videos "${MAX_VIDEOS}" \
     --num-inference-steps "${SAVI_EULER_STEPS:-10}" \
+    --num-gpus "${NUM_GPUS:-2}" \
     --guidance-scale "${SAVI_GUIDANCE:-4.0}" \
     --lr "${SAVI_LR:-0.01}" \
     --lam "${SAVI_LAM:-0.0012}" \
     --p "${SAVI_P:-0.9}" \
     --seed 42 \
     ${NO_OPT_FLAG} \
-    ${DNO_CFG_FLAG} \
+    ${LOSS_FLAG} \
     ${GT_CACHE_FLAG} \
     ${SAVE_LIST_FLAG}
 

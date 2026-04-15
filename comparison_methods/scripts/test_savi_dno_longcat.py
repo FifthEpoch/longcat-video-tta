@@ -37,7 +37,9 @@ from delta_experiment.scripts.common import (
     load_video_frames,
     _get_model_config,
 )
-from comparison_methods.scripts.savi_dno_longcat import SAViDNO_LongCat, load_feature_model
+from comparison_methods.scripts.savi_dno_longcat import (
+    SAViDNO_LongCat, load_feature_model, split_dit_across_gpus,
+)
 
 
 def test_noise_interpolation():
@@ -117,12 +119,17 @@ def test_full_pipeline(args):
     text_encoder.eval()
     print("  Model loaded successfully")
 
+    # 2-GPU split if requested and available
+    if args.num_gpus >= 2 and torch.cuda.device_count() >= 2:
+        split_dit_across_gpus(dit, split_block=24,
+                              device0="cuda:0", device1="cuda:1")
+
     # Load feature model
     print("  Loading ResNet3D feature model...")
     feature_model = load_feature_model(device)
     print("  Feature model loaded")
 
-    # Create SAViDNO_LongCat instance
+    # Create SAViDNO_LongCat instance (PVDM-style: no CFG, pixel+feature loss)
     savi = SAViDNO_LongCat(
         dit=dit, vae=vae, scheduler=scheduler,
         tokenizer=tokenizer, text_encoder=text_encoder,
@@ -132,7 +139,7 @@ def test_full_pipeline(args):
         lr=0.01, lam=0.0012, p=0.9,
         feature_model=feature_model,
         gradient_checkpointing=True,
-        dno_no_cfg=True,
+        latent_loss=False,
     )
 
     # Find a video to test with
@@ -235,8 +242,10 @@ def main():
                         default="/scratch/wc3013/longcat-video-checkpoints")
     parser.add_argument("--data-dir", type=str,
                         default="datasets/panda_1000_480p")
-    parser.add_argument("--num-steps", type=int, default=4,
-                        help="Euler steps for test (fewer = faster)")
+    parser.add_argument("--num-steps", type=int, default=10,
+                        help="Euler steps for test (10 matches SAVi-DNO paper)")
+    parser.add_argument("--num-gpus", type=int, default=1,
+                        help="Number of GPUs (2 for model-parallel DiT)")
     parser.add_argument("--skip-model", action="store_true",
                         help="Skip full model test (run only unit tests)")
     args = parser.parse_args()

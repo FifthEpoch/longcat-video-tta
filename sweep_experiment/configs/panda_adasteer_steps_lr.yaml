@@ -1,0 +1,65 @@
+# Panda-70M: AdaSteer-1 step × LR sweep (100 videos)
+#
+# Diagnostic found: 5 steps, lr=0.005 gives best FVD (571 vs 637 baseline).
+# PSNR/SSIM stayed neutral across all LRs. This sweep explores whether
+# more steps or different LR can push PSNR/SSIM up while keeping FVD gains.
+#
+# Already have from diagnostic: (5, 0.001), (5, 0.005), (5, 0.01).
+# This config adds the remaining grid points.
+method: delta_a
+series: panda
+series_name: panda_adasteer_steps_lr
+description: "Panda-70M: AdaSteer-1 step x LR sweep (100 videos)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # 5 steps — higher LR bracket
+  - run_id: S5_LR05
+    delta_steps: 5
+    delta_lr: 0.05
+
+  # 10 steps — full LR sweep
+  - run_id: S10_LR001
+    delta_steps: 10
+    delta_lr: 0.001
+
+  - run_id: S10_LR005
+    delta_steps: 10
+    delta_lr: 0.005
+
+  - run_id: S10_LR01
+    delta_steps: 10
+    delta_lr: 0.01
+
+  - run_id: S10_LR05
+    delta_steps: 10
+    delta_lr: 0.05
+
+  # 20 steps — lower LRs only (high LR overfits)
+  - run_id: S20_LR001
+    delta_steps: 20
+    delta_lr: 0.001
+
+  - run_id: S20_LR005
+    delta_steps: 20
+    delta_lr: 0.005
+
+  - run_id: S20_LR01
+    delta_steps: 20
+    delta_lr: 0.01

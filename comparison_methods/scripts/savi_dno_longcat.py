@@ -219,6 +219,123 @@ def torch_gc():
 
 
 # ============================================================================
+# 2-GPU model parallelism for DiT
+# ============================================================================
+
+def split_dit_across_gpus(dit, split_block=24, device0="cuda:0", device1="cuda:1"):
+    """Split the DiT transformer blocks across 2 GPUs.
+
+    Moves blocks[split_block:] and final_layer to device1, keeps embedders
+    and blocks[:split_block] on device0.  Monkey-patches dit.forward to
+    insert device transfers at the split boundary so gradients flow through
+    both GPUs seamlessly.
+    """
+    import types
+
+    for i in range(split_block, len(dit.blocks)):
+        dit.blocks[i] = dit.blocks[i].to(device1)
+    dit.final_layer = dit.final_layer.to(device1)
+
+    print(f"[2-GPU] Blocks 0-{split_block - 1} on {device0}, "
+          f"blocks {split_block}-{len(dit.blocks) - 1} + final_layer on {device1}")
+
+    _split = split_block
+    _dev0 = device0
+    _dev1 = device1
+
+    def _forward_2gpu(
+        self,
+        hidden_states,
+        timestep,
+        encoder_hidden_states,
+        encoder_attention_mask=None,
+        num_cond_latents=0,
+        **kwargs,
+    ):
+        # Pin inputs to device0 — during checkpoint recomputation the
+        # default CUDA device may have shifted to device1, which would
+        # cause tensors created with device="cuda" to land on the wrong GPU.
+        hidden_states = hidden_states.to(_dev0)
+        timestep = timestep.to(_dev0)
+        encoder_hidden_states = encoder_hidden_states.to(_dev0)
+        if encoder_attention_mask is not None:
+            encoder_attention_mask = encoder_attention_mask.to(_dev0)
+
+        B, _, T, H, W = hidden_states.shape
+        N_t = T // self.patch_size[0]
+        N_h = H // self.patch_size[1]
+        N_w = W // self.patch_size[2]
+
+        if len(timestep.shape) == 1:
+            timestep = timestep.unsqueeze(1).expand(-1, N_t)
+
+        dtype = self.x_embedder.proj.weight.dtype
+        hidden_states = hidden_states.to(dtype)
+        timestep = timestep.to(dtype)
+        encoder_hidden_states = encoder_hidden_states.to(dtype)
+
+        hidden_states = self.x_embedder(hidden_states)
+
+        with torch.amp.autocast("cuda", dtype=torch.float32):
+            t = self.t_embedder(
+                timestep.float().flatten(), dtype=torch.float32
+            ).reshape(B, N_t, -1)
+
+        encoder_hidden_states = self.y_embedder(encoder_hidden_states)
+
+        if self.text_tokens_zero_pad and encoder_attention_mask is not None:
+            encoder_hidden_states = (
+                encoder_hidden_states * encoder_attention_mask[:, None, :, None]
+            )
+            encoder_attention_mask = (
+                (encoder_attention_mask * 0 + 1).to(encoder_attention_mask.dtype)
+            )
+
+        if encoder_attention_mask is not None:
+            encoder_attention_mask = encoder_attention_mask.squeeze(1).squeeze(1)
+            encoder_hidden_states = (
+                encoder_hidden_states.squeeze(1)
+                .masked_select(encoder_attention_mask.unsqueeze(-1) != 0)
+                .view(1, -1, hidden_states.shape[-1])
+            )
+            y_seqlens = encoder_attention_mask.sum(dim=1).tolist()
+        else:
+            y_seqlens = [encoder_hidden_states.shape[2]] * encoder_hidden_states.shape[0]
+            encoder_hidden_states = encoder_hidden_states.squeeze(1).view(
+                1, -1, hidden_states.shape[-1]
+            )
+
+        latent_shape = (N_t, N_h, N_w)
+
+        for i, block in enumerate(self.blocks):
+            if i == _split:
+                hidden_states = hidden_states.to(_dev1)
+                t = t.to(_dev1)
+                encoder_hidden_states = encoder_hidden_states.to(_dev1)
+
+            if torch.is_grad_enabled() and self.gradient_checkpointing:
+                hidden_states = self._gradient_checkpointing_func(
+                    block, hidden_states, encoder_hidden_states, t,
+                    y_seqlens, latent_shape, num_cond_latents,
+                    False, None, False,
+                )
+            else:
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, t,
+                    y_seqlens, latent_shape, num_cond_latents,
+                )
+
+        hidden_states = self.final_layer(hidden_states, t, latent_shape)
+        hidden_states = self.unpatchify(hidden_states, N_t, N_h, N_w)
+        hidden_states = hidden_states.to(torch.float32)
+
+        return hidden_states.to(_dev0)
+
+    dit.forward = types.MethodType(_forward_2gpu, dit)
+    return dit
+
+
+# ============================================================================
 # SAViDNO_LongCat — core class
 # ============================================================================
 
@@ -247,7 +364,7 @@ class SAViDNO_LongCat:
         p: float = 0.9,
         feature_model: Optional[nn.Module] = None,
         gradient_checkpointing: bool = True,
-        dno_no_cfg: bool = False,
+        latent_loss: bool = False,
     ):
         self.device = device
         self.dtype = dtype
@@ -263,10 +380,10 @@ class SAViDNO_LongCat:
         self.lam = lam
         self.p = p
         self.gradient_checkpointing = gradient_checkpointing
-        self.dno_no_cfg = dno_no_cfg
+        self.latent_loss = latent_loss
 
         self.feature_model = None
-        if feature_model is not None:
+        if feature_model is not None and not latent_loss:
             self.feature_model = feature_model
             for param in self.feature_model.parameters():
                 param.requires_grad = False
@@ -363,14 +480,16 @@ class SAViDNO_LongCat:
         eps_init: torch.Tensor,
         prompt_embeds: torch.Tensor,
         prompt_mask: torch.Tensor,
-        use_cfg: bool = True,
+        use_cfg: bool = False,
     ) -> torch.Tensor:
         """Euler flow-matching sampling with gradient flow to eps_init.
 
         Starts from pure noise (eps_init at t=1.0) and steps toward clean
         signal (t=0.0) using the velocity prediction from the DiT.
 
-        When use_cfg=False, runs a single DiT pass per step (halves memory).
+        PVDM-style (default): single DiT pass per step, no CFG.
+        Matches SAVi-DNO paper: "For PVDM, we do not use guidance during
+        inference."
         """
         sigmas = self._build_sigmas()
         x_t = eps_init
@@ -454,44 +573,67 @@ class SAViDNO_LongCat:
 
         z_pred = self._flow_euler_sample_differentiable(
             cond_latents, eps_mixed, prompt_embeds, prompt_mask,
-            use_cfg=not self.dno_no_cfg,
         )
-
-        pred_pixels = self.decode(z_pred)
 
         loss_val = None
         if gt_frames is not None:
-            gt = gt_frames.to(self.device)
-            # VAE decode may produce fewer frames than GT due to temporal
-            # factor rounding (e.g. 14 frames → 4 latents → 13 decoded).
-            T_pred = pred_pixels.shape[2]
-            T_gt = gt.shape[2]
-            if T_pred < T_gt:
-                gt = gt[:, :, :T_pred]
-            elif T_gt < T_pred:
-                pred_pixels = pred_pixels[:, :, :T_gt]
+            if self.latent_loss:
+                # Vista-style: L1 loss in latent space (Eq. 6 from SAVi-DNO).
+                # Avoids decoding during optimization, saving significant memory
+                # for large models. Matches the paper's methodology for Vista.
+                gt_for_vae = (gt_frames.to(self.device) * 2.0 - 1.0).to(self.dtype)
+                with torch.no_grad():
+                    z_gt = encode_video(self.vae, gt_for_vae, normalize=True)
 
-            loss_pixel = F.l1_loss(pred_pixels, gt, reduction="mean")
+                total_loss = F.l1_loss(z_pred, z_gt.to(z_pred.dtype), reduction="mean")
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                self.optimizer.step()
+                loss_val = total_loss.item()
 
-            loss_feature = torch.tensor(0.0, device=self.device)
-            if self.feature_model is not None and self.lam > 0:
-                B, C, T, H, W = pred_pixels.shape
-                pred_3d = pred_pixels.float()
-                gt_3d = gt.float()
-                feat_pred = self.feature_model(pred_3d)
-                feat_gt = self.feature_model(gt_3d)
-                loss_feature = F.mse_loss(feat_pred, feat_gt, reduction="mean")
+                self.dit.zero_grad(set_to_none=True)
 
-            total_loss = loss_pixel + self.lam * loss_feature
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            self.optimizer.step()
-            loss_val = total_loss.item()
+                with torch.no_grad():
+                    pred_pixels = decode_latents(
+                        self.vae, z_pred.detach(), denorm=True,
+                    )
+            else:
+                # PVDM-style: pixel + feature loss (Eq. 3+4 from SAVi-DNO).
+                pred_pixels = self.decode(z_pred)
 
-            self.dit.zero_grad(set_to_none=True)
-            self.vae.zero_grad(set_to_none=True)
-            if self.feature_model is not None:
-                self.feature_model.zero_grad(set_to_none=True)
+                gt = gt_frames.to(self.device)
+                T_pred = pred_pixels.shape[2]
+                T_gt = gt.shape[2]
+                if T_pred < T_gt:
+                    gt = gt[:, :, :T_pred]
+                elif T_gt < T_pred:
+                    pred_pixels = pred_pixels[:, :, :T_gt]
+
+                loss_pixel = F.l1_loss(pred_pixels, gt, reduction="mean")
+
+                loss_feature = torch.tensor(0.0, device=self.device)
+                if self.feature_model is not None and self.lam > 0:
+                    pred_3d = pred_pixels.float()
+                    gt_3d = gt.float()
+                    feat_pred = self.feature_model(pred_3d)
+                    feat_gt = self.feature_model(gt_3d)
+                    loss_feature = F.mse_loss(feat_pred, feat_gt, reduction="mean")
+
+                total_loss = loss_pixel + self.lam * loss_feature
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                self.optimizer.step()
+                loss_val = total_loss.item()
+
+                self.dit.zero_grad(set_to_none=True)
+                self.vae.zero_grad(set_to_none=True)
+                if self.feature_model is not None:
+                    self.feature_model.zero_grad(set_to_none=True)
+        else:
+            with torch.no_grad():
+                pred_pixels = decode_latents(
+                    self.vae, z_pred.detach(), denorm=True,
+                )
 
         return pred_pixels.detach(), loss_val
 
@@ -531,18 +673,22 @@ def main():
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-videos", type=int, default=100)
     parser.add_argument("--num-inference-steps", type=int, default=10,
-                        help="Number of Euler steps for flow-matching sampling")
+                        help="Euler steps (10 matches SAVi-DNO paper, needs 2 GPUs)")
+    parser.add_argument("--num-gpus", type=int, default=1,
+                        help="Number of GPUs (2 for model-parallel DiT)")
     parser.add_argument("--guidance-scale", type=float, default=4.0)
     parser.add_argument("--lr", type=float, default=0.01,
                         help="Adam LR for noise optimization")
     parser.add_argument("--lam", type=float, default=0.0012,
-                        help="Feature loss weight")
+                        help="Feature loss weight (PVDM-style pixel+feature loss)")
     parser.add_argument("--p", type=float, default=0.9,
                         help="Noise interpolation parameter")
     parser.add_argument("--no-optimize", action="store_true",
                         help="LongCat baseline without noise optimization")
-    parser.add_argument("--dno-no-cfg", action="store_true",
-                        help="Skip CFG during DNO optimization (halves GPU memory)")
+    parser.add_argument("--latent-loss", action="store_true",
+                        help="Use latent-space L1 loss (Vista style, for OOM)")
+    parser.add_argument("--pixel-loss", action="store_true",
+                        help="Use pixel + feature loss (default, PVDM style)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-cond-frames", type=int, default=14)
     parser.add_argument("--num-frames", type=int, default=28,
@@ -580,6 +726,11 @@ def main():
     width = 832 if args.resolution == "480p" else 1280
     vae_t_factor = 4
 
+    # Resolve loss mode: --latent-loss and --pixel-loss are mutually exclusive.
+    # Default to pixel+feature loss (PVDM-style) when neither is specified.
+    use_latent_loss = args.latent_loss and not args.pixel_loss
+    loss_mode = "latent (Vista-style)" if use_latent_loss else "pixel+feature (PVDM-style, no CFG)"
+
     print("=" * 70)
     print("SAVi-DNO with LongCat Backbone")
     print("=" * 70)
@@ -588,13 +739,15 @@ def main():
     print("  Cond frames  : %d" % args.num_cond_frames)
     print("  Gen frames   : %d" % num_gen_frames)
     print("  Euler steps  : %d" % args.num_inference_steps)
-    print("  Guidance     : %.1f" % args.guidance_scale)
+    print("  Guidance     : %.1f%s" % (args.guidance_scale,
+          " (CFG off — PVDM-style)" if not use_latent_loss else " (CFG on — Vista-style)"))
     print("  DNO LR       : %g" % args.lr)
-    print("  Feature lam  : %g" % args.lam)
+    print("  Loss mode    : %s" % loss_mode)
+    print("  Feature lam  : %g%s" % (args.lam, " (unused — latent loss)" if use_latent_loss else ""))
     print("  Noise interp : %.2f" % args.p)
     print("  No-optimize  : %s" % args.no_optimize)
-    print("  DNO no-CFG   : %s" % args.dno_no_cfg)
     print("  Grad ckpt    : %s" % (not args.no_gradient_checkpointing))
+    print("  Num GPUs     : %d" % args.num_gpus)
     print("=" * 70)
 
     # --- Load LongCat model ---
@@ -619,9 +772,14 @@ def main():
     vae.eval()
     text_encoder.eval()
 
-    # Feature model for DNO loss
+    # 2-GPU model parallelism: split DiT blocks across devices
+    if args.num_gpus >= 2 and torch.cuda.device_count() >= 2:
+        split_dit_across_gpus(dit, split_block=24,
+                              device0="cuda:0", device1="cuda:1")
+
+    # Feature model only needed for pixel-loss mode
     feature_model = None
-    if not args.no_optimize and args.lam > 0:
+    if not args.no_optimize and not use_latent_loss and args.lam > 0:
         print("Loading ResNet3D feature extractor...")
         feature_model = load_feature_model(device)
 
@@ -634,7 +792,7 @@ def main():
         lr=args.lr, lam=args.lam, p=args.p,
         feature_model=feature_model,
         gradient_checkpointing=not args.no_gradient_checkpointing,
-        dno_no_cfg=args.dno_no_cfg,
+        latent_loss=use_latent_loss,
     )
 
     # --- Load metric models ---
@@ -687,6 +845,7 @@ def main():
     results = []
     total_psnr = total_ssim = total_lpips = 0.0
     n_ok = 0
+    gpu_peak_per_video = []
 
     for idx, entry in enumerate(tqdm(video_list, desc=method_name)):
         video_name = entry.get("video_name", entry.get("filename", ""))
@@ -751,6 +910,20 @@ def main():
                 )
 
             elapsed = time.time() - t_start
+
+            # Track GPU peak memory
+            if torch.cuda.is_available():
+                peaks = {}
+                for gi in range(torch.cuda.device_count()):
+                    peaks[gi] = torch.cuda.max_memory_allocated(gi) / (1024**3)
+                    torch.cuda.reset_peak_memory_stats(gi)
+                gpu_peak_per_video.append(peaks)
+                if idx == 0:
+                    total_per_gpu = {gi: torch.cuda.get_device_properties(gi).total_memory / (1024**3)
+                                     for gi in range(torch.cuda.device_count())}
+                    print("\n  [GPU mem] First video peaks: %s" %
+                          ", ".join("GPU%d=%.1f/%.1f GiB" % (gi, peaks[gi], total_per_gpu[gi])
+                                   for gi in sorted(peaks)))
 
             # Convert to numpy [T, C, H, W] for metrics
             pred_np = pred_pixels.squeeze(0).float().cpu().numpy()
@@ -873,8 +1046,22 @@ def main():
         "lam": args.lam,
         "p": args.p,
         "rollout_steps": args.rollout_steps,
-        "results": results,
+        "num_gpus": args.num_gpus,
     }
+    if gpu_peak_per_video:
+        num_devs = max(len(p) for p in gpu_peak_per_video)
+        gpu_mem = {}
+        for gi in range(num_devs):
+            dev_peaks = [p[gi] for p in gpu_peak_per_video if gi in p]
+            total_gib = torch.cuda.get_device_properties(gi).total_memory / (1024**3)
+            gpu_mem["gpu%d" % gi] = {
+                "total_gib": round(total_gib, 1),
+                "peak_mean_gib": round(sum(dev_peaks) / len(dev_peaks), 2),
+                "peak_max_gib": round(max(dev_peaks), 2),
+                "headroom_gib": round(total_gib - max(dev_peaks), 1),
+            }
+        summary["gpu_memory"] = gpu_mem
+    summary["results"] = results
     with open(output_dir / "summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=str)
 
@@ -890,6 +1077,10 @@ def main():
         print("  FVD:       %.4f" % fvd_val)
     if fid_val is not None:
         print("  FID:       %.4f" % fid_val)
+    if "gpu_memory" in summary:
+        for gname, ginfo in summary["gpu_memory"].items():
+            print("  %s: peak %.1f / %.1f GiB (headroom %.1f GiB)" %
+                  (gname, ginfo["peak_max_gib"], ginfo["total_gib"], ginfo["headroom_gib"]))
     print("  Results: %s" % str(output_dir / "summary.json"))
     print("=" * 70)
 
