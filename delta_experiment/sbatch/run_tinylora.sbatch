@@ -43,7 +43,7 @@ SKIP_GENERATION="${SKIP_GENERATION:-}"
 ES_DISABLE="${ES_DISABLE:-}"
 ES_CHECK_EVERY="${ES_CHECK_EVERY:-5}"
 ES_PATIENCE="${ES_PATIENCE:-3}"
-ES_ANCHOR_TIMESTEPS="${ES_ANCHOR_TIMESTEPS:-0.25,0.5,0.75}"
+ES_ANCHOR_SIGMAS="${ES_ANCHOR_SIGMAS:-0.25,0.5,0.75}"
 ES_NOISE_DRAWS="${ES_NOISE_DRAWS:-2}"
 ES_STRATEGY="${ES_STRATEGY:-patience}"
 ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
@@ -82,6 +82,11 @@ echo "==========================================================================
 
 # ============================================================================
 # Environment Setup
+#
+# CRITICAL: module load sets PYTHONHOME / PYTHONPATH to the system anaconda,
+# which breaks the conda env's sys.path (wrong Python version, missing
+# packages). We MUST unset these after conda activate. See:
+#   sweep_experiment/docs/SBATCH_CONDA_BEST_PRACTICES.md
 # ============================================================================
 module purge
 module load anaconda3/2025.06
@@ -97,8 +102,23 @@ else
 fi
 
 # CRITICAL: unset PYTHONHOME and PYTHONPATH set by "module load anaconda3/..."
+# Without this, even explicit $PYTHON uses the system anaconda's sys.path,
+# causing "No module named 'torch'" and similar import errors.
 unset PYTHONHOME
 unset PYTHONPATH
+
+PYTHON="${CONDA_ENV}/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    echo "ERROR: Python not found at $PYTHON" >&2
+    exit 1
+fi
+echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
+
+# Verify the environment is correct (catches broken conda activation early)
+"$PYTHON" -c "import torch; print(f'torch {torch.__version__}, CUDA {torch.cuda.is_available()}')" || {
+    echo "ERROR: torch import failed — conda env is broken or PYTHONHOME was not unset" >&2
+    exit 1
+}
 
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
@@ -135,7 +155,7 @@ if [ -n "${ES_DISABLE}" ]; then
 fi
 ES_FLAGS="${ES_FLAGS} --es-check-every ${ES_CHECK_EVERY}"
 ES_FLAGS="${ES_FLAGS} --es-patience ${ES_PATIENCE}"
-ES_FLAGS="${ES_FLAGS} --es-anchor-sigmas ${ES_ANCHOR_TIMESTEPS}"
+ES_FLAGS="${ES_FLAGS} --es-anchor-sigmas ${ES_ANCHOR_SIGMAS}"
 ES_FLAGS="${ES_FLAGS} --es-noise-draws ${ES_NOISE_DRAWS}"
 ES_FLAGS="${ES_FLAGS} --es-strategy ${ES_STRATEGY}"
 ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
@@ -145,7 +165,7 @@ ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
 # ============================================================================
 echo "Starting TinyLoRA TTA..."
 
-python delta_experiment/scripts/run_tinylora.py \
+"$PYTHON" delta_experiment/scripts/run_tinylora.py \
     --checkpoint-dir "${CHECKPOINT_DIR}" \
     --data-dir "${DATA_DIR}" \
     --output-dir "${OUTPUT_DIR}" \
