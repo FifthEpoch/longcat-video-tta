@@ -122,7 +122,8 @@ class TinyLoRALinear(nn.Module):
         self.register_buffer("frozen_U", U.to(dtype))
         self.register_buffer("frozen_Vt", V.t().contiguous().to(dtype))  # [r, d_in]
 
-        self.v = nn.Parameter(torch.zeros(svd_rank, dtype=dtype))
+        device = original_layer.weight.device
+        self.v = nn.Parameter(torch.zeros(svd_rank, dtype=dtype, device=device))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         result = self.original_layer(x)
@@ -237,9 +238,10 @@ def apply_weight_tying(
         return
 
     modules = [entry[0] for entry in injected]
+    device = modules[0].v.device if modules else "cpu"
     for group_start in range(0, len(modules), n_tie):
         group = modules[group_start : group_start + n_tie]
-        shared_v = nn.Parameter(torch.zeros(svd_rank, dtype=dtype))
+        shared_v = nn.Parameter(torch.zeros(svd_rank, dtype=dtype, device=device))
         for m in group:
             m.v = shared_v
 
