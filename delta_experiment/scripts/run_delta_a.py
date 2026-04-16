@@ -730,6 +730,7 @@ def main():
                             rotate_zoom=args.aug_rotate_zoom,
                             speed_factors=parse_speed_factors(args.aug_speed_factors),
                         )
+                        vae.to(args.device)
                         train_latents_variants = []
                         for pv in pix_variants:
                             if pv["name"] == "orig":
@@ -742,6 +743,8 @@ def main():
                                     "latents": aug_lat[:, :, t_start:t_end],
                                     "name": pv["name"],
                                 })
+                        vae.to("cpu")
+                        torch.cuda.empty_cache()
                         del _pf
 
                     opt_result = optimize_delta_a(
