@@ -233,6 +233,7 @@ def optimize_delta_a(
     dtype: torch.dtype = torch.bfloat16,
     early_stopper: Optional[AnchoredEarlyStopper] = None,
     train_latents_variants: Optional[List[Dict]] = None,
+    grad_accum: int = 1,
 ) -> Dict:
     """Optimize the delta vector using conditioning-aware loss.
 
@@ -241,10 +242,12 @@ def optimize_delta_a(
     cond_latents  : clean context latents [B, C, T_cond, H, W]
     train_latents : target latents to noise and compute loss on [B, C, T_train, H, W]
     train_latents_variants : optional augmented variants of train_latents
+    grad_accum : number of forward/backward passes per optimizer step.
+                 Each pass uses a fresh noise sample, giving a better
+                 gradient estimate without increasing peak GPU memory.
     """
     optimizer = AdamW([wrapper.delta], lr=lr, betas=(0.9, 0.999), eps=1e-15)
 
-    # Build variant list (original only if no augmentation)
     if train_latents_variants is None:
         train_latents_variants = [{"latents": train_latents, "name": "orig"}]
 
@@ -258,27 +261,28 @@ def optimize_delta_a(
     for step in range(num_steps):
         optimizer.zero_grad()
 
-        # Randomly pick a variant
-        vi = torch.randint(0, len(train_latents_variants), (1,)).item()
-        step_train = train_latents_variants[vi]["latents"]
+        step_loss_sum = 0.0
+        for _ga in range(grad_accum):
+            vi = torch.randint(0, len(train_latents_variants), (1,)).item()
+            step_train = train_latents_variants[vi]["latents"]
 
-        loss = compute_flow_matching_loss_conditioned(
-            dit=wrapper,
-            cond_latents=cond_latents,
-            target_latents=step_train,
-            prompt_embeds=prompt_embeds,
-            prompt_mask=prompt_mask,
-            device=device,
-            dtype=dtype,
-        )
+            loss = compute_flow_matching_loss_conditioned(
+                dit=wrapper,
+                cond_latents=cond_latents,
+                target_latents=step_train,
+                prompt_embeds=prompt_embeds,
+                prompt_mask=prompt_mask,
+                device=device,
+                dtype=dtype,
+            )
+            (loss / grad_accum).backward()
+            step_loss_sum += loss.item()
 
-        loss.backward()
         torch.nn.utils.clip_grad_norm_([wrapper.delta], 1.0)
         optimizer.step()
 
-        losses.append(loss.item())
+        losses.append(step_loss_sum / grad_accum)
 
-        # Early stopping check
         if early_stopper is not None:
             es_t0 = time.time()
             should_stop, es_info = early_stopper.step(
@@ -289,7 +293,6 @@ def optimize_delta_a(
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
 
-    # Restore best if early stopping was used
     es_state = None
     if early_stopper is not None:
         early_stopper.restore(
@@ -394,6 +397,11 @@ def main():
                         help="Number of videos per TTA batch. 1=instance-level (default), "
                              "K>1=retrieval-augmented batch-level (train on eval video + "
                              "K-1 nearest neighbours from the retrieval pool).")
+    parser.add_argument("--tta-grad-accum", type=int, default=1,
+                        help="Gradient accumulation steps per optimizer update. "
+                             "Each accumulation draws a fresh noise sample, giving "
+                             "a better gradient estimate without extra GPU memory. "
+                             "Effective batch = tta_grad_accum noise draws per step.")
     parser.add_argument("--batch-method", type=str, default="similarity",
                         choices=["sequential", "similarity"],
                         help="(Legacy) Retrieval is always by text-prompt similarity.")
@@ -448,6 +456,7 @@ def main():
     print(f"Delta steps    : {args.delta_steps}")
     print(f"Delta LR       : {args.delta_lr}")
     print(f"Augmentation   : {args.aug_enabled}")
+    print(f"Grad accum     : {args.tta_grad_accum}")
     print(f"Batch videos   : {args.batch_videos}")
     print(f"Batch method   : {args.batch_method}")
     if args.retrieval_pool_dir:
@@ -608,7 +617,23 @@ def main():
                     "early_stopping_info": None,
                 }
                 train_time = 0.0
+                timing = {k: 0.0 for k in [
+                    "load_frames", "encode_latents", "encode_prompt",
+                    "aug_build", "aug_encode", "tta_train", "es_setup",
+                    "es_check", "tta_train_net", "train_total",
+                ]}
             else:
+                # ── Detailed per-module timing ──
+                timing = {
+                    "load_frames": 0.0,
+                    "encode_latents": 0.0,
+                    "encode_prompt": 0.0,
+                    "aug_build": 0.0,
+                    "aug_encode": 0.0,
+                    "tta_train": 0.0,
+                    "es_setup": 0.0,
+                }
+
                 # ── Pre-encode all videos in the training batch ──
                 _cached_gen_cond_frames = None
                 batch_data = []
@@ -617,12 +642,16 @@ def main():
                     caption = entry["caption"]
 
                     tta_start = args.gen_start_frame - args.tta_total_frames
+                    _t = time.time()
                     pixel_frames = load_video_frames(
                         video_path, args.tta_total_frames, height=480, width=832,
                         start_frame=max(0, tta_start),
                     ).to(args.device, torch.bfloat16)
+                    timing["load_frames"] += time.time() - _t
 
+                    _t = time.time()
                     all_latents = encode_video(vae, pixel_frames, normalize=True)
+                    timing["encode_latents"] += time.time() - _t
 
                     vae_t_scale = 4
                     num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
@@ -631,10 +660,12 @@ def main():
                         holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
                     )
 
+                    _t = time.time()
                     prompt_embeds, prompt_mask = encode_prompt(
                         tokenizer, text_encoder, caption,
                         device=args.device, dtype=torch.bfloat16,
                     )
+                    timing["encode_prompt"] += time.time() - _t
 
                     batch_data.append({
                         "video_path": video_path,
@@ -671,7 +702,7 @@ def main():
                 torch.cuda.empty_cache()
 
                 # ── Train ──
-                t0 = time.time()
+                _t_train_start = time.time()
                 if batch_level:
                     opt_result = _optimize_delta_a_batch(
                         wrapper=wrapper,
@@ -698,6 +729,7 @@ def main():
                                 num_cond_latents=ncl,
                             )
 
+                        _t = time.time()
                         early_stopper.setup(
                             model=wrapper,
                             cond_latents=cond_lat,
@@ -710,11 +742,13 @@ def main():
                             video_id=bd["video_name"],
                             save_fn=lambda: copy.deepcopy(wrapper.delta.data),
                         )
+                        timing["es_setup"] = time.time() - _t
 
                     train_latents_variants = None
                     if args.aug_enabled:
                         from common import build_augmented_pixel_variants
                         _tta_start = args.gen_start_frame - args.tta_total_frames
+                        _t = time.time()
                         _pf = load_video_frames(
                             bd["video_path"], args.tta_total_frames,
                             height=480, width=832, start_frame=max(0, _tta_start),
@@ -730,6 +764,9 @@ def main():
                             rotate_zoom=args.aug_rotate_zoom,
                             speed_factors=parse_speed_factors(args.aug_speed_factors),
                         )
+                        timing["aug_build"] = time.time() - _t
+
+                        _t = time.time()
                         vae.to(args.device)
                         train_latents_variants = []
                         for pv in pix_variants:
@@ -745,8 +782,10 @@ def main():
                                 })
                         vae.to("cpu")
                         torch.cuda.empty_cache()
+                        timing["aug_encode"] = time.time() - _t
                         del _pf
 
+                    _t = time.time()
                     opt_result = optimize_delta_a(
                         wrapper=wrapper,
                         cond_latents=cond_lat,
@@ -759,11 +798,25 @@ def main():
                         dtype=torch.bfloat16,
                         early_stopper=early_stopper if val_lat is not None else None,
                         train_latents_variants=train_latents_variants,
+                        grad_accum=args.tta_grad_accum,
                     )
+                    timing["tta_train"] = time.time() - _t
 
-                train_time = time.time() - t0
+                train_time = time.time() - _t_train_start
+                timing["es_check"] = opt_result.get("es_check_time", 0.0)
+                timing["tta_train_net"] = timing["tta_train"] - timing["es_check"]
+                timing["train_total"] = train_time
                 print(f"  Train time: {train_time:.1f}s, "
                       f"Delta norm: {opt_result['delta_norm']:.4f}")
+                print(f"  Timing breakdown: "
+                      f"load={timing['load_frames']:.1f}s, "
+                      f"encode={timing['encode_latents']:.1f}s, "
+                      f"prompt={timing['encode_prompt']:.1f}s, "
+                      f"aug_build={timing['aug_build']:.1f}s, "
+                      f"aug_encode={timing['aug_encode']:.1f}s, "
+                      f"es_setup={timing['es_setup']:.1f}s, "
+                      f"train={timing['tta_train_net']:.1f}s, "
+                      f"es_check={timing['es_check']:.1f}s")
 
             # ── Generate ONLY for the eval video ──
             if not clip_gate_info.get("tta_skipped", False):
@@ -781,6 +834,7 @@ def main():
                 "batch_size": len(training_entries),
                 "num_neighbors": len(training_entries) - 1,
                 "early_stopping_info": opt_result.get("early_stopping_info"),
+                "timing": timing,
                 "success": True,
             }
             result.update(clip_gate_info)
@@ -925,6 +979,7 @@ def main():
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,
         "gen_start_frame": args.gen_start_frame,
+        "tta_grad_accum": args.tta_grad_accum,
         "batch_videos": args.batch_videos,
         "retrieval_pool_dir": args.retrieval_pool_dir,
         "num_videos": len(all_results),
@@ -942,6 +997,18 @@ def main():
         "avg_total_time": (
             np.mean([r.get("total_time", 0.0) for r in successful]) if successful else 0
         ),
+        "avg_timing": {
+            k: float(np.mean([r.get("timing", {}).get(k, 0.0) for r in successful]))
+            for k in [
+                "load_frames", "encode_latents", "encode_prompt",
+                "aug_build", "aug_encode", "tta_train", "tta_train_net",
+                "es_setup", "es_check", "train_total",
+            ]
+        } if successful else {},
+        "aug_enabled": args.aug_enabled,
+        "aug_flip": getattr(args, "aug_flip", False),
+        "es_disable": getattr(args, "es_disable", False),
+        "es_check_every": getattr(args, "es_check_every", 5),
         "clip_gate_enabled": args.clip_gate_enabled,
         "clip_gate_threshold": args.clip_gate_threshold,
         "clip_gate_backend": args.clip_gate_backend,
@@ -965,6 +1032,18 @@ def main():
         print(f"Avg train time: {summary['avg_train_time']:.1f}s")
         print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
         print(f"Avg total time: {summary['avg_total_time']:.1f}s")
+        if summary.get("avg_timing"):
+            at = summary["avg_timing"]
+            print(f"\nDetailed avg timing per video:")
+            print(f"  Load frames  : {at.get('load_frames', 0):.2f}s")
+            print(f"  Encode latent: {at.get('encode_latents', 0):.2f}s")
+            print(f"  Encode prompt: {at.get('encode_prompt', 0):.2f}s")
+            print(f"  Aug build    : {at.get('aug_build', 0):.2f}s")
+            print(f"  Aug encode   : {at.get('aug_encode', 0):.2f}s")
+            print(f"  ES setup     : {at.get('es_setup', 0):.2f}s")
+            print(f"  TTA train    : {at.get('tta_train_net', 0):.2f}s")
+            print(f"  ES checking  : {at.get('es_check', 0):.2f}s")
+            print(f"  Train total  : {at.get('train_total', 0):.2f}s")
 
 
 if __name__ == "__main__":

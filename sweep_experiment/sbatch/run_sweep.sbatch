@@ -116,6 +116,7 @@ RETRIEVAL_POOL_DIR="${RETRIEVAL_POOL_DIR:-}"
 # Delta A/B/C shared
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
+TTA_GRAD_ACCUM="${TTA_GRAD_ACCUM:-1}"
 
 # Delta-B specific
 NUM_GROUPS="${NUM_GROUPS:-4}"
@@ -316,13 +317,13 @@ CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-sample-frames ${CLIP_GATE_SAMPLE_FRAMES}"
 CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-aggregation ${CLIP_GATE_AGGREGATION}"
 CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-sampling-mode ${CLIP_GATE_SAMPLING_MODE}"
 CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-late-fraction ${CLIP_GATE_LATE_FRACTION}"
-if [ -n "${CLIP_GATE_LATE_ONLY}" ]; then
+if [ "${CLIP_GATE_LATE_ONLY}" = "1" ]; then
     CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-late-only"
 fi
-if [ -n "${CLIP_GATE_LOG_ONLY}" ]; then
+if [ "${CLIP_GATE_LOG_ONLY}" = "1" ]; then
     CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-log-only"
 fi
-if [ -n "${CLIP_GATE_FAIL_OPEN}" ]; then
+if [ "${CLIP_GATE_FAIL_OPEN}" = "1" ]; then
     CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-fail-open"
 else
     CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-fail-closed"
@@ -493,6 +494,7 @@ case "${METHOD}" in
     echo "Method-specific config:"
     echo "  Delta LR       : ${DELTA_LR}"
     echo "  Delta steps    : ${DELTA_STEPS}"
+    echo "  Grad accum     : ${TTA_GRAD_ACCUM}"
     echo "  Batch videos   : ${BATCH_VIDEOS}"
     echo "  Batch method   : ${BATCH_METHOD}"
     echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
@@ -510,6 +512,7 @@ case "${METHOD}" in
         --max-videos "${MAX_VIDEOS}" \
         --delta-steps "${DELTA_STEPS}" \
         --delta-lr "${DELTA_LR}" \
+        --tta-grad-accum "${TTA_GRAD_ACCUM}" \
         --batch-videos "${BATCH_VIDEOS}" \
         --batch-method "${BATCH_METHOD}" \
         ${POOL_FLAGS} \

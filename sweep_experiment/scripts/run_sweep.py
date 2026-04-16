@@ -79,6 +79,7 @@ _KEY_TO_ENV = {
     # Delta shared
     "delta_steps": "DELTA_STEPS",
     "delta_lr": "DELTA_LR",
+    "tta_grad_accum": "TTA_GRAD_ACCUM",
     # Delta-B
     "num_groups": "NUM_GROUPS",
     "delta_target": "DELTA_TARGET",
