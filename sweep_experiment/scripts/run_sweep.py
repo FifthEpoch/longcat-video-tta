@@ -214,11 +214,9 @@ def build_env_vars(
             print(f"WARNING: Unknown config key '{key}', skipping.", file=sys.stderr)
             continue
 
-        # Handle boolean flags: only set env var if True
+        # Handle boolean flags: "1" for True, "0" for False
         if isinstance(value, bool):
-            if value:
-                env[env_name] = "1"
-            # If False, don't set (empty string = disabled in sbatch)
+            env[env_name] = "1" if value else "0"
             continue
 
         env[env_name] = str(value)

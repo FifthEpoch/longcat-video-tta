@@ -279,7 +279,7 @@ echo ""
 # Build early stopping flags
 # ============================================================================
 ES_FLAGS=""
-if [ -n "${ES_DISABLE}" ]; then
+if [ "${ES_DISABLE}" = "1" ]; then
     ES_FLAGS="${ES_FLAGS} --es-disable"
 fi
 ES_FLAGS="${ES_FLAGS} --es-check-every ${ES_CHECK_EVERY}"
@@ -306,7 +306,7 @@ fi
 
 # Build CLIP gate flags (shared across methods)
 CLIP_FLAGS=""
-if [ -n "${CLIP_GATE_ENABLED}" ]; then
+if [ "${CLIP_GATE_ENABLED}" = "1" ]; then
     CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-enabled"
 fi
 CLIP_FLAGS="${CLIP_FLAGS} --clip-gate-threshold ${CLIP_GATE_THRESHOLD}"
@@ -349,10 +349,10 @@ EVAL_FLAGS="${EVAL_FLAGS} --min-fvd-videos ${MIN_FVD_VIDEOS}"
 
 # Build augmentation flags (shared across all methods)
 AUG_FLAGS=""
-if [ -n "${AUG_ENABLED}" ]; then
+if [ "${AUG_ENABLED}" = "1" ]; then
     AUG_FLAGS="${AUG_FLAGS} --aug-enabled"
 fi
-if [ -n "${AUG_FLIP}" ]; then
+if [ "${AUG_FLIP}" = "1" ]; then
     AUG_FLAGS="${AUG_FLAGS} --aug-flip"
 fi
 AUG_FLAGS="${AUG_FLAGS} --aug-rotate-deg ${AUG_ROTATE_DEG}"
@@ -382,7 +382,7 @@ case "${METHOD}" in
     echo "=============================================================================="
 
     EXTRA_FLAGS=""
-    if [ -n "${SKIP_GENERATION}" ]; then
+    if [ "${SKIP_GENERATION}" = "1" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --skip-generation"
     fi
 
@@ -439,13 +439,13 @@ case "${METHOD}" in
     echo "=============================================================================="
 
     EXTRA_FLAGS=""
-    if [ -n "${TARGET_FFN}" ]; then
+    if [ "${TARGET_FFN}" = "1" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --target-ffn"
     fi
-    if [ -n "${SKIP_GENERATION}" ]; then
+    if [ "${SKIP_GENERATION}" = "1" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --skip-generation"
     fi
-    if [ -n "${USE_BUILTIN_LORA}" ]; then
+    if [ "${USE_BUILTIN_LORA}" = "1" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --use-builtin-lora"
     fi
 
@@ -617,7 +617,7 @@ case "${METHOD}" in
     echo "=============================================================================="
 
     EXTRA_FLAGS=""
-    if [ -n "${ALSO_TUNE_DELTA}" ]; then
+    if [ "${ALSO_TUNE_DELTA}" = "1" ]; then
         EXTRA_FLAGS="${EXTRA_FLAGS} --also-tune-delta"
     fi
 

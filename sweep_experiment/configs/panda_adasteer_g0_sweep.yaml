@@ -29,6 +29,7 @@ fixed:
   es_disable: true
   caption_guard_mode: warn
   feature_frame_guard_mode: warn
+  no_save_videos: false
   aug_enabled: true
   aug_flip: true
 
