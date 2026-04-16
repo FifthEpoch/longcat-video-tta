@@ -33,11 +33,15 @@ ALPHA="${ALPHA:-1.0}"
 N_TIE="${N_TIE:-1}"
 TARGET_PRESET="${TARGET_PRESET:-qkv_proj}"
 TARGET_MODULES="${TARGET_MODULES:-}"
-NUM_COND_FRAMES="${NUM_COND_FRAMES:-2}"
-NUM_FRAMES="${NUM_FRAMES:-16}"
+NUM_COND_FRAMES="${NUM_COND_FRAMES:-14}"
+NUM_FRAMES="${NUM_FRAMES:-28}"
+GEN_START_FRAME="${GEN_START_FRAME:-48}"
+NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-50}"
+GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
+NO_SAVE_VIDEOS="${NO_SAVE_VIDEOS:-}"
 
 # Early stopping configuration
 ES_DISABLE="${ES_DISABLE:-}"
@@ -144,13 +148,13 @@ EXTRA_FLAGS=""
 if [ -n "${TARGET_MODULES}" ]; then
     EXTRA_FLAGS="${EXTRA_FLAGS} --target-modules ${TARGET_MODULES}"
 fi
-if [ -n "${SKIP_GENERATION}" ]; then
+if [ "${SKIP_GENERATION}" = "1" ]; then
     EXTRA_FLAGS="${EXTRA_FLAGS} --skip-generation"
 fi
 
 # Build early stopping flags
 ES_FLAGS=""
-if [ -n "${ES_DISABLE}" ]; then
+if [ "${ES_DISABLE}" = "1" ]; then
     ES_FLAGS="${ES_FLAGS} --es-disable"
 fi
 ES_FLAGS="${ES_FLAGS} --es-check-every ${ES_CHECK_EVERY}"
@@ -165,6 +169,11 @@ ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
 # ============================================================================
 echo "Starting TinyLoRA TTA..."
 
+SAVE_FLAGS=""
+if [ "${NO_SAVE_VIDEOS}" = "1" ]; then
+    SAVE_FLAGS="--no-save-videos"
+fi
+
 "$PYTHON" delta_experiment/scripts/run_tinylora.py \
     --checkpoint-dir "${CHECKPOINT_DIR}" \
     --data-dir "${DATA_DIR}" \
@@ -178,8 +187,12 @@ echo "Starting TinyLoRA TTA..."
     --tta-lr "${TTA_LR}" \
     --num-cond-frames "${NUM_COND_FRAMES}" \
     --num-frames "${NUM_FRAMES}" \
+    --gen-start-frame "${GEN_START_FRAME}" \
+    --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+    --guidance-scale "${GUIDANCE_SCALE}" \
     --resolution "${RESOLUTION}" \
     --seed "${SEED}" \
+    ${SAVE_FLAGS} \
     ${EXTRA_FLAGS} \
     ${ES_FLAGS}
 
