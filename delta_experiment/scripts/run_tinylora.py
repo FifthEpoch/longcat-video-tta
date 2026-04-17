@@ -51,6 +51,7 @@ from common import (
     split_tta_latents,
     save_results,
     save_video_from_numpy,
+    rename_videos_with_metrics,
     load_checkpoint,
     save_checkpoint,
     torch_gc,
@@ -737,6 +738,8 @@ def main():
     save_results(
         experiment_summary, os.path.join(args.output_dir, "summary.json")
     )
+    if not args.no_save_videos:
+        rename_videos_with_metrics(experiment_summary, videos_dir)
     print(f"\nResults saved to {args.output_dir}/summary.json")
     if successful:
         print(f"Avg train time : {experiment_summary['avg_train_time']:.1f}s")
