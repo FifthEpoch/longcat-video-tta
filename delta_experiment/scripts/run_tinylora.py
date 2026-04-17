@@ -639,7 +639,10 @@ def main():
 
                 output_path = os.path.join(videos_dir, f"{video_name}_tinylora.mp4")
                 if not args.no_save_videos:
-                    save_video_from_numpy(gen_frames, output_path, fps=24)
+                    save_video_from_numpy(
+                        gen_frames, output_path, fps=24,
+                        num_cond_frames=args.num_cond_frames,
+                    )
                     result["output_path"] = output_path
 
                 num_gen = args.num_frames - args.num_cond_frames

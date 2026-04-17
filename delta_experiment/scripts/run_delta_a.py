@@ -49,6 +49,7 @@ from common import (
     generate_video_continuation,
     save_results,
     save_video_from_numpy,
+    rename_videos_with_metrics,
     load_checkpoint,
     save_checkpoint,
     torch_gc,
@@ -870,7 +871,10 @@ def main():
                     result["gen_time"] = gen_time
                     output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
                     if not args.no_save_videos:
-                        save_video_from_numpy(gen_frames, output_path, fps=24)
+                        save_video_from_numpy(
+                            gen_frames, output_path, fps=24,
+                            num_cond_frames=args.num_cond_frames,
+                        )
                         result["output_path"] = output_path
 
                     num_gen = args.num_frames - args.num_cond_frames
@@ -914,7 +918,10 @@ def main():
 
                         output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
                         if not args.no_save_videos:
-                            save_video_from_numpy(gen_frames, output_path, fps=24)
+                            save_video_from_numpy(
+                                gen_frames, output_path, fps=24,
+                                num_cond_frames=args.num_cond_frames,
+                            )
                             result["output_path"] = output_path
 
                         num_gen = args.num_frames - args.num_cond_frames
@@ -1025,6 +1032,8 @@ def main():
     aggregate_quality_metrics(summary)
     finalize_online_eval(fvd_accumulator, summary, videos_dir, args)
     save_results(summary, os.path.join(args.output_dir, "summary.json"))
+    if not args.no_save_videos:
+        rename_videos_with_metrics(summary, videos_dir)
     print(f"\nResults saved to {args.output_dir}/summary.json")
     if successful:
         print(f"Avg CLIP gate time: {summary['avg_clip_gate_eval_time']:.2f}s")

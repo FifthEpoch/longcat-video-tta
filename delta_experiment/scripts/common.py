@@ -2038,16 +2038,177 @@ def summarize_clip_gate_stats(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ============================================================================
-# Video saving helper
+# Video annotation + saving helpers
 # ============================================================================
 
-def save_video_from_numpy(frames: np.ndarray, output_path: str, fps: int = 24):
-    """Save video from numpy array [N, H, W, 3] in [0, 1]."""
+def _get_annotation_font(size: int):
+    """Try system fonts, fall back to PIL default."""
+    from PIL import ImageFont
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/SFNSMono.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except (IOError, OSError):
+            continue
+    return ImageFont.load_default()
+
+
+def _annotate_single_frame(
+    frame_u8: np.ndarray,
+    label: str,
+    border_color: tuple,
+    border_width: int = 4,
+) -> np.ndarray:
+    """Add a coloured border and a white-on-black label to a single uint8 frame."""
+    from PIL import Image, ImageDraw
+    img = Image.fromarray(frame_u8)
+    draw = ImageDraw.Draw(img)
+    h, w = frame_u8.shape[:2]
+
+    for i in range(border_width):
+        draw.rectangle([i, i, w - 1 - i, h - 1 - i], outline=border_color)
+
+    font_size = max(14, h // 22)
+    font = _get_annotation_font(font_size)
+    margin = border_width + 5
+    bbox = draw.textbbox((margin, margin), label, font=font)
+    pad = 4
+    draw.rectangle(
+        [bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad],
+        fill=(0, 0, 0),
+    )
+    draw.text((margin, margin), label, fill="white", font=font)
+    return np.array(img)
+
+
+def annotate_video_frames(
+    frames: np.ndarray,
+    num_cond_frames: int,
+) -> np.ndarray:
+    """Annotate a [N, H, W, 3] float32 video (values in [0,1]).
+
+    - First ``num_cond_frames`` frames get a GREEN border + "CONDITIONING" label.
+    - Remaining frames get a RED border + "GENERATED" label.
+
+    Returns uint8 array [N, H, W, 3].
+    """
+    frames_u8 = (np.clip(frames, 0, 1) * 255).astype(np.uint8)
+    out = np.empty_like(frames_u8)
+    for i in range(len(frames_u8)):
+        if i < num_cond_frames:
+            out[i] = _annotate_single_frame(
+                frames_u8[i], "CONDITIONING",
+                border_color=(0, 200, 0), border_width=4)
+        else:
+            out[i] = _annotate_single_frame(
+                frames_u8[i], "GENERATED",
+                border_color=(220, 0, 0), border_width=4)
+    return out
+
+
+def save_video_from_numpy(
+    frames: np.ndarray, output_path: str, fps: int = 24,
+    num_cond_frames: int = 0,
+):
+    """Save video from numpy array [N, H, W, 3] in [0, 1].
+
+    If ``num_cond_frames > 0``, frames are annotated with green/red borders
+    and CONDITIONING/GENERATED labels before saving.
+    """
     import imageio
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    frames_u8 = (np.clip(frames, 0, 1) * 255).astype(np.uint8)
+    if num_cond_frames > 0:
+        frames_u8 = annotate_video_frames(frames, num_cond_frames)
+    else:
+        frames_u8 = (np.clip(frames, 0, 1) * 255).astype(np.uint8)
     imageio.mimwrite(output_path, frames_u8, fps=fps, codec="libx264", quality=9)
+
+
+# ============================================================================
+# Post-run video renaming (metric-stamped filenames)
+# ============================================================================
+
+_METHOD_SLUG = {
+    "delta_a": "adasteer", "delta_b": "adasteer-B", "delta_c": "adasteer-C",
+    "lora_tta": "lora", "full_tta": "no-TTA", "tinylora": "tinylora",
+}
+
+def _sanitize_caption(caption: str, max_len: int = 80) -> str:
+    import re as _re
+    s = caption.lower().strip()
+    s = _re.sub(r"[^a-z0-9\s-]", "", s)
+    s = _re.sub(r"\s+", "-", s)
+    s = _re.sub(r"-+", "-", s).strip("-")
+    return s[:max_len].rstrip("-") if len(s) > max_len else s
+
+def _extract_index(video_name: str) -> str:
+    import re as _re
+    m = _re.search(r"(\d+)$", video_name)
+    return (m.group(1).lstrip("0") or "0") if m else video_name
+
+def rename_videos_with_metrics(summary: dict, videos_dir: str):
+    """Rename saved video files to include per-video metrics.
+
+    Called at the end of a run after FVD/FID are finalized. Filenames become:
+      <idx>_<caption>_FVD-<fvd>_PSNR-<psnr>_SSIM-<ssim>_LPIPS-<lpips>_FID-<fid>_<method>.mp4
+    """
+    method_raw = summary.get("method", "unknown")
+    steps = summary.get("delta_steps", None)
+    if steps is not None and int(steps) == 0:
+        method = "no-TTA"
+    else:
+        method = _METHOD_SLUG.get(method_raw, method_raw)
+
+    run_fvd = summary.get("fvd") or summary.get("online_fvd")
+    run_fid = summary.get("fid") or summary.get("online_fid")
+
+    vdir = Path(videos_dir)
+    if not vdir.is_dir():
+        return
+
+    existing = {p.name: p for p in vdir.glob("*.mp4")}
+    renamed = 0
+
+    for r in summary.get("results", []):
+        if not r.get("success", False):
+            continue
+        vname = r.get("video_name", "")
+        caption = r.get("caption", "unknown")
+        psnr = r.get("psnr")
+        ssim = r.get("ssim")
+        lpips_val = r.get("lpips")
+        if psnr is None or ssim is None or lpips_val is None:
+            continue
+
+        for suffix in ("_delta_a.mp4", "_lora.mp4", "_full.mp4",
+                        "_tinylora.mp4", ".mp4"):
+            cand = f"{vname}{suffix}"
+            if cand in existing:
+                old_path = existing[cand]
+                break
+        else:
+            continue
+
+        idx = _extract_index(vname)
+        slug = _sanitize_caption(caption)
+        fvd_s = f"FVD-{run_fvd:.1f}" if run_fvd is not None else "FVD-NA"
+        fid_s = f"FID-{run_fid:.1f}" if run_fid is not None else "FID-NA"
+        new_name = (f"{idx}_{slug}_{fvd_s}"
+                    f"_PSNR-{psnr:.3f}_SSIM-{ssim:.3f}_LPIPS-{lpips_val:.3f}"
+                    f"_{fid_s}_{method}.mp4")
+        new_path = vdir / new_name
+
+        if old_path != new_path:
+            old_path.rename(new_path)
+            renamed += 1
+
+    if renamed:
+        print(f"  Renamed {renamed} videos with metrics "
+              f"(FVD={run_fvd}, FID={run_fid})")
 
 
 # ============================================================================
