@@ -75,6 +75,11 @@ class TinyLoRAConfig:
                layers share a single trainable v vector.
         target_modules: Dotted attribute paths to nn.Linear layers within
                         each LongCatSingleStreamBlock.
+        target_blocks: Which transformer blocks to inject into. ``None``
+                       means all blocks. Otherwise a set of integer indices.
+                       Using only the last few blocks can significantly
+                       reduce backward-pass cost since PyTorch autograd
+                       skips gradient computation for unadapted early blocks.
     """
 
     svd_rank: int = 2
@@ -83,6 +88,7 @@ class TinyLoRAConfig:
     target_modules: List[str] = field(
         default_factory=lambda: list(DEFAULT_TARGETS)
     )
+    target_blocks: Optional[set] = None
 
 
 # ============================================================================
@@ -187,18 +193,26 @@ def inject_tinylora_into_dit(
     dit: nn.Module,
     config: TinyLoRAConfig,
 ) -> List[InjectedInfo]:
-    """Inject TinyLoRA adapters into all target linear layers of a LongCat DiT.
+    """Inject TinyLoRA adapters into target linear layers of a LongCat DiT.
 
     Modifies ``dit.blocks`` in-place by replacing target ``nn.Linear``
     modules with ``TinyLoRALinear`` wrappers.  SVD is computed once per
     layer during injection.
 
+    When ``config.target_blocks`` is set, only the specified block indices
+    are adapted.  This can cut backward-pass time substantially because
+    PyTorch autograd skips gradient computation for unadapted early blocks.
+
     Returns a list of (tinylora_layer, parent_block, path) tuples that
     can be used for restoration via ``remove_tinylora_from_dit``.
     """
     injected: List[InjectedInfo] = []
+    num_blocks = len(dit.blocks)
 
-    for block in dit.blocks:
+    for block_idx, block in enumerate(dit.blocks):
+        if config.target_blocks is not None and block_idx not in config.target_blocks:
+            continue
+
         for target_path in config.target_modules:
             try:
                 original = _resolve_submodule(block, target_path)
@@ -213,6 +227,12 @@ def inject_tinylora_into_dit(
             )
             _set_submodule(block, target_path, lora_layer)
             injected.append((lora_layer, block, target_path))
+
+    if config.target_blocks is not None:
+        print(
+            f"  TinyLoRA: injected into blocks {sorted(config.target_blocks)} "
+            f"of {num_blocks} total"
+        )
 
     return injected
 
@@ -249,6 +269,35 @@ def apply_weight_tying(
 # ============================================================================
 # Wrapper
 # ============================================================================
+
+
+def parse_target_blocks(spec: str, num_blocks: int) -> Optional[set]:
+    """Parse a target-blocks specification into a set of block indices.
+
+    Accepts:
+      "all"         -> None (all blocks)
+      "last_5"      -> last 5 blocks
+      "first_10"    -> first 10 blocks
+      "0,5,10"      -> explicit comma-separated indices
+    """
+    spec = spec.strip().lower()
+    if spec == "all":
+        return None
+    if spec.startswith("last_"):
+        n = int(spec.split("_", 1)[1])
+        if n <= 0 or n > num_blocks:
+            raise ValueError(f"last_{n} invalid for {num_blocks} blocks")
+        return set(range(num_blocks - n, num_blocks))
+    if spec.startswith("first_"):
+        n = int(spec.split("_", 1)[1])
+        if n <= 0 or n > num_blocks:
+            raise ValueError(f"first_{n} invalid for {num_blocks} blocks")
+        return set(range(n))
+    indices = set(int(x.strip()) for x in spec.split(","))
+    for idx in indices:
+        if idx < 0 or idx >= num_blocks:
+            raise ValueError(f"Block index {idx} out of range [0, {num_blocks})")
+    return indices
 
 
 class TinyLoRAWrapper(nn.Module):
@@ -341,9 +390,11 @@ class TinyLoRAWrapper(nn.Module):
         remove_tinylora_from_dit(self._injected)
         self._injected.clear()
 
-    def param_summary(self) -> Dict[str, int]:
+    def param_summary(self) -> Dict:
         """Return a dict summarising parameter counts."""
         params = self.get_trainable_params()
+        num_blocks = len(self.dit.blocks)
+        target_blocks = self._config.target_blocks
         return {
             "total_model_params": sum(p.numel() for p in self.dit.parameters()),
             "tinylora_trainable": sum(p.numel() for p in params),
@@ -351,4 +402,7 @@ class TinyLoRAWrapper(nn.Module):
             "num_v_vectors": len(params),
             "svd_rank": self._config.svd_rank,
             "n_tie": self._config.n_tie,
+            "num_blocks_total": num_blocks,
+            "num_blocks_adapted": len(target_blocks) if target_blocks is not None else num_blocks,
+            "target_blocks": sorted(target_blocks) if target_blocks is not None else "all",
         }

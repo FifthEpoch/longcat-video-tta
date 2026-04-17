@@ -33,6 +33,7 @@ ALPHA="${ALPHA:-1.0}"
 N_TIE="${N_TIE:-1}"
 TARGET_PRESET="${TARGET_PRESET:-qkv_proj}"
 TARGET_MODULES="${TARGET_MODULES:-}"
+TARGET_BLOCKS="${TARGET_BLOCKS:-all}"
 NUM_COND_FRAMES="${NUM_COND_FRAMES:-14}"
 NUM_FRAMES="${NUM_FRAMES:-28}"
 GEN_START_FRAME="${GEN_START_FRAME:-48}"
@@ -113,6 +114,7 @@ echo "  Alpha          : ${ALPHA}"
 echo "  Weight tying   : n_tie=${N_TIE}"
 echo "  Target preset  : ${TARGET_PRESET}"
 echo "  Target modules : ${TARGET_MODULES:-<from preset>}"
+echo "  Target blocks  : ${TARGET_BLOCKS}"
 echo "  Cond frames    : ${NUM_COND_FRAMES}"
 echo "  Num frames     : ${NUM_FRAMES}"
 echo "  TTA total      : ${TTA_TOTAL_FRAMES}"
@@ -283,6 +285,7 @@ echo "Starting TinyLoRA TTA..."
     --alpha "${ALPHA}" \
     --n-tie "${N_TIE}" \
     --target-preset "${TARGET_PRESET}" \
+    --target-blocks "${TARGET_BLOCKS}" \
     --tta-steps "${TTA_STEPS}" \
     --tta-lr "${TTA_LR}" \
     --num-cond-frames "${NUM_COND_FRAMES}" \

@@ -83,6 +83,7 @@ from tinylora_layers import (
     TinyLoRAConfig,
     TinyLoRAWrapper,
     TARGET_PRESETS,
+    parse_target_blocks,
 )
 
 
@@ -206,6 +207,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--target-modules", type=str, default=None,
         help="Comma-separated target module paths (overrides --target-preset)",
     )
+    g.add_argument(
+        "--target-blocks", type=str, default="all",
+        help="Which DiT blocks to inject into: 'all', 'last_N', 'first_N', "
+             "or comma-separated indices (e.g. 'last_5'). Adapting only "
+             "late blocks cuts backward-pass time proportionally.",
+    )
 
     g = parser.add_argument_group("TTA optimisation")
     g.add_argument("--tta-steps", type=int, default=20)
@@ -272,13 +279,6 @@ def main():
     else:
         target_modules = TARGET_PRESETS[args.target_preset]
 
-    config = TinyLoRAConfig(
-        svd_rank=args.svd_rank,
-        alpha=args.alpha,
-        n_tie=args.n_tie,
-        target_modules=target_modules,
-    )
-
     ckpt_path = os.path.join(args.output_dir, "checkpoint.json")
     ckpt = load_checkpoint(ckpt_path)
     start_idx = ckpt.get("next_idx", 0) if ckpt else 0
@@ -289,10 +289,11 @@ def main():
     print(f"Checkpoint dir  : {args.checkpoint_dir}")
     print(f"Data dir        : {args.data_dir}")
     print(f"Output dir      : {args.output_dir}")
-    print(f"SVD rank        : {config.svd_rank}")
-    print(f"Alpha           : {config.alpha}")
-    print(f"Weight tying    : n_tie={config.n_tie}")
-    print(f"Target modules  : {config.target_modules}")
+    print(f"SVD rank        : {args.svd_rank}")
+    print(f"Alpha           : {args.alpha}")
+    print(f"Weight tying    : n_tie={args.n_tie}")
+    print(f"Target modules  : {target_modules}")
+    print(f"Target blocks   : {args.target_blocks}")
     print(f"TTA steps       : {args.tta_steps}")
     print(f"TTA LR          : {args.tta_lr}")
     print(f"Augmentation    : {args.aug_enabled}")
@@ -322,6 +323,21 @@ def main():
         _ckpt_fn, use_reentrant=False
     )
     print("Gradient checkpointing: ENABLED (use_reentrant=False)")
+
+    # ------------------------------------------------------------------
+    # Build TinyLoRA config (deferred until model is loaded so we
+    # can resolve --target-blocks against the actual block count)
+    # ------------------------------------------------------------------
+    num_blocks = len(dit.blocks)
+    resolved_blocks = parse_target_blocks(args.target_blocks, num_blocks)
+
+    config = TinyLoRAConfig(
+        svd_rank=args.svd_rank,
+        alpha=args.alpha,
+        n_tie=args.n_tie,
+        target_modules=target_modules,
+        target_blocks=resolved_blocks,
+    )
 
     # ------------------------------------------------------------------
     # Inject TinyLoRA (once — SVDs computed here, reused across videos)
@@ -685,6 +701,7 @@ def main():
             "alpha": config.alpha,
             "n_tie": config.n_tie,
             "target_modules": config.target_modules,
+            "target_blocks": args.target_blocks,
         },
         "param_summary": param_summary,
         "tta_steps": args.tta_steps,
