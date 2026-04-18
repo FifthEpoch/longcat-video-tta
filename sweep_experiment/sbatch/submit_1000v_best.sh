@@ -2,6 +2,13 @@
 # ============================================================================
 # Submit 1000-video evaluation of best configs
 #
+# Estimated wall times (per-video × 1000):
+#   NOTTA:     ~80s/vid  → ~22 hours
+#   DV_BARE:   ~134s/vid → ~37 hours
+#   LORA_R8:   ~99s/vid  → ~28 hours
+#
+# All scripts checkpoint per-video, so preemption/requeue is safe.
+#
 # BEFORE RUNNING:
 #   cd /scratch/wc3013/longcat-video-tta
 #   git pull
@@ -20,22 +27,23 @@ echo "[1/2] No-TTA baseline + Delta Vector (AS_BARE)..."
 python sweep_experiment/scripts/run_sweep.py \
     --config sweep_experiment/configs/panda_1000v_best_methods.yaml \
     --data-dir "${DATA_DIR}" \
-    --account "${ACCOUNT}"
+    --account "${ACCOUNT}" \
+    --time 48:00:00
 
 echo ""
-echo "[2/2] LoRA (2 configs: R4/S20 + R8/S10)..."
+echo "[2/2] LoRA (R8, 10 steps)..."
 python sweep_experiment/scripts/run_sweep.py \
     --config sweep_experiment/configs/panda_1000v_lora.yaml \
     --data-dir "${DATA_DIR}" \
-    --account "${ACCOUNT}"
+    --account "${ACCOUNT}" \
+    --time 48:00:00
 
 echo ""
 echo "============================================"
-echo "Submitted 4 jobs total:"
-echo "  - NOTTA (no TTA baseline)"
-echo "  - DV_BARE (Delta Vector, steps=10, lr=0.005)"
-echo "  - LORA_R4_S20 (rank=4, last_4, 20 steps, lr=1e-5)"
-echo "  - LORA_R8_S10 (rank=8, all, 10 steps, lr=5e-5)"
+echo "Submitted 3 jobs total:"
+echo "  - NOTTA       (~22h)"
+echo "  - DV_BARE     (~37h)"
+echo "  - LORA_R8_S10 (~28h)"
 echo ""
 echo "Monitor: squeue -u \$USER"
 echo "============================================"
