@@ -1,0 +1,62 @@
+# Panda-70M: 1000-video LoRA evaluation
+#
+# Two best LoRA configs from 100-video studies:
+#   A) Best FVD: rank=4, alpha=8, last_4, 20 steps, LR=1e-5 (FVD=641.5)
+#   B) Best PSNR: rank=8, alpha=16, all, 10 steps, LR=5e-5 (PSNR=18.616)
+#
+# Neither beat baseline on the 100-video set (baseline FVD=641.1).
+# This 1000-video run checks whether FVD separation appears at scale.
+#
+# Submit with:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/panda_1000v_lora.yaml \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p \
+#       --account torch_pr_36_mren
+
+method: lora
+series: panda
+series_name: panda_1000v_lora
+description: "Panda-70M 1000-video: best LoRA configs (FVD-best + PSNR-best)"
+
+fixed:
+  warmup_steps: 3
+  weight_decay: 0.01
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  no_save_videos: true
+
+sweep:
+  # Config A: Best FVD from 100-video study
+  # rank=4, alpha=8, last_4, 20 steps, LR=1e-5, grad_norm=10
+  # 100v result: FVD=641.5, PSNR=18.569
+  - run_id: LORA_R4_S20
+    lora_rank: 4
+    lora_alpha: 8
+    lora_target_blocks: last_4
+    num_steps: 20
+    learning_rate: 1.0e-5
+    max_grad_norm: 10.0
+
+  # Config B: Best PSNR from 100-video study
+  # rank=8, alpha=16, all, 10 steps, LR=5e-5, grad_norm=10
+  # 100v result: FVD=644.6, PSNR=18.616
+  - run_id: LORA_R8_S10
+    lora_rank: 8
+    lora_alpha: 16
+    lora_target_blocks: all
+    num_steps: 10
+    learning_rate: 5.0e-5
+    max_grad_norm: 10.0

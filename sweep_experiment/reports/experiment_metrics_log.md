@@ -270,3 +270,81 @@ Planned runs:
 | TL_LAST5 | 2 | 1 | qkv_proj | last_5 | 20 | 1e-3 | off | Only last 5 blocks |
 | TL_LAST10 | 2 | 1 | qkv_proj | last_10 | 20 | 1e-3 | off | Only last 10 blocks |
 | TL_LAST24 | 2 | 1 | qkv_proj | last_24 | 20 | 1e-3 | off | Only last 24 blocks |
+
+---
+
+## 1000-Video Evaluation - Status
+
+Date submitted: Feb 16, 2026
+Config files:
+- sweep_experiment/configs/panda_1000v_best_methods.yaml (NOTTA + DV_BARE)
+- sweep_experiment/configs/panda_1000v_lora.yaml (LORA_R4_S20 + LORA_R8_S10)
+Dataset: panda_1000_480p, ALL 1000 videos
+Submit script: sweep_experiment/sbatch/submit_1000v_best.sh
+
+### LoRA Config Selection Rationale
+
+Ranked all LoRA results on panda_1000_480p (100 videos) by FVD:
+
+| Config | Rank | Blocks | Steps | LR | FVD | PSNR | Train(s) |
+|--------|------|--------|-------|----|-----|------|----------|
+| NOTTA (baseline) | -- | -- | 0 | -- | 641.1 | 18.612 | 0.0 |
+| LR1e5_S20 | 4 | last_4 | 20 | 1e-5 | 641.5 | 18.569 | 37.3 |
+| LORA_S10_LR5e-5 | 8 | all | 10 | 5e-5 | 644.6 | 18.616 | 18.5 |
+| LORA_S5_LR1e-5 | 8 | all | 5 | 1e-5 | 651.0 | 18.591 | 9.2 |
+| LORA_S5_LR5e-5 | 8 | all | 5 | 5e-5 | 651.3 | 18.609 | 9.3 |
+| S4_GN10_LR2e5 | 1 | all | 20 | 2e-5 | 653.6 | 18.593 | 114.4 |
+| LORA_S10_LR1e-5 | 8 | all | 10 | 1e-5 | 660.0 | 18.604 | 18.4 |
+| LORA_noES_noCLIP | 4 | last_4 | 10 | 2e-5 | 668.4 | 18.575 | 55.9 |
+
+No LoRA config meaningfully beats baseline FVD (641.1) at 100 videos. Selected two for 1000v:
+- LORA_R4_S20: best FVD (rank=4, last_4, 20 steps, lr=1e-5) -- FVD=641.5
+- LORA_R8_S10: best PSNR (rank=8, all, 10 steps, lr=5e-5) -- PSNR=18.616
+
+### Planned 1000v Runs
+
+| Run ID | Method | Key Config | 100v FVD | 100v PSNR | Status |
+|--------|--------|-----------|----------|-----------|--------|
+| NOTTA | No TTA | guidance=4.0 | 641.1 | 18.612 | PENDING |
+| DV_BARE | Delta Vector | steps=10, lr=0.005 | 561.1 | 18.604 | PENDING |
+| LORA_R4_S20 | LoRA | R4, last_4, 20s, lr=1e-5 | 641.5 | 18.569 | PENDING |
+| LORA_R8_S10 | LoRA | R8, all, 10s, lr=5e-5 | 644.6 | 18.616 | PENDING |
+
+---
+
+## 1000-Video Evaluation - Status
+
+Date submitted: Feb 16, 2026
+Config files:
+- sweep_experiment/configs/panda_1000v_best_methods.yaml (NOTTA + DV_BARE)
+- sweep_experiment/configs/panda_1000v_lora.yaml (LORA_R4_S20 + LORA_R8_S10)
+Dataset: panda_1000_480p, ALL 1000 videos
+Submit script: sweep_experiment/sbatch/submit_1000v_best.sh
+
+### LoRA Config Selection Rationale
+
+Ranked all LoRA results on panda_1000_480p (100 videos) by FVD:
+
+| Config | Rank | Blocks | Steps | LR | FVD | PSNR | Train(s) |
+|--------|------|--------|-------|----|-----|------|----------|
+| NOTTA (baseline) | -- | -- | 0 | -- | 641.1 | 18.612 | 0.0 |
+| LR1e5_S20 | 4 | last_4 | 20 | 1e-5 | 641.5 | 18.569 | 37.3 |
+| LORA_S10_LR5e-5 | 8 | all | 10 | 5e-5 | 644.6 | 18.616 | 18.5 |
+| LORA_S5_LR1e-5 | 8 | all | 5 | 1e-5 | 651.0 | 18.591 | 9.2 |
+| LORA_S5_LR5e-5 | 8 | all | 5 | 5e-5 | 651.3 | 18.609 | 9.3 |
+| S4_GN10_LR2e5 | 1 | all | 20 | 2e-5 | 653.6 | 18.593 | 114.4 |
+| LORA_S10_LR1e-5 | 8 | all | 10 | 1e-5 | 660.0 | 18.604 | 18.4 |
+| LORA_noES_noCLIP | 4 | last_4 | 10 | 2e-5 | 668.4 | 18.575 | 55.9 |
+
+No LoRA config meaningfully beats baseline FVD (641.1) at 100 videos. Selected two for 1000v:
+- LORA_R4_S20: best FVD (rank=4, last_4, 20 steps, lr=1e-5) -- FVD=641.5
+- LORA_R8_S10: best PSNR (rank=8, all, 10 steps, lr=5e-5) -- PSNR=18.616
+
+### Planned 1000v Runs
+
+| Run ID | Method | Key Config | 100v FVD | 100v PSNR | Status |
+|--------|--------|-----------|----------|-----------|--------|
+| NOTTA | No TTA | guidance=4.0 | 641.1 | 18.612 | PENDING |
+| DV_BARE | Delta Vector | steps=10, lr=0.005 | 561.1 | 18.604 | PENDING |
+| LORA_R4_S20 | LoRA | R4, last_4, 20s, lr=1e-5 | 641.5 | 18.569 | PENDING |
+| LORA_R8_S10 | LoRA | R8, all, 10s, lr=5e-5 | 644.6 | 18.616 | PENDING |

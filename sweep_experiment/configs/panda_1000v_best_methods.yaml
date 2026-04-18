@@ -1,0 +1,49 @@
+# Panda-70M: 1000-video evaluation of best configs
+#
+# Purpose: Full-scale evaluation (all 1000 videos) of the best-performing
+# configs identified in the 100-video ablation studies.
+#
+# Submit with:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/panda_1000v_best_methods.yaml \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p \
+#       --account torch_pr_36_mren
+#
+# IMPORTANT: This uses method=delta_a with delta_steps=0 for the no-TTA
+# baseline, so all runs go through the same code path. For LoRA runs we
+# submit separately via panda_1000v_lora.yaml.
+
+method: delta_a
+series: panda
+series_name: panda_1000v_best
+description: "Panda-70M 1000-video: No-TTA baseline + best Delta Vector"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  no_save_videos: true
+
+sweep:
+  # No-TTA baseline (delta_steps=0 -> pure inference, no adaptation)
+  - run_id: NOTTA
+    delta_steps: 0
+    delta_lr: 0.005
+
+  # Best Delta Vector: AS_BARE config (steps=10, lr=0.005, no extras)
+  # 100-video result: FVD=561.1, dFVD=-80.0 (best of all methods tested)
+  - run_id: DV_BARE
+    delta_steps: 10
+    delta_lr: 0.005
