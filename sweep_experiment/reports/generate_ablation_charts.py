@@ -1,4 +1,4 @@
-"""Generate ablation study charts for the AdaSteer feature analysis slides."""
+"""Generate ablation study charts for the Delta Vector feature analysis slides."""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -33,7 +33,7 @@ GRAY = "#6B7280"
 LIGHT_GRAY = "#D1D5DB"
 
 # ═══════════════════════════════════════════════════════════════════════
-# Data: AdaSteer Ablation (Panda-70M, N=100, G=4.0, 10 steps, lr=0.005)
+# Data: Delta Vector Ablation (Panda-70M, N=100, 10 steps, lr=0.005)
 #
 # Source: panda_adasteer_ablation config results from cluster.
 #   - "Bare" = AS_BARE (no ES, no CLIP, no augmentation)
@@ -47,7 +47,7 @@ ablation = {
         "train_net": 0, "es_check": 0, "gen": 80.4, "total": 80.4,
         "label": "No adaptation",
     },
-    "Bare\nAdaSteer": {
+    "Bare\nDelta Vector": {
         "fvd": 561.1,
         "train_net": 54, "es_check": 0, "gen": 80, "total": 134,
         "label": "10 steps, lr=0.005",
@@ -138,7 +138,7 @@ ax_time.set_title("Training Time Breakdown", fontsize=16, fontweight="bold")
 ax_time.legend(loc="upper left", framealpha=0.9, fontsize=11)
 ax_time.set_ylim(0, 210)
 
-fig.suptitle("AdaSteer Feature Ablation: FVD Improvement vs Cost",
+fig.suptitle("Delta Vector Feature Ablation: FVD Improvement vs Cost",
              fontsize=18, fontweight="bold", y=1.02)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, "ablation_fvd_time.png"))

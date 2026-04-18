@@ -1,4 +1,4 @@
-"""Generate core presentation charts for AdaSteer PI update."""
+"""Generate core presentation charts for Delta Vector PI update."""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -30,7 +30,7 @@ PURPLE = "#7C3AED"
 GRAY = "#6B7280"
 
 # ----------------------------------------------------------------
-# Data: AdaSteer Step x LR sweep (Panda-70M, N=100, G=4.0)
+# Data: Delta Vector Step x LR sweep (Panda-70M, N=100)
 # ----------------------------------------------------------------
 
 base_psnr = 18.612
@@ -79,7 +79,7 @@ ax.set_yticks(range(len(steps_list)))
 ax.set_yticklabels([str(s) for s in steps_list])
 ax.set_xlabel("Learning Rate")
 ax.set_ylabel("Optimization Steps")
-ax.set_title("AdaSteer Sweep: FVD Change from Baseline")
+ax.set_title("Delta Vector Sweep: FVD Change from Baseline")
 
 for i in range(len(steps_list)):
     for j in range(len(lr_list)):
@@ -99,7 +99,7 @@ cbar = fig.colorbar(im, ax=ax, shrink=0.85, label="delta-FVD (green = better)")
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, "step_lr_heatmap.png"))
 plt.close(fig)
-print("  [1/4] step_lr_heatmap.png")
+print("  [1/3] step_lr_heatmap.png")
 
 # ----------------------------------------------------------------
 # CHART 2: Parameter Efficiency Log-Scale
@@ -110,8 +110,8 @@ fig, ax = plt.subplots(figsize=(8, 5))
 methods_pe = [
     "Full Model\n(14B)",
     "LoRA\n(rank=1)",
-    "AdaSteer\n(Delta-B, dim=128)",
-    "AdaSteer\n(Delta-A)",
+    "Delta Vector\n(Delta-B, dim=128)",
+    "Delta Vector\n(Delta-A)",
 ]
 params_pe = [14e9, 1000, 128, 1]
 fvd_delta_pe = [0, 12.5, -69.6, -72.4]
@@ -147,7 +147,7 @@ ax.set_ylim(-85, 25)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, "param_efficiency.png"))
 plt.close(fig)
-print("  [2/4] param_efficiency.png")
+print("  [2/3] param_efficiency.png")
 
 # ----------------------------------------------------------------
 # CHART 3: Architecture Diagram
@@ -181,7 +181,7 @@ def draw_arrow(ax, x1, y1, x2, y2, color="#374151"):
 
 
 ax.text(
-    5, 6.6, "AdaSteer: Delta Injection into DiT AdaLN",
+    5, 6.6, "Delta Vector: Delta Injection into DiT AdaLN",
     fontsize=16, ha="center", fontweight="bold",
 )
 
@@ -219,78 +219,6 @@ ax.text(
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, "architecture_diagram.png"))
 plt.close(fig)
-print("  [3/4] architecture_diagram.png")
-
-# ----------------------------------------------------------------
-# CHART 4: Improvement Summary (Before -> After arrows)
-# ----------------------------------------------------------------
-
-fig, ax = plt.subplots(figsize=(10, 5.5))
-ax.set_xlim(0, 10)
-ax.set_ylim(0, 8)
-ax.set_axis_off()
-
-ax.text(
-    5, 7.5, "Improvement Summary: Default -> Optimized Configuration",
-    ha="center", fontsize=18, fontweight="bold", color="#1F2937",
-)
-
-metrics_summary = [
-    ("PSNR",  "18.61 dB", "20.32 dB", "+1.71 dB", "(+9.2%)"),
-    ("SSIM",  "0.682",    "0.733",    "+0.051",   "(+7.5%)"),
-    ("LPIPS", "0.320",    "0.280",    "-0.040",   "(-12.5%)"),
-    ("FVD",   "641.1",    "502.4",    "-138.7",   "(-21.6%)"),
-]
-
-for i, (name, before, after, delta, pct) in enumerate(metrics_summary):
-    y = 6.0 - i * 1.4
-
-    ax.text(0.5, y, name, fontsize=16, fontweight="bold", color="#1F2937",
-            va="center")
-
-    rect = mpatches.FancyBboxPatch(
-        (1.8, y - 0.35), 1.8, 0.7,
-        boxstyle="round,pad=0.1",
-        facecolor="#FEE2E2", edgecolor="#EF4444", linewidth=1.5,
-    )
-    ax.add_patch(rect)
-    ax.text(2.7, y, before, ha="center", va="center", fontsize=14,
-            color="#DC2626")
-
-    ax.annotate(
-        "", xy=(4.3, y), xytext=(3.8, y),
-        arrowprops=dict(arrowstyle="-|>", color=GREEN, lw=3),
-    )
-
-    rect = mpatches.FancyBboxPatch(
-        (4.5, y - 0.35), 1.8, 0.7,
-        boxstyle="round,pad=0.1",
-        facecolor="#DCFCE7", edgecolor="#22C55E", linewidth=1.5,
-    )
-    ax.add_patch(rect)
-    ax.text(5.4, y, after, ha="center", va="center", fontsize=14,
-            color="#16A34A", fontweight="bold")
-
-    ax.text(7.2, y, delta, ha="center", va="center", fontsize=16,
-            fontweight="bold", color=GREEN)
-    ax.text(8.5, y, pct, ha="center", va="center", fontsize=13,
-            color=GRAY)
-
-ax.text(2.7, 6.8, "Before", ha="center", fontsize=12, color=GRAY,
-        fontstyle="italic")
-ax.text(5.4, 6.8, "After", ha="center", fontsize=12, color=GRAY,
-        fontstyle="italic")
-ax.text(7.2, 6.8, "Change", ha="center", fontsize=12, color=GRAY,
-        fontstyle="italic")
-
-ax.text(2.7, 0.7, "No-TTA, Guidance=4.0\n(default)", ha="center",
-        fontsize=10, color=GRAY)
-ax.text(5.4, 0.7, "AdaSteer + Guidance=0.0\n(optimized)", ha="center",
-        fontsize=10, color=GREEN)
-
-fig.tight_layout()
-fig.savefig(os.path.join(OUT, "improvement_summary.png"))
-plt.close(fig)
-print("  [4/4] improvement_summary.png")
+print("  [3/3] architecture_diagram.png")
 
 print(f"\nCore charts saved to {OUT}/")

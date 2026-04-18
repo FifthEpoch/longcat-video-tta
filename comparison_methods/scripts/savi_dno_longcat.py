@@ -365,6 +365,7 @@ class SAViDNO_LongCat:
         feature_model: Optional[nn.Module] = None,
         gradient_checkpointing: bool = True,
         latent_loss: bool = False,
+        max_grad_norm: float = 1.0,
     ):
         self.device = device
         self.dtype = dtype
@@ -381,6 +382,7 @@ class SAViDNO_LongCat:
         self.p = p
         self.gradient_checkpointing = gradient_checkpointing
         self.latent_loss = latent_loss
+        self.max_grad_norm = max_grad_norm
 
         self.feature_model = None
         if feature_model is not None and not latent_loss:
@@ -588,6 +590,8 @@ class SAViDNO_LongCat:
                 total_loss = F.l1_loss(z_pred, z_gt.to(z_pred.dtype), reduction="mean")
                 self.optimizer.zero_grad()
                 total_loss.backward()
+                if self.max_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_([self.eps_optimized], self.max_grad_norm)
                 self.optimizer.step()
                 loss_val = total_loss.item()
 
@@ -622,6 +626,8 @@ class SAViDNO_LongCat:
                 total_loss = loss_pixel + self.lam * loss_feature
                 self.optimizer.zero_grad()
                 total_loss.backward()
+                if self.max_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_([self.eps_optimized], self.max_grad_norm)
                 self.optimizer.step()
                 loss_val = total_loss.item()
 
@@ -677,11 +683,11 @@ def main():
     parser.add_argument("--num-gpus", type=int, default=1,
                         help="Number of GPUs (2 for model-parallel DiT)")
     parser.add_argument("--guidance-scale", type=float, default=4.0)
-    parser.add_argument("--lr", type=float, default=0.01,
+    parser.add_argument("--lr", type=float, default=1e-4,
                         help="Adam LR for noise optimization")
     parser.add_argument("--lam", type=float, default=0.0012,
                         help="Feature loss weight (PVDM-style pixel+feature loss)")
-    parser.add_argument("--p", type=float, default=0.9,
+    parser.add_argument("--p", type=float, default=0.7,
                         help="Noise interpolation parameter")
     parser.add_argument("--no-optimize", action="store_true",
                         help="LongCat baseline without noise optimization")
@@ -700,7 +706,10 @@ def main():
     parser.add_argument("--save-only-list", type=str, default=None)
     parser.add_argument("--save-dir", type=str, default=None)
     parser.add_argument("--gt-features-cache", type=str, default=None)
-    parser.add_argument("--rollout-steps", type=int, default=1)
+    parser.add_argument("--rollout-steps", type=int, default=10,
+                        help="Number of noise optimization steps per video")
+    parser.add_argument("--max-grad-norm", type=float, default=1.0,
+                        help="Max gradient norm for eps_optimized (0=disable)")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -727,8 +736,8 @@ def main():
     vae_t_factor = 4
 
     # Resolve loss mode: --latent-loss and --pixel-loss are mutually exclusive.
-    # Default to pixel+feature loss (PVDM-style) when neither is specified.
-    use_latent_loss = args.latent_loss and not args.pixel_loss
+    # Default to latent loss (shorter gradient path, more stable on large DiT).
+    use_latent_loss = not args.pixel_loss
     loss_mode = "latent (Vista-style)" if use_latent_loss else "pixel+feature (PVDM-style, no CFG)"
 
     print("=" * 70)
@@ -745,6 +754,8 @@ def main():
     print("  Loss mode    : %s" % loss_mode)
     print("  Feature lam  : %g%s" % (args.lam, " (unused — latent loss)" if use_latent_loss else ""))
     print("  Noise interp : %.2f" % args.p)
+    print("  Rollout steps: %d" % args.rollout_steps)
+    print("  Max grad norm: %g" % args.max_grad_norm)
     print("  No-optimize  : %s" % args.no_optimize)
     print("  Grad ckpt    : %s" % (not args.no_gradient_checkpointing))
     print("  Num GPUs     : %d" % args.num_gpus)
@@ -793,6 +804,7 @@ def main():
         feature_model=feature_model,
         gradient_checkpointing=not args.no_gradient_checkpointing,
         latent_loss=use_latent_loss,
+        max_grad_norm=args.max_grad_norm,
     )
 
     # --- Load metric models ---
@@ -904,10 +916,11 @@ def main():
                 )
                 loss_val = None
             else:
-                pred_pixels, loss_val = savi.predict_and_optimize(
-                    cond_latents, gt_01, target_shape,
-                    prompt_embeds, prompt_mask,
-                )
+                for _opt_step in range(args.rollout_steps):
+                    pred_pixels, loss_val = savi.predict_and_optimize(
+                        cond_latents, gt_01, target_shape,
+                        prompt_embeds, prompt_mask,
+                    )
 
             elapsed = time.time() - t_start
 

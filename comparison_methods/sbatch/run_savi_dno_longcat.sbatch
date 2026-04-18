@@ -20,11 +20,13 @@ echo "Node: $SLURM_NODELIST"
 echo "Start time: $(date)"
 echo "Euler steps: ${SAVI_EULER_STEPS:-10}"
 echo "Num GPUs: ${NUM_GPUS:-2}"
-echo "LR: ${SAVI_LR:-0.01}"
+echo "LR: ${SAVI_LR:-1e-4}"
 echo "Lambda: ${SAVI_LAM:-0.0012}"
-echo "p: ${SAVI_P:-0.9}"
+echo "p: ${SAVI_P:-0.7}"
 echo "Guidance: ${SAVI_GUIDANCE:-4.0}"
-echo "Loss mode: ${SAVI_LOSS_MODE:-pixel} (PVDM-style: pixel+feature, no CFG)"
+echo "Loss mode: ${SAVI_LOSS_MODE:-latent} (default: latent loss for LongCat)"
+echo "Rollout steps: ${SAVI_ROLLOUT_STEPS:-10}"
+echo "Max grad norm: ${SAVI_MAX_GRAD_NORM:-1.0}"
 echo "No-optimize: ${SAVI_NO_OPTIMIZE:-}"
 echo "=============================================================================="
 
@@ -84,9 +86,7 @@ if [ -n "${SAVI_NO_OPTIMIZE:-}" ] && [ "${SAVI_NO_OPTIMIZE}" = "1" ]; then
     NO_OPT_FLAG="--no-optimize"
 fi
 LOSS_FLAG=""
-if [ "${SAVI_LOSS_MODE:-pixel}" = "latent" ]; then
-    LOSS_FLAG="--latent-loss"
-else
+if [ "${SAVI_LOSS_MODE:-latent}" = "pixel" ]; then
     LOSS_FLAG="--pixel-loss"
 fi
 
@@ -101,9 +101,11 @@ fi
     --num-inference-steps "${SAVI_EULER_STEPS:-10}" \
     --num-gpus "${NUM_GPUS:-2}" \
     --guidance-scale "${SAVI_GUIDANCE:-4.0}" \
-    --lr "${SAVI_LR:-0.01}" \
+    --lr "${SAVI_LR:-1e-4}" \
     --lam "${SAVI_LAM:-0.0012}" \
-    --p "${SAVI_P:-0.9}" \
+    --p "${SAVI_P:-0.7}" \
+    --rollout-steps "${SAVI_ROLLOUT_STEPS:-10}" \
+    --max-grad-norm "${SAVI_MAX_GRAD_NORM:-1.0}" \
     --seed 42 \
     ${NO_OPT_FLAG} \
     ${LOSS_FLAG} \

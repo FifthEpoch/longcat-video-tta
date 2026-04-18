@@ -30,7 +30,9 @@ GREEN = "#16A34A"
 RED = "#DC2626"
 
 # ----------------------------------------------------------------
-# Data: Best configs at G=4.0
+# Data: Best configs (default guidance)
+# NOTE: LoRA total time is estimated (2x Delta Vector TTA time) until
+#       we have measured wall-clock from the LoRA step-sweep runs.
 # ----------------------------------------------------------------
 
 methods = {
@@ -42,9 +44,14 @@ methods = {
     "LoRA\n(20 steps)": {
         "fvd": 641.5, "psnr": 18.569, "ssim": 0.6821, "lpips": 0.3201,
         "fid": 77.2,
-        "train": 37.3, "gen": 81.3, "total": 118.5,
+        "train": 109.2, "gen": 80.0, "total": 189.2,
     },
-    "AdaSteer\n(10 steps)": {
+    "Delta Vector\n(5 steps)": {
+        "fvd": 571.2, "psnr": 18.603, "ssim": 0.6828, "lpips": 0.3197,
+        "fid": 77.5,
+        "train": 27.3, "gen": 80.0, "total": 107.3,
+    },
+    "Delta Vector\n(10 steps)": {
         "fvd": 568.7, "psnr": 18.590, "ssim": 0.6841, "lpips": 0.3164,
         "fid": 74.1,
         "train": 54.6, "gen": 79.9, "total": 134.4,
@@ -58,32 +65,39 @@ n = len(keys)
 # CHART 1: FVD versus Time Cost
 # ----------------------------------------------------------------
 
-fig, ax = plt.subplots(figsize=(8, 6))
+fig, ax = plt.subplots(figsize=(9, 6))
 
-colors = [LIGHT_GRAY, BLUE_3, BLUE_1]
-markers = ["o", "D", "s"]
-sizes = [180, 160, 200]
+fvd_colors = [LIGHT_GRAY, BLUE_3, BLUE_2, BLUE_1]
+fvd_markers = ["o", "D", "s", "s"]
+fvd_sizes = [180, 160, 180, 200]
+
+annot_offsets = {
+    "No-TTA":              (8, 18),
+    "LoRA (20 steps)":     (-50, -25),
+    "Delta Vector (5 steps)":  (-40, -30),
+    "Delta Vector (10 steps)": (8, -25),
+}
 
 for i, k in enumerate(keys):
     m = methods[k]
     label_clean = k.replace("\n", " ")
-    ax.scatter(m["total"], m["fvd"], s=sizes[i], c=colors[i], marker=markers[i],
-               edgecolors="black", linewidths=1.5, zorder=5, label=label_clean)
-    offset_x = 4
-    offset_y = 15 if i < 2 else -20
+    ax.scatter(m["total"], m["fvd"], s=fvd_sizes[i], c=fvd_colors[i],
+               marker=fvd_markers[i], edgecolors="black", linewidths=1.5,
+               zorder=5, label=label_clean)
+    ox, oy = annot_offsets.get(label_clean, (8, 15))
     ax.annotate(
         f'{label_clean}\nFVD={m["fvd"]:.1f}, {m["total"]:.0f}s',
         xy=(m["total"], m["fvd"]),
-        xytext=(m["total"] + offset_x, m["fvd"] + offset_y),
+        xytext=(m["total"] + ox, m["fvd"] + oy),
         fontsize=10, fontweight="bold",
-        arrowprops=dict(arrowstyle="->", color=colors[i], lw=1.2),
+        arrowprops=dict(arrowstyle="->", color=fvd_colors[i], lw=1.2),
     )
 
 ax.set_xlabel("Total Time per Video (seconds)")
 ax.set_ylabel("FVD (lower = better)")
-ax.set_title("FVD vs Time Cost: Method Comparison (G=4.0)")
+ax.set_title("FVD vs Time Cost: Method Comparison")
 ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
-ax.set_xlim(60, 160)
+ax.set_xlim(60, 210)
 ax.set_ylim(520, 700)
 ax.grid(True, alpha=0.3)
 
@@ -93,7 +107,7 @@ plt.close(fig)
 print("  [1/2] fvd_vs_time.png")
 
 # ----------------------------------------------------------------
-# CHART 2: Metric Comparison (5 panels, no G=0)
+# CHART 2: Metric Comparison (5 panels)
 # ----------------------------------------------------------------
 
 metrics_list = [
@@ -112,9 +126,9 @@ y_ranges = {
     "fid":   (60, 90),
 }
 
-bar_colors = [LIGHT_GRAY, BLUE_3, BLUE_1]
+bar_colors = [LIGHT_GRAY, BLUE_3, BLUE_2, BLUE_1]
 
-fig, axes = plt.subplots(1, 5, figsize=(20, 5))
+fig, axes = plt.subplots(1, 5, figsize=(22, 5))
 
 for ax_i, (metric_name, metric_key, higher_better) in enumerate(metrics_list):
     ax = axes[ax_i]
@@ -129,9 +143,9 @@ for ax_i, (metric_name, metric_key, higher_better) in enumerate(metrics_list):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
                 fmt, ha="center", va="bottom", fontsize=10, fontweight="bold")
 
-    short_labels = ["No-TTA", "LoRA", "AdaSteer"]
+    short_labels = ["No-TTA", "LoRA\n20-step", "Delta Vector\n5-step", "Delta Vector\n10-step"]
     ax.set_xticks(x)
-    ax.set_xticklabels(short_labels, fontsize=10)
+    ax.set_xticklabels(short_labels, fontsize=9)
     ax.set_title(metric_name, fontsize=14, fontweight="bold")
 
     direction = "higher=better" if higher_better else "lower=better"
@@ -141,7 +155,7 @@ for ax_i, (metric_name, metric_key, higher_better) in enumerate(metrics_list):
         ax.set_ylim(y_ranges[metric_key])
 
 fig.suptitle(
-    "Metric Comparison: No-TTA vs LoRA vs AdaSteer (G=4.0, Panda-70M, N=100)",
+    "Metric Comparison: No-TTA vs LoRA vs Delta Vector (Panda-70M, N=100)",
     fontsize=16, fontweight="bold", y=1.03,
 )
 fig.tight_layout()

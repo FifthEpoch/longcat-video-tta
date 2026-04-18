@@ -227,8 +227,8 @@ AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-min ${AUG_ROTATE_RANDOM_MIN}"
 AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-max ${AUG_ROTATE_RANDOM_MAX}"
 AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-count ${AUG_ROTATE_RANDOM_COUNT}"
 AUG_FLAGS="${AUG_FLAGS} --aug-rotate-random-step ${AUG_ROTATE_RANDOM_STEP}"
-if [ "${AUG_ROTATE_ZOOM}" = "1" ]; then
-    AUG_FLAGS="${AUG_FLAGS} --aug-rotate-zoom"
+if [ "${AUG_ROTATE_ZOOM}" != "1" ]; then
+    AUG_FLAGS="${AUG_FLAGS} --no-aug-rotate-zoom"
 fi
 if [ -n "${AUG_SPEED_FACTORS}" ]; then
     AUG_FLAGS="${AUG_FLAGS} --aug-speed-factors ${AUG_SPEED_FACTORS}"
