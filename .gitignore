@@ -50,3 +50,6 @@ comparison_methods/PVDM/
 comparison_methods/DFoT/
 comparison_methods/results/
 comparison_methods/slurm_log/
+
+# Cursor IDE
+.cursor/

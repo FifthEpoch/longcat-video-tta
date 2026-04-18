@@ -329,7 +329,7 @@ def _draw_baseline_curve(ax, data, runs, x_key_fn, metric="psnr_mean"):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# FIG 1: MAIN METHOD COMPARISON  (DeepSeek-style grouped bars)
+# FIG 1: MAIN METHOD COMPARISON  (grouped bars)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _get_standard_best(c):
@@ -1923,7 +1923,7 @@ def _get_curve(loss_data, series, run_id):
 
 def _plot_loss_curve(ax, curve_data, color, label, alpha_fill=0.15, lw=2.0,
                      subsample=1):
-    """Plot mean +/- std anchor loss curve (DeepSeek-R1 style)."""
+    """Plot mean +/- std anchor loss curve (shaded region style)."""
     agg = curve_data["aggregate_curve"]
     steps = [p["step"] for p in agg]
     means = [p["mean"] for p in agg]
