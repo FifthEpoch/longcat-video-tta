@@ -406,6 +406,11 @@ def main():
     parser.add_argument("--batch-method", type=str, default="similarity",
                         choices=["sequential", "similarity"],
                         help="(Legacy) Retrieval is always by text-prompt similarity.")
+    parser.add_argument("--rollout-steps", type=int, default=1,
+                        help="Number of autoregressive rollout steps. After generating "
+                             "one chunk, the last num_cond_frames of output become "
+                             "conditioning for the next chunk. The learned delta is held "
+                             "fixed across all rollout steps.")
     parser.add_argument("--retrieval-pool-dir", type=str, default=None,
                         help="Directory containing the larger retrieval pool dataset "
                              "(e.g. 1000 videos). Required when --batch-videos > 1. "
@@ -457,6 +462,7 @@ def main():
     print(f"Delta steps    : {args.delta_steps}")
     print(f"Delta LR       : {args.delta_lr}")
     print(f"Augmentation   : {args.aug_enabled}")
+    print(f"Rollout steps  : {args.rollout_steps}")
     print(f"Grad accum     : {args.tta_grad_accum}")
     print(f"Batch videos   : {args.batch_videos}")
     print(f"Batch method   : {args.batch_method}")
@@ -844,6 +850,9 @@ def main():
             if not args.skip_generation:
                 from PIL import Image
 
+                num_gen = args.num_frames - args.num_cond_frames
+                rollout_steps = args.rollout_steps
+
                 gen_pf = gen_pixel_frames.to(args.device)
                 pf = gen_pf.squeeze(0)
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
@@ -852,53 +861,24 @@ def main():
                     frame_np = (pf[:, t_idx].permute(1, 2, 0).float().cpu().numpy() * 255).astype(np.uint8)
                     cond_images.append(Image.fromarray(frame_np))
 
-                if clip_gate_info.get("tta_skipped", False):
-                    gen_start = time.time()
-                    gen_frames = generate_video_continuation(
-                        pipe=pipe,
-                        video_frames=cond_images,
-                        prompt=eval_entry["caption"],
-                        num_cond_frames=args.num_cond_frames,
-                        num_frames=args.num_frames,
-                        num_inference_steps=args.num_inference_steps,
-                        guidance_scale=args.guidance_scale,
-                        seed=args.seed + v_idx,
-                        resolution=args.resolution,
-                        device=args.device,
-                    )
-                    gen_time = time.time() - gen_start
+                all_step_metrics = []
+                prev_gen_frames = None
 
-                    result["gen_time"] = gen_time
-                    output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
-                    if not args.no_save_videos:
-                        save_video_from_numpy(
-                            gen_frames, output_path, fps=24,
-                            num_cond_frames=args.num_cond_frames,
-                        )
-                        result["output_path"] = output_path
-
-                    num_gen = args.num_frames - args.num_cond_frames
-                    metrics = evaluate_generation_metrics(
-                        gen_output=gen_frames,
-                        video_path=eval_entry["video_path"],
-                        num_cond_frames=args.num_cond_frames,
-                        num_gen_frames=num_gen,
-                        gen_start_frame=args.gen_start_frame,
-                        device=args.device,
-                        return_gt_frames=(fvd_accumulator is not None),
-                    )
-                    _gt_for_fvd = metrics.pop("gt_frames_hwc", None)
-                    result.update(metrics)
-                    if fvd_accumulator is not None:
-                        fvd_accumulator.update(gen_frames, eval_entry["video_path"],
-                                               args.num_cond_frames, num_gen, args.gen_start_frame,
-                                               gt_frames_hwc=_gt_for_fvd)
-                    print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
-                          f"SSIM={metrics['ssim']:.4f}, "
-                          f"LPIPS={metrics['lpips']:.4f}")
-                else:
+                apply_delta = not clip_gate_info.get("tta_skipped", False)
+                if apply_delta:
                     wrapper.apply_to_dit()
-                    try:
+
+                try:
+                    for step_i in range(rollout_steps):
+                        step_gen_start_frame = args.gen_start_frame + step_i * num_gen
+
+                        if step_i > 0:
+                            tail = prev_gen_frames[num_gen:]
+                            cond_images = []
+                            for t_idx in range(tail.shape[0]):
+                                frame_np = (np.clip(tail[t_idx], 0, 1) * 255).astype(np.uint8)
+                                cond_images.append(Image.fromarray(frame_np))
+
                         gen_start = time.time()
                         gen_frames = generate_video_continuation(
                             pipe=pipe,
@@ -908,43 +888,63 @@ def main():
                             num_frames=args.num_frames,
                             num_inference_steps=args.num_inference_steps,
                             guidance_scale=args.guidance_scale,
-                            seed=args.seed + v_idx,
+                            seed=args.seed + v_idx + step_i,
                             resolution=args.resolution,
                             device=args.device,
                         )
-                        gen_time = time.time() - gen_start
+                        step_gen_time = time.time() - gen_start
+                        gen_time += step_gen_time
 
-                        result["gen_time"] = gen_time
-
-                        output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
-                        if not args.no_save_videos:
-                            save_video_from_numpy(
-                                gen_frames, output_path, fps=24,
-                                num_cond_frames=args.num_cond_frames,
-                            )
-                            result["output_path"] = output_path
-
-                        num_gen = args.num_frames - args.num_cond_frames
-                        metrics = evaluate_generation_metrics(
+                        step_metrics = evaluate_generation_metrics(
                             gen_output=gen_frames,
                             video_path=eval_entry["video_path"],
                             num_cond_frames=args.num_cond_frames,
                             num_gen_frames=num_gen,
-                            gen_start_frame=args.gen_start_frame,
+                            gen_start_frame=step_gen_start_frame,
                             device=args.device,
-                            return_gt_frames=(fvd_accumulator is not None),
+                            return_gt_frames=(step_i == 0 and fvd_accumulator is not None),
                         )
-                        _gt_for_fvd = metrics.pop("gt_frames_hwc", None)
-                        result.update(metrics)
-                        if fvd_accumulator is not None:
+                        _gt_for_fvd = step_metrics.pop("gt_frames_hwc", None)
+                        all_step_metrics.append(step_metrics)
+
+                        if step_i == 0 and fvd_accumulator is not None:
                             fvd_accumulator.update(gen_frames, eval_entry["video_path"],
                                                    args.num_cond_frames, num_gen, args.gen_start_frame,
                                                    gt_frames_hwc=_gt_for_fvd)
-                        print(f"    Metrics: PSNR={metrics['psnr']:.2f}, "
-                              f"SSIM={metrics['ssim']:.4f}, "
-                              f"LPIPS={metrics['lpips']:.4f}")
-                    finally:
+
+                        if step_i == 0:
+                            output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
+                            if not args.no_save_videos:
+                                save_video_from_numpy(
+                                    gen_frames, output_path, fps=24,
+                                    num_cond_frames=args.num_cond_frames,
+                                )
+                                result["output_path"] = output_path
+
+                        prev_gen_frames = gen_frames
+                finally:
+                    if apply_delta:
                         wrapper.remove_from_dit()
+
+                result["gen_time"] = gen_time
+                result["rollout_steps"] = rollout_steps
+
+                for si, sm in enumerate(all_step_metrics):
+                    for mk in ("psnr", "ssim", "lpips"):
+                        result["step_%d_%s" % (si + 1, mk)] = sm.get(mk)
+
+                avg_metrics = {}
+                for mk in ("psnr", "ssim", "lpips"):
+                    vals = [sm[mk] for sm in all_step_metrics if sm.get(mk) is not None and sm[mk] == sm[mk]]
+                    avg_metrics[mk] = float(np.mean(vals)) if vals else float("nan")
+                result.update(avg_metrics)
+
+                print("    Metrics: PSNR=%.2f, SSIM=%.4f, LPIPS=%.4f" % (
+                    avg_metrics["psnr"], avg_metrics["ssim"], avg_metrics["lpips"]))
+                if rollout_steps > 1:
+                    print("    Rollout: " + ", ".join(
+                        "step%d PSNR=%.2f" % (si + 1, sm.get("psnr", float("nan")))
+                        for si, sm in enumerate(all_step_metrics)))
 
                 del gen_pf
                 torch_gc()
@@ -986,6 +986,7 @@ def main():
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,
         "gen_start_frame": args.gen_start_frame,
+        "rollout_steps": args.rollout_steps,
         "tta_grad_accum": args.tta_grad_accum,
         "batch_videos": args.batch_videos,
         "retrieval_pool_dir": args.retrieval_pool_dir,

@@ -1,6 +1,6 @@
 # SBATCH + Conda Environment Best Practices (NYU Greene HPC)
 
-**Purpose:** Reference document for AI agents and developers writing or modifying SLURM sbatch scripts that use a conda environment on NYU Greene (or similar HPC clusters). Follow these rules exactly to avoid `ModuleNotFoundError` for `torch`, `sentence_transformers`, and other packages.
+**Purpose:** Reference document for developers writing or modifying SLURM sbatch scripts that use a conda environment on NYU Greene (or similar HPC clusters). Follow these rules exactly to avoid `ModuleNotFoundError` for `torch`, `sentence_transformers`, and other packages.
 
 ---
 

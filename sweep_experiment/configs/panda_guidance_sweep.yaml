@@ -1,0 +1,60 @@
+# Panda-70M: Guidance scale sweep (baseline + AdaSteer)
+#
+# Hypothesis: At lower guidance, the model has more freedom and per-video
+# adaptation has more room to steer, amplifying the visual gap.
+# All runs use rollout_steps=2 to also capture compounding effects.
+method: delta_a
+series: panda
+series_name: panda_guidance_sweep
+description: "Panda-70M: guidance scale sweep (1.0/2.0/4.0) with rollout=2"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 14
+  tta_total_frames: 14
+  tta_context_frames: 14
+  num_inference_steps: 50
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: false
+  rollout_steps: 2
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # Baseline (no TTA) at each guidance scale
+  - run_id: NOTTA_G1
+    delta_steps: 0
+    delta_lr: 0.005
+    guidance_scale: 1.0
+
+  - run_id: NOTTA_G2
+    delta_steps: 0
+    delta_lr: 0.005
+    guidance_scale: 2.0
+
+  - run_id: NOTTA_G4
+    delta_steps: 0
+    delta_lr: 0.005
+    guidance_scale: 4.0
+
+  # AdaSteer (10 steps, lr=5e-3) at each guidance scale
+  - run_id: ADA_G1
+    delta_steps: 10
+    delta_lr: 5.0e-3
+    guidance_scale: 1.0
+
+  - run_id: ADA_G2
+    delta_steps: 10
+    delta_lr: 5.0e-3
+    guidance_scale: 2.0
+
+  - run_id: ADA_G4
+    delta_steps: 10
+    delta_lr: 5.0e-3
+    guidance_scale: 4.0
