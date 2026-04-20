@@ -257,6 +257,7 @@ def optimize_delta_a(
 
     wrapper.train()
     losses = []
+    raw_grad_norms = []
 
     es_check_time = 0.0
     for step in range(num_steps):
@@ -279,7 +280,11 @@ def optimize_delta_a(
             (loss / grad_accum).backward()
             step_loss_sum += loss.item()
 
-        torch.nn.utils.clip_grad_norm_([wrapper.delta], 1.0)
+        raw_norm = torch.nn.utils.clip_grad_norm_([wrapper.delta], float("inf")).item()
+        raw_grad_norms.append(raw_norm)
+        if raw_norm > 1.0:
+            scale = 1.0 / (raw_norm + 1e-6)
+            wrapper.delta.grad.mul_(scale)
         optimizer.step()
 
         losses.append(step_loss_sum / grad_accum)
@@ -294,6 +299,12 @@ def optimize_delta_a(
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
 
+    clipped_count = sum(1 for n in raw_grad_norms if n > 1.0)
+    print(f"  Grad norms: min={min(raw_grad_norms):.2f} "
+          f"max={max(raw_grad_norms):.2f} "
+          f"mean={sum(raw_grad_norms)/len(raw_grad_norms):.2f} "
+          f"clipped={clipped_count}/{len(raw_grad_norms)}")
+
     es_state = None
     if early_stopper is not None:
         early_stopper.restore(
@@ -304,6 +315,7 @@ def optimize_delta_a(
     return {
         "losses": losses,
         "delta_norm": wrapper.delta.detach().norm().item(),
+        "raw_grad_norms": raw_grad_norms,
         "es_check_time": es_check_time,
         "early_stopping_info": es_state,
     }
@@ -328,6 +340,7 @@ def _optimize_delta_a_batch(
 
     wrapper.train()
     losses = []
+    raw_grad_norms = []
     n_vids = len(batch_data)
 
     for step in range(num_steps):
@@ -352,18 +365,48 @@ def _optimize_delta_a_batch(
         )
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_([wrapper.delta], 1.0)
+        raw_norm = torch.nn.utils.clip_grad_norm_([wrapper.delta], float("inf")).item()
+        raw_grad_norms.append(raw_norm)
+        if raw_norm > 1.0:
+            scale = 1.0 / (raw_norm + 1e-6)
+            wrapper.delta.grad.mul_(scale)
         optimizer.step()
 
         losses.append(loss.item())
 
         del cond_lat, train_lat, pe, pm
 
+    clipped_count = sum(1 for n in raw_grad_norms if n > 1.0)
+    print(f"  Grad norms: min={min(raw_grad_norms):.2f} "
+          f"max={max(raw_grad_norms):.2f} "
+          f"mean={sum(raw_grad_norms)/len(raw_grad_norms):.2f} "
+          f"clipped={clipped_count}/{len(raw_grad_norms)}")
+
     return {
         "losses": losses,
         "delta_norm": wrapper.delta.detach().norm().item(),
+        "raw_grad_norms": raw_grad_norms,
         "es_check_time": 0.0,
         "early_stopping_info": None,
+    }
+
+
+def _summarize_grad_norms(results):
+    """Aggregate raw gradient norm statistics across all videos."""
+    all_norms = []
+    for r in results:
+        all_norms.extend(r.get("raw_grad_norms", []))
+    if not all_norms:
+        return {}
+    clipped = sum(1 for n in all_norms if n > 1.0)
+    return {
+        "total_steps": len(all_norms),
+        "clipped_steps": clipped,
+        "clip_rate": clipped / len(all_norms),
+        "min": min(all_norms),
+        "max": max(all_norms),
+        "mean": sum(all_norms) / len(all_norms),
+        "median": sorted(all_norms)[len(all_norms) // 2],
     }
 
 
@@ -838,6 +881,7 @@ def main():
                 "es_check_time": opt_result.get("es_check_time", 0.0),
                 "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
                 "delta_norm": opt_result["delta_norm"],
+                "raw_grad_norms": opt_result.get("raw_grad_norms", []),
                 "batch_size": len(training_entries),
                 "num_neighbors": len(training_entries) - 1,
                 "early_stopping_info": opt_result.get("early_stopping_info"),
@@ -1028,6 +1072,7 @@ def main():
         "clip_gate_log_only": args.clip_gate_log_only,
         "clip_gate_fail_open": args.clip_gate_fail_open,
         "clip_gate_stats": summarize_clip_gate_stats(successful),
+        "grad_norm_stats": _summarize_grad_norms(successful),
         "results": all_results,
     }
     aggregate_quality_metrics(summary)
@@ -1042,6 +1087,13 @@ def main():
         print(f"Avg train time: {summary['avg_train_time']:.1f}s")
         print(f"Avg gen time: {summary['avg_gen_time']:.1f}s")
         print(f"Avg total time: {summary['avg_total_time']:.1f}s")
+        gns = summary.get("grad_norm_stats", {})
+        if gns:
+            print(f"\nGradient norm stats (clip threshold=1.0):")
+            print(f"  Clipped: {gns['clipped_steps']}/{gns['total_steps']} "
+                  f"({gns['clip_rate']:.1%})")
+            print(f"  Raw norms: min={gns['min']:.2f} median={gns['median']:.2f} "
+                  f"mean={gns['mean']:.2f} max={gns['max']:.2f}")
         if summary.get("avg_timing"):
             at = summary["avg_timing"]
             print(f"\nDetailed avg timing per video:")
