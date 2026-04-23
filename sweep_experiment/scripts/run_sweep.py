@@ -60,6 +60,8 @@ _KEY_TO_ENV = {
     "resolution": "RESOLUTION",
     "seed": "SEED",
     "max_videos": "MAX_VIDEOS",
+    "start_video_idx": "START_VIDEO_IDX",
+    "chunk_size": "CHUNK_SIZE",
     "batch_videos": "BATCH_VIDEOS",
     "batch_method": "BATCH_METHOD",
     "retrieval_pool_dir": "RETRIEVAL_POOL_DIR",

@@ -53,6 +53,8 @@ GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
 MAX_VIDEOS="${MAX_VIDEOS:-100}"
+START_VIDEO_IDX="${START_VIDEO_IDX:-0}"
+CHUNK_SIZE="${CHUNK_SIZE:-0}"
 
 # Early stopping (shared by all methods)
 ES_DISABLE="${ES_DISABLE:-}"
@@ -460,6 +462,8 @@ case "${METHOD}" in
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
         --max-videos "${MAX_VIDEOS}" \
+        --start-video-idx "${START_VIDEO_IDX}" \
+        --chunk-size "${CHUNK_SIZE}" \
         --lora-rank "${LORA_RANK}" \
         --lora-alpha "${LORA_ALPHA}" \
         --target-modules "${TARGET_MODULES}" \
@@ -510,6 +514,8 @@ case "${METHOD}" in
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
         --max-videos "${MAX_VIDEOS}" \
+        --start-video-idx "${START_VIDEO_IDX}" \
+        --chunk-size "${CHUNK_SIZE}" \
         --delta-steps "${DELTA_STEPS}" \
         --delta-lr "${DELTA_LR}" \
         --tta-grad-accum "${TTA_GRAD_ACCUM}" \

@@ -725,6 +725,10 @@ def main():
     parser.add_argument("--output-dir", type=str, required=True,
                         help="Output directory for results")
     parser.add_argument("--max-videos", type=int, default=100)
+    parser.add_argument("--start-video-idx", type=int, default=0,
+                        help="Start processing from this index in the video list (for chunked runs)")
+    parser.add_argument("--chunk-size", type=int, default=0,
+                        help="Number of videos to process from start-video-idx (0 = all remaining)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--restart", action="store_true",
@@ -993,6 +997,13 @@ def main():
         top_k=args.caption_guard_topk,
         context="eval",
     )
+    if args.start_video_idx > 0 or args.chunk_size > 0:
+        end = len(eval_videos)
+        if args.chunk_size > 0:
+            end = min(args.start_video_idx + args.chunk_size, end)
+        eval_videos = eval_videos[args.start_video_idx:end]
+        print(f"Chunk: videos [{args.start_video_idx}:{end}] → {len(eval_videos)} videos")
+
     print(f"\nEvaluation videos: {len(eval_videos)}")
 
     # Build retrieval pool for batch-level TTA

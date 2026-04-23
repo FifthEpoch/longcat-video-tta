@@ -43,6 +43,8 @@ NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-50}"
 GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
+START_VIDEO_IDX="${START_VIDEO_IDX:-0}"
+CHUNK_SIZE="${CHUNK_SIZE:-0}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
 NO_SAVE_VIDEOS="${NO_SAVE_VIDEOS:-}"
 
@@ -281,6 +283,8 @@ echo "Starting TinyLoRA TTA..."
     --data-dir "${DATA_DIR}" \
     --output-dir "${OUTPUT_DIR}" \
     --max-videos "${NUM_VIDEOS}" \
+    --start-video-idx "${START_VIDEO_IDX}" \
+    --chunk-size "${CHUNK_SIZE}" \
     --svd-rank "${SVD_RANK}" \
     --alpha "${ALPHA}" \
     --n-tie "${N_TIE}" \

@@ -185,6 +185,10 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--data-dir", type=str, required=True)
     g.add_argument("--output-dir", type=str, required=True)
     g.add_argument("--max-videos", type=int, default=100)
+    g.add_argument("--start-video-idx", type=int, default=0,
+                   help="Start processing from this index in the video list (for chunked runs)")
+    g.add_argument("--chunk-size", type=int, default=0,
+                   help="Number of videos to process from start-video-idx (0 = all remaining)")
 
     g = parser.add_argument_group("TinyLoRA config")
     g.add_argument(
@@ -372,6 +376,13 @@ def main():
         top_k=args.caption_guard_topk,
         context="eval",
     )
+    if args.start_video_idx > 0 or args.chunk_size > 0:
+        end = len(videos)
+        if args.chunk_size > 0:
+            end = min(args.start_video_idx + args.chunk_size, end)
+        videos = videos[args.start_video_idx:end]
+        print(f"Chunk: videos [{args.start_video_idx}:{end}] → {len(videos)} videos")
+
     print(f"\nTotal videos: {len(videos)}")
 
     early_stopper = build_early_stopper_from_args(args)
