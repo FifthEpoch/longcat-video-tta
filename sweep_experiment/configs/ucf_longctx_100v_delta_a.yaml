@@ -1,0 +1,36 @@
+# UCF-101: Long context frame generation at full dataset scale (Baseline + AdaSteer)
+#
+# 61 frames (14 cond + 47 gen), 100 videos (full UCF-101 subset).
+# Matches ucf_longctx_delta_a.yaml but at full 100-video scale.
+
+method: delta_a
+series: ucf
+series_name: ucf_longctx_100v
+description: "UCF-101 long-context 100v: 61-frame generation (baseline + AdaSteer)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 61
+  gen_start_frame: 14
+  tta_total_frames: 14
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: NOTTA
+    delta_steps: 0
+    delta_lr: 0.005
+
+  - run_id: ADA_S10
+    delta_steps: 10
+    delta_lr: 5.0e-3
