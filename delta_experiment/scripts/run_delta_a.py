@@ -299,11 +299,12 @@ def optimize_delta_a(
                 print(f"  Early stopping at step {step + 1}: {es_info}")
                 break
 
-    clipped_count = sum(1 for n in raw_grad_norms if n > 1.0)
-    print(f"  Grad norms: min={min(raw_grad_norms):.2f} "
-          f"max={max(raw_grad_norms):.2f} "
-          f"mean={sum(raw_grad_norms)/len(raw_grad_norms):.2f} "
-          f"clipped={clipped_count}/{len(raw_grad_norms)}")
+    if raw_grad_norms:
+        clipped_count = sum(1 for n in raw_grad_norms if n > 1.0)
+        print(f"  Grad norms: min={min(raw_grad_norms):.2f} "
+              f"max={max(raw_grad_norms):.2f} "
+              f"mean={sum(raw_grad_norms)/len(raw_grad_norms):.2f} "
+              f"clipped={clipped_count}/{len(raw_grad_norms)}")
 
     es_state = None
     if early_stopper is not None:
@@ -376,11 +377,12 @@ def _optimize_delta_a_batch(
 
         del cond_lat, train_lat, pe, pm
 
-    clipped_count = sum(1 for n in raw_grad_norms if n > 1.0)
-    print(f"  Grad norms: min={min(raw_grad_norms):.2f} "
-          f"max={max(raw_grad_norms):.2f} "
-          f"mean={sum(raw_grad_norms)/len(raw_grad_norms):.2f} "
-          f"clipped={clipped_count}/{len(raw_grad_norms)}")
+    if raw_grad_norms:
+        clipped_count = sum(1 for n in raw_grad_norms if n > 1.0)
+        print(f"  Grad norms: min={min(raw_grad_norms):.2f} "
+              f"max={max(raw_grad_norms):.2f} "
+              f"mean={sum(raw_grad_norms)/len(raw_grad_norms):.2f} "
+              f"clipped={clipped_count}/{len(raw_grad_norms)}")
 
     return {
         "losses": losses,
