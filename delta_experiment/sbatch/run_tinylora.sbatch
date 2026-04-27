@@ -86,9 +86,10 @@ CAPTION_GUARD_MODE="${CAPTION_GUARD_MODE:-warn}"
 FIXED_CAPTION="${FIXED_CAPTION:-}"
 FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-warn}"
 
-# Online FVD / FID
+# Online FVD / FID / VBench++
 COMPUTE_FVD="${COMPUTE_FVD:-0}"
 COMPUTE_FID="${COMPUTE_FID:-0}"
+COMPUTE_VBENCH="${COMPUTE_VBENCH:-0}"
 MIN_FVD_VIDEOS="${MIN_FVD_VIDEOS:-256}"
 
 # ============================================================================
@@ -271,6 +272,7 @@ FEATURE_FLAGS="--feature-frame-guard-mode ${FEATURE_FRAME_GUARD_MODE}"
 EVAL_FLAGS=""
 [ "${COMPUTE_FVD}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fvd"
 [ "${COMPUTE_FID}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fid"
+[ "${COMPUTE_VBENCH}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-vbench"
 EVAL_FLAGS="${EVAL_FLAGS} --min-fvd-videos ${MIN_FVD_VIDEOS}"
 
 # ============================================================================

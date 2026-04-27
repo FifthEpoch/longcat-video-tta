@@ -500,7 +500,11 @@ def main():
     # Resume support
     ckpt_path = os.path.join(args.output_dir, "checkpoint.json")
     ckpt = load_checkpoint(ckpt_path)
-    start_idx = ckpt.get("next_idx", 0) if ckpt else 0
+    start_idx = 0
+    _ckpt_results = []
+    if ckpt:
+        start_idx = ckpt.get("next_idx", 0)
+        _ckpt_results = ckpt.get("results", [])
 
     print("=" * 70)
     print("Delta-A TTA for LongCat-Video")
@@ -597,14 +601,17 @@ def main():
     # Build early stopper
     early_stopper = build_early_stopper_from_args(args)
 
-    # Results
-    all_results = []
+    # Results (restore from checkpoint if resuming)
+    all_results = list(_ckpt_results)
     videos_dir = os.path.join(args.output_dir, "videos")
     fvd_accumulator = OnlineFrechetAccumulator(
         device=args.device, compute_fid=args.compute_fid,
         min_videos=args.min_fvd_videos,
         gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
+    fvd_ckpt_path = os.path.join(args.output_dir, "fvd_checkpoint.npz")
+    if fvd_accumulator is not None and start_idx > 0:
+        fvd_accumulator.load_stats(fvd_ckpt_path)
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
@@ -1014,6 +1021,8 @@ def main():
             all_results.append(result)
 
             save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
+            if fvd_accumulator is not None:
+                fvd_accumulator.save_stats(fvd_ckpt_path)
 
             # Cleanup per-video
             wrapper = None
@@ -1032,6 +1041,8 @@ def main():
                 "success": False,
             })
             save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
+            if fvd_accumulator is not None:
+                fvd_accumulator.save_stats(fvd_ckpt_path)
             torch_gc()
 
     # Save final results

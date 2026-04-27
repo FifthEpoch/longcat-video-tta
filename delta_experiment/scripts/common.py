@@ -2705,6 +2705,39 @@ class OnlineFrechetAccumulator:
             })
         return stats
 
+    def import_stats(self, stats: Dict[str, np.ndarray]):
+        """Restore sufficient statistics from a previous export (for checkpoint resume).
+
+        Overwrites the current accumulator state with the provided stats,
+        allowing FVD/FID computation to continue from where a previous
+        process left off.
+        """
+        self._gen_sum = stats["gen_sum"].astype(np.float64)
+        self._gen_cov = stats["gen_cov"].astype(np.float64)
+        self._gen_count = int(stats["gen_count"])
+        self._ref_sum = stats["ref_sum"].astype(np.float64)
+        self._ref_cov = stats["ref_cov"].astype(np.float64)
+        self._ref_count = int(stats["ref_count"])
+        if "fid_gen_sum" in stats and self.compute_fid:
+            self._fid_gen_sum = stats["fid_gen_sum"].astype(np.float64)
+            self._fid_gen_cov = stats["fid_gen_cov"].astype(np.float64)
+            self._fid_gen_frames = int(stats["fid_gen_frames"])
+            self._fid_ref_sum = stats["fid_ref_sum"].astype(np.float64)
+            self._fid_ref_cov = stats["fid_ref_cov"].astype(np.float64)
+            self._fid_ref_frames = int(stats["fid_ref_frames"])
+
+    def save_stats(self, path: str):
+        """Save accumulator state to .npz for checkpoint resume."""
+        np.savez(path, **self.export_stats())
+
+    def load_stats(self, path: str):
+        """Load accumulator state from .npz (checkpoint resume)."""
+        if os.path.exists(path):
+            stats = dict(np.load(path, allow_pickle=True))
+            self.import_stats(stats)
+            print(f"[FVD/FID] Restored accumulator state: "
+                  f"{self._gen_count} gen, {self._ref_count} ref videos")
+
 
 # ============================================================================
 # Online eval CLI args + finalization
@@ -2766,29 +2799,69 @@ def finalize_online_eval(
             print(f"\n[VBench++] Running on {len(mp4s)} videos in {videos_dir}...")
             try:
                 from vbench import VBench
+                import vbench as _vbench_pkg
 
                 _VBENCH_DIMS = [
                     "subject_consistency",
+                    "background_consistency",
                     "motion_smoothness",
-                    "temporal_flickering",
+                    "dynamic_degree",
                     "aesthetic_quality",
                     "imaging_quality",
                 ]
-                vb = VBench(device="cuda", full_json_dir=None)
+
+                pkg_dir = os.path.dirname(_vbench_pkg.__file__)
+                full_info_json = os.path.join(pkg_dir, "VBench_full_info.json")
+                if not os.path.exists(full_info_json):
+                    full_info_json = os.path.join(
+                        os.path.dirname(pkg_dir), "vbench", "VBench_full_info.json"
+                    )
+
+                vbench_output = os.path.join(
+                    os.path.dirname(videos_dir), "vbench_results"
+                )
+                os.makedirs(vbench_output, exist_ok=True)
+
+                vb = VBench(torch.device("cuda"), full_info_json, vbench_output)
+
                 vbench_scores: Dict[str, Any] = {}
-                video_paths = [str(p) for p in mp4s]
                 for dim in _VBENCH_DIMS:
                     try:
-                        score = vb.evaluate(
-                            videos_path=video_paths,
-                            name=dim,
+                        print(f"  Evaluating {dim}...")
+                        vb.evaluate(
+                            videos_path=videos_dir,
+                            name=f"vbench_{dim}",
                             dimension_list=[dim],
-                            mode="i2v",
+                            mode="custom_input",
                         )
-                        vbench_scores[dim] = (
-                            float(score) if isinstance(score, (int, float)) else score
+                        result_file = os.path.join(
+                            vbench_output, f"vbench_{dim}_eval_results.json"
                         )
-                        print(f"  {dim}: {vbench_scores[dim]}")
+                        if os.path.exists(result_file):
+                            import json as _json
+                            with open(result_file) as _f:
+                                dim_results = _json.load(_f)
+                            if isinstance(dim_results, list) and dim_results:
+                                scores = []
+                                for entry in dim_results:
+                                    if isinstance(entry, dict):
+                                        for v in entry.values():
+                                            if isinstance(v, (list, tuple)):
+                                                scores.extend(
+                                                    float(x) for x in v
+                                                    if isinstance(x, (int, float))
+                                                )
+                                            elif isinstance(v, (int, float)):
+                                                scores.append(float(v))
+                                if scores:
+                                    vbench_scores[dim] = float(np.mean(scores))
+                                else:
+                                    vbench_scores[dim] = dim_results
+                            elif isinstance(dim_results, (int, float)):
+                                vbench_scores[dim] = float(dim_results)
+                            else:
+                                vbench_scores[dim] = dim_results
+                        print(f"    {dim}: {vbench_scores.get(dim, 'N/A')}")
                     except Exception as exc:
                         print(f"  WARNING: VBench++ {dim} failed: {exc}",
                               file=sys.stderr)
@@ -2796,7 +2869,8 @@ def finalize_online_eval(
                 summary["vbench"] = vbench_scores
                 vbench_skipped = False
             except ImportError:
-                print("  WARNING: vbench not installed, skipping VBench++",
+                print("  WARNING: vbench not installed, skipping VBench++. "
+                      "Install with: pip install vbench",
                       file=sys.stderr)
         else:
             print("[VBench++] No saved videos found; skipping "

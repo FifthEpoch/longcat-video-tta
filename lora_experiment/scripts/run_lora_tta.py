@@ -1048,6 +1048,9 @@ def main():
         min_videos=args.min_fvd_videos,
         gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
+    fvd_ckpt_path = os.path.join(args.output_dir, "fvd_checkpoint.npz")
+    if fvd_accumulator is not None and start_idx > 0:
+        fvd_accumulator.load_stats(fvd_ckpt_path)
     lora_dir = os.path.join(args.output_dir, "lora_weights")
     retain_set = set()
     if args.save_only_list:
@@ -1421,6 +1424,8 @@ def main():
             })
 
         save_checkpoint({"next_idx": idx + 1, "results": all_results}, ckpt_path)
+        if fvd_accumulator is not None:
+            fvd_accumulator.save_stats(fvd_ckpt_path)
 
     # Save final results
     successful = [r for r in all_results if r.get("success", False)]

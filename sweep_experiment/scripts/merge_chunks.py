@@ -176,6 +176,26 @@ def merge_summaries(chunks):
             merged["fid_per_chunk"] = chunk_fids
             merged["fid_mean_of_chunks"] = float(np.mean(chunk_fids))
 
+    vbench_chunks = [c.get("vbench") for c in chunks
+                     if c.get("vbench") and not c.get("vbench_skipped", True)]
+    if vbench_chunks:
+        all_dims = set()
+        for vc in vbench_chunks:
+            if isinstance(vc, dict):
+                all_dims.update(vc.keys())
+        vbench_merged = {}
+        for dim in sorted(all_dims):
+            vals = [vc[dim] for vc in vbench_chunks
+                    if isinstance(vc, dict) and dim in vc
+                    and isinstance(vc[dim], (int, float))]
+            if vals:
+                vbench_merged[dim] = float(np.mean(vals))
+                vbench_merged[dim + "_std"] = float(np.std(vals))
+                vbench_merged[dim + "_per_chunk"] = vals
+        if vbench_merged:
+            merged["vbench"] = vbench_merged
+            merged["vbench_num_chunks"] = len(vbench_chunks)
+
     config = chunks[0].get("config", chunks[0].get("experiment_config", {}))
     if config:
         merged["config"] = config
@@ -205,6 +225,11 @@ def process_run_dir(run_dir):
     elif "fvd_mean_of_chunks" in merged:
         print("    FVD~%.1f (WARNING: avg of chunk FVDs, not true global)" %
               merged["fvd_mean_of_chunks"])
+    if "vbench" in merged and isinstance(merged["vbench"], dict):
+        vb = merged["vbench"]
+        dims = [k for k in vb if not k.endswith("_std") and not k.endswith("_per_chunk")]
+        parts = ["    VBench:"] + ["%s=%.3f" % (d, vb[d]) for d in dims]
+        print("  ".join(parts))
     print("    Avg time: train=%.1fs  gen=%.1fs  total=%.1fs" % (
         merged["avg_train_time"], merged["avg_gen_time"], merged["avg_total_time"]))
     print("    -> %s" % out_path)
