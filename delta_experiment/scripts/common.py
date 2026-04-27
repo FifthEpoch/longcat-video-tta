@@ -2678,6 +2678,33 @@ class OnlineFrechetAccumulator:
 
         return result
 
+    def export_stats(self) -> Dict[str, np.ndarray]:
+        """Export sufficient statistics for merging across chunked runs.
+
+        Returns a dict of numpy arrays that can be saved with np.savez and
+        later summed element-wise across chunks before calling
+        _compute_frechet_distance on the totals.
+        """
+        stats = {
+            "gen_sum": self._gen_sum,
+            "gen_cov": self._gen_cov,
+            "gen_count": np.array(self._gen_count, dtype=np.int64),
+            "ref_sum": self._ref_sum,
+            "ref_cov": self._ref_cov,
+            "ref_count": np.array(self._ref_count, dtype=np.int64),
+            "gt_cached": np.array(self._gt_cached, dtype=bool),
+        }
+        if self.compute_fid:
+            stats.update({
+                "fid_gen_sum": self._fid_gen_sum,
+                "fid_gen_cov": self._fid_gen_cov,
+                "fid_gen_frames": np.array(self._fid_gen_frames, dtype=np.int64),
+                "fid_ref_sum": self._fid_ref_sum,
+                "fid_ref_cov": self._fid_ref_cov,
+                "fid_ref_frames": np.array(self._fid_ref_frames, dtype=np.int64),
+            })
+        return stats
+
 
 # ============================================================================
 # Online eval CLI args + finalization
@@ -2727,6 +2754,10 @@ def finalize_online_eval(
         summary.update(fvd_results)
         for k, v in fvd_results.items():
             print(f"  {k}: {v}")
+
+        stats_path = os.path.join(os.path.dirname(videos_dir), "fvd_fid_stats.npz")
+        np.savez(stats_path, **accumulator.export_stats())
+        print(f"  Saved sufficient statistics to {stats_path}")
 
     vbench_skipped = True
     if getattr(args, "compute_vbench", False):
