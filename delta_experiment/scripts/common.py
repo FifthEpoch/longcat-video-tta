@@ -57,7 +57,8 @@ def load_longcat_components(
         cp_split_hw = [1, 1]
 
     tokenizer = AutoTokenizer.from_pretrained(
-        checkpoint_dir, subfolder="tokenizer", torch_dtype=dtype
+        checkpoint_dir, subfolder="tokenizer", torch_dtype=dtype,
+        use_fast=False,
     )
     text_encoder = UMT5EncoderModel.from_pretrained(
         checkpoint_dir, subfolder="text_encoder", torch_dtype=dtype
