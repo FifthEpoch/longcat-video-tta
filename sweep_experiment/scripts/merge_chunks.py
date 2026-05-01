@@ -185,9 +185,17 @@ def merge_summaries(chunks):
                 all_dims.update(vc.keys())
         vbench_merged = {}
         for dim in sorted(all_dims):
-            vals = [vc[dim] for vc in vbench_chunks
-                    if isinstance(vc, dict) and dim in vc
-                    and isinstance(vc[dim], (int, float))]
+            vals = []
+            for vc in vbench_chunks:
+                if not isinstance(vc, dict) or dim not in vc:
+                    continue
+                v = vc[dim]
+                if isinstance(v, (int, float)):
+                    vals.append(float(v))
+                elif isinstance(v, dict):
+                    inner = v.get(dim, next(iter(v.values()), None))
+                    if isinstance(inner, (list, tuple)) and inner and isinstance(inner[0], (int, float)):
+                        vals.append(float(inner[0]))
             if vals:
                 vbench_merged[dim] = float(np.mean(vals))
                 vbench_merged[dim + "_std"] = float(np.std(vals))

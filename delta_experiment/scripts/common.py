@@ -2763,6 +2763,29 @@ def add_online_eval_args(parser: "argparse.ArgumentParser"):
                           "distribution is loaded once and never re-extracted.")
 
 
+def _extract_vbench_score(dim: str, dim_results) -> Optional[float]:
+    """Extract the overall scalar score from VBench's output format.
+
+    VBench saves results as either:
+      - dict: {"dim_name": [overall_score, [per_video_list]]}
+      - list: [{"dim_name": [overall_score, [per_video_list]]}]
+    """
+    target = dim_results
+    if isinstance(target, list) and len(target) == 1 and isinstance(target[0], dict):
+        target = target[0]
+    if isinstance(target, dict):
+        val = target.get(dim)
+        if isinstance(val, (list, tuple)) and len(val) >= 1:
+            if isinstance(val[0], (int, float)):
+                return float(val[0])
+        for v in target.values():
+            if isinstance(v, (list, tuple)) and len(v) >= 1 and isinstance(v[0], (int, float)):
+                return float(v[0])
+    if isinstance(dim_results, (int, float)):
+        return float(dim_results)
+    return None
+
+
 def aggregate_quality_metrics(summary: dict):
     """Compute avg PSNR, SSIM, LPIPS from per-video results and merge into summary."""
     successful = [r for r in summary.get("results", []) if r.get("success")]
@@ -2842,24 +2865,9 @@ def finalize_online_eval(
                             import json as _json
                             with open(result_file) as _f:
                                 dim_results = _json.load(_f)
-                            if isinstance(dim_results, list) and dim_results:
-                                scores = []
-                                for entry in dim_results:
-                                    if isinstance(entry, dict):
-                                        for v in entry.values():
-                                            if isinstance(v, (list, tuple)):
-                                                scores.extend(
-                                                    float(x) for x in v
-                                                    if isinstance(x, (int, float))
-                                                )
-                                            elif isinstance(v, (int, float)):
-                                                scores.append(float(v))
-                                if scores:
-                                    vbench_scores[dim] = float(np.mean(scores))
-                                else:
-                                    vbench_scores[dim] = dim_results
-                            elif isinstance(dim_results, (int, float)):
-                                vbench_scores[dim] = float(dim_results)
+                            overall = _extract_vbench_score(dim, dim_results)
+                            if overall is not None:
+                                vbench_scores[dim] = overall
                             else:
                                 vbench_scores[dim] = dim_results
                         print(f"    {dim}: {vbench_scores.get(dim, 'N/A')}")
