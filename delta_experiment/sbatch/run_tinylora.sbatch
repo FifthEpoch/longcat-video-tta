@@ -174,7 +174,9 @@ echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
 export TRANSFORMERS_CACHE="${HF_HOME}"
-mkdir -p "$HF_HOME"
+export TORCH_HOME="${SCRATCH_BASE}/.cache/torch"
+export VBENCH_CACHE_DIR="${SCRATCH_BASE}/.cache/vbench"
+mkdir -p "$HF_HOME" "$TORCH_HOME" "$VBENCH_CACHE_DIR"
 
 cd "$PROJECT_ROOT"
 
