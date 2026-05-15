@@ -59,19 +59,21 @@ AdaSteer FVD improvement is consistent (4.6-6.2%) across horizons and datasets. 
 
 ---
 
-## 1000-Video Panda-70M Long Context (93f) -- Old Run, Partial
+## 999-Video Panda-70M Long Context (93f) -- Corrected Global FVD
 
-> These are pre-audit results (NOTTA crashed, FVD is per-chunk avg not global). Corrected run in progress.
+> Corrected run with all four methods complete. FVD/FID are global Frechet distances from merged sufficient statistics across chunks, not per-chunk averages.
 
-| Method | Videos | PSNR | SSIM | LPIPS | FVD (chunk avg +/- std) | FID (chunk avg) |
-|---|---|---|---|---|---|---|
-| No-TTA | 0/1000 | -- | -- | -- | -- | -- |
-| AdaSteer S10 | 999/1000 | 12.776 | 0.4758 | 0.5447 | 964.8 +/- 143.3 | 99.6 +/- 4.2 |
-| LoRA R8 | 899/1000 | 12.756 | 0.4713 | 0.5487 | 953.2 +/- 88.9 | 100.8 +/- 4.1 |
-| TinyLoRA LAST24 | 600/1000 | 12.799 | -- | -- | -- | -- |
+| Method | Videos | PSNR | SSIM | LPIPS | FVD | FID | TTA | Gen | Total |
+|---|---:|---|---|---|---|---|---|---|---|
+| No-TTA | 999 | 12.769 | 0.4744 | 0.5469 | **278.7** | 29.9 | 0.9s | 553.9s | 554.8s |
+| AdaSteer S10 | 999 | **12.787** | **0.4762** | **0.5436** | 284.1 (+5.4) | **29.5** | 18.4s | 552.9s | 571.3s |
+| LoRA R8 | 999 | 12.734 | 0.4726 | 0.5480 | 282.4 (+3.7) | 30.3 | 18.3s | 567.9s | 586.1s |
+| TinyLoRA LAST24 | 999 | 12.773 | 0.4744 | 0.5468 | **278.6** (-0.1) | 30.1 | 23.0s | 562.2s | 585.2s |
+
+Takeaway: the earlier 50-video Panda long-context FVD gain did not hold at 999 videos. AdaSteer improves PSNR/SSIM/LPIPS/FID slightly, but worsens global FVD. TinyLoRA is essentially tied with No-TTA on FVD with extra compute.
 
 ---
 
-## Current Status (May 1, 2026)
+## Current Status (May 14, 2026)
 
-1000-video Panda-70M resubmitted with all pipeline fixes (4 methods x 10 chunks = 40 jobs). Awaiting results ~May 2.
+The corrected 999-video Panda long-context run is complete and logged. The strongest full-scale AdaSteer result remains the standard 28-frame Panda run (FVD 150.09 -> 142.32, -5.2%). Long-context Panda remains unresolved: small pointwise improvements do not translate into FVD gains at scale.

@@ -30,11 +30,23 @@ Intended for paper writing, debugging metric regressions, and cross-referencing 
 | Dataset | Path on Cluster | Videos | Notes |
 |---------|----------------|--------|-------|
 | Panda-70M (1000) | datasets/panda_1000_480p | 1000 | Current primary set. max_videos=100 selects first 100. |
+| Panda-70M (200 discovery) | datasets/panda_200_480p | 200 | Planned deterministic subset from panda_1000_480p for cheap standard-horizon parameter sweeps. |
 | Panda-70M (100) | datasets/panda_100_480p | 100 | Original small subset. DIFFERENT videos from panda_1000_480p. |
+| UCF-101 (200 discovery) | datasets/ucf101_200_480p | 200 | Planned stratified subset from ucf101_1000_480p for discovery sweeps. |
 | UCF-101 (100) | datasets/ucf101_test_480p | 100 | Action recognition clips. |
 | UCF-101 (500) | datasets/ucf101_test_480p | 500 | Larger UCF eval (Phase 2). |
 
 CRITICAL: panda_1000_480p and panda_100_480p contain DIFFERENT videos with different difficulty distributions. Results are NOT directly comparable across these datasets.
+
+### May 2026 Discovery Funnel
+
+Initial parameter sweeps should run on 200-video discovery subsets before any new 1000-video paper run. The first sweep stage uses the standard 28-frame setting, not long-context Panda, because full-scale standard Panda already shows the clearest FVD gain and is cheaper than 93-frame long-context generation. Long-context Panda should be reserved for validating winners or testing horizon-specific objectives after the short-horizon sweep identifies stable hyperparameters.
+
+Planned configs:
+- `sweep_experiment/configs/panda_200_adasteer_steps_lr.yaml`
+- `sweep_experiment/configs/ucf101_200_adasteer_steps_lr.yaml`
+
+Promotion rule: only scale configs that improve FVD and do not regress PSNR/SSIM/LPIPS on the 200-video discovery set.
 
 ---
 
@@ -309,6 +321,97 @@ No LoRA config meaningfully beats baseline FVD (641.1) at 100 videos. Selected t
 | DV_BARE | Delta Vector | steps=10, lr=0.005 | 561.1 | 18.604 | PENDING |
 | LORA_R4_S20 | LoRA | R4, last_4, 20s, lr=1e-5 | 641.5 | 18.569 | PENDING |
 | LORA_R8_S10 | LoRA | R8, all, 10s, lr=5e-5 | 644.6 | 18.616 | PENDING |
+
+---
+
+## May 2026 - Panda-70M Long-Context 999-Video Corrected Evaluation
+
+Date logged: May 14, 2026
+
+Purpose: corrected full-scale long-context evaluation after the earlier partial run had a crashed No-TTA baseline and invalid per-chunk FVD averaging. This run uses proper global FVD/FID from merged sufficient statistics across chunks.
+
+Dataset: `panda_1000_480p`, 999 successful videos
+
+Shared config:
+- `num_cond_frames=14`
+- `num_frames=93` (14 conditioning + 79 generated)
+- `gen_start_frame=14`
+- `tta_total_frames=14`
+- `tta_context_frames=14`
+- `num_inference_steps=50`
+- `guidance_scale=4.0`
+- `resolution=480p`
+- 10 chunks, 100 videos per chunk except final chunk with 99 videos
+
+Result paths:
+- `sweep_experiment/results/panda_longctx_1000v/NOTTA/merged_summary.json`
+- `sweep_experiment/results/panda_longctx_1000v/ADA_S10/merged_summary.json`
+- `sweep_experiment/results/panda_longctx_1000v/LORA_R8/merged_summary.json`
+- `delta_experiment/results/tinylora_longctx_1000v/PANDA_TL_LAST24/merged_summary.json`
+
+Chunk/FVD audit:
+- All four methods have 10 chunk summaries and 10 `fvd_fid_stats.npz` files.
+- All four methods have the same 999 unique videos, with no duplicates and no missing/extra videos versus No-TTA.
+- Each method has `gen_count=999`, `ref_count=999`, `gt_cached=False`.
+- Feature dimensions are consistent: I3D feature sum `(400,)`, second moment `(400, 400)`.
+- FVD/FID values below are global Frechet distances from merged sufficient statistics, not averages of per-chunk FVD/FID.
+
+| Method | Config | PSNR | SSIM | LPIPS | FVD | dFVD vs No-TTA | FID | Train(s) | Gen(s) | Total(s) | VBench aesthetic | VBench background | VBench subject |
+|--------|--------|------|------|-------|-----|---------------:|-----|----------|--------|----------|------------------|-------------------|----------------|
+| No-TTA | `delta_steps=0` | 12.769 | 0.4744 | 0.5469 | 278.7 | -- | 29.9 | 0.9 | 553.9 | 554.8 | 0.440 | 0.848 | 0.774 |
+| AdaSteer S10 | `delta_steps=10`, `delta_lr=5e-3` | 12.787 | 0.4762 | 0.5436 | 284.1 | +5.4 | 29.5 | 18.4 | 552.9 | 571.3 | 0.440 | 0.848 | 0.775 |
+| LoRA R8 | rank=8, alpha=16, all blocks, 10 steps, lr=5e-5 | 12.734 | 0.4726 | 0.5480 | 282.4 | +3.7 | 30.3 | 18.3 | 567.9 | 586.1 | 0.485 | 0.848 | 0.757 |
+| TinyLoRA LAST24 | rank=2, `n_tie=1`, `qkv_proj`, last 24 blocks, 20 steps, lr=1e-3 | 12.773 | 0.4744 | 0.5468 | 278.6 | -0.1 | 30.1 | 23.0 | 562.2 | 585.2 | 0.440 | 0.848 | 0.774 |
+
+Key findings:
+- The earlier 50-video Panda long-context FVD gain did **not** hold at 999 videos.
+- AdaSteer slightly improves pointwise metrics over No-TTA (PSNR +0.018, SSIM +0.0018, LPIPS -0.0033) and improves FID (29.9 -> 29.5), but worsens global FVD (278.7 -> 284.1).
+- LoRA R8 is worse than No-TTA on PSNR/SSIM/LPIPS/FVD/FID, though its VBench aesthetic score is higher.
+- TinyLoRA LAST24 is effectively tied with No-TTA on global FVD and pointwise metrics, with extra train/generation time.
+- Interpretation: standard 28-frame Panda remains the strongest full-scale AdaSteer result; long-context Panda at 999 videos does not currently support a distributional-quality claim for AdaSteer.
+
+---
+
+## May 2026 - Batch Experiments Planned
+
+Date planned: May 4, 2026
+
+Purpose: separate two batching questions that were previously conflated.
+
+### A. Retrieval-Augmented Batch-Level TTA
+
+This tests whether training one shared TTA update on an eval video plus retrieved neighbours changes quality. It does NOT test GPU parallel throughput, because the current batch-level implementations cycle through one video per optimizer step.
+
+New paper-aligned configs:
+
+| Config | Method | Setting | K values | Status |
+|--------|--------|---------|----------|--------|
+| `panda_batch_retrieval_delta_a.yaml` | AdaSteer | Panda standard, 28f, gen_start=48 | 1, 5, 10 | READY |
+| `panda_batch_retrieval_lora.yaml` | LoRA R8 | Panda standard, 28f, gen_start=48 | 1, 5, 10 | READY |
+| `panda_longctx_batch_retrieval_delta_a.yaml` | AdaSteer | Panda long, 93f, gen_start=14 | 1, 5, 10 | READY |
+| `panda_longctx_batch_retrieval_lora.yaml` | LoRA R8 | Panda long, 93f, gen_start=14 | 1, 5, 10 | READY |
+| `ucf_longctx_batch_retrieval_delta_a.yaml` | AdaSteer | UCF long, 61f, gen_start=14 | 1, 5, 10 | READY |
+| `ucf_longctx_batch_retrieval_lora.yaml` | LoRA R8 | UCF long, 61f, gen_start=14 | 1, 5, 10 | READY |
+
+Submit helper: `sweep_experiment/sbatch/submit_batch_retrieval.sh` (defaults to dry-run; set `DRY_RUN=0` to submit).
+
+### B. Batched Independent TTA Throughput
+
+This tests the deployment claim: AdaSteer can train multiple independent per-video residuals in one batched forward/backward pass, while LoRA/TinyLoRA currently require serial independent adapters.
+
+New benchmark script: `sweep_experiment/scripts/benchmark_batched_tta.py`
+
+Outputs: `batched_tta_benchmark.json` with requested batch size, status/OOM, train seconds/video, total encode+train seconds/video, and peak H200 memory.
+
+Initial profiles:
+
+| Profile | Dataset | Frames | AdaSteer B sweep | Baselines |
+|---------|---------|--------|------------------|-----------|
+| panda_standard | Panda-70M | 28 | 1, 2, 4, 8, 16 | serial LoRA, serial TinyLoRA |
+| panda_longctx | Panda-70M | 93 | 1, 2, 4, 8 | serial LoRA, serial TinyLoRA |
+| ucf_longctx | UCF-101 | 61 | 1, 2, 4, 8 | serial LoRA, serial TinyLoRA |
+
+Submit helper: `sweep_experiment/sbatch/submit_batched_tta_benchmark.sh` (defaults to dry-run; set `DRY_RUN=0` to submit).
 
 ---
 

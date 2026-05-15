@@ -1,0 +1,47 @@
+updated: 2026-05-15
+goal: "Find TTA configs that improve both pointwise metrics and FVD, then scale winners to 1000 videos."
+
+completed:
+  - id: panda_standard_999_adasteer
+    status: logged
+    dataset: panda_1000_480p
+    setting: "28 frames, standard horizon"
+    outcome: "AdaSteer improves FVD 150.09 -> 142.32 (-5.2%); pointwise metrics roughly flat/slightly worse."
+    log: sweep_experiment/reports/experiment_metrics_log.md
+  - id: panda_longctx_999_corrected
+    status: logged
+    dataset: panda_1000_480p
+    setting: "93 frames, long context"
+    outcome: "AdaSteer improves PSNR/SSIM/LPIPS/FID slightly but worsens FVD 278.7 -> 284.1."
+    log: sweep_experiment/reports/experiment_metrics_log.md
+  - id: ucf_longctx_50
+    status: logged
+    dataset: ucf101_100_480p
+    setting: "61 frames, long context, 50 videos"
+    outcome: "AdaSteer improves PSNR/SSIM/LPIPS/FVD/FID at small scale."
+    log: EXPERIMENT_RESULTS.md
+
+pending_discovery:
+  - id: create_200_video_subsets
+    status: planned
+    purpose: "Deterministic 200-video discovery subsets for Panda-70M and UCF-101."
+  - id: panda_standard_200_steps_lr
+    status: planned
+    purpose: "Cheap parameter sweep where AdaSteer has strongest known FVD signal."
+  - id: ucf_standard_200_steps_lr
+    status: planned
+    purpose: "Cross-dataset short/standard-horizon confirmation."
+  - id: retrieval_batch_200
+    status: planned
+    purpose: "Test whether retrieval neighbors regularize AdaSteer."
+
+promotion_gates:
+  discovery_to_final_1000:
+    required:
+      - "FVD improves vs matched No-TTA."
+      - "PSNR improves or is neutral within noise."
+      - "SSIM improves or is neutral within noise."
+      - "LPIPS improves or is neutral within noise."
+      - "No severe runtime regression beyond paper-acceptable overhead."
+    final_action: "Run winners directly at 1000 videos on Panda and UCF where available."
+

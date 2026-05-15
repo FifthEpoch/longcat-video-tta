@@ -726,6 +726,38 @@ SERIES_INFO = {
         "purpose": "Retrieval-augmented batch-size ablation (LoRA, UCF-101)",
         "sweep_params": ["batch_videos"],
     },
+    "panda_batch_retrieval_delta_a": {
+        "purpose": "Paper-aligned retrieval batch-level TTA (AdaSteer, Panda standard horizon)",
+        "sweep_params": ["batch_videos"],
+    },
+    "panda_batch_retrieval_lora": {
+        "purpose": "Paper-aligned retrieval batch-level TTA (LoRA, Panda standard horizon)",
+        "sweep_params": ["batch_videos"],
+    },
+    "panda_longctx_batch_retrieval_delta_a": {
+        "purpose": "Paper-aligned retrieval batch-level TTA (AdaSteer, Panda long context)",
+        "sweep_params": ["batch_videos"],
+    },
+    "panda_longctx_batch_retrieval_lora": {
+        "purpose": "Paper-aligned retrieval batch-level TTA (LoRA, Panda long context)",
+        "sweep_params": ["batch_videos"],
+    },
+    "ucf_longctx_batch_retrieval_delta_a": {
+        "purpose": "Paper-aligned retrieval batch-level TTA (AdaSteer, UCF long context)",
+        "sweep_params": ["batch_videos"],
+    },
+    "ucf_longctx_batch_retrieval_lora": {
+        "purpose": "Paper-aligned retrieval batch-level TTA (LoRA, UCF long context)",
+        "sweep_params": ["batch_videos"],
+    },
+    "panda_200_adasteer_steps_lr": {
+        "purpose": "200-video discovery: AdaSteer step/LR sweep (Panda standard horizon)",
+        "sweep_params": ["delta_steps", "delta_lr"],
+    },
+    "ucf101_200_adasteer_steps_lr": {
+        "purpose": "200-video discovery: AdaSteer step/LR sweep (UCF-101 standard horizon)",
+        "sweep_params": ["delta_steps", "delta_lr"],
+    },
     "ucf101_full": {
         "purpose": "Cross-dataset: full-model TTA on UCF-101",
         "sweep_params": [],
