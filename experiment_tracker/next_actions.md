@@ -1,12 +1,13 @@
 # Next Actions
 
-## Immediate Implementation
+## Immediate Cluster Actions
 
-1. Create deterministic 200-video subsets:
-   - `datasets/panda_200_480p`
-   - `datasets/ucf101_200_480p`
-2. Submit standard/short-horizon AdaSteer discovery sweeps on both datasets.
-3. Submit retrieval-batch discovery only after the 200-video eval sets exist.
+1. Resume the six checkpointed 10-step discovery jobs:
+   - Panda: `S10_LR001`, `S10_LR0025`, `S10_LR005`
+   - UCF: `S10_LR001`, `S10_LR0025`, `S10_LR005`
+2. Audit why UCF pointwise metrics are `nan` in raw summaries.
+3. After 10-step summaries are complete, select Panda and UCF winners.
+4. Submit retrieval-batch discovery only after the 200-video step/LR sweep is fully interpreted.
 
 ## Discussion After Initial Changes
 

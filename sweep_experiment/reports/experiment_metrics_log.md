@@ -50,6 +50,86 @@ Promotion rule: only scale configs that improve FVD and do not regress PSNR/SSIM
 
 ---
 
+## May 2026 - 200-Video Standard-Horizon AdaSteer Discovery Sweep
+
+Date pasted/logged: May 18, 2026
+
+Purpose: cheap standard-horizon parameter sweep on new 200-video discovery subsets before promoting any config to 1000-video paper runs.
+
+Shared config:
+- `num_cond_frames=14`
+- `num_frames=28`
+- `gen_start_frame=48`
+- `tta_total_frames=48`
+- `tta_context_frames=14`
+- `num_inference_steps=50`
+- `guidance_scale=4.0`
+- `resolution=480p`
+- `seed=42`
+- `max_videos=200`
+- `compute_fvd=true`
+- `compute_fid=true`
+- `es_disable=true`
+- `no_save_videos=true`
+
+Configs:
+- `sweep_experiment/configs/panda_200_adasteer_steps_lr.yaml`
+- `sweep_experiment/configs/ucf101_200_adasteer_steps_lr.yaml`
+
+Status:
+- Completed: `NOTTA`, all `S3_*`, all `S5_*` for Panda and UCF.
+- Incomplete/checkpoint-only: all `S10_*` runs for both datasets.
+- Checkpoint progress: Panda `S10_LR001=191/200`, `S10_LR0025=192/200`, `S10_LR005=187/200`; UCF `S10_LR001=190/200`, `S10_LR0025=189/200`, `S10_LR005=193/200`.
+
+### Panda-70M 200 Discovery
+
+Dataset: `datasets/panda_200_480p`
+
+Use the in-series `NOTTA` row as the matched baseline for this subset. The exporter baseline matched against an older Panda no-TTA run and should not be used for deltas here.
+
+| Run ID | Status | N | PSNR | dPSNR vs in-series NOTTA | SSIM | dSSIM | LPIPS | dLPIPS | FVD | dFVD | FID |
+|--------|--------|---:|-----:|-------------------------:|-----:|------:|------:|-------:|----:|-----:|----:|
+| NOTTA | complete | 200 | 18.3676 | -- | 0.6564 | -- | 0.3290 | -- | 333.70 | -- | 54.13 |
+| S3_LR001 | complete | 200 | 18.4009 | +0.0332 | 0.6564 | -0.0001 | 0.3285 | -0.0005 | 337.46 | +3.76 | 54.49 |
+| S3_LR0025 | complete | 200 | 18.3792 | +0.0116 | 0.6549 | -0.0015 | 0.3297 | +0.0007 | 327.55 | -6.15 | 54.53 |
+| S3_LR005 | complete | 200 | 18.3524 | -0.0153 | 0.6559 | -0.0005 | 0.3299 | +0.0009 | 328.17 | -5.53 | 53.72 |
+| S5_LR001 | complete | 200 | 18.3804 | +0.0127 | 0.6552 | -0.0013 | 0.3298 | +0.0008 | 338.51 | +4.81 | 54.29 |
+| S5_LR0025 | complete | 200 | 18.3957 | +0.0281 | 0.6567 | +0.0002 | 0.3280 | -0.0010 | 348.08 | +14.38 | 54.79 |
+| S5_LR005 | complete | 200 | 18.4057 | +0.0380 | 0.6560 | -0.0005 | 0.3288 | -0.0002 | 339.15 | +5.45 | 55.46 |
+
+Interim takeaways:
+- Best completed Panda FVD is `S3_LR0025` (333.70 -> 327.55, -6.15), but it slightly worsens SSIM and LPIPS.
+- `S3_LR005` also improves FVD (-5.53) and FID, but worsens all pointwise metrics.
+- `S5_LR0025` and `S5_LR005` improve pointwise metrics more clearly but worsen FVD.
+- No completed Panda run yet satisfies the promotion rule across FVD and pointwise metrics.
+
+### UCF-101 200 Discovery
+
+Dataset: `datasets/ucf101_200_480p`
+
+Raw summary-level PSNR/SSIM/LPIPS fields were `nan` in the direct audit output, but the exporter table computed pointwise metrics from per-video records. Use the FVD/FID table below for promotion decisions until the summaries are audited.
+
+| Run ID | Status | N | FVD | dFVD vs in-series NOTTA | FID | Exporter pointwise note |
+|--------|--------|---:|----:|------------------------:|----:|-------------------------|
+| NOTTA | complete | 200 | 359.80 | -- | 32.70 | exporter: PSNR 20.4417, SSIM 0.7356, LPIPS 0.2340 |
+| S3_LR001 | complete | 200 | 357.92 | -1.88 | 32.73 | near-neutral pointwise |
+| S3_LR0025 | complete | 200 | 366.58 | +6.78 | 32.63 | near-neutral pointwise |
+| S3_LR005 | complete | 200 | 363.61 | +3.81 | 32.77 | near-neutral pointwise |
+| S5_LR001 | complete | 200 | 347.09 | -12.71 | 32.78 | exporter: PSNR 20.4330, SSIM 0.7354, LPIPS 0.2342 |
+| S5_LR0025 | complete | 200 | 353.30 | -6.50 | 32.72 | exporter: best completed SSIM/LPIPS among pasted rows |
+| S5_LR005 | complete | 200 | 361.99 | +2.19 | 32.89 | exporter: best completed PSNR among pasted rows |
+
+Interim takeaways:
+- Best completed UCF FVD is `S5_LR001` (359.80 -> 347.09, -12.71 / -3.5%), but pointwise metrics appear slightly worse than in-series `NOTTA` from the exporter table.
+- `S5_LR0025` gives a smaller FVD gain (-6.50) and looked best for SSIM/LPIPS in the exporter table.
+- Need final `S10_*` runs before deciding whether to promote a UCF config.
+
+Next action:
+- Resume the six checkpointed `S10_*` runs and re-run the raw metrics audit.
+- Audit why UCF summary-level pointwise means are `nan` while exporter table pointwise values are populated.
+
+---
+
 ## Known Issues and Caveats
 
 ### Gen-Start-Frame Misalignment Bug (fixed Feb 13, 2026)
