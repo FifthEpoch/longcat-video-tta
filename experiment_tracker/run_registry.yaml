@@ -1,4 +1,4 @@
-updated: 2026-05-18
+updated: 2026-05-19
 goal: "Find TTA configs that improve both pointwise metrics and FVD, then scale winners to 1000 videos."
 
 completed:
@@ -26,31 +26,23 @@ pending_discovery:
     status: completed
     purpose: "Deterministic 200-video discovery subsets for Panda-70M and UCF-101."
   - id: panda_standard_200_steps_lr
-    status: partial
+    status: completed
     purpose: "Cheap parameter sweep where AdaSteer has strongest known FVD signal."
-    completed_runs: ["NOTTA", "S3_LR001", "S3_LR0025", "S3_LR005", "S5_LR001", "S5_LR0025", "S5_LR005"]
-    checkpoint_runs:
-      S10_LR001: 191
-      S10_LR0025: 192
-      S10_LR005: 187
+    completed_runs: ["NOTTA", "S3_LR001", "S3_LR0025", "S3_LR005", "S5_LR001", "S5_LR0025", "S5_LR005", "S10_LR001", "S10_LR0025", "S10_LR005"]
     resumed_job_ids:
       S10_LR001: 9008397
       S10_LR0025: 9008398
       S10_LR005: 9008399
-    interim_outcome: "Best completed FVD: S3_LR0025, 333.70 -> 327.55 (-6.15), but SSIM/LPIPS regress slightly. No completed Panda run satisfies full promotion rule yet."
+    outcome: "Winner S10_LR005: FVD 333.70 -> 316.34 (-17.36 / -5.2%), FID 54.13 -> 53.59, PSNR +0.0520, SSIM +0.0008, LPIPS -0.0018. Promote candidate for 1000-video Panda standard validation."
   - id: ucf_standard_200_steps_lr
-    status: partial
+    status: completed
     purpose: "Cross-dataset short/standard-horizon confirmation."
-    completed_runs: ["NOTTA", "S3_LR001", "S3_LR0025", "S3_LR005", "S5_LR001", "S5_LR0025", "S5_LR005"]
-    checkpoint_runs:
-      S10_LR001: 190
-      S10_LR0025: 189
-      S10_LR005: 193
+    completed_runs: ["NOTTA", "S3_LR001", "S3_LR0025", "S3_LR005", "S5_LR001", "S5_LR0025", "S5_LR005", "S10_LR001", "S10_LR0025", "S10_LR005"]
     resumed_job_ids:
       S10_LR001: 9008401
       S10_LR0025: 9008402
       S10_LR005: 9008403
-    interim_outcome: "Best completed FVD: S5_LR001, 359.80 -> 347.09 (-12.71 / -3.5%). Need S10 finals and UCF pointwise summary audit before promotion."
+    outcome: "FVD-only winner S5_LR001: 359.80 -> 347.09 (-12.71 / -3.5%) with slight pointwise regression. Safer promotion candidate S5_LR0025: FVD 359.80 -> 353.30 (-6.50 / -1.8%) with exporter pointwise gains."
   - id: retrieval_batch_200
     status: planned
     purpose: "Test whether retrieval neighbors regularize AdaSteer."
