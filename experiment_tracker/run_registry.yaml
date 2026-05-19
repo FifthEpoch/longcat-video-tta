@@ -33,6 +33,10 @@ pending_discovery:
       S10_LR001: 191
       S10_LR0025: 192
       S10_LR005: 187
+    resumed_job_ids:
+      S10_LR001: 9008397
+      S10_LR0025: 9008398
+      S10_LR005: 9008399
     interim_outcome: "Best completed FVD: S3_LR0025, 333.70 -> 327.55 (-6.15), but SSIM/LPIPS regress slightly. No completed Panda run satisfies full promotion rule yet."
   - id: ucf_standard_200_steps_lr
     status: partial
@@ -42,6 +46,10 @@ pending_discovery:
       S10_LR001: 190
       S10_LR0025: 189
       S10_LR005: 193
+    resumed_job_ids:
+      S10_LR001: 9008401
+      S10_LR0025: 9008402
+      S10_LR005: 9008403
     interim_outcome: "Best completed FVD: S5_LR001, 359.80 -> 347.09 (-12.71 / -3.5%). Need S10 finals and UCF pointwise summary audit before promotion."
   - id: retrieval_batch_200
     status: planned
