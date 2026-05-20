@@ -322,6 +322,82 @@ def optimize_delta_a(
     }
 
 
+def compute_anchor_gate_info(
+    es_state: Optional[Dict],
+    mode: str,
+    threshold: float,
+    soft_scale: float,
+) -> Dict:
+    """Turn anchor-loss early-stopping state into a generation-time gate."""
+    mode = (mode or "off").lower()
+    info = {
+        "anchor_gate_mode": mode,
+        "anchor_gate_threshold": threshold,
+        "anchor_gate_soft_scale": soft_scale,
+        "anchor_gate_enabled": mode != "off",
+        "anchor_gate_decision": "use",
+        "anchor_gate_scale": 1.0,
+        "anchor_gate_reason": "disabled" if mode == "off" else "",
+        "anchor_gate_initial_loss": None,
+        "anchor_gate_best_loss": None,
+        "anchor_gate_improvement": None,
+        "anchor_gate_relative_improvement": None,
+        "anchor_gate_best_step": None,
+    }
+    if mode == "off":
+        return info
+
+    if not es_state:
+        info.update({
+            "anchor_gate_decision": "use",
+            "anchor_gate_reason": "missing_anchor_state",
+        })
+        return info
+
+    initial = es_state.get("initial_loss")
+    best = es_state.get("best_loss")
+    best_step = int(es_state.get("best_step", 0) or 0)
+    info["anchor_gate_initial_loss"] = initial
+    info["anchor_gate_best_loss"] = best
+    info["anchor_gate_best_step"] = best_step
+    if initial is None or best is None or initial <= 0:
+        info.update({
+            "anchor_gate_decision": "use",
+            "anchor_gate_reason": "invalid_anchor_losses",
+        })
+        return info
+
+    improvement = float(initial) - float(best)
+    rel = improvement / max(abs(float(initial)), 1e-12)
+    info["anchor_gate_improvement"] = improvement
+    info["anchor_gate_relative_improvement"] = rel
+
+    passes = best_step > 0 and rel >= threshold
+    if mode == "log_only":
+        info.update({
+            "anchor_gate_decision": "use",
+            "anchor_gate_reason": "log_only_pass" if passes else "log_only_fail",
+        })
+    elif mode == "binary":
+        info.update({
+            "anchor_gate_decision": "use" if passes else "skip",
+            "anchor_gate_scale": 1.0 if passes else 0.0,
+            "anchor_gate_reason": "anchor_pass" if passes else "anchor_fail",
+        })
+    elif mode == "soft":
+        scale = min(1.0, max(0.0, rel / max(soft_scale, 1e-12)))
+        if rel < threshold or best_step == 0:
+            scale = 0.0
+        info.update({
+            "anchor_gate_decision": "use" if scale > 0 else "skip",
+            "anchor_gate_scale": scale,
+            "anchor_gate_reason": "anchor_soft_scale" if scale > 0 else "anchor_fail",
+        })
+    else:
+        raise ValueError(f"Unknown anchor gate mode: {mode}")
+    return info
+
+
 def _optimize_delta_a_batch(
     wrapper: DeltaAWrapper,
     batch_data: List[Dict],
@@ -464,6 +540,13 @@ def main():
                         help="Directory containing the larger retrieval pool dataset "
                              "(e.g. 1000 videos). Required when --batch-videos > 1. "
                              "Eval videos come from --data-dir; neighbours come from here.")
+    parser.add_argument("--anchor-gate-mode", type=str, default="off",
+                        choices=["off", "log_only", "binary", "soft"],
+                        help="Use anchor-loss early-stopping state as a generation-time gate.")
+    parser.add_argument("--anchor-gate-threshold", type=float, default=0.0,
+                        help="Minimum relative anchor-loss improvement required to apply TTA.")
+    parser.add_argument("--anchor-gate-soft-scale", type=float, default=0.01,
+                        help="Relative anchor improvement that maps to scale=1.0 in soft mode.")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -909,6 +992,22 @@ def main():
                 "success": True,
             }
             result.update(clip_gate_info)
+            anchor_gate_info = compute_anchor_gate_info(
+                opt_result.get("early_stopping_info"),
+                mode=args.anchor_gate_mode,
+                threshold=args.anchor_gate_threshold,
+                soft_scale=args.anchor_gate_soft_scale,
+            )
+            result.update(anchor_gate_info)
+            if anchor_gate_info["anchor_gate_enabled"]:
+                print(
+                    "  Anchor gate: "
+                    f"mode={anchor_gate_info['anchor_gate_mode']}, "
+                    f"decision={anchor_gate_info['anchor_gate_decision']}, "
+                    f"scale={anchor_gate_info['anchor_gate_scale']:.3f}, "
+                    f"rel_impr={anchor_gate_info['anchor_gate_relative_improvement']}, "
+                    f"reason={anchor_gate_info['anchor_gate_reason']}"
+                )
 
             gen_time = 0.0
             if not args.skip_generation:
@@ -928,8 +1027,17 @@ def main():
                 all_step_metrics = []
                 prev_gen_frames = None
 
-                apply_delta = not clip_gate_info.get("tta_skipped", False)
+                anchor_scale = float(anchor_gate_info.get("anchor_gate_scale", 1.0) or 0.0)
+                apply_delta = (
+                    not clip_gate_info.get("tta_skipped", False)
+                    and anchor_gate_info.get("anchor_gate_decision") != "skip"
+                    and anchor_scale > 0.0
+                )
+                original_delta = None
                 if apply_delta:
+                    if abs(anchor_scale - 1.0) > 1e-6:
+                        original_delta = wrapper.delta.data.clone()
+                        wrapper.delta.data.mul_(anchor_scale)
                     wrapper.apply_to_dit()
 
                 try:
@@ -989,6 +1097,8 @@ def main():
                 finally:
                     if apply_delta:
                         wrapper.remove_from_dit()
+                    if original_delta is not None:
+                        wrapper.delta.data.copy_(original_delta)
 
                 result["gen_time"] = gen_time
                 result["rollout_steps"] = rollout_steps
@@ -1056,6 +1166,9 @@ def main():
         "gen_start_frame": args.gen_start_frame,
         "rollout_steps": args.rollout_steps,
         "tta_grad_accum": args.tta_grad_accum,
+        "anchor_gate_mode": args.anchor_gate_mode,
+        "anchor_gate_threshold": args.anchor_gate_threshold,
+        "anchor_gate_soft_scale": args.anchor_gate_soft_scale,
         "batch_videos": args.batch_videos,
         "retrieval_pool_dir": args.retrieval_pool_dir,
         "num_videos": len(all_results),
@@ -1096,6 +1209,25 @@ def main():
         "clip_gate_log_only": args.clip_gate_log_only,
         "clip_gate_fail_open": args.clip_gate_fail_open,
         "clip_gate_stats": summarize_clip_gate_stats(successful),
+        "anchor_gate_stats": {
+            "enabled": args.anchor_gate_mode != "off",
+            "mode": args.anchor_gate_mode,
+            "num_use": sum(1 for r in successful if r.get("anchor_gate_decision") == "use"),
+            "num_skip": sum(1 for r in successful if r.get("anchor_gate_decision") == "skip"),
+            "avg_scale": (
+                float(np.mean([r.get("anchor_gate_scale", 1.0) for r in successful]))
+                if successful else 0.0
+            ),
+            "avg_relative_improvement": (
+                float(np.mean([
+                    r["anchor_gate_relative_improvement"]
+                    for r in successful
+                    if r.get("anchor_gate_relative_improvement") is not None
+                ]))
+                if any(r.get("anchor_gate_relative_improvement") is not None for r in successful)
+                else None
+            ),
+        },
         "grad_norm_stats": _summarize_grad_norms(successful),
         "results": all_results,
     }

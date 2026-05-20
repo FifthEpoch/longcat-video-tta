@@ -218,6 +218,7 @@ def extract_run(run_dir: Path) -> Optional[dict]:
         "es_disable", "es_check_every", "es_patience",
         "es_anchor_sigmas", "es_noise_draws", "es_strategy",
         "es_holdout_fraction",
+        "anchor_gate_mode", "anchor_gate_threshold", "anchor_gate_soft_scale",
         "clip_gate_enabled", "clip_gate_threshold", "clip_gate_backend", "clip_gate_model",
         "clip_gate_sample_frames", "clip_gate_aggregation",
         "clip_gate_sampling_mode", "clip_gate_late_fraction",
@@ -758,6 +759,14 @@ SERIES_INFO = {
         "purpose": "200-video discovery: AdaSteer step/LR sweep (UCF-101 standard horizon)",
         "sweep_params": ["delta_steps", "delta_lr"],
     },
+    "panda_200_anchor_gate": {
+        "purpose": "200-video discovery: anchor-loss gate for AdaSteer (Panda standard horizon)",
+        "sweep_params": ["anchor_gate_mode", "anchor_gate_threshold", "anchor_gate_soft_scale"],
+    },
+    "ucf101_200_anchor_gate": {
+        "purpose": "200-video discovery: anchor-loss gate for AdaSteer (UCF-101 standard horizon)",
+        "sweep_params": ["anchor_gate_mode", "anchor_gate_threshold", "anchor_gate_soft_scale"],
+    },
     "ucf101_full": {
         "purpose": "Cross-dataset: full-model TTA on UCF-101",
         "sweep_params": [],
@@ -904,6 +913,9 @@ _KEY_SHORT = {
     "es_anchor_sigmas": "sigmas",
     "es_noise_draws": "draws",
     "es_holdout_fraction": "holdout",
+    "anchor_gate_mode": "gate",
+    "anchor_gate_threshold": "gate_thr",
+    "anchor_gate_soft_scale": "gate_scale",
     "norm_target": "norm_tgt",
     "norm_lr": "LR",
     "film_lr": "LR",

@@ -65,6 +65,11 @@ ES_NOISE_DRAWS="${ES_NOISE_DRAWS:-2}"
 ES_STRATEGY="${ES_STRATEGY:-patience}"
 ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
 
+# Anchor-loss generation gate (AdaSteer)
+ANCHOR_GATE_MODE="${ANCHOR_GATE_MODE:-off}"
+ANCHOR_GATE_THRESHOLD="${ANCHOR_GATE_THRESHOLD:-0.0}"
+ANCHOR_GATE_SOFT_SCALE="${ANCHOR_GATE_SOFT_SCALE:-0.01}"
+
 # Data augmentation (enabled by default for all TTA methods)
 AUG_ENABLED="${AUG_ENABLED:-1}"
 AUG_FLIP="${AUG_FLIP:-1}"
@@ -504,6 +509,7 @@ case "${METHOD}" in
     echo "  Batch videos   : ${BATCH_VIDEOS}"
     echo "  Batch method   : ${BATCH_METHOD}"
     echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
+    echo "  Anchor gate    : mode=${ANCHOR_GATE_MODE}, threshold=${ANCHOR_GATE_THRESHOLD}, soft_scale=${ANCHOR_GATE_SOFT_SCALE}"
     echo "=============================================================================="
 
     POOL_FLAGS=""
@@ -523,6 +529,9 @@ case "${METHOD}" in
         --tta-grad-accum "${TTA_GRAD_ACCUM}" \
         --batch-videos "${BATCH_VIDEOS}" \
         --batch-method "${BATCH_METHOD}" \
+        --anchor-gate-mode "${ANCHOR_GATE_MODE}" \
+        --anchor-gate-threshold "${ANCHOR_GATE_THRESHOLD}" \
+        --anchor-gate-soft-scale "${ANCHOR_GATE_SOFT_SCALE}" \
         ${POOL_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \

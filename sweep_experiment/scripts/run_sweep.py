@@ -108,6 +108,10 @@ _KEY_TO_ENV = {
     "es_noise_draws": "ES_NOISE_DRAWS",
     "es_strategy": "ES_STRATEGY",
     "es_holdout_fraction": "ES_HOLDOUT_FRACTION",
+    # Anchor-loss gate
+    "anchor_gate_mode": "ANCHOR_GATE_MODE",
+    "anchor_gate_threshold": "ANCHOR_GATE_THRESHOLD",
+    "anchor_gate_soft_scale": "ANCHOR_GATE_SOFT_SCALE",
     # CLIP gate
     "clip_gate_enabled": "CLIP_GATE_ENABLED",
     "clip_gate_threshold": "CLIP_GATE_THRESHOLD",

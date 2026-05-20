@@ -278,6 +278,7 @@ class AnchoredEarlyStopper:
             "stopped_early": self.stopped_early,
             "best_step": self.best_step,
             "best_loss": self.best_loss,
+            "initial_loss": self.loss_history[0][1],
             "total_checks": len(self.loss_history),
             "loss_history": self.loss_history,
         }
