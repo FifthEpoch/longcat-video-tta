@@ -112,6 +112,10 @@ _KEY_TO_ENV = {
     "anchor_gate_mode": "ANCHOR_GATE_MODE",
     "anchor_gate_threshold": "ANCHOR_GATE_THRESHOLD",
     "anchor_gate_soft_scale": "ANCHOR_GATE_SOFT_SCALE",
+    # Anchor regularization
+    "anchor_reg_weight": "ANCHOR_REG_WEIGHT",
+    "anchor_reg_sigmas": "ANCHOR_REG_SIGMAS",
+    "anchor_reg_noise_draws": "ANCHOR_REG_NOISE_DRAWS",
     # CLIP gate
     "clip_gate_enabled": "CLIP_GATE_ENABLED",
     "clip_gate_threshold": "CLIP_GATE_THRESHOLD",

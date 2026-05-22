@@ -22,6 +22,7 @@ Usage:
 import argparse
 import copy
 import gc
+import hashlib
 import json
 import os
 import sys
@@ -46,6 +47,7 @@ from common import (
     encode_prompt,
     compute_flow_matching_loss,
     compute_flow_matching_loss_conditioned,
+    compute_flow_matching_loss_conditioned_fixed_grad,
     generate_video_continuation,
     save_results,
     save_video_from_numpy,
@@ -235,6 +237,11 @@ def optimize_delta_a(
     early_stopper: Optional[AnchoredEarlyStopper] = None,
     train_latents_variants: Optional[List[Dict]] = None,
     grad_accum: int = 1,
+    anchor_reg_latents: Optional[torch.Tensor] = None,
+    anchor_reg_weight: float = 0.0,
+    anchor_reg_sigmas: Optional[List[float]] = None,
+    anchor_reg_noise_draws: int = 1,
+    anchor_reg_video_id: str = "",
 ) -> Dict:
     """Optimize the delta vector using conditioning-aware loss.
 
@@ -251,12 +258,30 @@ def optimize_delta_a(
 
     if train_latents_variants is None:
         train_latents_variants = [{"latents": train_latents, "name": "orig"}]
+    anchor_reg_sigmas = anchor_reg_sigmas or [0.25, 0.5, 0.75]
+    anchor_reg_enabled = (
+        anchor_reg_weight > 0.0
+        and anchor_reg_latents is not None
+        and anchor_reg_latents.shape[2] > 0
+    )
+    anchor_reg_noises = []
+    if anchor_reg_enabled:
+        seed_base = int(hashlib.md5(anchor_reg_video_id.encode()).hexdigest()[:8], 16) % (2**31)
+        for draw_idx in range(anchor_reg_noise_draws):
+            gen = torch.Generator(device=device)
+            gen.manual_seed(seed_base + 1009 + draw_idx)
+            anchor_reg_noises.append(torch.randn(
+                anchor_reg_latents.shape, generator=gen,
+                device=device, dtype=anchor_reg_latents.dtype,
+            ))
 
     def _save_fn():
         return copy.deepcopy(wrapper.delta.data)
 
     wrapper.train()
     losses = []
+    base_losses = []
+    anchor_reg_losses = []
     raw_grad_norms = []
 
     es_check_time = 0.0
@@ -277,8 +302,25 @@ def optimize_delta_a(
                 device=device,
                 dtype=dtype,
             )
+            base_loss = loss
+            anchor_loss = None
+            if anchor_reg_enabled:
+                anchor_loss = compute_flow_matching_loss_conditioned_fixed_grad(
+                    dit=wrapper,
+                    cond_latents=cond_latents,
+                    target_latents=anchor_reg_latents,
+                    prompt_embeds=prompt_embeds,
+                    prompt_mask=prompt_mask,
+                    fixed_sigmas=anchor_reg_sigmas,
+                    fixed_noises=anchor_reg_noises,
+                    device=device,
+                    dtype=dtype,
+                )
+                loss = base_loss + anchor_reg_weight * anchor_loss
+                anchor_reg_losses.append(anchor_loss.item())
             (loss / grad_accum).backward()
             step_loss_sum += loss.item()
+            base_losses.append(base_loss.item())
 
         raw_norm = torch.nn.utils.clip_grad_norm_([wrapper.delta], float("inf")).item()
         raw_grad_norms.append(raw_norm)
@@ -315,6 +357,8 @@ def optimize_delta_a(
 
     return {
         "losses": losses,
+        "base_losses": base_losses,
+        "anchor_reg_losses": anchor_reg_losses,
         "delta_norm": wrapper.delta.detach().norm().item(),
         "raw_grad_norms": raw_grad_norms,
         "es_check_time": es_check_time,
@@ -547,6 +591,12 @@ def main():
                         help="Minimum relative anchor-loss improvement required to apply TTA.")
     parser.add_argument("--anchor-gate-soft-scale", type=float, default=0.01,
                         help="Relative anchor improvement that maps to scale=1.0 in soft mode.")
+    parser.add_argument("--anchor-reg-weight", type=float, default=0.0,
+                        help="Weight for differentiable fixed-sigma anchor regularization on held-out latents.")
+    parser.add_argument("--anchor-reg-sigmas", type=str, default="0.25,0.5,0.75",
+                        help="Comma-separated fixed sigma values for anchor regularization.")
+    parser.add_argument("--anchor-reg-noise-draws", type=int, default=1,
+                        help="Number of deterministic noise draws per sigma for anchor regularization.")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -573,6 +623,7 @@ def main():
     if args.tta_context_frames > args.tta_total_frames:
         args.tta_context_frames = args.tta_total_frames
     validate_tta_feature_budget(args, context="delta_a")
+    args.anchor_reg_sigmas_parsed = [float(x) for x in args.anchor_reg_sigmas.split(",") if x]
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -952,6 +1003,11 @@ def main():
                         early_stopper=early_stopper if val_lat is not None else None,
                         train_latents_variants=train_latents_variants,
                         grad_accum=args.tta_grad_accum,
+                        anchor_reg_latents=val_lat,
+                        anchor_reg_weight=args.anchor_reg_weight,
+                        anchor_reg_sigmas=args.anchor_reg_sigmas_parsed,
+                        anchor_reg_noise_draws=args.anchor_reg_noise_draws,
+                        anchor_reg_video_id=bd["video_name"],
                     )
                     timing["tta_train"] = time.time() - _t
 
@@ -983,6 +1039,8 @@ def main():
                 "train_time": train_time,
                 "es_check_time": opt_result.get("es_check_time", 0.0),
                 "final_loss": opt_result["losses"][-1] if opt_result["losses"] else None,
+                "final_base_loss": opt_result["base_losses"][-1] if opt_result.get("base_losses") else None,
+                "final_anchor_reg_loss": opt_result["anchor_reg_losses"][-1] if opt_result.get("anchor_reg_losses") else None,
                 "delta_norm": opt_result["delta_norm"],
                 "raw_grad_norms": opt_result.get("raw_grad_norms", []),
                 "batch_size": len(training_entries),
@@ -1169,6 +1227,9 @@ def main():
         "anchor_gate_mode": args.anchor_gate_mode,
         "anchor_gate_threshold": args.anchor_gate_threshold,
         "anchor_gate_soft_scale": args.anchor_gate_soft_scale,
+        "anchor_reg_weight": args.anchor_reg_weight,
+        "anchor_reg_sigmas": args.anchor_reg_sigmas,
+        "anchor_reg_noise_draws": args.anchor_reg_noise_draws,
         "batch_videos": args.batch_videos,
         "retrieval_pool_dir": args.retrieval_pool_dir,
         "num_videos": len(all_results),

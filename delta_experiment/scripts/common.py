@@ -560,6 +560,69 @@ def compute_flow_matching_loss_conditioned_fixed(
     return total_loss / max(count, 1)
 
 
+def compute_flow_matching_loss_conditioned_fixed_grad(
+    dit,
+    cond_latents: torch.Tensor,
+    target_latents: torch.Tensor,
+    prompt_embeds: torch.Tensor,
+    prompt_mask: torch.Tensor,
+    fixed_sigmas: List[float],
+    fixed_noises: List[torch.Tensor],
+    num_train_timesteps: int = 1000,
+    device: str = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
+    forward_fn=None,
+) -> torch.Tensor:
+    """Differentiable conditioning-aware fixed-sigma loss.
+
+    This mirrors ``compute_flow_matching_loss_conditioned_fixed`` but keeps
+    gradients so it can regularize the TTA objective directly.
+    """
+    cfg = _get_model_config(dit)
+    B, C, T_cond, H_lat, W_lat = cond_latents.shape
+    T_target = target_latents.shape[2]
+    T_total = T_cond + T_target
+
+    patch_t = cfg.patch_size[0]
+    N_cond = T_cond // patch_t
+    N_target = T_target // patch_t
+    N_total = T_total // patch_t
+
+    total_loss = None
+    count = 0
+    for sigma_val in fixed_sigmas:
+        sigma = torch.tensor([sigma_val], device=device, dtype=torch.float32)
+        sigma_expanded = sigma.view(1, 1, 1, 1, 1)
+
+        for noise in fixed_noises:
+            noisy_target = (1.0 - sigma_expanded) * target_latents + sigma_expanded * noise
+            hidden_states = torch.cat([cond_latents, noisy_target], dim=2).to(dtype)
+
+            timestep = torch.zeros(B, N_total, device=device, dtype=dtype)
+            timestep[:, N_cond:] = (sigma * num_train_timesteps).unsqueeze(1).expand(B, N_target).to(dtype)
+
+            if forward_fn is not None:
+                pred = forward_fn(hidden_states, timestep, N_cond)
+            else:
+                pred = dit(
+                    hidden_states=hidden_states,
+                    timestep=timestep,
+                    encoder_hidden_states=prompt_embeds,
+                    encoder_attention_mask=prompt_mask,
+                    num_cond_latents=N_cond,
+                )
+
+            pred_target = pred[:, :, T_cond:].to(torch.float32)
+            velocity_target = (noise - target_latents).to(torch.float32)
+            loss = F.mse_loss(pred_target, velocity_target)
+            total_loss = loss if total_loss is None else total_loss + loss
+            count += 1
+
+    if total_loss is None:
+        return torch.zeros((), device=device, dtype=torch.float32)
+    return total_loss / max(count, 1)
+
+
 # ============================================================================
 # Video generation helper (using pipeline)
 # ============================================================================

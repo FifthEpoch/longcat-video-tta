@@ -219,6 +219,7 @@ def extract_run(run_dir: Path) -> Optional[dict]:
         "es_anchor_sigmas", "es_noise_draws", "es_strategy",
         "es_holdout_fraction",
         "anchor_gate_mode", "anchor_gate_threshold", "anchor_gate_soft_scale",
+        "anchor_reg_weight", "anchor_reg_sigmas", "anchor_reg_noise_draws",
         "clip_gate_enabled", "clip_gate_threshold", "clip_gate_backend", "clip_gate_model",
         "clip_gate_sample_frames", "clip_gate_aggregation",
         "clip_gate_sampling_mode", "clip_gate_late_fraction",
@@ -783,6 +784,14 @@ SERIES_INFO = {
         "purpose": "200-video discovery: retrieval-batch AdaSteer (UCF-101 standard horizon)",
         "sweep_params": ["batch_videos"],
     },
+    "panda_200_anchor_reg": {
+        "purpose": "200-video discovery: anchor-regularized AdaSteer objective (Panda standard horizon)",
+        "sweep_params": ["anchor_reg_weight"],
+    },
+    "ucf101_200_anchor_reg": {
+        "purpose": "200-video discovery: anchor-regularized AdaSteer objective (UCF-101 standard horizon)",
+        "sweep_params": ["anchor_reg_weight"],
+    },
     "ucf101_full": {
         "purpose": "Cross-dataset: full-model TTA on UCF-101",
         "sweep_params": [],
@@ -932,6 +941,9 @@ _KEY_SHORT = {
     "anchor_gate_mode": "gate",
     "anchor_gate_threshold": "gate_thr",
     "anchor_gate_soft_scale": "gate_scale",
+    "anchor_reg_weight": "areg",
+    "anchor_reg_sigmas": "areg_sig",
+    "anchor_reg_noise_draws": "areg_draws",
     "norm_target": "norm_tgt",
     "norm_lr": "LR",
     "film_lr": "LR",

@@ -124,6 +124,9 @@ RETRIEVAL_POOL_DIR="${RETRIEVAL_POOL_DIR:-}"
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
 TTA_GRAD_ACCUM="${TTA_GRAD_ACCUM:-1}"
+ANCHOR_REG_WEIGHT="${ANCHOR_REG_WEIGHT:-0.0}"
+ANCHOR_REG_SIGMAS="${ANCHOR_REG_SIGMAS:-0.25,0.5,0.75}"
+ANCHOR_REG_NOISE_DRAWS="${ANCHOR_REG_NOISE_DRAWS:-1}"
 
 # Delta-B specific
 NUM_GROUPS="${NUM_GROUPS:-4}"
@@ -510,6 +513,7 @@ case "${METHOD}" in
     echo "  Batch method   : ${BATCH_METHOD}"
     echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
     echo "  Anchor gate    : mode=${ANCHOR_GATE_MODE}, threshold=${ANCHOR_GATE_THRESHOLD}, soft_scale=${ANCHOR_GATE_SOFT_SCALE}"
+    echo "  Anchor reg     : weight=${ANCHOR_REG_WEIGHT}, sigmas=${ANCHOR_REG_SIGMAS}, draws=${ANCHOR_REG_NOISE_DRAWS}"
     echo "=============================================================================="
 
     POOL_FLAGS=""
@@ -532,6 +536,9 @@ case "${METHOD}" in
         --anchor-gate-mode "${ANCHOR_GATE_MODE}" \
         --anchor-gate-threshold "${ANCHOR_GATE_THRESHOLD}" \
         --anchor-gate-soft-scale "${ANCHOR_GATE_SOFT_SCALE}" \
+        --anchor-reg-weight "${ANCHOR_REG_WEIGHT}" \
+        --anchor-reg-sigmas "${ANCHOR_REG_SIGMAS}" \
+        --anchor-reg-noise-draws "${ANCHOR_REG_NOISE_DRAWS}" \
         ${POOL_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
