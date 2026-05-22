@@ -133,6 +133,81 @@ Next action:
 
 ---
 
+## May 2026 - 200-Video Anchor-Loss Gate Sweep
+
+Date pasted/logged: May 22, 2026
+
+Purpose: test whether the existing anchor-loss validation signal can gate AdaSteer generation-time deltas. This reuses the early-stopping anchor loss, but changes the action from "stop/restore best step" to "use/skip/scale delta at generation time."
+
+Configs:
+- `sweep_experiment/configs/panda_200_anchor_gate.yaml`
+- `sweep_experiment/configs/ucf101_200_anchor_gate.yaml`
+
+Implementation commit: `b57f362 Add anchor-loss gating for AdaSteer`
+
+Shared setup:
+- Panda base config: `delta_steps=10`, `delta_lr=0.005` (winner from 200-video step/LR sweep).
+- UCF base config: `delta_steps=5`, `delta_lr=0.0025` (balanced candidate from 200-video step/LR sweep).
+- ES/anchor validation enabled: `es_disable=false`, `es_check_every=5`, `es_patience=3`, `es_anchor_sigmas=0.25,0.5,0.75`, `es_noise_draws=2`, `es_holdout_fraction=0.25`.
+- Gate modes tested: `G_OFF`, `G_LOG`, `G_BIN_0`, `G_BIN_001`, `G_SOFT_001`.
+
+SLURM status:
+- Panda `G_OFF` job `9218476` failed quickly (`FAILED`, exit `2:0`, elapsed `00:01:14`).
+- UCF `G_OFF` job `9218487` failed quickly (`FAILED`, exit `2:0`, elapsed `00:01:17`).
+- All non-off gate jobs completed.
+- Because `G_OFF` was intended as the ES-enabled/no-generation-gate control, compare against the previous non-ES 200-video winners with caution.
+
+### Panda-70M 200 Anchor Gate
+
+Matched references:
+- In-series no-TTA from step/LR sweep: FVD `333.70`, FID `54.13`, PSNR `18.3676`, SSIM `0.6564`, LPIPS `0.3290`.
+- Previous non-ES winner `S10_LR005`: FVD `316.34`, FID `53.59`, PSNR `18.4196`, SSIM `0.6572`, LPIPS `0.3272`.
+
+| Run ID | Status | N | PSNR | SSIM | LPIPS | FVD | dFVD vs NOTTA | dFVD vs S10_LR005 | FID | Use | Skip | Avg scale | Avg rel anchor impr |
+|--------|--------|---:|-----:|-----:|------:|----:|--------------:|------------------:|----:|----:|-----:|----------:|--------------------:|
+| G_OFF | failed | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| G_LOG | complete | 200 | 18.4356 | 0.6580 | 0.3272 | 321.59 | -12.11 | +5.24 | 53.76 | 200 | 0 | 1.000 | 0.00259 |
+| G_BIN_0 | complete | 200 | 18.4260 | 0.6585 | 0.3269 | 325.54 | -8.16 | +9.20 | 54.40 | 199 | 1 | 0.995 | 0.00262 |
+| G_BIN_001 | complete | 200 | 18.4020 | 0.6574 | 0.3270 | 321.62 | -12.08 | +5.28 | 53.92 | 189 | 11 | 0.945 | 0.00262 |
+| G_SOFT_001 | complete | 200 | 18.3493 | 0.6553 | 0.3293 | 321.80 | -11.90 | +5.46 | 53.92 | 199 | 1 | 0.260 | 0.00260 |
+
+Takeaways:
+- All completed anchor-gate variants improve FVD vs in-series no-TTA, but none beats the previous non-ES `S10_LR005` FVD.
+- `G_LOG` has the best Panda pointwise metrics among completed runs and improves FVD vs no-TTA, but FVD is worse than `S10_LR005` by +5.24.
+- Binary gating barely skips videos at threshold `0.0` (1/200) and only skips 11/200 at threshold `0.001`; the anchor signal is too weakly selective in this range.
+- Soft gating with `soft_scale=0.01` over-damps the delta (`avg_scale=0.26`) and hurts pointwise metrics.
+- Do not promote anchor gating for Panda unless the paper values pointwise gains over the stronger FVD from `S10_LR005`.
+
+### UCF-101 200 Anchor Gate
+
+Matched references:
+- In-series no-TTA from step/LR sweep: FVD `359.80`, FID `32.70`.
+- Previous balanced candidate `S5_LR0025`: FVD `353.30`, FID `32.72`.
+- Previous FVD-only winner `S5_LR001`: FVD `347.09`, FID `32.78`.
+
+Raw summary-level PSNR/SSIM/LPIPS fields remained `nan`; exporter pointwise metrics were finite. FVD/FID below are from raw summaries.
+
+| Run ID | Status | N | FVD | dFVD vs NOTTA | dFVD vs S5_LR0025 | FID | Use | Skip | Avg scale | Avg rel anchor impr |
+|--------|--------|---:|----:|--------------:|------------------:|----:|----:|-----:|----------:|--------------------:|
+| G_OFF | failed | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| G_LOG | complete | 200 | 356.06 | -3.74 | +2.76 | 32.58 | 200 | 0 | 1.000 | 0.00055 |
+| G_BIN_0 | complete | 200 | 363.78 | +3.97 | +10.47 | 32.56 | 192 | 8 | 0.960 | 0.00054 |
+| G_BIN_001 | complete | 200 | 358.42 | -1.38 | +5.12 | 32.71 | 10 | 190 | 0.050 | 0.00054 |
+| G_SOFT_001 | complete | 200 | 361.86 | +2.06 | +8.56 | 32.52 | 196 | 4 | 0.055 | 0.00055 |
+
+Takeaways:
+- `G_LOG` is the best UCF anchor-gate run by FVD, but it is worse than the previous balanced candidate `S5_LR0025` and much worse than the FVD-only `S5_LR001`.
+- Threshold `0.001` is too strict for UCF: it skips 190/200 videos because the average relative anchor improvement is only about `0.00054`.
+- Soft gating heavily damps the delta (`avg_scale=0.055`) and does not help FVD.
+- Do not promote anchor gating for UCF based on this sweep.
+
+Overall conclusion:
+- Anchor-loss validation is useful as a diagnostic/logging signal, but the simple binary/soft gate did not improve the 200-video Pareto frontier.
+- The best next promotion candidates remain Panda `S10_LR005` and UCF `S5_LR0025` (balanced) or UCF `S5_LR001` (FVD-only).
+- If revisiting anchor gating, the next experiment should tune thresholds from observed relative-improvement quantiles rather than fixed `0.0`/`0.001`, and should include a successful ES-enabled `G_OFF` control.
+
+---
+
 ## Known Issues and Caveats
 
 ### Gen-Start-Frame Misalignment Bug (fixed Feb 13, 2026)

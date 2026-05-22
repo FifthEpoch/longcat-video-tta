@@ -1,4 +1,4 @@
-updated: 2026-05-19
+updated: 2026-05-22
 goal: "Find TTA configs that improve both pointwise metrics and FVD, then scale winners to 1000 videos."
 
 completed:
@@ -43,6 +43,13 @@ pending_discovery:
       S10_LR0025: 9008402
       S10_LR005: 9008403
     outcome: "FVD-only winner S5_LR001: 359.80 -> 347.09 (-12.71 / -3.5%) with slight pointwise regression. Safer promotion candidate S5_LR0025: FVD 359.80 -> 353.30 (-6.50 / -1.8%) with exporter pointwise gains."
+  - id: anchor_gate_200
+    status: completed
+    purpose: "Evaluate anchor-loss gate modes on 200-video Panda and UCF discovery sets."
+    failed_controls:
+      panda_G_OFF: 9218476
+      ucf_G_OFF: 9218487
+    outcome: "Simple anchor gating did not beat prior winners. Panda best gate G_LOG reached FVD 321.59 vs prior S10_LR005 316.34. UCF best gate G_LOG reached FVD 356.06 vs prior S5_LR0025 353.30 and S5_LR001 347.09. Keep anchor gate as diagnostic; do not promote."
   - id: retrieval_batch_200
     status: planned
     purpose: "Test whether retrieval neighbors regularize AdaSteer."

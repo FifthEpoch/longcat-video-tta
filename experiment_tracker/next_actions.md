@@ -6,12 +6,13 @@
    - Panda standard: `S10_LR005`
    - UCF standard: `S5_LR0025` as balanced candidate, `S5_LR001` as FVD-only candidate
 2. Audit why UCF pointwise metrics are `nan` in raw summaries while exporter pointwise values are finite.
-3. Discuss gating and horizon-aware objective implementation details before adding new method code.
-4. Submit retrieval-batch discovery only after deciding whether the 1000-video validation should run first.
+3. If revisiting anchor gating, fix the failed `G_OFF` controls and tune thresholds from observed anchor-improvement quantiles.
+4. Discuss horizon-aware objective implementation details before adding new method code.
+5. Submit retrieval-batch discovery only after deciding whether the 1000-video validation should run first.
 
 ## Discussion After Initial Changes
 
-- Gating implementation: choose between baseline-quality gate, TTA-loss-slope gate, or prompt-alignment gate.
+- Anchor gating result: simple binary/soft anchor gates did not improve the 200-video Pareto frontier; keep as diagnostic unless we tune thresholds from quantiles.
 - Horizon-aware objective: decide whether to implement multi-noise consistency first or rollout self-consistency.
 
 ## Rule
