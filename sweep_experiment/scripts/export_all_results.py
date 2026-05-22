@@ -767,6 +767,22 @@ SERIES_INFO = {
         "purpose": "200-video discovery: anchor-loss gate for AdaSteer (UCF-101 standard horizon)",
         "sweep_params": ["anchor_gate_mode", "anchor_gate_threshold", "anchor_gate_soft_scale"],
     },
+    "panda_1000v_s10_lr005_validation": {
+        "purpose": "1000-video validation: AdaSteer S10 LR=0.005 (Panda standard horizon)",
+        "sweep_params": ["delta_steps", "delta_lr"],
+    },
+    "ucf101_1000v_s5_lr0025_validation": {
+        "purpose": "1000-video validation: AdaSteer S5 LR=0.0025 (UCF-101 standard horizon)",
+        "sweep_params": ["delta_steps", "delta_lr"],
+    },
+    "panda_200_batch_retrieval_delta_a": {
+        "purpose": "200-video discovery: retrieval-batch AdaSteer (Panda standard horizon)",
+        "sweep_params": ["batch_videos"],
+    },
+    "ucf101_200_batch_retrieval_delta_a": {
+        "purpose": "200-video discovery: retrieval-batch AdaSteer (UCF-101 standard horizon)",
+        "sweep_params": ["batch_videos"],
+    },
     "ucf101_full": {
         "purpose": "Cross-dataset: full-model TTA on UCF-101",
         "sweep_params": [],

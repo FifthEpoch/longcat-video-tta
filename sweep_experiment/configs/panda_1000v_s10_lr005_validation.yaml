@@ -1,0 +1,37 @@
+# Panda-70M 1000-video validation: 200-video winner S10_LR005
+#
+# Purpose: full-scale validation of the standard-horizon AdaSteer config that
+# won the 200-video discovery sweep across FVD and pointwise metrics.
+
+method: delta_a
+series: panda
+series_name: panda_1000v_s10_lr005_validation
+description: "Panda-70M 1000-video validation: AdaSteer S10 LR=0.005"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: NOTTA
+    delta_steps: 0
+    delta_lr: 0.005
+
+  - run_id: S10_LR005
+    delta_steps: 10
+    delta_lr: 0.005
+
