@@ -7,7 +7,8 @@
 3. Decide whether Panda `AREG02` deserves a 500-video or 1000-video validation run after current 1000-video validation finishes.
 4. Audit why UCF pointwise metrics are `nan` in raw summaries while exporter pointwise values are finite.
 5. If revisiting anchor gating, fix the failed `G_OFF` controls and tune thresholds from observed anchor-improvement quantiles.
-6. **NEW (May 23, 2026):** Run the long-horizon failure-mode diagnostic on the corrected 999-video Panda long-context No-TTA vs AdaSteer S10 runs to identify caption themes where AdaSteer regressed (see `scripts/diagnose_long_horizon_failures.py`). Findings will drive horizon-aware config design in Phase B below.
+6. **NEW (May 23, 2026, validation):** Run `scripts/recompute_fvd_fid_from_stats.py` against the four long-context Panda 999v runs (No-TTA, AdaSteer S10, LoRA R8, TinyLoRA LAST24). Cluster command sequence is in `sweep_experiment/reports/experiment_metrics_log.md` under "May 23, 2026 - FVD/FID Chunked-Merge Validation". The local numerical unit test (`scripts/test_chunked_fvd_equivalence.py`) already proved the merge math is identical to single-pass FVD/FID to 1e-15 relative precision; this cluster step is the implementation-level check against the actual stored sufficient statistics. Acceptance: <1e-4 relative agreement between recomputed FVD/FID and `merged_summary.json` for all four runs.
+7. **NEW (May 23, 2026, Phase A):** After step 6 confirms the +5.4 FVD regression is real (not an artifact), run the long-horizon failure-mode diagnostic on the corrected 999-video Panda long-context No-TTA vs AdaSteer S10 runs (`scripts/diagnose_long_horizon_failures.py`) to identify caption themes where AdaSteer regressed. Findings drive horizon-aware config design in Phase B below.
 
 ## Phase A: Long-Horizon Failure Diagnostics (Sat May 23 → Sun May 24)
 

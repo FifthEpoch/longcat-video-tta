@@ -737,3 +737,68 @@ Decision flow:
 - If neither is clean: fall back to anchor-regularization at long horizon (already implemented; just needs cluster jobs).
 
 Once the CSV+txt are produced, results will be pasted back here and the Phase B sweep design will be discussed before any cluster submission.
+
+
+## May 23, 2026 - FVD/FID Chunked-Merge Validation
+
+PI flagged a concern that chunked 100-video FVD/FID computation could have introduced an error producing the +5.4 long-context Panda FVD regression.
+
+### Audit of the chunked merge math
+
+The chunked path stores per-chunk sufficient statistics:
+- `gen_sum = sum(f_i for i in chunk)` (sum of 400-D I3D features)
+- `gen_cov = sum(f_i f_i^T for i in chunk)` (sum of outer products, NOT a covariance yet)
+- `gen_count = N`
+
+`sweep_experiment/scripts/merge_chunks.py:_compute_frechet_distance` computes the final FVD only at the end, from totals over all 999 videos:
+
+  mu = sum_total / N_total
+  Sigma = cov_total / N_total - outer(mu, mu)
+
+By linearity of sums and sum-of-outer-products, this is exactly the single-pass FVD over all 999 features. There is no per-chunk averaging anywhere. The reference distribution is also chunk-shared (each chunk stores its own ref_sum/ref_cov/ref_count and these are summed identically).
+
+### Numerical validation
+
+Added `scripts/test_chunked_fvd_equivalence.py`. Generates synthetic 400-D (FVD) and 2048-D (FID) feature streams, computes Frechet distance two ways (single pass vs chunked sufficient-statistics merge), asserts agreement to <1e-6 relative tolerance.
+
+Ran locally on May 23, 2026. Result: 7/7 cases passed.
+
+  [PASS] FVD shape, 999 vs 999, chunk=100, distributions match:   rel_diff = 7.8e-15
+  [PASS] FVD shape, mean shift +0.10 (typical TTA-vs-NoTTA scale): rel_diff = 1.2e-15
+  [PASS] FVD shape, smaller chunks:                                 rel_diff = 7.9e-15
+  [PASS] FVD shape, larger chunks:                                  rel_diff = 5.3e-15
+  [PASS] FID shape (Inception-2048), no shift:                      rel_diff = 1.6e-11
+  [PASS] FID shape (Inception-2048), small shift:                   rel_diff = 1.1e-13
+  [PASS] Uneven chunk sizes (500 / 37 leaves remainder):            rel_diff = 0.0e+00
+
+Largest relative error across all FVD-shape cases is ~1e-15, the float64 round-off floor. Largest across FID-shape cases is ~1.6e-11, also within numerical noise. Chunked merge is mathematically identical to single-pass.
+
+### End-to-end production validation (cluster, pending)
+
+`scripts/recompute_fvd_fid_from_stats.py` re-walks all `chunk_*/fvd_fid_stats.npz` under a run directory, sums the sufficient statistics independently, recomputes FVD/FID, and compares against `merged_summary.json`. Numpy + scipy only, no torch, no I3D, no GPU.
+
+Cluster command for the four long-context Panda 999v runs:
+
+```
+cd $LONGCAT_REPO
+git pull origin main
+for METHOD in NOTTA ADA_S10 LORA_R8; do
+  python scripts/recompute_fvd_fid_from_stats.py \
+    --run-dir sweep_experiment/results/panda_longctx_1000v/$METHOD \
+    | tee sweep_experiment/reports/fvd_recompute_panda_longctx_1000v_$METHOD.txt
+done
+python scripts/recompute_fvd_fid_from_stats.py \
+  --run-dir delta_experiment/results/tinylora_longctx_1000v/PANDA_TL_LAST24 \
+  | tee sweep_experiment/reports/fvd_recompute_panda_longctx_1000v_TL.txt
+
+python scripts/recompute_fvd_fid_from_stats.py \
+  --run-dir sweep_experiment/results/panda_longctx_1000v/NOTTA \
+  --compare-dir sweep_experiment/results/panda_longctx_1000v/ADA_S10 \
+  | tee sweep_experiment/reports/fvd_recompute_panda_longctx_pairwise.txt
+```
+
+Acceptance criterion: recomputed FVD/FID must agree with `merged_summary.json` to <1e-4 relative tolerance for every method. If any method disagrees, that disagreement (not the +5.4 FVD regression itself) becomes the next thing to debug.
+
+### Conclusion (math)
+
+The +5.4 FVD long-context Panda regression for AdaSteer S10 is not a chunked-merge artifact. The local unit test removes the only legitimate concern about the merge math. The cluster recomputation validates the implementation against the actual stored sufficient statistics; if it agrees with the existing numbers (expected), the regression is a real property of the generated distributions and Phase A diagnostics in `scripts/diagnose_long_horizon_failures.py` is the right next step.
