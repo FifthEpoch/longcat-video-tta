@@ -2,18 +2,16 @@
 
 ## Immediate Cluster Actions
 
-1. Decide whether to promote the 200-video winners to 1000-video validation:
-   - Panda standard: `S10_LR005`
-   - UCF standard: `S5_LR0025` as balanced candidate, `S5_LR001` as FVD-only candidate
-2. Audit why UCF pointwise metrics are `nan` in raw summaries while exporter pointwise values are finite.
-3. If revisiting anchor gating, fix the failed `G_OFF` controls and tune thresholds from observed anchor-improvement quantiles.
-4. Discuss horizon-aware objective implementation details before adding new method code.
-5. Submit retrieval-batch discovery only after deciding whether the 1000-video validation should run first.
+1. Wait for the four 1000-video validation jobs to finish, then merge/log Panda `S10_LR005` and UCF `S5_LR0025`.
+2. Inspect failed retrieval-batch `K5`/`K10` SLURM logs before resubmitting retrieval jobs.
+3. Decide whether Panda `AREG02` deserves a 500-video or 1000-video validation run after current 1000-video validation finishes.
+4. Audit why UCF pointwise metrics are `nan` in raw summaries while exporter pointwise values are finite.
+5. If revisiting anchor gating, fix the failed `G_OFF` controls and tune thresholds from observed anchor-improvement quantiles.
 
 ## Discussion After Initial Changes
 
 - Anchor gating result: simple binary/soft anchor gates did not improve the 200-video Pareto frontier; keep as diagnostic unless we tune thresholds from quantiles.
-- Horizon-aware objective: decide whether to implement multi-noise consistency first or rollout self-consistency.
+- Horizon-aware objective result: Panda anchor regularization (`AREG02`) is promising at 200 videos; UCF anchor regularization is not.
 
 ## Rule
 

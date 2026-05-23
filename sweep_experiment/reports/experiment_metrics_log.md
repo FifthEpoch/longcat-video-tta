@@ -208,6 +208,105 @@ Overall conclusion:
 
 ---
 
+## May 2026 - Active Validation, Retrieval, and Anchor-Regularization Batch
+
+Date pasted/logged: May 23, 2026
+
+Implementation commits:
+- `759bc0e Add validation and retrieval submission batch`
+- `1d7d3a1 Add anchor-regularized AdaSteer objective`
+
+### 1000-Video Standard-Horizon Validation
+
+Status: still running/checkpointed as of May 23.
+
+Configs:
+- `sweep_experiment/configs/panda_1000v_s10_lr005_validation.yaml`
+- `sweep_experiment/configs/ucf101_1000v_s5_lr0025_validation.yaml`
+
+SLURM/job status:
+- `9424554` Panda `NOTTA`: running, checkpoint `next_idx=431`, `ok=431`.
+- `9424555` Panda `S10_LR005`: running, checkpoint `next_idx=271`, `ok=271`.
+- `9424556` UCF `NOTTA`: running, checkpoint `next_idx=435`, `ok=435`.
+- `9424557` UCF `S5_LR0025`: running, checkpoint `next_idx=322`, `ok=322`.
+
+No final metrics yet. Wait for summaries before judging full-scale validation.
+
+### 200-Video Anchor-Regularized AdaSteer Objective
+
+Purpose: test whether adding differentiable fixed-sigma heldout anchor loss to the TTA objective improves robustness over the previous 200-video winners.
+
+Configs:
+- `sweep_experiment/configs/panda_200_anchor_reg.yaml`
+- `sweep_experiment/configs/ucf101_200_anchor_reg.yaml`
+
+Reference baselines:
+- Panda in-series no-TTA from step/LR sweep: FVD `333.70`, FID `54.13`, PSNR `18.3676`, SSIM `0.6564`, LPIPS `0.3290`.
+- Panda previous winner `S10_LR005`: FVD `316.34`, FID `53.59`, PSNR `18.4196`, SSIM `0.6572`, LPIPS `0.3272`.
+- UCF in-series no-TTA from step/LR sweep: FVD `359.80`, FID `32.70`.
+- UCF balanced candidate `S5_LR0025`: FVD `353.30`, FID `32.72`.
+- UCF FVD-only winner `S5_LR001`: FVD `347.09`, FID `32.78`.
+
+Panda results:
+
+| Run ID | Anchor reg weight | N | PSNR | SSIM | LPIPS | FVD | dFVD vs NOTTA | dFVD vs S10_LR005 | FID | Train(s) |
+|--------|------------------:|---:|-----:|-----:|------:|----:|--------------:|------------------:|----:|---------:|
+| AREG0 | 0.00 | 200 | 18.4435 | 0.6579 | 0.3266 | 329.36 | -4.34 | +13.01 | 53.93 | 57.5 |
+| AREG005 | 0.05 | 200 | 18.3876 | 0.6575 | 0.3285 | 317.97 | -15.73 | +1.63 | 55.00 | 86.5 |
+| AREG01 | 0.10 | 200 | 18.4139 | 0.6581 | 0.3276 | 316.50 | -17.20 | +0.16 | 53.75 | 85.5 |
+| AREG02 | 0.20 | 200 | 18.4285 | 0.6569 | 0.3264 | 310.97 | -22.73 | -5.37 | 53.35 | 84.2 |
+
+Panda takeaways:
+- `AREG02` is a new 200-video Panda best by FVD: `333.70 -> 310.97` (-22.73 / -6.8%), beating previous `S10_LR005` by 5.37 FVD points.
+- `AREG02` also improves PSNR and LPIPS vs both no-TTA and previous winner, but SSIM is slightly below previous `S10_LR005`.
+- Anchor regularization costs ~84s train/video vs ~57s for unregularized 10-step AdaSteer.
+- Candidate follow-up: consider 500-video or 1000-video validation of Panda `AREG02` only after current 1000-video `S10_LR005` validation completes, because compute cost is higher.
+
+UCF results:
+
+Raw summary-level PSNR/SSIM/LPIPS fields remained `nan`; exporter pointwise metrics were finite. FVD/FID below are from raw summaries.
+
+| Run ID | Anchor reg weight | N | FVD | dFVD vs NOTTA | dFVD vs S5_LR0025 | dFVD vs S5_LR001 | FID | Train(s) |
+|--------|------------------:|---:|----:|--------------:|------------------:|-----------------:|----:|---------:|
+| AREG0 | 0.00 | 200 | 361.84 | +2.04 | +8.54 | +14.75 | 32.60 | 30.1 |
+| AREG005 | 0.05 | 200 | 360.61 | +0.81 | +7.31 | +13.52 | 32.66 | 44.5 |
+| AREG01 | 0.10 | 200 | 356.21 | -3.59 | +2.91 | +9.12 | 32.51 | 43.8 |
+| AREG02 | 0.20 | 200 | 353.95 | -5.85 | +0.65 | +6.86 | 32.70 | 44.6 |
+
+UCF takeaways:
+- `AREG02` is the best anchor-reg UCF run, but it does not beat prior `S5_LR0025` or `S5_LR001` on FVD.
+- Anchor regularization is not a UCF promotion candidate from this sweep.
+
+### 200-Video Retrieval-Batch AdaSteer
+
+Purpose: test retrieval-augmented shared delta quality, not independent TTA throughput.
+
+Configs:
+- `sweep_experiment/configs/panda_200_batch_retrieval_delta_a.yaml`
+- `sweep_experiment/configs/ucf101_200_batch_retrieval_delta_a.yaml`
+
+SLURM status:
+- Panda `K1` job `9424558`: completed.
+- Panda `K5` job `9424559`: failed quickly (`FAILED`, exit `1:0`, elapsed `00:03:29`).
+- Panda `K10` job `9424560`: failed quickly (`FAILED`, exit `1:0`, elapsed `00:02:15`).
+- UCF `K1` job `9424561`: completed.
+- UCF `K5` job `9424562`: failed quickly (`FAILED`, exit `1:0`, elapsed `00:03:38`).
+- UCF `K10` job `9424563`: failed quickly (`FAILED`, exit `1:0`, elapsed `00:02:17`).
+
+Completed `K1` results:
+
+| Series | Run ID | N | PSNR | SSIM | LPIPS | FVD | FID | Train(s) |
+|--------|--------|---:|-----:|-----:|------:|----:|----:|---------:|
+| Panda retrieval | K1 | 200 | 18.4519 | 0.6577 | 0.3269 | 319.26 | 54.58 | 58.2 |
+| UCF retrieval | K1 | 200 | nan | nan | nan | 350.74 | 32.74 | 30.2 |
+
+Retrieval-batch takeaways:
+- `K1` is effectively a same-method control and completed.
+- Retrieval settings `K5`/`K10` failed before producing summaries, so no retrieval quality conclusion yet.
+- Need to inspect failed SLURM logs before resubmitting retrieval; likely causes include retrieval pool/path handling, memory during pool embedding, or runtime dependency issues.
+
+---
+
 ## Known Issues and Caveats
 
 ### Gen-Start-Frame Misalignment Bug (fixed Feb 13, 2026)

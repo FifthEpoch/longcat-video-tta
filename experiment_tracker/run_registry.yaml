@@ -1,4 +1,4 @@
-updated: 2026-05-22
+updated: 2026-05-23
 goal: "Find TTA configs that improve both pointwise metrics and FVD, then scale winners to 1000 videos."
 
 completed:
@@ -51,8 +51,21 @@ pending_discovery:
       ucf_G_OFF: 9218487
     outcome: "Simple anchor gating did not beat prior winners. Panda best gate G_LOG reached FVD 321.59 vs prior S10_LR005 316.34. UCF best gate G_LOG reached FVD 356.06 vs prior S5_LR0025 353.30 and S5_LR001 347.09. Keep anchor gate as diagnostic; do not promote."
   - id: retrieval_batch_200
-    status: planned
+    status: partial_failed
     purpose: "Test whether retrieval neighbors regularize AdaSteer."
+    outcome: "K1 controls completed (Panda FVD 319.26, UCF FVD 350.74), but K5/K10 failed quickly for both datasets. Inspect SLURM logs before resubmitting retrieval."
+  - id: anchor_reg_200
+    status: completed
+    purpose: "Test differentiable fixed-sigma anchor regularization in AdaSteer objective."
+    outcome: "Panda AREG02 is a new 200-video FVD best: 333.70 -> 310.97 (-6.8%), beating prior S10_LR005 by 5.37 FVD points with PSNR/LPIPS gains but slight SSIM drop. UCF AREG02 improves over NOTTA but does not beat S5_LR0025/S5_LR001."
+  - id: standard_1000_validation
+    status: running
+    purpose: "Full 1000-video validation of Panda S10_LR005 and UCF S5_LR0025."
+    checkpoints:
+      panda_NOTTA: 431
+      panda_S10_LR005: 271
+      ucf_NOTTA: 435
+      ucf_S5_LR0025: 322
 
 promotion_gates:
   discovery_to_final_1000:
