@@ -708,3 +708,32 @@ No LoRA config meaningfully beats baseline FVD (641.1) at 100 videos. Selected t
 | DV_BARE | Delta Vector | steps=10, lr=0.005 | 561.1 | 18.604 | PENDING |
 | LORA_R4_S20 | LoRA | R4, last_4, 20s, lr=1e-5 | 641.5 | 18.569 | PENDING |
 | LORA_R8_S10 | LoRA | R8, all, 10s, lr=5e-5 | 644.6 | 18.616 | PENDING |
+
+
+---
+
+## May 23, 2026 - Long-Horizon Failure-Mode Diagnostic (Plan)
+
+Following the locked Related-Works framing (option A: treat long-context Panda 999v as an honest caveat), the PI requested a diagnostic pass to understand *why* AdaSteer regresses on long-context Panda before designing horizon-aware configs.
+
+Run inputs:
+- No-TTA: `sweep_experiment/results/panda_longctx_1000v/NOTTA/` (10 chunks).
+- AdaSteer S10: `sweep_experiment/results/panda_longctx_1000v/ADA_S10/` (10 chunks).
+- Captions: `datasets/panda_1000_480p/metadata.csv` (filename, caption, [category]).
+
+Diagnostic script: `scripts/diagnose_long_horizon_failures.py` (stdlib only, runs on cluster). It produces:
+1. `sweep_experiment/reports/long_horizon_failure_panda_1000v.csv` -- per-video PSNR/SSIM/LPIPS for both methods, deltas, caption, and a coarse theme label (sport, dance_music, cooking, nature, animal, vehicle, talking_head, crowd, indoor_misc, other).
+2. `sweep_experiment/reports/long_horizon_failure_panda_1000v.txt` -- stdout summary with per-theme mean deltas, quintile buckets on No-TTA PSNR, and top-25 worst/best videos for qualitative spot-check.
+
+Hypotheses to test:
+- H1 (motion mismatch): AdaSteer hurts most on high-motion themes (sport, dance, vehicle) because the conditioning frames under-represent future motion magnitude. Predicts strongly negative dPSNR on `sport` and `vehicle`.
+- H2 (scene cuts): AdaSteer hurts on talking_head/news clips that contain a cut into a new scene. Predicts negative dSSIM in talking_head despite high No-TTA PSNR.
+- H3 (overfit to clean cond): AdaSteer hurts worst on the highest-PSNR quintile, i.e., it overfits to already-good conditioning frames and adds bias.
+- H4 (scale-dependent regression): AdaSteer hurts most on the lowest-PSNR quintile, i.e., when conditioning information is weak the residual extrapolates poorly.
+
+Decision flow:
+- If a theme has strongly negative mean dPSNR and large N: design a theme-gated AdaSteer or theme-aware step schedule (Phase B).
+- If quintile structure dominates: design a quality-conditioned step schedule (less steps for clean conditioning, more for noisy).
+- If neither is clean: fall back to anchor-regularization at long horizon (already implemented; just needs cluster jobs).
+
+Once the CSV+txt are produced, results will be pasted back here and the Phase B sweep design will be discussed before any cluster submission.

@@ -1,5 +1,5 @@
 updated: 2026-05-23
-goal: "Find TTA configs that improve both pointwise metrics and FVD, then scale winners to 1000 videos."
+goal: "Find TTA configs that improve both pointwise metrics and FVD, then scale winners to 1000 videos. Phase A (May 23): long-horizon failure diagnostics on the corrected 999-video Panda long-context run."
 
 completed:
   - id: panda_standard_999_adasteer
@@ -81,6 +81,32 @@ pending_discovery:
       ucf_D1: 9433814
       ucf_D2: 9433815
       ucf_D3: 9433816
+  - id: long_horizon_failure_diagnostic_panda
+    status: pending
+    purpose: "Diagnose which caption themes and quality buckets drive the long-context Panda 999-video FVD regression for AdaSteer S10."
+    inputs:
+      notta_dir: "(cluster path to corrected 999v Panda long-context No-TTA results)"
+      treat_dir: "(cluster path to corrected 999v Panda long-context AdaSteer S10 results)"
+      dataset_dir: "datasets/panda_1000_480p"
+    script: "scripts/diagnose_long_horizon_failures.py"
+    expected_outputs:
+      - "sweep_experiment/reports/long_horizon_failure_panda_1000v.csv"
+      - "sweep_experiment/reports/long_horizon_failure_panda_1000v.txt"
+    decision_inputs:
+      - "Themes with strongly negative dPSNR/dSSIM or positive dLPIPS."
+      - "Quintile of No-TTA PSNR most hurt by AdaSteer (low vs high)."
+      - "Top-25 worst-regression videos and their caption signatures."
+
+planned:
+  - id: long_horizon_adasteer_v2
+    status: design
+    purpose: "After Phase A diagnostic, design long-horizon AdaSteer configs targeting the identified failure modes."
+    candidates:
+      - "Conditioning-window-aware step/LR schedule keyed to (cond_frames / total_frames)."
+      - "Anchor-regularization (AREG02-style) lifted to the long-context 93-frame setting."
+      - "Multi-noise / multi-sigma objective at long horizon (--anchor-reg-noise-draws)."
+      - "Theme-conditioned CLIP gate to skip TTA on themes Phase A flags as harmful."
+    discussion_required: true
 
 promotion_gates:
   discovery_to_final_1000:
