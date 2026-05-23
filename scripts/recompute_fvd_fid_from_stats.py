@@ -39,11 +39,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy.linalg import sqrtm
+
+
+def _log(msg: str) -> None:
+    print(msg, flush=True)
 
 
 _COV_EPS = 1e-6
@@ -123,14 +129,21 @@ def merge_and_compute(stats: List[Dict], kind: str) -> Optional[float]:
     if not all(gen_sum_key in s for s in stats):
         return None
 
+    _log(f"  [{kind.upper()}] summing sufficient statistics over {len(stats)} chunks...")
+    t0 = time.time()
     gen_sum = sum(s[gen_sum_key] for s in stats)
     gen_cov = sum(s[gen_cov_key] for s in stats)
     gen_count = sum(int(s[gen_n_key]) for s in stats)
     ref_sum = sum(s[ref_sum_key] for s in stats)
     ref_cov = sum(s[ref_cov_key] for s in stats)
     ref_count = sum(int(s[ref_n_key]) for s in stats)
-
-    return frechet_distance(gen_sum, gen_cov, gen_count, ref_sum, ref_cov, ref_count)
+    d = gen_sum.shape[0]
+    _log(f"  [{kind.upper()}] summed in {time.time()-t0:.1f}s. dim={d}, gen_n={gen_count}, ref_n={ref_count}")
+    _log(f"  [{kind.upper()}] running scipy.linalg.sqrtm on a {d}x{d} matrix... (FID 2048x2048 typically 1-5 min/run on 1 CPU core; set OMP_NUM_THREADS to speed up)")
+    t0 = time.time()
+    out = frechet_distance(gen_sum, gen_cov, gen_count, ref_sum, ref_cov, ref_count)
+    _log(f"  [{kind.upper()}] done in {time.time()-t0:.1f}s.")
+    return out
 
 
 def load_merged_summary(run_dir: Path) -> Dict:
@@ -141,12 +154,16 @@ def load_merged_summary(run_dir: Path) -> Dict:
     return {}
 
 
-def summarize(run_dir: Path) -> Dict[str, Optional[float]]:
-    print(f"\n=== {run_dir} ===")
+def summarize(run_dir: Path, skip_fid: bool = False) -> Dict[str, Optional[float]]:
+    _log(f"\n=== {run_dir} ===")
     stats = load_chunk_stats(run_dir)
     consistency_audit(stats)
     fvd = merge_and_compute(stats, "fvd")
-    fid = merge_and_compute(stats, "fid")
+    if skip_fid:
+        _log("  [FID] skipped (--skip-fid).")
+        fid = None
+    else:
+        fid = merge_and_compute(stats, "fid")
     merged = load_merged_summary(run_dir)
     stored_fvd = merged.get("fvd")
     stored_fid = merged.get("fid")
@@ -175,17 +192,20 @@ def main() -> None:
                         help="Run directory containing chunk_N/fvd_fid_stats.npz")
     parser.add_argument("--compare-dir", type=Path, default=None,
                         help="Optional second run to compute the FVD/FID delta against.")
+    parser.add_argument("--skip-fid", action="store_true",
+                        help="Skip FID computation. FID's 2048x2048 sqrtm is the slow part "
+                             "(1-5 min per run on 1 CPU core). FVD alone finishes in seconds.")
     args = parser.parse_args()
 
-    a = summarize(args.run_dir)
+    a = summarize(args.run_dir, skip_fid=args.skip_fid)
     if args.compare_dir is not None:
-        b = summarize(args.compare_dir)
-        print("\n=== Pairwise delta (compare - run) ===")
+        b = summarize(args.compare_dir, skip_fid=args.skip_fid)
+        _log("\n=== Pairwise delta (compare - run) ===")
         if a["fvd"] is not None and b["fvd"] is not None:
-            print(f"  dFVD = {b['fvd'] - a['fvd']:+.4f}  "
+            _log(f"  dFVD = {b['fvd'] - a['fvd']:+.4f}  "
                   f"(run={a['fvd']:.4f}, compare={b['fvd']:.4f})")
         if a["fid"] is not None and b["fid"] is not None:
-            print(f"  dFID = {b['fid'] - a['fid']:+.4f}  "
+            _log(f"  dFID = {b['fid'] - a['fid']:+.4f}  "
                   f"(run={a['fid']:.4f}, compare={b['fid']:.4f})")
 
 
