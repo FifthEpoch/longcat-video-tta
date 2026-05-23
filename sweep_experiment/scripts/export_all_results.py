@@ -792,6 +792,14 @@ SERIES_INFO = {
         "purpose": "200-video discovery: anchor-regularized AdaSteer objective (UCF-101 standard horizon)",
         "sweep_params": ["anchor_reg_weight"],
     },
+    "panda_200_anchor_reg_draws": {
+        "purpose": "200-video discovery: anchor-regularization noise-draw sweep (Panda standard horizon)",
+        "sweep_params": ["anchor_reg_noise_draws"],
+    },
+    "ucf101_200_anchor_reg_draws": {
+        "purpose": "200-video discovery: anchor-regularization noise-draw sweep (UCF-101 standard horizon)",
+        "sweep_params": ["anchor_reg_noise_draws"],
+    },
     "ucf101_full": {
         "purpose": "Cross-dataset: full-model TTA on UCF-101",
         "sweep_params": [],
