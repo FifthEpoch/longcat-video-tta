@@ -143,10 +143,8 @@ Two batching experiments are planned for the paper.
    - Contributions and summary results.
 
 2. Related Work
-   - Video diffusion transformers and video continuation.
-   - Test-time adaptation for generative models.
-   - Parameter-efficient fine-tuning: LoRA, adapters, TinyLoRA/SVD-constrained methods.
-   - Adaptive normalization and timestep conditioning in diffusion models.
+   - Full draft lives in `sweep_experiment/reports/related_works.md` (May 23, 2026). Uses a 6-subsection narrative-aligned organization: video DiTs and long-horizon continuation, test-time adaptation in vision, adaptation and personalization of pretrained diffusion models, parameter-efficient fine-tuning, modulation pathways and adaptive normalization, and evaluation of video generation.
+   - Three organizational proposals (A: method-axis, B: problem-axis, C: hybrid narrative-aligned) are recorded at the top of `related_works.md`; the draft uses Proposal C pending sign-off.
 
 3. Method
    - Problem setup and no-leakage adaptation objective.
