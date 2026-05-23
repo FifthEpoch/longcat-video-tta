@@ -61,11 +61,26 @@ pending_discovery:
   - id: standard_1000_validation
     status: running
     purpose: "Full 1000-video validation of Panda S10_LR005 and UCF S5_LR0025."
+    job_ids:
+      panda_NOTTA: 9424554
+      panda_S10_LR005: 9424555
+      ucf_NOTTA: 9424556
+      ucf_S5_LR0025: 9424557
     checkpoints:
       panda_NOTTA: 431
       panda_S10_LR005: 271
       ucf_NOTTA: 435
       ucf_S5_LR0025: 322
+  - id: anchor_reg_draws_200
+    status: queued
+    purpose: "Sweep deterministic anchor regularization noise draws at anchor_reg_weight=0.2."
+    job_ids:
+      panda_D1: 9433811
+      panda_D2: 9433812
+      panda_D3: 9433813
+      ucf_D1: 9433814
+      ucf_D2: 9433815
+      ucf_D3: 9433816
 
 promotion_gates:
   discovery_to_final_1000:
