@@ -1,0 +1,48 @@
+# Series 23: Delta-A Optimization Experiments
+#
+# Delta-A is the best-performing TTA method. These experiments push it further:
+#
+# DAO1: More conditioning frames (24 instead of 14) with proper ES.
+#       More conditioning gives more training signal and better generation context.
+#
+# DAO2: Extended training (100 steps) with aggressive ES to find the true
+#       optimal step count with high precision.
+#
+# DAO3: Combined Delta-A + norm tuning. Tunes both the timestep delta vector
+#       AND the pre_crs_attn_norm affine params simultaneously.
+
+# Note: DAO1 and DAO2 use method=delta_a (existing script).
+# DAO3 uses method=norm_tune with --also-tune-delta flag.
+# Since methods differ, we split into two config files.
+# This file covers DAO1 and DAO2.
+
+method: delta_a
+series: 23
+series_name: delta_a_optimized
+description: "Delta-A optimization: more frames, more steps with ES"
+
+fixed:
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  gen_start_frame: 32
+  delta_lr: 5.0e-3
+
+sweep:
+  # DAO1: Best config + 24 conditioning frames + proper ES
+  - run_id: DAO1
+    num_cond_frames: 24
+    num_frames: 28
+    delta_steps: 20
+    es_check_every: 1
+    es_patience: 5
+
+  # DAO2: Extended training to find true optimal step
+  - run_id: DAO2
+    num_cond_frames: 14
+    num_frames: 28
+    delta_steps: 100
+    es_check_every: 1
+    es_patience: 10

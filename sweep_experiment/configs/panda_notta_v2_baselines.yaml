@@ -1,0 +1,61 @@
+# Panda-70M: No-TTA baselines for v2 sweep (100 videos)
+#
+# Baselines at each guidance_scale and num_inference_steps variant.
+# Existing baseline (guidance=4.0, infer=50): PSNR=18.612 — already have this.
+#
+# IMPORTANT: Run with --data-dir datasets/panda_1000_480p --output-base sweep_experiment/results/sanity_100
+method: delta_a
+series: panda
+series_name: panda_notta_v2
+description: "Panda-70M: No-TTA baselines for v2 sweep (100 videos)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  delta_steps: 0
+  delta_lr: 0.005
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  no_save_videos: false
+  aug_enabled: true
+  aug_flip: true
+
+sweep:
+  # Guidance scale baselines
+  - run_id: NOTTA_G0
+    guidance_scale: 0.0
+    num_inference_steps: 50
+
+  - run_id: NOTTA_G2p5
+    guidance_scale: 2.5
+    num_inference_steps: 50
+
+  - run_id: NOTTA_G5
+    guidance_scale: 5.0
+    num_inference_steps: 50
+
+  - run_id: NOTTA_G7p5
+    guidance_scale: 7.5
+    num_inference_steps: 50
+
+  - run_id: NOTTA_G10
+    guidance_scale: 10.0
+    num_inference_steps: 50
+
+  # Inference step baselines
+  - run_id: NOTTA_I25
+    guidance_scale: 4.0
+    num_inference_steps: 25
+
+  - run_id: NOTTA_I100
+    guidance_scale: 4.0
+    num_inference_steps: 100

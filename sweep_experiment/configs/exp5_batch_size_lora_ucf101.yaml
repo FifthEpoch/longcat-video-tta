@@ -1,0 +1,46 @@
+# Series 38 (UCF-101): Retrieval-Augmented Batch-Size Ablation (LoRA)
+# Same as exp5_batch_size_lora but uses UCF-101 1000-video pool.
+#
+# Submit:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/exp5_batch_size_lora_ucf101.yaml \
+#       --account torch_pr_36_mren \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/ucf101_100_480p
+
+method: lora
+series: 38
+series_name: exp5_batch_size_lora_ucf101
+description: "Retrieval-augmented batch-size ablation: LoRA TTA (UCF-101)"
+
+fixed:
+  lora_rank: 1
+  lora_alpha: 2
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_modules: "qkv,proj"
+  target_ffn: false
+  batch_method: similarity
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/ucf101_1000_480p
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: BS_L1
+    batch_videos: 1
+  - run_id: BS_L2
+    batch_videos: 5
+  - run_id: BS_L3
+    batch_videos: 10
+  - run_id: BS_L4
+    batch_videos: 50
+  - run_id: BS_L5
+    batch_videos: 100

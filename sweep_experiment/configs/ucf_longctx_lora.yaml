@@ -1,0 +1,46 @@
+# UCF-101: Long context frame generation (LoRA)
+#
+# Tests LongCat's long-context generation on UCF-101 (61 frames = 14 cond + 47 gen).
+# num_frames=61 is the longest 4k+1 value that fits within UCF's 62-frame minimum.
+# gen_start_frame=14 on 50 videos. Best LoRA config from 100-video study.
+#
+# Submit with:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/ucf_longctx_lora.yaml \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/ucf101_100_480p \
+#       --account torch_pr_36_mren \
+#       --time 24:00:00
+
+method: lora
+series: ucf
+series_name: ucf_longctx
+description: "UCF-101 long-context: 61-frame generation (LoRA, 50 videos)"
+
+fixed:
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 10.0
+  num_cond_frames: 14
+  num_frames: 61
+  gen_start_frame: 14
+  tta_total_frames: 14
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 50
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: LORA_R8
+    lora_rank: 8
+    lora_alpha: 16
+    lora_target_blocks: all
+    num_steps: 10
+    learning_rate: 5.0e-5

@@ -1,0 +1,143 @@
+# AdaSteer Ablation Study — Feature cost/benefit analysis
+#
+# All runs at the known-best AdaSteer config: steps=10, lr=0.005, guidance=4.0.
+# Detailed per-module timing is now recorded automatically.
+#
+# Ablation axes:
+#   1. Early Stopping (ES):  check every 1 step (every epoch for AdaSteer)
+#   2. CLIP-gate:            per-sample gating before TTA
+#   3. Video Augmentation:   flip + rotation
+#   4. Gradient Accumulation: 2x/4x noise draws per optimizer step
+#
+# Design: Each ablation axis is isolated (one feature on at a time),
+# plus a combined ES+CLIP run and a full-features run.
+#
+# IMPORTANT: Run with --data-dir datasets/panda_1000_480p --output-base sweep_experiment/results/sanity_100
+method: delta_a
+series: panda
+series_name: panda_adasteer_ablation
+description: "AdaSteer ablation: ES / CLIP-gate / augmentation / grad-accum (100 videos)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  no_save_videos: false
+
+sweep:
+  # ═══════════════════════════════════════════════════════════════════
+  # 0) No-TTA baseline at guidance=4.0
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: NOTTA_G4
+    delta_steps: 0
+    delta_lr: 0.005
+    es_disable: true
+    clip_gate_enabled: false
+    aug_enabled: false
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 1) Bare AdaSteer — no ES, no CLIP, no augmentation
+  #    This is the timing/quality reference for all other ablations.
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_BARE
+    delta_steps: 10
+    delta_lr: 0.005
+    es_disable: true
+    clip_gate_enabled: false
+    aug_enabled: false
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 2) Early Stopping ablation (CLIP off, Aug off)
+  #    check_every=1 so ES evaluates after every training step.
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_ES1
+    delta_steps: 10
+    delta_lr: 0.005
+    es_disable: false
+    es_check_every: 1
+    es_patience: 2
+    clip_gate_enabled: false
+    aug_enabled: false
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 3) CLIP-gate ablation (ES off, Aug off)
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_CLIP
+    delta_steps: 10
+    delta_lr: 0.005
+    es_disable: true
+    clip_gate_enabled: true
+    clip_gate_threshold: 0.25
+    clip_gate_log_only: false
+    aug_enabled: false
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 4) Video Augmentation ablation (ES off, CLIP off)
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_AUG
+    delta_steps: 10
+    delta_lr: 0.005
+    es_disable: true
+    clip_gate_enabled: false
+    aug_enabled: true
+    aug_flip: true
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 5) ES + CLIP-gate combined (Aug off)
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_ES_CLIP
+    delta_steps: 10
+    delta_lr: 0.005
+    es_disable: false
+    es_check_every: 1
+    es_patience: 2
+    clip_gate_enabled: true
+    clip_gate_threshold: 0.25
+    clip_gate_log_only: false
+    aug_enabled: false
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 6) Full features: ES + CLIP + Augmentation
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_FULL
+    delta_steps: 10
+    delta_lr: 0.005
+    es_disable: false
+    es_check_every: 1
+    es_patience: 2
+    clip_gate_enabled: true
+    clip_gate_threshold: 0.25
+    clip_gate_log_only: false
+    aug_enabled: true
+    aug_flip: true
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 7-8) Gradient accumulation sweep (bare AdaSteer + more noise draws)
+  #      Same wall-steps but each step averages 2x/4x noise samples.
+  # ═══════════════════════════════════════════════════════════════════
+  - run_id: AS_GA2
+    delta_steps: 10
+    delta_lr: 0.005
+    tta_grad_accum: 2
+    es_disable: true
+    clip_gate_enabled: false
+    aug_enabled: false
+
+  - run_id: AS_GA4
+    delta_steps: 10
+    delta_lr: 0.005
+    tta_grad_accum: 4
+    es_disable: true
+    clip_gate_enabled: false
+    aug_enabled: false

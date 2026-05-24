@@ -1,0 +1,50 @@
+# Panda-70M: LoRA TTA -- ES x CLIP ablation (1000 videos)
+# Uses R4, alpha=8, LR=1e-6, last_4 blocks (best from UCF-101 Phase 2)
+# 2x2 ablation: {ES OFF, ES ON} x {CLIP OFF, CLIP ON}
+method: lora
+series: panda
+series_name: panda_lora_ablation
+description: "Panda-70M: LoRA TTA ES+CLIP ablation (R4, LR=1e-6, 1000 videos)"
+
+fixed:
+  learning_rate: 1.0e-6
+  lora_rank: 4
+  lora_alpha: 8
+  lora_target_blocks: last_4
+  num_steps: 30
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 10.0
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: LORA_noES_noCLIP
+    es_disable: true
+
+  - run_id: LORA_ES_noCLIP
+    es_check_every: 2
+    es_patience: 3
+
+  - run_id: LORA_noES_CLIP
+    es_disable: true
+    clip_gate_enabled: true
+    clip_gate_threshold: 0.135
+
+  - run_id: LORA_ES_CLIP
+    es_check_every: 2
+    es_patience: 3
+    clip_gate_enabled: true
+    clip_gate_threshold: 0.135

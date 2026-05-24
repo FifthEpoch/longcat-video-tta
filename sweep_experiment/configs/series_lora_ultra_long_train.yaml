@@ -1,0 +1,58 @@
+# Series 32: Ultra-LoRA Long-Train with Early Stopping
+#
+# Goal: Extend the best ultra-constrained LoRA configs beyond 20 steps
+# with ES to find the true optimal step count.
+#
+# Previous results (20 max steps):
+#   LB4 (last_2, qkv, α=0.05) = 22.64 PSNR, best_step=18.4, 3/86 stopped
+#   LB2 (last_1, qkv, α=0.05) = 22.19 PSNR, best_step=19.6, 2/91 stopped
+#   LB3 (last_2, qkv, α=0.01) = 22.05 PSNR, best_step=13.5, 18/86 stopped
+#
+# LB4 is the best LoRA result across all experiments. Its best_step=18.4
+# at 20 max suggests it could improve with more room. LB3 had stability
+# issues (86/100 ok) — lower alpha (0.01) may be more stable at 50 steps.
+
+method: lora
+series: 32
+series_name: lora_ultra_long_train
+description: "Ultra-constrained LoRA extended to 50 steps with ES"
+
+fixed:
+  lora_rank: 1
+  learning_rate: 2.0e-4
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+  es_noise_draws: 2
+  es_anchor_sigmas: "0.25,0.5,0.75"
+  es_holdout_fraction: 0.25
+
+sweep:
+  - run_id: LBES1
+    lora_target_blocks: "last_2"
+    target_modules: "qkv"
+    lora_alpha: 0.05
+    num_steps: 50
+
+  - run_id: LBES2
+    lora_target_blocks: "last_1"
+    target_modules: "qkv"
+    lora_alpha: 0.05
+    num_steps: 50
+
+  - run_id: LBES3
+    lora_target_blocks: "last_2"
+    target_modules: "qkv"
+    lora_alpha: 0.01
+    num_steps: 50

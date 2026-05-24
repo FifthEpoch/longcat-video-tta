@@ -1,0 +1,60 @@
+# Delta-B Hidden-State Residual Sweep
+#
+# Motivation: The original Delta-B targets the timestep embedding (512-dim),
+# which corrupts noise-level information and performs poorly on LongCat.
+# In contrast, Open-Sora v2.0's Delta-B targets `vec` (combined timestep +
+# CLIP embedding, 3072-dim) and works well.
+#
+# This sweep tests "hidden" mode: per-group deltas added as residuals to
+# hidden states AFTER each block (4096-dim). This mirrors Open-Sora's
+# approach of modifying the representation stream rather than the denoising
+# schedule. Also includes a delta_final for the final layer.
+#
+# Param count (hidden mode):
+#   4 groups × 4096 + 4096 (final) = 20,480 params (~0.00015%)
+#   1 group  × 4096 + 4096 (final) =  8,192 params
+#
+# We sweep groups and LR, using the same training setup as the original
+# Delta-B best config (delta_lr=1e-2, 20 steps).
+
+method: delta_b
+series: 19
+series_name: delta_b_hidden_sweep
+description: "Delta-B with hidden-state residual injection (fixed from timestep)"
+
+fixed:
+  delta_target: hidden
+  delta_steps: 20
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  es_check_every: 1
+  es_patience: 5
+
+sweep:
+  # ── Groups sweep at LR 1e-2 (best LR from original Delta-B) ──
+  - run_id: DBH1
+    num_groups: 1
+    delta_lr: 1.0e-2
+  - run_id: DBH2
+    num_groups: 4
+    delta_lr: 1.0e-2
+  - run_id: DBH3
+    num_groups: 12
+    delta_lr: 1.0e-2
+
+  # ── LR sweep at 4 groups ──
+  - run_id: DBH4
+    num_groups: 4
+    delta_lr: 1.0e-3
+  - run_id: DBH5
+    num_groups: 4
+    delta_lr: 5.0e-3
+  - run_id: DBH6
+    num_groups: 4
+    delta_lr: 5.0e-2

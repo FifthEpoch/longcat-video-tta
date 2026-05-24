@@ -1,0 +1,38 @@
+# UCF-101: Long context frame generation at full dataset scale (LoRA)
+#
+# 61 frames (14 cond + 47 gen), 100 videos (full UCF-101 subset).
+# Matches ucf_longctx_lora.yaml but at full 100-video scale.
+
+method: lora
+series: ucf
+series_name: ucf_longctx_100v
+description: "UCF-101 long-context 100v: 61-frame generation (LoRA)"
+
+fixed:
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 10.0
+  num_cond_frames: 14
+  num_frames: 61
+  gen_start_frame: 14
+  tta_total_frames: 14
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: LORA_R8
+    lora_rank: 8
+    lora_alpha: 16
+    lora_target_blocks: all
+    num_steps: 10
+    learning_rate: 5.0e-5

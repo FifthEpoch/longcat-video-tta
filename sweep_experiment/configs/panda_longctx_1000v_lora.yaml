@@ -1,0 +1,39 @@
+# Panda-70M: Long context frame generation at scale (LoRA)
+#
+# 93 frames (14 cond + 79 gen), 1000 videos.
+# Matches panda_longctx_lora.yaml but at full 1000-video scale.
+# Video saving disabled to conserve disk.
+
+method: lora
+series: panda
+series_name: panda_longctx_1000v
+description: "Panda-70M long-context 1000v: 93-frame generation (LoRA)"
+
+fixed:
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 10.0
+  num_cond_frames: 14
+  num_frames: 93
+  gen_start_frame: 14
+  tta_total_frames: 14
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: LORA_R8
+    lora_rank: 8
+    lora_alpha: 16
+    lora_target_blocks: all
+    num_steps: 10
+    learning_rate: 5.0e-5

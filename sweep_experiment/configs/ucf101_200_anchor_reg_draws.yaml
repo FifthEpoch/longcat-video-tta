@@ -1,0 +1,42 @@
+# UCF-101 200-video discovery: anchor-regularization noise-draw sweep
+#
+# Holds anchor-reg weight at 0.2 and tests whether more deterministic anchor
+# noise draws stabilize/improve the fixed-sigma objective.
+
+method: delta_a
+series: ucf101
+series_name: ucf101_200_anchor_reg_draws
+description: "UCF-101 200-video discovery: anchor-reg noise draws"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 200
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  delta_steps: 5
+  delta_lr: 0.0025
+  anchor_reg_weight: 0.2
+  anchor_reg_sigmas: "0.25,0.5,0.75"
+
+sweep:
+  - run_id: D1
+    anchor_reg_noise_draws: 1
+
+  - run_id: D2
+    anchor_reg_noise_draws: 2
+
+  - run_id: D3
+    anchor_reg_noise_draws: 3
+

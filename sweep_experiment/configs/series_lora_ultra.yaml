@@ -1,0 +1,73 @@
+# Ultra-Constrained LoRA Sweep ("Option B")
+#
+# Even more aggressive parameter reduction than Option A.
+# Option A minimum was last_4 blocks × qkv × alpha=0.1 (~65K params).
+# Here we push further with last_1 and last_2 blocks, and also test
+# proj-only targeting which has fewer params per block.
+#
+# Param counts per block (rank=1):
+#   qkv target:  self_attn.qkv (16,384) + cross_attn.q_linear (8,192) + cross_attn.kv_linear (12,288)
+#                = 36,864 params/block
+#   proj target: self_attn.proj (8,192) + cross_attn.proj (8,192)
+#                = 16,384 params/block
+#
+# Expected total params:
+#   last_1 × qkv  → ~37K     last_1 × proj → ~16K
+#   last_2 × qkv  → ~74K     last_2 × proj → ~33K
+#
+# Very low alpha values (0.01, 0.05) to further dampen LoRA contribution.
+
+method: lora
+series: 16
+series_name: lora_ultra_constrained
+description: "Ultra-constrained LoRA: last 1-2 blocks, very low alpha"
+
+fixed:
+  lora_rank: 1
+  learning_rate: 2.0e-4
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  # ── last_1 block × qkv (~37K params) ──
+  - run_id: LB1
+    lora_target_blocks: "last_1"
+    target_modules: "qkv"
+    lora_alpha: 0.01
+  - run_id: LB2
+    lora_target_blocks: "last_1"
+    target_modules: "qkv"
+    lora_alpha: 0.05
+
+  # ── last_2 blocks × qkv (~74K params) ──
+  - run_id: LB3
+    lora_target_blocks: "last_2"
+    target_modules: "qkv"
+    lora_alpha: 0.01
+  - run_id: LB4
+    lora_target_blocks: "last_2"
+    target_modules: "qkv"
+    lora_alpha: 0.05
+
+  # ── last_1 block × proj only (~16K params) ──
+  - run_id: LB5
+    lora_target_blocks: "last_1"
+    target_modules: "proj"
+    lora_alpha: 0.01
+
+  # ── last_2 blocks × proj only (~33K params) ──
+  - run_id: LB6
+    lora_target_blocks: "last_2"
+    target_modules: "proj"
+    lora_alpha: 0.01

@@ -1,0 +1,59 @@
+# Panda-70M: AdaSteer parameter count sweep (100 videos)
+#
+# Tests whether fewer or more params improve metrics.
+# Uses delta_b with num_groups and delta_dim to control param count.
+#
+# Param counts:
+#   delta_dim=64,  G=1 →    64 params
+#   delta_dim=128, G=1 →   128 params
+#   delta_dim=256, G=1 →   256 params
+#   (delta_dim=512, G=1 → 512 params — already done in diagnostic)
+#   G=2, dim=512        → 1024 params
+#   G=4, dim=512        → 2048 params
+#
+# All at steps=5, lr=0.005 (best FVD from diagnostic).
+method: delta_b
+series: panda
+series_name: panda_adasteer_params
+description: "Panda-70M: AdaSteer param count sweep (64-2048 params, 100 videos)"
+
+fixed:
+  delta_steps: 5
+  delta_lr: 0.005
+  delta_target: timestep
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # Sub-512: fewer params per group
+  - run_id: P64
+    num_groups: 1
+    delta_dim: 64
+
+  - run_id: P128
+    num_groups: 1
+    delta_dim: 128
+
+  - run_id: P256
+    num_groups: 1
+    delta_dim: 256
+
+  # Above-512: more groups
+  - run_id: G2
+    num_groups: 2
+
+  - run_id: G4
+    num_groups: 4

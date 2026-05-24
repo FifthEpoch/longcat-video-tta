@@ -1,0 +1,39 @@
+# Series 4: LoRA -- Learning Rate Sweep (Standard: all blocks)
+# Goal: Find optimal LR for standard LoRA (rank=1, all blocks, 1.7M params).
+# Fixed: lora_rank=1, lora_alpha=2.0, all blocks, steps=20
+# Swept: learning_rate
+
+method: lora
+series: 4
+series_name: lora_lr_sweep
+description: "LoRA LR sweep — standard config (rank=1, all blocks)"
+
+fixed:
+  lora_rank: 1
+  lora_alpha: 2.0
+  num_steps: 20
+  warmup_steps: 3
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  target_modules: "qkv"
+  target_ffn: false
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 32
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+
+sweep:
+  - run_id: L6
+    learning_rate: 5.0e-5
+  - run_id: L7
+    learning_rate: 1.0e-4
+  - run_id: L8
+    learning_rate: 2.0e-4
+  - run_id: L9
+    learning_rate: 5.0e-4
+  - run_id: L10
+    learning_rate: 1.0e-3

@@ -1,0 +1,60 @@
+# Panda-70M: Autoregressive rollout sweep (baseline + AdaSteer)
+#
+# Goal: Same as UCF rollout sweep but on Panda-70M which has longer videos,
+# potentially supporting more rollout steps.
+# gen_start_frame=14 maximizes rollout room (conditioning on frames 0-13).
+method: delta_a
+series: panda
+series_name: panda_rollout_sweep
+description: "Panda-70M: rollout sweep (baseline + AdaSteer, 1/2/3 steps)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 14
+  tta_total_frames: 14
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # Baseline (no TTA) at each rollout depth
+  - run_id: NOTTA_R1
+    delta_steps: 0
+    delta_lr: 0.005
+    rollout_steps: 1
+
+  - run_id: NOTTA_R2
+    delta_steps: 0
+    delta_lr: 0.005
+    rollout_steps: 2
+
+  - run_id: NOTTA_R3
+    delta_steps: 0
+    delta_lr: 0.005
+    rollout_steps: 3
+
+  # AdaSteer (10 steps, lr=5e-3) at each rollout depth
+  - run_id: ADA_R1
+    delta_steps: 10
+    delta_lr: 5.0e-3
+    rollout_steps: 1
+
+  - run_id: ADA_R2
+    delta_steps: 10
+    delta_lr: 5.0e-3
+    rollout_steps: 2
+
+  - run_id: ADA_R3
+    delta_steps: 10
+    delta_lr: 5.0e-3
+    rollout_steps: 3
