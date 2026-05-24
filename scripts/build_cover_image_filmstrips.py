@@ -21,6 +21,7 @@ import argparse
 import csv
 import html
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -84,27 +85,59 @@ def load_summary_order(method_dir: Path) -> Dict[str, int]:
     return out
 
 
+def _numeric_id(video_name: str) -> Optional[int]:
+    """Strip leading zeros from the trailing digit run.
+
+    Examples: ``panda_0387`` -> 387, ``ucf101_v0010`` -> 10. The renamer used
+    by the sweep runner names output MP4s with this numeric prefix followed
+    by ``_<caption-slug>_..._<method>.mp4``.
+    """
+    m = re.search(r"(\d+)$", video_name)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
 def find_mp4(videos_dir: Path, video_name: str,
              idx_by_name: Dict[str, int]) -> Optional[Path]:
-    """Locate the MP4 for video_name in videos_dir. Defensive."""
+    """Locate the MP4 for ``video_name`` in ``videos_dir``.
+
+    Tries multiple naming conventions because the sweep runner has used a few
+    different output schemes across runs:
+
+    1. ``<video_name>.mp4`` (raw GT files in ``datasets/``).
+    2. ``<video_name>*.mp4`` (LoRA dirs: e.g. ``panda_0867_lora.mp4``).
+    3. ``<numeric_id>_*.mp4`` (NOTTA / AdaSteer rename:
+       ``867_a-large-red-truck-..._adasteer.mp4`` for ``panda_0867``).
+    4. ``<results_idx>_*.mp4`` from ``summary.json`` ordering (legacy).
+    5. Substring fallback.
+    """
     if not videos_dir.is_dir():
         return None
-    # 1. Direct match: <video_name>.mp4 (e.g., GT case)
+    # 1. Direct match
     direct = videos_dir / f"{video_name}.mp4"
     if direct.exists():
         return direct
-    # 2. Original pre-rename pattern: <video_name>_<method>.mp4
-    pre = list(videos_dir.glob(f"{video_name}*.mp4"))
-    if len(pre) == 1:
+    # 2. video_name prefix
+    pre = sorted(videos_dir.glob(f"{video_name}*.mp4"))
+    if pre:
         return pre[0]
-    # 3. Post-rename pattern: <idx>_*.mp4
+    # 3. Numeric-tail prefix (strip leading zeros: panda_0867 -> 867)
+    nid = _numeric_id(video_name)
+    if nid is not None:
+        num_glob = sorted(videos_dir.glob(f"{nid}_*.mp4"))
+        if num_glob:
+            return num_glob[0]
+    # 4. results-array idx from summary.json
     idx = idx_by_name.get(video_name)
     if idx is not None:
         post = sorted(videos_dir.glob(f"{idx}_*.mp4"))
-        if len(post) >= 1:
-            # Prefer one that also matches a method suffix shape
+        if post:
             return post[0]
-    # 4. Substring fallback
+    # 5. Substring fallback
     sub = list(videos_dir.glob(f"*{video_name}*.mp4"))
     if len(sub) == 1:
         return sub[0]
