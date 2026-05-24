@@ -1,0 +1,36 @@
+# Collapsed-LoRA regeneration on the LoRA-collapse cover-image subset.
+#
+# Exact match to the ucf500_tta_baseline/LORA config so the per-frame
+# collapse magnitudes line up with the candidate-selection CSV:
+#   method=lora_tta, rank=8, alpha=16, num_steps=50, learning_rate=2e-4
+# This is the "single-clip TTA breaks LoRA" failure mode we want on the
+# cover. Saving videos so the filmstrip builder has something to read.
+
+method: lora
+series: ucf500_lora_collapse_cover
+series_name: ucf500_lora_collapse_cover
+description: "UCF-101 LoRA-collapse cover subset: collapsed-LoRA regeneration"
+
+fixed:
+  lora_rank: 8
+  lora_alpha: 16.0
+  num_steps: 50
+  learning_rate: 2.0e-4
+  warmup_steps: 0
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: false
+  compute_fid: false
+  es_disable: true
+  no_save_videos: false
+
+sweep:
+  - run_id: LORA_R8_S50

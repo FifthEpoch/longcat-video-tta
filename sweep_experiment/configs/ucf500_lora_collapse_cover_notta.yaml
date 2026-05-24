@@ -1,0 +1,33 @@
+# No-TTA regeneration on the LoRA-collapse cover-image subset.
+# 30 UCF-101 videos selected by find_lora_collapse_candidates.py.
+# Matches the original ucf500_notta config (full-model TTA path with steps=0)
+# so the regenerated NOTTA videos are pixel-for-pixel reproducible vs the
+# 423-video benchmark on the shared 30 IDs.
+
+method: full
+series: ucf500_lora_collapse_cover
+series_name: ucf500_lora_collapse_cover
+description: "UCF-101 LoRA-collapse cover subset: No-TTA regeneration with saved videos"
+
+fixed:
+  learning_rate: 0.0
+  num_steps: 0
+  warmup_steps: 0
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  optimizer: sgd
+  es_disable: true
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 100
+  compute_fvd: false
+  compute_fid: false
+  no_save_videos: false
+
+sweep:
+  - run_id: NOTTA
