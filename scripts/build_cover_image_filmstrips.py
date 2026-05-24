@@ -12,8 +12,8 @@ ordering in each method's summary.json, then falls back to globbing for
 the original ``<video_name>*.mp4`` pattern. This handles both
 pre-rename and post-rename directory states.
 
-Dependencies: numpy, opencv-python (both already installed by the
-env_setup script). No new packages required.
+Dependencies: numpy, opencv-python, Pillow (all already installed by the
+env_setup script via torchvision / matplotlib). No new packages required.
 """
 from __future__ import annotations
 
@@ -177,15 +177,19 @@ def put_label(img: np.ndarray, text: str, *,
               thickness: int = 1) -> None:
     """Draw ``text`` onto a BGR uint8 image in-place using PIL.
 
-    OpenCV 4.9's ``cv2.putText`` Python binding can reject perfectly valid
-    numpy arrays in some environments ("img is not a numpy array, neither a
-    scalar"). PIL's text rasteriser is more forgiving and yields sharper
-    glyphs anyway, so we route all label drawing through it.
+    Notes on the cv2 avoidance:
+        On some cluster installs ``opencv-python==4.9.0`` is built against a
+        different numpy ABI than what is loaded at runtime, so every cv2 call
+        with a numpy array we allocated ourselves raises
+        ``src is not a numpy array, neither a scalar``. The arrays cv2 itself
+        creates (e.g. from ``VideoCapture.read``) still work, but anything we
+        build via ``np.full`` / ``np.vstack`` does not. We therefore do BGR
+        <-> RGB conversions with plain numpy indexing instead of
+        ``cv2.cvtColor`` and rasterise text with PIL.
     """
     if not isinstance(img, np.ndarray) or img.ndim != 3 or img.shape[2] != 3:
         return
-    rgb = cv2.cvtColor(np.ascontiguousarray(img, dtype=np.uint8),
-                       cv2.COLOR_BGR2RGB)
+    rgb = np.ascontiguousarray(img[:, :, ::-1])
     pil_img = Image.fromarray(rgb)
     draw = ImageDraw.Draw(pil_img)
     font = _get_font(max(10, int(round(scale * 28))))
@@ -195,8 +199,8 @@ def put_label(img: np.ndarray, text: str, *,
     cap_h = max(6, int(round(scale * 22)))
     pos = (int(org[0]), int(org[1]) - cap_h)
     draw.text(pos, text, fill=pil_colour, font=font)
-    new_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    img[:, :, :] = new_bgr
+    new_rgb = np.array(pil_img)
+    img[:, :, :] = new_rgb[:, :, ::-1]
 
 
 def compose_row(label: str, frames: List[np.ndarray],
@@ -377,7 +381,8 @@ def main() -> None:
         rank_tag = f"{dpsnr:+.2f}" if dpsnr is not None else "nan"
         out_name = f"{video_id}_dpsnr{rank_tag}.png"
         out_path = args.out_dir / out_name
-        cv2.imwrite(str(out_path), strip)
+        # PIL save avoids the cv2 numpy-ABI rejection on cluster wheels.
+        Image.fromarray(np.ascontiguousarray(strip[:, :, ::-1])).save(out_path)
         successes.append({
             "video": video_id, "out": out_name, "dpsnr": dpsnr,
             "dssim": dssim, "dlpips": dlpips, "theme": theme,
