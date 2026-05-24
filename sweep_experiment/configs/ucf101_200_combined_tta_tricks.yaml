@@ -1,0 +1,78 @@
+# UCF-101 200-video discovery: combined-tricks AdaSteer sweep
+#
+# Tests whether anchor-regularisation + retrieval rehabilitate the
+# previously-dominated S20 setting, and whether the two regularisers
+# stack. All runs hold the current UCF best (anchor_reg_weight=0.2,
+# anchor_reg_noise_draws=2 -- note UCF prefers 2 draws while Panda
+# prefers 1, see panda_200_anchor_reg_draws vs ucf101_200_anchor_reg_draws).
+#
+# Prior best (reference):
+#   - ucf101_200_anchor_reg_draws/D2:            FVD 349.63   (S10, AREG, D=2)
+#   - ucf101_200_anchor_reg/AREG02:              FVD 353.95   (S10, AREG, D=1)
+#   - ucf101_200_batch_retrieval_delta_a/K1:     FVD 350.74   (S10, retrieval only)
+#   - ucf101_200_adasteer_steps_lr/S5_LR0025:    FVD 353.30   (control, no AREG)
+#
+# This sweep:
+#   S10_AREG_D2         S10 control replica  (matches D2; pins noise floor)
+#   S20_AREG_D2         S20 with anchor reg  (does AREG save S20 on UCF?)
+#   S10_AREG_D2_K1      S10 + AREG + retrieval (tricks-stack at safe step count)
+#   S20_AREG_D2_K1      S20 + AREG + retrieval (full stack -- the biggest EV cell)
+#   S20_AREG_D2_LR125   S20 with halved LR   (or does S20 just need smaller updates?)
+#
+# UCF base LR is 0.0025 (the discovery-sweep balanced winner), so halved LR is
+# 1.25e-3.
+
+method: delta_a
+series: ucf101
+series_name: ucf101_200_combined_tta_tricks
+description: "UCF-101 200-video discovery: combined-tricks AdaSteer (S10/S20 x AREG x retrieval)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 200
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  delta_lr: 2.5e-3
+  anchor_reg_weight: 0.2
+  anchor_reg_sigmas: "0.25,0.5,0.75"
+  anchor_reg_noise_draws: 2
+
+sweep:
+  # 1. S10 + AREG only (control replica of D2).
+  - run_id: S10_AREG_D2
+    delta_steps: 10
+
+  # 2. S20 + AREG only.
+  - run_id: S20_AREG_D2
+    delta_steps: 20
+
+  # 3. S10 + AREG + retrieval K=1.
+  - run_id: S10_AREG_D2_K1
+    delta_steps: 10
+    batch_method: similarity
+    batch_videos: 1
+    retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/ucf101_1000_480p
+
+  # 4. S20 + AREG + retrieval K=1. Highest-EV cell.
+  - run_id: S20_AREG_D2_K1
+    delta_steps: 20
+    batch_method: similarity
+    batch_videos: 1
+    retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/ucf101_1000_480p
+
+  # 5. S20 + AREG with halved LR.
+  - run_id: S20_AREG_D2_LR125
+    delta_steps: 20
+    delta_lr: 1.25e-3

@@ -1,0 +1,77 @@
+# Panda-70M 200-video discovery: combined-tricks AdaSteer sweep
+#
+# Tests whether anchor-regularisation + retrieval rehabilitate the
+# previously-dominated S20 setting, and whether the two regularisers
+# stack. All runs hold the current Panda best (anchor_reg_weight=0.2,
+# anchor_reg_noise_draws=1) and only vary the dimensions that have not
+# been jointly tested yet.
+#
+# Prior best (reference):
+#   - panda_200_anchor_reg/AREG02:               FVD 310.97   (S10, AREG only)
+#   - panda_200_anchor_reg_draws/D1:             FVD 316.36   (S10, AREG, D=1)
+#   - panda_200_batch_retrieval_delta_a/K1:      FVD 319.26   (S10, retrieval only)
+#   - panda_adasteer_steps_lr/S10_LR005 (no AREG):FVD 316.34  (control)
+#   - panda_adasteer_steps_lr/S20_LR005 (no AREG):FVD 657.6   (proves S20 hurts without anchor reg)
+#
+# This sweep:
+#   S10_AREG_D1         S10 control replica  (matches AREG02; pins noise floor)
+#   S20_AREG_D1         S20 with anchor reg  (does AREG save S20?)
+#   S10_AREG_D1_K1      S10 + AREG + retrieval (tricks-stack at the safe step count)
+#   S20_AREG_D1_K1      S20 + AREG + retrieval (full stack -- the biggest EV cell)
+#   S20_AREG_D1_LR3     S20 with halved LR   (or does S20 just need smaller updates?)
+
+method: delta_a
+series: panda
+series_name: panda_200_combined_tta_tricks
+description: "Panda-70M 200-video discovery: combined-tricks AdaSteer (S10/S20 x AREG x retrieval)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 200
+  compute_fvd: true
+  compute_fid: true
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  delta_lr: 0.005
+  anchor_reg_weight: 0.2
+  anchor_reg_sigmas: "0.25,0.5,0.75"
+  anchor_reg_noise_draws: 1
+
+sweep:
+  # 1. S10 + AREG only (control replica of AREG02 / D1).
+  - run_id: S10_AREG_D1
+    delta_steps: 10
+
+  # 2. S20 + AREG only. Question: does anchor reg let us push past S10?
+  - run_id: S20_AREG_D1
+    delta_steps: 20
+
+  # 3. S10 + AREG + retrieval K=1. Question: do the two regularisers stack at S10?
+  - run_id: S10_AREG_D1_K1
+    delta_steps: 10
+    batch_method: similarity
+    batch_videos: 1
+    retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p
+
+  # 4. S20 + AREG + retrieval K=1. Highest-EV cell: full stack at higher capacity.
+  - run_id: S20_AREG_D1_K1
+    delta_steps: 20
+    batch_method: similarity
+    batch_videos: 1
+    retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p
+
+  # 5. S20 + AREG with halved LR. Tests whether S20 just needs smaller updates,
+  #    independent of regularisation.
+  - run_id: S20_AREG_D1_LR3
+    delta_steps: 20
+    delta_lr: 0.0025
