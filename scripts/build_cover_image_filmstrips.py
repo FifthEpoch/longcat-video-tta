@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 
 # --- Layout constants (override via CLI flags) ---
@@ -146,12 +147,56 @@ def sample_frames(video_path: Path, num: int,
     return frames
 
 
+_FONT_CACHE: Dict[int, "ImageFont.ImageFont"] = {}
+
+
+def _get_font(size: int) -> "ImageFont.ImageFont":
+    if size in _FONT_CACHE:
+        return _FONT_CACHE[size]
+    for name in (
+        "DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "Arial.ttf",
+        "Helvetica.ttf",
+    ):
+        try:
+            font = ImageFont.truetype(name, size)
+            _FONT_CACHE[size] = font
+            return font
+        except (OSError, IOError):
+            continue
+    font = ImageFont.load_default()
+    _FONT_CACHE[size] = font
+    return font
+
+
 def put_label(img: np.ndarray, text: str, *,
               org: Tuple[int, int], scale: float = 0.5,
               colour: Tuple[int, int, int] = (0, 0, 0),
               thickness: int = 1) -> None:
-    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale,
-                colour, thickness, cv2.LINE_AA)
+    """Draw ``text`` onto a BGR uint8 image in-place using PIL.
+
+    OpenCV 4.9's ``cv2.putText`` Python binding can reject perfectly valid
+    numpy arrays in some environments ("img is not a numpy array, neither a
+    scalar"). PIL's text rasteriser is more forgiving and yields sharper
+    glyphs anyway, so we route all label drawing through it.
+    """
+    if not isinstance(img, np.ndarray) or img.ndim != 3 or img.shape[2] != 3:
+        return
+    rgb = cv2.cvtColor(np.ascontiguousarray(img, dtype=np.uint8),
+                       cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(rgb)
+    draw = ImageDraw.Draw(pil_img)
+    font = _get_font(max(10, int(round(scale * 28))))
+    pil_colour = (int(colour[2]), int(colour[1]), int(colour[0]))
+    # cv2.putText anchors at the text baseline; PIL anchors at the top-left.
+    # Shift up by roughly the cap height so the visual placement matches.
+    cap_h = max(6, int(round(scale * 22)))
+    pos = (int(org[0]), int(org[1]) - cap_h)
+    draw.text(pos, text, fill=pil_colour, font=font)
+    new_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    img[:, :, :] = new_bgr
 
 
 def compose_row(label: str, frames: List[np.ndarray],
