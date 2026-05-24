@@ -399,10 +399,13 @@ def main() -> None:
             failures.append((video_id, ",".join(missing)))
 
         g = gains.get(video_id, {})
-        theme = g.get("theme", "")
-        dpsnr = safe_float(g.get("dpsnr"))
-        dssim = safe_float(g.get("dssim"))
-        dlpips = safe_float(g.get("dlpips"))
+        # Accept either the panda-style column names (theme/dpsnr/dssim/dlpips)
+        # or the UCF LoRA-collapse-style names
+        # (action_class/collapse_psnr/collapse_ssim/collapse_lpips).
+        theme = g.get("theme") or g.get("action_class") or ""
+        dpsnr = safe_float(g.get("dpsnr") or g.get("collapse_psnr"))
+        dssim = safe_float(g.get("dssim") or g.get("collapse_ssim"))
+        dlpips = safe_float(g.get("dlpips") or g.get("collapse_lpips"))
         caption = g.get("caption", "")
 
         strip_w = LABEL_COL_W + args.num_keyframes * args.frame_w + (args.num_keyframes - 1) * COL_PAD
