@@ -900,3 +900,95 @@ python sweep_experiment/scripts/merge_chunks.py \
 | **Total** | | **192 jobs** | **672 GPU-h** | **~1344 GPU-h** |
 
 At 4-job concurrency this is ~14 wall days. Submitted jobs are preemptible (`preemption=yes;requeue=true`).
+
+---
+
+## May 2026 - 2048-video retrieval-augmented AdaSteer sweep (planned)
+
+Date logged: May 25, 2026
+
+### Background
+
+The May 2026 200-video retrieval-batch attempt (`panda_200_batch_retrieval_delta_a.yaml`,
+`ucf101_200_batch_retrieval_delta_a.yaml`) completed only K=1 -- K=5 and K=10 jobs
+(SLURM 9424559, 9424560, 9424562, 9424563) all died at startup with:
+
+```
+ImportError: cannot import name 'NLTK_IMPORT_ERROR' from 'transformers.utils.import_utils'
+```
+
+Root cause: `sentence-transformers` >= 3.x eagerly imports its cross-encoder /
+fit_mixin / datasets chain at top-level `__init__`, which references
+`NLTK_IMPORT_ERROR` (introduced in transformers >= 4.40). The cluster env has an
+older transformers pinned for LongCat-Video compatibility. Even the unrelated
+import `from sentence_transformers import SentenceTransformer` is enough to
+trigger the chain.
+
+A separate latent bug was discovered while investigating: the earlier
+`exp5_batch_size_*` sweep on UCF-101 (n=100, K=1..100, three methods) showed
+~6.4 dB PSNR collapse for K>=5 because `_optimize_delta_a_batch` ran for
+exactly `num_steps` total iterations regardless of `K`, distributing them
+round-robin. With `delta_steps=10` and `K=5`, the eval clip received only 2
+gradient updates; at `K=10`, exactly 1. The May 2026 K=5/K=10 attempts would
+have reproduced this collapse even if the ImportError had been fixed.
+
+### Bug fixes (this branch, commit pending)
+
+1. **Lazy import of `sentence_transformers`.** `build_retrieval_pool` only loads
+   the package when `batch_method='similarity'`. New `batch_method='random'`
+   skips the package entirely.
+
+2. **New `batch_method='random'`** in `run_delta_a.py`. Uniform random sampling
+   of K-1 neighbours from the retrieval pool (seeded per eval video for
+   reproducibility). Tests whether *any* additional clips in the gradient batch
+   help, independent of semantic similarity.
+
+3. **Step-budget fix in `_optimize_delta_a_batch`.** Total optimiser steps are
+   now `num_steps * K`. Every video in the training batch (including the eval
+   clip at index 0) receives `num_steps` gradient updates round-robin. This
+   makes K-curves interpretable: K is a regularisation knob, not a step-budget
+   divisor.
+
+4. **`requirements.txt`** added at repo root; pins `sentence-transformers==2.7.0`
+   for cluster env reproducibility.
+
+### Planned sweep
+
+| Run ID    | K  | Method     | Steps/video | Total opt. steps | Wall time |
+|-----------|---:|------------|-------------:|-----------------:|----------:|
+| K5_RAND   |  5 | random     | 10 (Panda) / 5 (UCF) |  50 / 25 | 14h/chunk |
+| K10_RAND  | 10 | random     | 10 / 5      | 100 / 50         | 22h/chunk |
+| K5_SIM    |  5 | similarity | 10 / 5      |  50 / 25         | 14h/chunk |
+| K10_SIM   | 10 | similarity | 10 / 5      | 100 / 50         | 22h/chunk |
+
+- 16 chunks x 128 videos per chunk per run = 64 jobs per dataset.
+- 2 datasets (Panda, UCF101) -> 128 SLURM jobs total.
+- Retrieval pool is the same 2048-video set as the eval set (each clip retrieves
+  from the remaining 2047).
+
+### Submission
+
+Pre-flight (one-time per env):
+```
+pip install --no-deps --force-reinstall "sentence-transformers==2.7.0"
+python -c "from sentence_transformers import SentenceTransformer; \
+           m=SentenceTransformer('all-MiniLM-L6-v2'); \
+           print('OK dim=', m.get_sentence_embedding_dimension())"
+```
+
+Master submission:
+```
+bash sweep_experiment/sbatch/submit_2048v_retrieval_chunked.sh
+```
+
+### What each cell tests
+
+- K5_RAND vs K1 (NoTTA baseline): does *any* additional clip in the batch
+  regularise per-video TTA, independent of similarity?
+- K5_SIM vs K5_RAND: is *semantic* similarity necessary, or is generic
+  cross-video gradient signal enough?
+- K10_RAND vs K5_RAND: does more cross-video signal help past a point?
+- K10_SIM vs K5_SIM: same, but with similar neighbours.
+
+The exp5 UCF-101 result (~6.4 dB collapse) is the negative-control baseline:
+that's what we expect to see *without* the step-budget fix.

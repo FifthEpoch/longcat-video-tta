@@ -1,0 +1,65 @@
+# UCF-101 2048-video retrieval-augmented AdaSteer
+#
+# Sample size : 2048 (StyleGAN-V / VideoCrafter FVD protocol).
+# Dataset     : datasets/ucf101_2048_480p
+# Pool        : same dataset (each eval video retrieves neighbours from the
+#               other 2047 clips in the same set).
+# Method      : delta_a (AdaSteer S5/LR=2.5e-3) + batch-level retrieval.
+#
+# Two batch_method variants are tested:
+#   - random     : uniform random sampling, no similarity check, no sentence-
+#                  transformers required. Tests whether the eval clip benefits
+#                  from *any* additional clips in the gradient batch.
+#   - similarity : nearest-neighbour by sentence-transformer caption embedding.
+#                  Tests whether *topically related* clips help more.
+#
+# Step-budget semantics (post-fix): each video in the training batch
+# receives `delta_steps` gradient updates; total = delta_steps * K.
+#
+# Submit chunked (recommended):
+#   bash sweep_experiment/sbatch/submit_2048v_retrieval_chunked.sh
+
+method: delta_a
+series: ucf101
+series_name: ucf101_2048v_retrieval
+description: "UCF-101 2048v retrieval-augmented AdaSteer (random vs similarity, K=5/10)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 2048
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: true
+  min_fvd_videos: 256
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  delta_steps: 5
+  delta_lr: 2.5e-3
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/ucf101_2048_480p
+
+sweep:
+  - run_id: K5_RAND
+    batch_videos: 5
+    batch_method: random
+
+  - run_id: K10_RAND
+    batch_videos: 10
+    batch_method: random
+
+  - run_id: K5_SIM
+    batch_videos: 5
+    batch_method: similarity
+
+  - run_id: K10_SIM
+    batch_videos: 10
+    batch_method: similarity

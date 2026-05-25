@@ -1,0 +1,28 @@
+# Pinned dependencies for the longcat-video-tta cluster environment.
+#
+# Only constraints that are critical for reproducibility / for avoiding
+# known breakages are pinned here. The full conda env is built externally
+# (see cluster setup notes); this file documents the version invariants
+# the code relies on.
+
+# Retrieval-augmented batch-level TTA uses SentenceTransformer for
+# caption embedding. sentence-transformers >= 3.x imports
+# `NLTK_IMPORT_ERROR` from transformers.utils.import_utils via its
+# top-level __init__ (cross_encoder -> fit_mixin -> datasets ->
+# DenoisingAutoEncoderDataset). That symbol was only added in
+# transformers >= 4.40. Our cluster env has an older transformers
+# pinned for LongCat-Video compatibility, so any `from
+# sentence_transformers import SentenceTransformer` crashes with
+#   ImportError: cannot import name 'NLTK_IMPORT_ERROR' ...
+# Pin to the last 2.x release, which works with our transformers and
+# whose `__init__` does not drag in the cross-encoder/fit_mixin chain.
+sentence-transformers==2.7.0
+
+# Video validation pipeline.
+av>=10.0.0
+
+# YAML config loading for sweep_experiment.
+PyYAML>=6.0
+
+# Numerical core.
+numpy>=1.23

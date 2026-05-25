@@ -2319,6 +2319,10 @@ def build_retrieval_pool(
 ) -> Tuple[np.ndarray, Any]:
     """Pre-compute normalised sentence embeddings for a pool of videos.
 
+    Only used when ``batch_method='similarity'``. The ``sentence_transformers``
+    import is performed lazily here so that ``random`` neighbour sampling
+    does not require the package to be importable.
+
     Returns (embeddings, sentence_transformer_model) so the model can be
     reused for encoding query captions without reloading.
     """
@@ -2332,6 +2336,38 @@ def build_retrieval_pool(
     print(f"  Retrieval pool: {len(pool_entries)} videos, "
           f"embedding dim={embeddings.shape[1]}")
     return embeddings, st_model
+
+
+def sample_neighbors_random(
+    query_entry: Dict,
+    pool_entries: List[Dict],
+    k: int,
+    rng: Optional[np.random.Generator] = None,
+) -> List[Dict]:
+    """Return up to ``k-1`` *random* neighbours from the pool, excluding the query.
+
+    This is the non-similarity counterpart to :func:`retrieve_neighbors`.
+    Used when ``batch_method='random'`` to test whether having any
+    additional clips in the training batch helps (variance reduction),
+    independent of whether the neighbours are topically related.
+
+    No caption-embedding model is required.
+    """
+    if k <= 1:
+        return []
+    if rng is None:
+        rng = np.random.default_rng()
+
+    query_path = os.path.abspath(query_entry.get("video_path", ""))
+    candidates = [
+        e for e in pool_entries
+        if os.path.abspath(e.get("video_path", "")) != query_path
+    ]
+    n_pick = min(k - 1, len(candidates))
+    if n_pick == 0:
+        return []
+    idx = rng.choice(len(candidates), size=n_pick, replace=False)
+    return [candidates[int(i)] for i in idx]
 
 
 def retrieve_neighbors(

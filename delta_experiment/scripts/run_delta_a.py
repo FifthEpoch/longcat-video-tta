@@ -67,6 +67,7 @@ from common import (
     evaluate_generation_metrics,
     build_retrieval_pool,
     retrieve_neighbors,
+    sample_neighbors_random,
     evaluate_clip_gate,
     summarize_clip_gate_stats,
     validate_caption_quality,
@@ -452,10 +453,17 @@ def _optimize_delta_a_batch(
 ) -> Dict:
     """Optimize a shared delta vector across multiple videos.
 
-    At each training step, one video is randomly sampled from the batch.
-    Its conditioning and training latents are loaded to GPU, the flow-matching
-    loss is computed, and the shared delta is updated. This acts as natural
-    regularization: the delta must improve denoising across diverse content.
+    ``num_steps`` is the number of gradient updates *each video in the batch*
+    receives. With ``K = len(batch_data)`` videos, the total number of
+    optimiser steps is ``num_steps * K``, with videos cycled round-robin so
+    every clip (including the eval clip at index 0) sees the full ``num_steps``
+    budget.
+
+    This semantics change fixes a prior bug where the loop ran for
+    ``num_steps`` total iterations regardless of ``K``, which gave the eval
+    clip only ``num_steps // K`` updates and caused the catastrophic
+    metric collapse observed in the ``exp5_batch_size_*`` UCF-101 sweep
+    (~6 dB PSNR regression at K >= 5).
     """
     optimizer = AdamW([wrapper.delta], lr=lr, betas=(0.9, 0.999), eps=1e-15)
 
@@ -463,8 +471,11 @@ def _optimize_delta_a_batch(
     losses = []
     raw_grad_norms = []
     n_vids = len(batch_data)
+    total_steps = num_steps * n_vids
+    print(f"  Batch optimisation: {num_steps} updates/video x {n_vids} videos "
+          f"= {total_steps} total steps")
 
-    for step in range(num_steps):
+    for step in range(total_steps):
         optimizer.zero_grad()
 
         vi = step % n_vids
@@ -573,8 +584,13 @@ def main():
                              "a better gradient estimate without extra GPU memory. "
                              "Effective batch = tta_grad_accum noise draws per step.")
     parser.add_argument("--batch-method", type=str, default="similarity",
-                        choices=["sequential", "similarity"],
-                        help="(Legacy) Retrieval is always by text-prompt similarity.")
+                        choices=["sequential", "similarity", "random"],
+                        help="Neighbour selection for batch-level TTA. "
+                             "'similarity' (default): nearest-neighbour by caption "
+                             "embedding -- requires sentence-transformers. "
+                             "'random': uniform random sampling from the pool, no "
+                             "similarity check, no sentence-transformers needed. "
+                             "'sequential' is a legacy alias for 'similarity'.")
     parser.add_argument("--rollout-steps", type=int, default=1,
                         help="Number of autoregressive rollout steps. After generating "
                              "one chunk, the last num_cond_frames of output become "
@@ -707,6 +723,7 @@ def main():
     pool_entries = None
     pool_embeddings = None
     st_model = None
+    neighbour_rng = None
 
     if batch_level:
         pool_dir = args.retrieval_pool_dir or args.data_dir
@@ -730,7 +747,18 @@ def main():
             context="retrieval_pool",
         )
         print(f"Retrieval pool: {len(pool_entries)} videos from {pool_dir}")
-        pool_embeddings, st_model = build_retrieval_pool(pool_entries)
+
+        # Only the similarity path needs sentence-transformers; the random path
+        # samples uniformly from pool_entries and skips embedding construction.
+        # 'sequential' is a legacy alias for 'similarity'.
+        if args.batch_method in ("similarity", "sequential"):
+            print(f"  Neighbour mode: similarity (cosine over caption embeddings)")
+            pool_embeddings, st_model = build_retrieval_pool(pool_entries)
+        elif args.batch_method == "random":
+            print(f"  Neighbour mode: random (uniform sampling, no similarity check)")
+            neighbour_rng = np.random.default_rng(args.seed)
+        else:
+            raise ValueError(f"Unknown batch_method: {args.batch_method}")
 
     # Build early stopper
     early_stopper = build_early_stopper_from_args(args)
@@ -787,14 +815,25 @@ def main():
             print(f"  CLIP gate: decision={clip_gate_info['clip_gate_decision']} "
                   f"({clip_gate_info.get('clip_gate_reason', 'n/a')})")
 
-        # Build training batch: eval video + K-1 nearest neighbours
+        # Build training batch: eval video + K-1 neighbours (similarity or random)
         if batch_level and not clip_gate_info.get("tta_skipped", False):
-            neighbors = retrieve_neighbors(
-                eval_entry, pool_entries, pool_embeddings, st_model,
-                k=args.batch_videos,
-            )
+            if args.batch_method == "random":
+                # Use a per-eval-video rng seed so neighbour choice is reproducible
+                # across resumes but still differs between eval videos.
+                per_eval_rng = np.random.default_rng(args.seed + v_idx)
+                neighbors = sample_neighbors_random(
+                    eval_entry, pool_entries,
+                    k=args.batch_videos,
+                    rng=per_eval_rng,
+                )
+            else:
+                neighbors = retrieve_neighbors(
+                    eval_entry, pool_entries, pool_embeddings, st_model,
+                    k=args.batch_videos,
+                )
             training_entries = [eval_entry] + neighbors
-            print(f"  Batch: 1 eval + {len(neighbors)} retrieved neighbours "
+            mode_tag = "random" if args.batch_method == "random" else "retrieved"
+            print(f"  Batch: 1 eval + {len(neighbors)} {mode_tag} neighbours "
                   f"(total {len(training_entries)})")
             for ni, ne in enumerate(neighbors[:5]):
                 print(f"    neighbour {ni+1}: {Path(ne['video_path']).stem} "
