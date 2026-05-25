@@ -1,0 +1,46 @@
+# UCF-101 2048-video headline run: NoTTA + AdaSteer
+#
+# Sample size: 2048 (StyleGAN-V / VideoCrafter FVD protocol).
+# Dataset    : datasets/ucf101_2048_480p (extension of ucf101_test_480p).
+# Method     : delta_a (NoTTA + AdaSteer S5/LR=2.5e-3).
+#
+# AdaSteer settings differ from Panda's: UCF-101 has shorter, more
+# motion-heavy clips, and the 200-video discovery sweep settled on
+# S5/LR=0.0025 as the winning config (vs S10/LR=0.005 on Panda).
+#
+# LoRA arms live in ucf101_2048v_lora.yaml. TinyLoRA arms are submitted
+# via submit_standard_2048v_chunked.sh.
+
+method: delta_a
+series: ucf101
+series_name: ucf101_2048v_main
+description: "UCF-101 2048v headline: NoTTA + AdaSteer S5 LR=2.5e-3"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 2048
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: true
+  min_fvd_videos: 256
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: NOTTA
+    delta_steps: 0
+    delta_lr: 0.0025
+
+  - run_id: ADA_S5
+    delta_steps: 5
+    delta_lr: 0.0025

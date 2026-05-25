@@ -1,0 +1,54 @@
+# Panda-70M 2048-video headline run: NoTTA + AdaSteer
+#
+# Sample size: 2048 (StyleGAN-V / VideoCrafter FVD protocol).
+# Dataset    : datasets/panda_2048_480p (extension of panda_1000_480p)
+# Method     : delta_a (NoTTA via delta_steps=0; AdaSteer via S10/LR=5e-3)
+#
+# This config drives only the NoTTA baseline and AdaSteer arms of the
+# headline 5-method comparison. LoRA arms live in panda_2048v_lora.yaml
+# and TinyLoRA arms are submitted via submit_standard_2048v_chunked.sh
+# (TinyLoRA goes through delta_experiment/sbatch/run_tinylora.sbatch
+# rather than this YAML).
+#
+# Submit chunked via the standalone script:
+#   bash sweep_experiment/sbatch/submit_standard_2048v_chunked.sh
+#
+# Or submit a single non-chunked job for quick smoke tests:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/panda_2048v_main.yaml \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_2048_480p \
+#       --account torch_pr_36_mren --time 36:00:00
+
+method: delta_a
+series: panda
+series_name: panda_2048v_main
+description: "Panda-70M 2048v headline: NoTTA + AdaSteer S10 LR=5e-3"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 2048
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: true
+  min_fvd_videos: 256
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: NOTTA
+    delta_steps: 0
+    delta_lr: 0.005
+
+  - run_id: ADA_S10
+    delta_steps: 10
+    delta_lr: 0.005

@@ -834,3 +834,69 @@ Cluster ran `scripts/recompute_fvd_fid_from_stats.py` against the four long-cont
 ### Next step (Phase A)
 
 The chunked-merge investigation is closed. Phase A failure diagnostics (`scripts/diagnose_long_horizon_failures.py`) is unblocked and is the next action; the goal is to localize the regression to specific caption themes / PSNR quintiles so the horizon-aware AdaSteer v2 design (Phase B) targets the actual failure modes rather than guessing. Cluster command and theme-classification notes are in `experiment_tracker/next_actions.md` under "Phase A".
+
+---
+
+## May 2026 - 2048-video headline sweep (planned)
+
+To match the modern FVD/FID reporting convention (StyleGAN-V / VideoCrafter protocol uses N=2048), we extend the standard-horizon evaluation from 1000 to 2048 videos per method per dataset.
+
+### Build pipeline
+
+The new datasets are constructed as strict supersets of the existing 1000-video sets, so the first-1000 prefix of each 2048-video set is bit-identical to prior experiments.
+
+| Step | Script | Notes |
+|------|--------|-------|
+| Build Panda 2048 | `scripts/build_panda_2048_dataset.py` | Pre-seeds with the 1000-set videos via symlink, then runs `datasets/download_panda70m_subset.py --resume` to fill to 2300 (oversampled) candidates before validation. |
+| Build UCF101 2048 | `scripts/build_ucf101_2048_dataset.py` | Samples ~13 new clips per category from `ucf101_org/`, excluding originals already in the 1000-set. |
+| Validate | `scripts/validate_dataset.py` | Stronger than `validate_decodable=True`: requires >=50 decoded frames, FPS>=6, height>=240, file>=50KB, non-empty caption. Writes `valid_subset.csv`. |
+| Smoke test | `sweep_experiment/sbatch/smoke_test_2048v.sbatch` | Runs NoTTA on first 20 videos, confirms inference pipeline end-to-end before submitting the full batch. |
+
+Submit dataset builds (cluster):
+
+```
+sbatch --account=torch_pr_36_mren datasets/build_panda_2048.sbatch
+sbatch --account=torch_pr_36_mren datasets/build_ucf101_2048.sbatch
+```
+
+### Headline 6-method comparison
+
+Submitted via `sweep_experiment/sbatch/submit_standard_2048v_chunked.sh` (16 chunks x 128 videos x 6 methods x 2 datasets = 192 jobs):
+
+| # | Method | Trainable params | Family | Recipe |
+|---|--------|-----------------:|--------|--------|
+| 1 | NoTTA | 0 | Baseline | — |
+| 2 | AdaSteer | 512 | Tiny – structured (AdaLN) | S10/LR=5e-3 on Panda; S5/LR=2.5e-3 on UCF |
+| 3 | LoRA R1 | ~2.6M | Free low-rank | rank=1, alpha=2, 5 steps, lr=2e-4 |
+| 4 | LoRA R8 | ~20.4M | Free low-rank | rank=8, alpha=16, 10 steps, lr=5e-5 |
+| 5 | TL_BARE_R2 | 192 | Tiny – independent (SVD) | rank=2, n_tie=1, qkv_proj, all blocks, 20 steps, lr=1e-3 |
+| 6 | TL_TIED_R2 | 4 | Tiny – extreme tie (SVD) | rank=2, n_tie=48, qkv_proj, all blocks, 20 steps, lr=1e-3 |
+
+`COMPUTE_VBENCH=1` is enabled, so VBench++ runs inline per chunk and lands in each chunk's `summary.json`. Generated videos are retained (`NO_SAVE_VIDEOS=0`) for post-hoc analysis; `sweep_experiment/sbatch/submit_post_hoc_vbench.sh` re-runs VBench standalone if needed.
+
+After all jobs complete, merge per-chunk results into the global FVD/FID:
+
+```
+python sweep_experiment/scripts/merge_chunks.py \
+    --results-dir sweep_experiment/results/panda_2048v --recursive
+python sweep_experiment/scripts/merge_chunks.py \
+    --results-dir sweep_experiment/results/ucf101_2048v --recursive
+python sweep_experiment/scripts/merge_chunks.py \
+    --results-dir delta_experiment/results/tinylora_panda_2048v --recursive
+python sweep_experiment/scripts/merge_chunks.py \
+    --results-dir delta_experiment/results/tinylora_ucf101_2048v --recursive
+```
+
+### Compute budget
+
+| Method | Hours/chunk (128v) | Chunks | GPU-hours/dataset | x2 datasets |
+|--------|-------------------:|-------:|------------------:|------------:|
+| NoTTA | 4 | 16 | 64 | 128 |
+| AdaSteer | 7 | 16 | 112 | 224 |
+| LoRA R1 (5 steps) | 5 | 16 | 80 | 160 |
+| LoRA R8 (10 steps) | 8 | 16 | 128 | 256 |
+| TL_BARE_R2 | 9 | 16 | 144 | 288 |
+| TL_TIED_R2 | 9 | 16 | 144 | 288 |
+| **Total** | | **192 jobs** | **672 GPU-h** | **~1344 GPU-h** |
+
+At 4-job concurrency this is ~14 wall days. Submitted jobs are preemptible (`preemption=yes;requeue=true`).
