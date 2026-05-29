@@ -33,7 +33,7 @@
 #
 # Datasets:
 #   Panda: datasets/panda_1000_480p   (the existing 1000-video dataset)
-#   UCF  : datasets/ucf101_test_480p  (the existing 1000-video UCF subset)
+#   UCF  : datasets/ucf101_1000_480p  (the existing 1000-video UCF subset)
 #
 # Chunking: 10 chunks x 100 videos = 1000 total per (dataset, method).
 # Smaller chunk size (vs 2048v's 128) keeps each chunk under the prior
@@ -229,7 +229,7 @@ fi
 
 if [ "${ONLY_DATASET}" = "ucf" ] || [ "${ONLY_DATASET}" = "ucf101" ] || [ "${ONLY_DATASET}" = "both" ]; then
     submit_dataset "ucf101" \
-        "${PROJECT_ROOT}/datasets/ucf101_test_480p" \
+        "${PROJECT_ROOT}/datasets/ucf101_1000_480p" \
         "sweep_experiment/results/ucf101_1000v_standard" \
         "delta_experiment/results/tinylora_ucf101_1000v_standard" \
         "5" "2.5e-3"
