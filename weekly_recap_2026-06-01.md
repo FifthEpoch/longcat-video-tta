@@ -104,23 +104,54 @@ slightly faster than TinyLoRA (23 s). At inference time the differences are
 within ±2 % of generation cost (552–568 s), so any wall-time advantage will
 come from batched-per-video TTA, not single-video TTA.
 
-### 1.2 Panda-70M & UCF-101, N = 1000 STANDARD horizon (this week's sweeps)
+### 1.2 Panda-70M & UCF-101, N = 999 / 932 / 683 STANDARD-HORIZON & LONG sweeps (this week)
 
-Submitted 2026-05-26 → completed 2026-05-30. Result directories on cluster:
+**Paths corrected from cluster discovery, 2026-06-01:**
 
-- `sweep_experiment/results/panda_1000v_std/{NOTTA,ADA,LORA_R8_TTA}/metrics.json`
-- `sweep_experiment/results/ucf101_std_1000v/{NOTTA,ADA,LORA_R8_TTA}/metrics.json`
-  (N = 932 — UCF-101 standard-horizon filtered subset)
-- `sweep_experiment/results/ucf101_long_1000v/{NOTTA,ADA,LORA_R8_TTA}/metrics.json`
-  (N = 683 — UCF-101 long-horizon filtered subset)
+- Panda 1000v std: `sweep_experiment/results/panda_1000v_standard/{NOTTA,ADA,LORA_R8_TTA}/merged_summary.json`
+- UCF 932v std:    `sweep_experiment/results/ucf101_932v_standard/{NOTTA,ADA,LORA_R8_TTA}/merged_summary.json`
+- UCF 683v long:   `sweep_experiment/results/ucf101_683v_longhorizon/{NOTTA,ADA,LORA_R8_TTA}/merged_summary.json` *(only 7 chunks merged so far — confirm with `find ... -name 'chunk_*' | wc -l`)*
+- TinyLoRA Panda 1000v std: `delta_experiment/results/tinylora_panda_1000v_standard/{TL_BARE_R2,TL_TIED_R2}/merged_summary.json`
+- TinyLoRA UCF 932v std:    `delta_experiment/results/tinylora_ucf101_932v_standard/{TL_BARE_R2,TL_TIED_R2}/` — **NOT MERGED YET**
 
-> **Hard numbers TODO** — run the extraction one-liner in §7 on the cluster.
-> Based on §1.1's pattern (FVD saturation on in-domain Panda) and §1.3's pattern
-> (small parameter sweep wins on 200v), I expect:
->
-> - Panda std N = 1000: all-method FVD likely within ±10 of No-TTA (saturated)
-> - UCF std N = 932: AdaSteer probably −5 to −15 FVD vs No-TTA (OOD opens room)
-> - UCF long N = 683: AdaSteer's clearest win, probably −15 to −25 FVD
+#### 1.2a Panda 1000v STANDARD horizon (N = 999, 28-frame generation)
+
+Schema confirmed: top-level keys, no nested `metrics` dict.
+
+| Method | N | PSNR | SSIM | LPIPS | FVD | FID |
+|---|---:|---:|---:|---:|---:|---:|
+| **No-TTA**       | 999 | TODO  | TODO   | TODO   | TODO  | TODO |
+| **AdaSteer ADA** | 999 | **17.938** | **0.6510** | **0.3373** | **153.4** | **25.22** |
+| **LoRA-R8 TTA**  | 999 | TODO  | TODO   | TODO   | TODO  | TODO |
+| TinyLoRA TL_BARE_R2 | 999 | TODO | TODO | TODO | TODO | TODO |
+| TinyLoRA TL_TIED_R2 | 999 | TODO | TODO | TODO | TODO | TODO |
+
+ADA values from the schema-peek on 2026-06-01. Other two rows extractable
+with the one-liner in §7. **Key sanity check vs §1.1:** the same AdaSteer
+method on the SAME Panda dataset gives FVD=153.4 at standard horizon (28
+frames) vs FVD=284.1 at long context (76 frames) — a 46 % FVD reduction by
+going to the shorter horizon. The std-horizon regime is also where FVD
+deltas vs other methods will be most informative.
+
+#### 1.2b UCF-101 932v STANDARD horizon
+
+| Method | N | PSNR | SSIM | LPIPS | FVD | FID |
+|---|---:|---:|---:|---:|---:|---:|
+| No-TTA       | 932 | TODO | TODO | TODO | TODO | TODO |
+| AdaSteer ADA | 932 | TODO | TODO | TODO | TODO | TODO |
+| LoRA-R8 TTA  | 932 | TODO | TODO | TODO | TODO | TODO |
+
+#### 1.2c UCF-101 683v LONG horizon (76-frame generation)
+
+| Method | N | PSNR | SSIM | LPIPS | FVD | FID | Notes |
+|---|---:|---:|---:|---:|---:|---:|---|
+| No-TTA       | 683 | TODO | TODO | TODO | TODO | TODO | 7 chunks merged (partial?) |
+| AdaSteer ADA | 683 | TODO | TODO | TODO | TODO | TODO | 7 chunks merged |
+| LoRA-R8 TTA  | 683 | TODO | TODO | TODO | TODO | TODO | 7 chunks merged |
+
+**Note:** UCF long-horizon series only has 7 chunks merged (`merged_summary.json`
+exists but covers 7 of the planned 10 chunks). Either (a) only 7 chunks were
+submitted, or (b) 3 chunks are still pending — verify before reporting.
 
 ### 1.3 200-video AdaSteer discovery sweep (step / LR grid, 2026-05-18)
 
@@ -362,43 +393,68 @@ their own NoTTA-on-that-same-subset reference column.
 
 ### One-liner to fill the §1.2 TODO cells
 
-Schema discovery first (since merge_chunks.py output keys may differ between
-old `merged_summary.json` and newer `metrics.json` files):
-
-```bash
-cd /scratch/wc3013/longcat-video-tta && \
-for f in $(ls sweep_experiment/results/{panda_1000v_std,ucf101_std_1000v,ucf101_long_1000v}/*/metrics.json \
-              sweep_experiment/results/{panda_1000v_std,ucf101_std_1000v,ucf101_long_1000v}/*/merged_summary.json \
-              2>/dev/null | head -3); do \
-    echo "=== $f ==="; \
-    python3 -c "import json; d=json.load(open('$f')); print(list(d.keys())[:30])"; \
-done
-```
-
-Once you know the keys, extract the metric values:
+Schema and series-name discovery already completed on 2026-06-01 — see
+`sweep_experiment/reports/experiment_outputs/2026-06-01.md` for the recorded
+output. Skip straight to extraction:
 
 ```bash
 cd /scratch/wc3013/longcat-video-tta && \
 python3 <<'PY'
 import json, glob, os
-for series in ["panda_1000v_std", "ucf101_std_1000v", "ucf101_long_1000v"]:
-    print("\n" + "="*70)
-    print(series)
-    print("="*70)
-    for jf in sorted(glob.glob(f"sweep_experiment/results/{series}/*/merged_summary.json")
-                   + glob.glob(f"sweep_experiment/results/{series}/*/metrics.json")):
+
+SERIES = [
+    # (series_root, series_dirs)
+    ("sweep_experiment/results", "panda_1000v_standard"),
+    ("sweep_experiment/results", "ucf101_932v_standard"),
+    ("sweep_experiment/results", "ucf101_683v_longhorizon"),
+    ("delta_experiment/results", "tinylora_panda_1000v_standard"),
+    ("delta_experiment/results", "tinylora_ucf101_932v_standard"),
+]
+
+for root, series in SERIES:
+    print("\n" + "="*78)
+    print(f"  {series}  (under {root}/)")
+    print("="*78)
+    paths = sorted(glob.glob(f"{root}/{series}/*/merged_summary.json"))
+    if not paths:
+        print(f"  no merged_summary.json yet -- need to run merge_chunks.py")
+        # show which methods exist as chunked-only
+        for d in sorted(glob.glob(f"{root}/{series}/*/")):
+            method = os.path.basename(d.rstrip("/"))
+            n_chunks = len(glob.glob(f"{d}chunk_*"))
+            print(f"    {method:22s}  chunks={n_chunks}  (run merge to materialise)")
+        continue
+    for jf in paths:
         method = os.path.basename(os.path.dirname(jf))
         d = json.load(open(jf))
-        # try common key spellings
-        def g(k1, k2=None):
-            v = d.get(k1)
-            if v is None and isinstance(d.get("metrics"), dict): v = d["metrics"].get(k1)
-            if v is None and k2: v = d.get(k2)
-            return v
-        print(f"  {method:18s}  N={g('num_videos','n')}  "
-              f"PSNR={g('psnr','psnr_mean')}  SSIM={g('ssim','ssim_mean')}  "
-              f"LPIPS={g('lpips','lpips_mean')}  FVD={g('fvd')}  FID={g('fid')}")
+        psnr  = d.get("psnr")
+        ssim  = d.get("ssim")
+        lpips = d.get("lpips")
+        fvd   = d.get("fvd")
+        fid   = d.get("fid")
+        n     = d.get("num_videos") or d.get("num_successful")
+        # printf-friendly with None guards
+        def fmt(v, decimals=4):
+            if v is None: return "    None"
+            return f"{v:.{decimals}f}"
+        print(f"  {method:22s}  N={n}  "
+              f"PSNR={fmt(psnr,3)}  SSIM={fmt(ssim,4)}  "
+              f"LPIPS={fmt(lpips,4)}  FVD={fmt(fvd,2)}  FID={fmt(fid,2)}")
 PY
 ```
 
-Paste the output back and I'll drop the numbers into the §1.2 tables.
+This will dump 5 series × 2-3 methods = ~13 rows of metric numbers. Paste
+back and I'll drop them into §1.2a/b/c.
+
+**Heads-up:** `tinylora_ucf101_932v_standard` showed `merged=[]` in the
+discovery, meaning `merge_chunks.py` hasn't been run on it. To get those
+numbers:
+
+```bash
+python sweep_experiment/scripts/merge_chunks.py \
+    --results-dir delta_experiment/results/tinylora_ucf101_932v_standard \
+    --recursive
+```
+
+Same potentially for `ucf101_932v_retrieval` (K5/K10 × SIM/RAND), which
+should be merged once the K_RAND chunks finish.
