@@ -39,6 +39,30 @@ from longcat_video.modules.longcat_video_dit import LongCatVideoTransformer3DMod
 from longcat_video.pipeline_longcat_video import LongCatVideoPipeline, retrieve_latents
 
 
+def _install_st_compat_shim() -> None:
+    """Stub `is_nltk_available` for transformers<4.40.
+
+    sentence-transformers (>=2.3) eagerly imports
+    `is_nltk_available` from `transformers.utils.import_utils`,
+    which only exists in transformers>=4.40. The longcat env
+    pins transformers==4.33.2, so importing sentence_transformers
+    fails before our retrieval code can run. We don't use the
+    `DenoisingAutoEncoderDataset` (the only nltk consumer), so a
+    benign stub returning False is safe and idempotent.
+    """
+    try:
+        import transformers.utils.import_utils as _iu  # type: ignore
+        if not hasattr(_iu, "is_nltk_available"):
+            _iu.is_nltk_available = lambda: False  # type: ignore[attr-defined]
+        if not hasattr(_iu, "NLTK_IMPORT_ERROR"):
+            _iu.NLTK_IMPORT_ERROR = (
+                "nltk shim installed by longcat-video-tta "
+                "(transformers<4.40 has no is_nltk_available)."
+            )
+    except Exception:
+        pass
+
+
 # ============================================================================
 # Model loading helpers
 # ============================================================================
@@ -2322,6 +2346,7 @@ def build_retrieval_pool(
     Returns (embeddings, sentence_transformer_model) so the model can be
     reused for encoding query captions without reloading.
     """
+    _install_st_compat_shim()
     from sentence_transformers import SentenceTransformer
 
     st_model = SentenceTransformer(model_name)

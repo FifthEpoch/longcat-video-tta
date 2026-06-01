@@ -47,6 +47,33 @@ from typing import List
 import numpy as np
 
 
+def _install_st_compat_shim() -> None:
+    """Stub `is_nltk_available` on `transformers.utils.import_utils`.
+
+    sentence-transformers >= 2.3 imports `is_nltk_available` (and the
+    paired `NLTK_IMPORT_ERROR`) from `transformers.utils.import_utils`
+    at module-import time, but `transformers < 4.40` does not expose
+    those symbols. The longcat conda env pins `transformers==4.33.2`
+    (a hard requirement of the diffusion model), so importing
+    sentence_transformers raises ImportError before any user code runs.
+
+    We never use `DenoisingAutoEncoderDataset` (the only consumer of
+    nltk inside sentence-transformers), so a benign stub returning
+    False is sufficient. Idempotent.
+    """
+    try:
+        import transformers.utils.import_utils as _iu  # type: ignore
+        if not hasattr(_iu, "is_nltk_available"):
+            _iu.is_nltk_available = lambda: False  # type: ignore[attr-defined]
+        if not hasattr(_iu, "NLTK_IMPORT_ERROR"):
+            _iu.NLTK_IMPORT_ERROR = (
+                "nltk shim installed by precompute_pool_embeddings "
+                "(transformers<4.40 has no is_nltk_available)."
+            )
+    except Exception:
+        pass
+
+
 def _read_captions(metadata_csv: Path) -> List[str]:
     captions: List[str] = []
     with open(metadata_csv, "r", encoding="utf-8") as f:
@@ -165,6 +192,7 @@ def main() -> int:
 
     print(f"[2/3] Loading model '{args.model}' ...", flush=True)
     t0 = time.time()
+    _install_st_compat_shim()
     from sentence_transformers import SentenceTransformer
     st_model = SentenceTransformer(args.model)
     print(f"      Model ready in {time.time() - t0:.1f}s.", flush=True)
