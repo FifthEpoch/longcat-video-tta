@@ -26,8 +26,11 @@
 #   bash sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh
 #
 # Ablation matrix (4 sweep entries x 10 chunks = 40 jobs):
-#   K5_RAND   K=5 random        (does ANY extra clip in batch help?)
-#   K10_RAND  K=10 random
+#   K5_RAND   K=5 sequential    (does ANY extra clip in batch help, ignoring
+#                                content? "sequential" picks the next K-1
+#                                pool entries with same-source skipped --
+#                                deterministic but content-agnostic).
+#   K10_RAND  K=10 sequential
 #   K5_SIM    K=5 similarity    (do TOPICALLY RELATED clips help more?)
 #   K10_SIM   K=10 similarity
 #
@@ -65,11 +68,11 @@ fixed:
 sweep:
   - run_id: K5_RAND
     batch_videos: 5
-    batch_method: random
+    batch_method: sequential
 
   - run_id: K10_RAND
     batch_videos: 10
-    batch_method: random
+    batch_method: sequential
 
   - run_id: K5_SIM
     batch_videos: 5

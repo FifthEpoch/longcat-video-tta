@@ -216,11 +216,11 @@ submit_dataset() {
 
     submit_retrieval_chunks "${dataset_tag}" "K5_RAND"  "${sweep_subdir}" \
         "${data_dir}" "${pool_dir}" "${TIME_K5}"  "${delta_steps}" "${delta_lr}" \
-        5  "random"     "${max_videos}" "${chunk_size}"
+        5  "sequential" "${max_videos}" "${chunk_size}"
 
     submit_retrieval_chunks "${dataset_tag}" "K10_RAND" "${sweep_subdir}" \
         "${data_dir}" "${pool_dir}" "${TIME_K10}" "${delta_steps}" "${delta_lr}" \
-        10 "random"     "${max_videos}" "${chunk_size}"
+        10 "sequential" "${max_videos}" "${chunk_size}"
 
     submit_retrieval_chunks "${dataset_tag}" "K5_SIM"   "${sweep_subdir}" \
         "${data_dir}" "${pool_dir}" "${TIME_K5}"  "${delta_steps}" "${delta_lr}" \
