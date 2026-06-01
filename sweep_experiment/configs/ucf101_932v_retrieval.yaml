@@ -1,0 +1,80 @@
+# UCF-101 932-video retrieval-augmented AdaSteer (paper-grade)
+#
+# Sample size : 932 (eval = ucf101_std_480p, the filtered UCF-101 subset
+#               with >=76 decodable frames, matches the headline
+#               ucf101_932v_standard sweep that produced our reported
+#               NOTTA/ADA/LORA_R8_TTA numbers).
+# Eval set    : datasets/ucf101_std_480p   (932 clips)
+# Pool        : datasets/ucf101_pool_max   (~26K chunked clips, ~8.8 GB)
+#
+# Why ucf101_pool_max as the pool:
+#   - 26x larger than the eval set, giving the similarity-method genuine
+#     room to find topically related neighbours.
+#   - Built via 3-second non-overlapping chunking of all UCF-101 source
+#     clips (chunked builder writes `source_video_id` field so the
+#     same-source exclusion in common.py prevents the eval clip's own
+#     chunks from being returned as nearest neighbours).
+#   - Captions are clean class-name strings ("a person performing X"),
+#     unlike the bracket-wrapped multi-caption format on Panda-70M, so
+#     UCF retrieval is the cleanest test of similarity-vs-random.
+#
+# Method      : delta_a (AdaSteer) at the same hyper-params used by
+#               ucf101_932v_standard/ADA (S5/LR=2.5e-3) so the retrieval
+#               variants are directly comparable.
+#
+# Submit chunked:
+#   bash sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh
+#
+# Ablation matrix (4 sweep entries x 10 chunks = 40 jobs):
+#   K5_RAND   K=5 random        (does ANY extra clip in batch help?)
+#   K10_RAND  K=10 random
+#   K5_SIM    K=5 similarity    (do TOPICALLY RELATED clips help more?)
+#   K10_SIM   K=10 similarity
+#
+# Step-budget semantics (post-fix): each video in the training batch
+# receives `delta_steps` gradient updates; total = delta_steps * K.
+
+method: delta_a
+series: ucf101
+series_name: ucf101_932v_retrieval
+description: "UCF-101 932v retrieval-augmented AdaSteer (random vs similarity, K=5/10), pool=ucf101_pool_max (~26K chunks)"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 932
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: true
+  min_fvd_videos: 256
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  delta_steps: 5
+  delta_lr: 2.5e-3
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/ucf101_pool_max
+
+sweep:
+  - run_id: K5_RAND
+    batch_videos: 5
+    batch_method: random
+
+  - run_id: K10_RAND
+    batch_videos: 10
+    batch_method: random
+
+  - run_id: K5_SIM
+    batch_videos: 5
+    batch_method: similarity
+
+  - run_id: K10_SIM
+    batch_videos: 10
+    batch_method: similarity

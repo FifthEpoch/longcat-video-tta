@@ -1,0 +1,89 @@
+# Panda-70M 1000-video retrieval-augmented AdaSteer (paper-grade)
+#
+# Sample size : 1000 (eval = panda_1000_480p, the same set used by the
+#               headline non-retrieval 1000v sweeps).
+# Eval set    : datasets/panda_1000_480p           (1000 clips)
+# Pool        : datasets/panda_2048_480p           (2048 clips)
+#
+# Why eval != pool here (vs the older panda_2048v_retrieval.yaml which
+# used eval==pool==panda_2048_480p):
+#
+#   - panda_2048_480p is built as a SUPER-SET of panda_1000_480p:
+#     indices 0..999 are bit-identical symlinks to the 1000-set, indices
+#     1000..2047 are 1048 fresh clips. So the pool has 1048 clips that
+#     are NOT in the eval set, plus 1000 clips that ARE in the eval set
+#     (and would be excluded by the same-source filter in common.py
+#     anyway). Effective neighbour pool per eval clip: 1047 clips.
+#
+#   - This separation matches the UCF setup (eval = ucf101_std_480p
+#     932 clips, pool = ucf101_pool_max 26K chunks) and gives us a
+#     paper-defensible "retrieval drew from clips OUTSIDE the eval set".
+#
+# Why panda_2048_480p instead of the abandoned panda_pool_10k:
+#   The 25K head-trimmed Panda pool job was killed by YouTube bot-checks
+#   (122 HTTP 429s + 121 HTTP 403s + cookie wall on 30K candidate URLs).
+#   panda_2048_480p is what we actually have on disk and is 2x larger
+#   than the user's "1K pool too small" baseline.
+#
+# Method      : delta_a (AdaSteer) at the same hyper-params used by
+#               panda_1000v_standard/ADA (S10/LR=5e-3) so the retrieval
+#               variants are directly comparable.
+#
+# Submit chunked:
+#   bash sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh
+#
+# Ablation matrix (4 sweep entries x 10 chunks = 40 jobs):
+#   K5_RAND   K=5 random        (does ANY extra clip in batch help?)
+#   K10_RAND  K=10 random       (does more extra-clips help further?)
+#   K5_SIM    K=5 similarity    (do TOPICALLY RELATED clips help more?)
+#   K10_SIM   K=10 similarity
+#
+# Step-budget semantics (post-fix in run_delta_a.py::_optimize_delta_a_batch):
+#   each video in the training batch (including the eval clip) receives
+#   `delta_steps` gradient updates. Total optimiser steps per eval video
+#   = delta_steps * K.
+
+method: delta_a
+series: panda
+series_name: panda_1000v_retrieval
+description: "Panda-70M 1000v retrieval-augmented AdaSteer (random vs similarity, K=5/10), pool=panda_2048_480p"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: true
+  min_fvd_videos: 256
+  es_disable: true
+  no_save_videos: false
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  delta_steps: 10
+  delta_lr: 5.0e-3
+  retrieval_pool_dir: /scratch/wc3013/longcat-video-tta/datasets/panda_2048_480p
+
+sweep:
+  - run_id: K5_RAND
+    batch_videos: 5
+    batch_method: random
+
+  - run_id: K10_RAND
+    batch_videos: 10
+    batch_method: random
+
+  - run_id: K5_SIM
+    batch_videos: 5
+    batch_method: similarity
+
+  - run_id: K10_SIM
+    batch_videos: 10
+    batch_method: similarity
