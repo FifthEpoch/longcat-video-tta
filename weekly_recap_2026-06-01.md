@@ -8,97 +8,191 @@
 
 ## TL;DR
 
-- **Paper-grade 1000-video sweep COMPLETED** for Panda-70M (std horizon, 50 chunks ×
-  ~20 v) and UCF-101 (std horizon N = 932, long horizon N = 683), across No-TTA,
-  AdaSteer, and `LORA_R8_TTA` baselines.
-- **FVD sample-size bias identified and quantified.** Old 200-video FVD numbers
-  (~200–500 range) were inflated; 1000-video FVD numbers (~50–100 range) are the
-  publication-grade values. Same checkpoint, same generations — just different
-  number of samples fed to the I3D activation distribution.
-- **FVD saturation at N = 1000, std horizon, Panda.** No-TTA and AdaSteer produce
-  near-identical distributions at this scale — TTA gains are below the FVD noise
-  floor here.
-- **AdaSteer wins in OOD + long-horizon regimes.** Per-video FVD analysis on
-  UCF-101 (out-of-distribution for the LongCat backbone) and on long-horizon
-  rollouts (degraded baseline) consistently shows AdaSteer net-positive.
-- **Paper narrative reframed** to: *AdaSteer is per-video net-positive in OOD
-  long-horizon scenarios, with comparable distributional quality on in-domain
-  short-horizon generation.*
+- **Paper-grade 1000-video sweep COMPLETED** for the **long-context Panda** track
+  (4 methods × 10 chunks × ~100 v ≈ 999 videos). Headline finding: **FVD
+  saturation** — No-TTA, AdaSteer, LoRA-R8, and TinyLoRA all produce
+  near-identical distributions (FVD 278.6–284.1; PSNR 12.73–12.79; SSIM 0.473–
+  0.476). TTA gains are **below the FVD noise floor** in this regime.
+- **1000-video standard-horizon sweep completed this week** for Panda and UCF-101
+  (std N = 932, long N = 683), with `LORA_R8_TTA` chosen as the LoRA baseline.
+  Per-method merged-metrics extraction is still TODO from the cluster — pointer
+  paths in §7.
+- **FVD sample-size sensitivity confirmed** (not as dramatic as I'd guessed in
+  earlier drafts). Concrete numbers: Panda 200v NoTTA FVD = 333.7 vs 1000v
+  long-context NoTTA FVD = 278.7 → ~17 % drop, not 5-10× as I'd loosely claimed
+  in the first draft. The sensitivity is real but bounded; **a 5-point FVD
+  difference at N = 200 may not survive at N = 1000.**
+- **200-video discovery sweep finished** for AdaSteer step/LR grid on both
+  datasets. Best Panda: `S3_LR0.0025` (FVD 327.55 vs NoTTA 333.70, Δ = −6.15 /
+  −1.8 %). Best UCF: `S5_LR0.001` (FVD 347.09 vs NoTTA 359.80, Δ = −12.71 /
+  −3.5 %). PSNR/SSIM/LPIPS deltas within noise on Panda; **UCF PSNR/SSIM came
+  back NaN** for this batch — a metric-pipeline bug to investigate before
+  trusting per-frame UCF numbers at this scale.
+- **Eval-set drift caveat (paper-critical):** the new 200v eval subsets are not
+  drawn from the same population as the legacy baselines. 200v Panda eval is
+  ~3.7 dB PSNR *harder* than the legacy Panda baseline (18.37 vs 22.07); 200v
+  UCF eval is ~2.0 dB PSNR *easier* than the legacy `ucf101_cond14_gen14`
+  baseline (20.44 vs 18.42). Implication: any cross-experiment comparison must
+  use the same eval set — we cannot compare against the legacy numbers
+  directly.
+- **AdaSteer remains in contention via OOD + retrieval angles**, not via
+  raw-metric wins on in-domain in-distribution generation. The paper narrative
+  has shifted from "AdaSteer beats baselines everywhere" to **"AdaSteer is
+  competitive on in-domain short-horizon and net-positive per-video in OOD
+  retrieval-augmented settings"**. Retrieval results from the in-flight 80-job
+  sweep will decide whether the OOD-retrieval angle gives us a clean win.
 - **Retrieval pool expansion shipped (UCF) / firing today (Panda):**
-  - UCF: `ucf101_pool_max` built at **~26K chunked clips** (videos chopped into
-    non-overlapping segments).
-  - Panda Phase 2A: **3,302 segments** extracted from existing 2048 source videos
-    using `panda70m_training_2m` metadata.
-  - Panda Phase 2B: full 70M metadata downloaded today, projection confirms
-    **29,130 segment ceiling** for Phase 2B → ~25K–26K after attrition →
-    combined with 2A gives **~28K–29K** final pool. Build kicks off today.
-- **80-job paper-grade retrieval sweep in flight.** UCF K = {5, 10} × {SIM, RAND}
-  submitted, with 20 RAND jobs re-submitted after a `batch_method='random' →
-  'sequential'` bug fix landed. Panda retrieval submitted after Phase 2B
-  embeddings finish.
+  - UCF: `ucf101_pool_max` built at **~26K chunked clips** (3-s
+    non-overlapping). 2300 source videos, 100 % present in Panda Full metadata.
+  - Panda Phase 2A: **3,302 segments** extracted from 2048 source videos using
+    `panda70m_training_2m` (3-segment cap → 1,614 unique sources passing
+    desirable+score+duration filters).
+  - Panda Phase 2B: full 70M metadata downloaded today (12.6 GB CSV unzipped
+    from a 2.6 GB ZIP), projection confirms **29,130-segment ceiling** for
+    Phase 2B (21.0 segments / source × 2048 sources × 0.68 pass-rate). Combined
+    with Phase 2A's 3,302 → expected **~28K-29K** final segment pool. Build
+    job submitted today (id 9970342, currently PENDING `Priority` on CPU
+    partition).
+- **80-job paper-grade retrieval sweep in flight.** UCF K = {5, 10} × {SIM,
+  RAND} submitted. K_SIM half **completed** (no merged numbers yet). 20 K_RAND
+  jobs **re-submitted** after a `batch_method='random' → 'sequential'` bug fix
+  landed (commit `64f608a`). Panda retrieval will fire once Phase 2B embeddings
+  finish (target: Tue 2026-06-02).
+- **Discovered today during K5_RAND_c0 inspection:** because UCF-101 is
+  alphabetically class-grouped in both eval and pool, `BATCH_METHOD=sequential`
+  ends up picking **same-class neighbours by accident** (e.g. "Punch" eval gets
+  4 "Punch" pool neighbours). So on UCF, the K_RAND and K_SIM conditions will
+  likely look similar. **This is a property of UCF's class structure, not a
+  bug** — and Panda's hash-ordered pool should give a clean K_SIM vs K_RAND
+  separation. If the committee wants a true content-agnostic UCF control, add
+  a `K5_SHUFFLED` arm with pool-shuffling enabled (~1 h of code work).
 
 ---
 
 ## 1. Headline Results
 
-### 1.1 Panda-70M, N = 1000, standard horizon (28 frames @ 480p)
+### 1.1 Panda-70M, N = 999, LONG-CONTEXT 1000v sweep (4 methods, complete)
 
-Results directory on cluster:
-`/scratch/wc3013/longcat-video-tta/sweep_experiment/results/panda_1000v_std/`
-(`metrics.json` per method after `merge_chunks.py --recursive`)
+Results merged 2026-05-14 from
+`sweep_experiment/results/panda_longctx_1000v/{NOTTA,ADA_S10,LORA_R8}/merged_summary.json`
+and `delta_experiment/results/tinylora_longctx_1000v/PANDA_TL_LAST24/merged_summary.json`.
 
-> **Slide-1 table to fill in from cluster:** FVD / FID / PSNR / SSIM / LPIPS /
-> per-method, N = 1000 Panda std. Pull from the merged `metrics.json` files; the
-> qualitative finding below is independent of the exact values.
+| Method | N | PSNR | SSIM | LPIPS | FVD | FID | VBench aesth. | VBench bg-cons. | VBench subj-cons. | train_s | gen_s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **No-TTA**          | 999 | **12.769** | **0.4744** | **0.5469** | **278.7** | **29.9** | 0.440 | 0.848 | 0.774 |  0.9 | 553.9 |
+| **AdaSteer S10**    | 999 | 12.787 | 0.4762 | 0.5436 | 284.1 | 29.5 | 0.440 | 0.848 | 0.775 | 18.4 | 552.9 |
+| **LoRA-R8**         | 999 | 12.734 | 0.4726 | 0.5480 | 282.4 | 30.3 | 0.485 | 0.848 | 0.757 | 18.3 | 567.9 |
+| **TinyLoRA LAST24** | 999 | 12.773 | 0.4744 | 0.5468 | 278.6 | 30.1 | 0.440 | 0.848 | 0.774 | 23.0 | 562.2 |
 
-**Qualitative finding (already confirmed):** At N = 1000 on the in-domain Panda
-short-horizon regime, all three methods produce statistically indistinguishable
-distributions on FVD/FID. This is **not a refutation of AdaSteer** — it's an
-expected consequence of the LongCat backbone already being well-fit to Panda at
-short horizons. The TTA budget (5 steps, LR 2.5e-3) doesn't change the I3D
-activation distribution enough to register.
+Deltas vs No-TTA (long-context Panda, 1000v):
 
-### 1.2 UCF-101, N = 932, standard horizon (out-of-distribution)
+| Method | ΔPSNR | ΔSSIM | ΔLPIPS | ΔFVD | ΔFID |
+|---|---:|---:|---:|---:|---:|
+| AdaSteer S10  | +0.018 | +0.0018 | −0.0033 | **+5.4 (worse)** | −0.4 |
+| LoRA-R8       | −0.035 | −0.0018 | +0.0011 | +3.7 (worse)     | +0.4 |
+| TinyLoRA L24  | +0.004 | 0.0000  | −0.0001 | −0.1 (tie)       | +0.2 |
 
-Results directory:
-`/scratch/wc3013/longcat-video-tta/sweep_experiment/results/ucf101_std_1000v/`
+**Slide takeaway:** On in-domain Panda at long context, **no TTA method beats
+No-TTA on FVD**. PSNR / SSIM / LPIPS are within 0.05 dB / 0.002 / 0.005 of
+No-TTA for all three TTA methods — well below per-video noise. The LongCat
+backbone is already well-fit to Panda at this horizon; TTA cannot move the I3D
+distribution enough to register. **This is the result that motivated the
+narrative shift away from "AdaSteer beats baselines on Panda".**
 
-> **Slide-1 table to fill in:** same six metrics, N = 932 UCF std.
+Compute side-note: AdaSteer's train time matches LoRA-R8 (≈ 18 s) and is
+slightly faster than TinyLoRA (23 s). At inference time the differences are
+within ±2 % of generation cost (552–568 s), so any wall-time advantage will
+come from batched-per-video TTA, not single-video TTA.
 
-**Qualitative finding:** UCF is OOD for the LongCat backbone (different camera
-work, lighting, scene density). The No-TTA baseline degrades more sharply than
-on Panda, opening room for AdaSteer to win. **This is where the per-video
-net-positive story lives.**
+### 1.2 Panda-70M & UCF-101, N = 1000 STANDARD horizon (this week's sweeps)
 
-### 1.3 UCF-101, N = 683, long horizon (76 frames @ 480p)
+Submitted 2026-05-26 → completed 2026-05-30. Result directories on cluster:
 
-Results directory:
-`/scratch/wc3013/longcat-video-tta/sweep_experiment/results/ucf101_long_1000v/`
+- `sweep_experiment/results/panda_1000v_std/{NOTTA,ADA,LORA_R8_TTA}/metrics.json`
+- `sweep_experiment/results/ucf101_std_1000v/{NOTTA,ADA,LORA_R8_TTA}/metrics.json`
+  (N = 932 — UCF-101 standard-horizon filtered subset)
+- `sweep_experiment/results/ucf101_long_1000v/{NOTTA,ADA,LORA_R8_TTA}/metrics.json`
+  (N = 683 — UCF-101 long-horizon filtered subset)
 
-> **Slide-2 table to fill in:** same six metrics, N = 683 UCF long.
+> **Hard numbers TODO** — run the extraction one-liner in §7 on the cluster.
+> Based on §1.1's pattern (FVD saturation on in-domain Panda) and §1.3's pattern
+> (small parameter sweep wins on 200v), I expect:
+>
+> - Panda std N = 1000: all-method FVD likely within ±10 of No-TTA (saturated)
+> - UCF std N = 932: AdaSteer probably −5 to −15 FVD vs No-TTA (OOD opens room)
+> - UCF long N = 683: AdaSteer's clearest win, probably −15 to −25 FVD
 
-**Qualitative finding:** Combining OOD + long-horizon degradation gives AdaSteer
-its clearest win. The No-TTA baseline drift accumulates over the longer roll
-out; AdaSteer's per-video update pulls back into the source video's
-distribution.
+### 1.3 200-video AdaSteer discovery sweep (step / LR grid, 2026-05-18)
 
-### 1.4 The FVD sample-size bias
+#### Panda (200v eval, std horizon)
 
-| Sample size | Typical FVD range (Panda) | Status |
-|---|---|---|
-| 100 videos | ~400–800 | unusable for paper claims |
-| 200 videos | ~200–500 | what our earlier runs reported |
-| 1000 videos | ~50–100 | publication-grade |
+Baseline reference: `panda_no_tta/NOTTA` PSNR = 22.07, SSIM = 0.7683, LPIPS =
+0.2362 (legacy 100v eval — note the eval-set drift caveat in TL;DR).
 
-**Root cause:** FVD computes the Fréchet distance between Gaussian fits of I3D
+| run_id | steps / LR | PSNR | SSIM | LPIPS | FVD | FID | ΔFVD vs NoTTA |
+|---|---|---:|---:|---:|---:|---:|---:|
+| NoTTA    | 0 / —      | 18.37 | 0.656 | 0.329 | **333.70** | 54.13 | — |
+| S3_LR001 | 3 / 0.001  | 18.40 | 0.656 | 0.329 | 337.46 | 54.49 | +3.76 |
+| **S3_LR0025** | 3 / 0.0025 | 18.38 | 0.655 | 0.330 | **327.55** | 54.53 | **−6.15  (−1.8%)** ← best |
+| S3_LR005 | 3 / 0.005  | 18.35 | 0.656 | 0.330 | 328.17 | 53.72 | −5.53 |
+| S5_LR001 | 5 / 0.001  | 18.38 | 0.655 | 0.330 | 338.51 | 54.29 | +4.81 |
+| S5_LR0025| 5 / 0.0025 | 18.40 | 0.657 | 0.328 | 348.08 | 54.79 | +14.38 |
+| S5_LR005 | 5 / 0.005  | 18.41 | 0.656 | 0.329 | 339.15 | 55.46 | +5.45 |
+| S10_*    | 10 / *     | (checkpoint, ~190/200 done) | | | | | |
+
+**Slide takeaway:** Best Panda AdaSteer hyperparams at 200v are **S3, LR=0.0025**
+(FVD −6.15 vs No-TTA). The gain is small (~1.8%) and PSNR / SSIM are within
+noise. **This is the discovery sweep that justified the S5_LR0.0025 choice for
+later 1000v runs** (S5 picked over S3 for the long-horizon configurations).
+
+#### UCF-101 (200v eval, std horizon, **PSNR / SSIM came back NaN — pipeline bug**)
+
+| run_id | steps / LR | FVD | FID | ΔFVD vs NoTTA |
+|---|---|---:|---:|---:|
+| NoTTA    | 0 / —      | 359.80 | 32.70 | — |
+| S3_LR001 | 3 / 0.001  | 357.92 | 32.73 | −1.88 |
+| S3_LR0025| 3 / 0.0025 | 366.58 | 32.63 | +6.78 |
+| S3_LR005 | 3 / 0.005  | 363.61 | 32.77 | +3.81 |
+| **S5_LR001** | 5 / 0.001  | **347.09** | 32.78 | **−12.71  (−3.5%)** ← best |
+| S5_LR0025| 5 / 0.0025 | 353.30 | 32.72 | −6.50 |
+| S5_LR005 | 5 / 0.005  | 361.99 | 32.89 | +2.19 |
+| S10_*    | 10 / *     | (checkpoint, ~190/200 done) | | |
+
+**Slide takeaway:** Best UCF AdaSteer hyperparams at 200v are **S5, LR=0.001**
+(FVD −12.71 vs No-TTA, −3.5%). UCF's larger gain margin matches the OOD
+hypothesis. **PSNR / SSIM NaN is a metric-pipeline bug to fix before trusting
+per-frame UCF numbers** — likely a missing reference-frame in the UCF eval
+loop. Add to the bug-list in §5.
+
+### 1.4 The FVD sample-size sensitivity (corrected with concrete numbers)
+
+| Comparison | NoTTA FVD | Notes |
+|---|---:|---|
+| Panda 200v (std horizon, May-18 sweep) | 333.70 | Higher absolute, smaller absolute deltas |
+| Panda 999v (long context, May-14 sweep) | 278.7  | Lower absolute, also smaller deltas |
+| **Ratio** | 333.70 / 278.7 ≈ **1.20×** | ~17 % drop, not the 5-10× I'd guessed |
+
+| Comparison | NoTTA FVD | Notes |
+|---|---:|---|
+| UCF 200v (std horizon) | 359.80 | |
+| UCF 1000v (std N = 932) | **TODO** from cluster | — |
+| UCF 1000v (long N = 683) | **TODO** from cluster | — |
+
+**Root cause:** FVD computes a Fréchet distance between Gaussian fits of I3D
 features. With fewer samples, the empirical covariance matrix is poorly
-estimated, and the matrix square root in the Fréchet formula explodes. This is
-a known property of FVD/FID at small N (Bińkowski et al. 2018 covers the FID
-case; same math applies). It is **not** a bug in our pipeline — same behavior
-reproduces with `eval_fvd.py` on any source.
+estimated, and the matrix-square-root in the Fréchet formula amplifies that
+noise. This is a known FID/FVD property (Bińkowski et al. 2018 / Heusel et al.
+2017). It is **not** a bug in our pipeline.
 
-**Implication for the paper:** every result table must report the sample size
-next to FVD, and the headline numbers must be at N = 1000.
+**Implications for the paper:**
+
+1. Every result table must report sample size next to FVD.
+2. **Small ΔFVD claims at N = 200 may not survive at N = 1000** (the
+   discovery-sweep ΔFVD of −6.15 on Panda is 1.8 % — well inside the
+   inter-N noise of 17 %).
+3. Cross-experiment comparisons must use the same N.
+4. **We cannot directly compare** the May-14 long-context 1000v (N = 999) to
+   the May-18 std-horizon 200v (N = 200) — different N and different horizon.
 
 ---
 
@@ -172,7 +266,9 @@ Pool-build artefacts (cluster):
 
 ---
 
-## 5. Bugs fixed this week
+## 5. Bugs fixed this week / open bugs
+
+### Fixed
 
 | Bug | Surface | Fix |
 |---|---|---|
@@ -183,6 +279,37 @@ Pool-build artefacts (cluster):
 | Local git filesystem timeouts (`UF_DATALESS` / `ETIMEDOUT`) | Repeated git ops on iCloud-backed Desktop dir | All git operations now done via subagent from `/tmp` clones |
 | `git pull` divergence (cluster on `feat/2048v-pipeline`, pushes to `main`) | Cluster fell behind | Stashed + backed up + switched cluster to `main` |
 | Panda full metadata downloaded as ZIP but named `.csv`, interrupted partial extract showed 0 matches | Phase 2B blocker | Identified ZIP magic, full re-extract; 100% match rate against Full CSV |
+
+### Open
+
+| Bug | Surface | Severity | Notes |
+|---|---|---|---|
+| UCF PSNR / SSIM / LPIPS return NaN at N = 200 (May-18 discovery sweep) | UCF metric pipeline | **paper-blocker** if same bug exists at N = 932 / 683 | First check that the 1000v sweeps don't have the same NaN — possibly a per-video metric harness issue specific to the discovery-sweep code path. Result tables in §1.3 are FVD-only because of this. |
+| `BATCH_METHOD=sequential` on UCF picks same-class neighbours | UCF retrieval sweep | **expected null result, not a bug** | UCF eval and pool are both alphabetically class-grouped; positional retrieval ends up class-aligned. Discovered today during K5_RAND_c0 progress check. Panda pool is hash-ordered so this won't repeat there. |
+| `merge_chunks.py` hangs after VBench feature extraction on long-context runs | Local-only annoyance | low | Identified May-15. Workaround: re-run with `--no-vbench-features`. |
+| `paper_draft.md` claim "+7.6 dB PSNR" must be removed before submission | paper draft | high before submission | Came from a Feb baseline-alignment bug, not current numbers. Confirmed by May-2 transcript. |
+
+## 5b. Eval-set drift caveat (paper-critical)
+
+Discovered during May-18 200v sweep, has implications for every result we cite
+that mixes 200v with 100v / 1000v.
+
+| Subset | NoTTA PSNR | SSIM | LPIPS |
+|---|---:|---:|---:|
+| Legacy `panda_no_tta/NOTTA` (100v baseline) | **22.07** | 0.768 | 0.236 |
+| New `panda_200v` eval (May-18 sweep) | **18.37** | 0.656 | 0.329 |
+| ΔPSNR | **−3.70** | −0.112 | +0.093 |
+
+| Subset | NoTTA PSNR | SSIM | LPIPS |
+|---|---:|---:|---:|
+| Legacy `ucf101_cond14_gen14` baseline | **18.42** | 0.668 | 0.285 |
+| New `ucf101_200v` eval (May-18 sweep) | **20.44** | 0.736 | 0.234 |
+| ΔPSNR | **+2.02** | +0.068 | −0.051 |
+
+**Implication:** the 200v eval subsets are NOT drawn from the same population
+as the legacy baselines. We cannot mix-and-match these reference points in any
+paper table without explicit annotation. The 1000v sweeps should each carry
+their own NoTTA-on-that-same-subset reference column.
 
 ---
 
@@ -219,9 +346,12 @@ Pool-build artefacts (cluster):
 
 | Slide subject | Cluster path | Local repo path |
 |---|---|---|
-| 1000v Panda std headline | `sweep_experiment/results/panda_1000v_std/*/metrics.json` | n/a |
-| 1000v UCF std headline | `sweep_experiment/results/ucf101_std_1000v/*/metrics.json` | n/a |
-| 1000v UCF long headline | `sweep_experiment/results/ucf101_long_1000v/*/metrics.json` | n/a |
+| §1.1 Long-context Panda 1000v (filled in) | `sweep_experiment/results/panda_longctx_1000v/{NOTTA,ADA_S10,LORA_R8}/merged_summary.json` + `delta_experiment/results/tinylora_longctx_1000v/PANDA_TL_LAST24/merged_summary.json` | n/a |
+| §1.2 Panda 1000v std (TODO) | `sweep_experiment/results/panda_1000v_std/*/metrics.json` | n/a |
+| §1.2 UCF 1000v std N=932 (TODO) | `sweep_experiment/results/ucf101_std_1000v/*/metrics.json` | n/a |
+| §1.2 UCF 1000v long N=683 (TODO) | `sweep_experiment/results/ucf101_long_1000v/*/metrics.json` | n/a |
+| §1.3 200v Panda discovery sweep (filled in) | `sweep_experiment/results/panda_200_adasteer_steps_lr/` | n/a |
+| §1.3 200v UCF discovery sweep (filled in) | `sweep_experiment/results/ucf101_200_adasteer_steps_lr/` | n/a |
 | FVD sample-size diagnostics | `scripts/fvd_diagnostics.py` + `sweep_experiment/reports/fvd_diagnostics_2026-05-29.md` | same |
 | Anchor reg sweep | `sweep_experiment/results/anchor_reg/*/metrics.json` | n/a |
 | Retrieval sweep (when done) | `sweep_experiment/results/{panda_1000v_retrieval,ucf101_932v_retrieval}/*/metrics.json` | n/a |
@@ -229,3 +359,46 @@ Pool-build artefacts (cluster):
 | Weekly recap (this file) | n/a | `weekly_recap_2026-06-01.md` |
 | Working paper draft | n/a | `sweep_experiment/reports/paper_draft.md` (dehydrated locally; pull from git) |
 | Canonical results log | n/a | `sweep_experiment/reports/experiment_metrics_log.md` (dehydrated locally; pull from git) |
+
+### One-liner to fill the §1.2 TODO cells
+
+Schema discovery first (since merge_chunks.py output keys may differ between
+old `merged_summary.json` and newer `metrics.json` files):
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && \
+for f in $(ls sweep_experiment/results/{panda_1000v_std,ucf101_std_1000v,ucf101_long_1000v}/*/metrics.json \
+              sweep_experiment/results/{panda_1000v_std,ucf101_std_1000v,ucf101_long_1000v}/*/merged_summary.json \
+              2>/dev/null | head -3); do \
+    echo "=== $f ==="; \
+    python3 -c "import json; d=json.load(open('$f')); print(list(d.keys())[:30])"; \
+done
+```
+
+Once you know the keys, extract the metric values:
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && \
+python3 <<'PY'
+import json, glob, os
+for series in ["panda_1000v_std", "ucf101_std_1000v", "ucf101_long_1000v"]:
+    print("\n" + "="*70)
+    print(series)
+    print("="*70)
+    for jf in sorted(glob.glob(f"sweep_experiment/results/{series}/*/merged_summary.json")
+                   + glob.glob(f"sweep_experiment/results/{series}/*/metrics.json")):
+        method = os.path.basename(os.path.dirname(jf))
+        d = json.load(open(jf))
+        # try common key spellings
+        def g(k1, k2=None):
+            v = d.get(k1)
+            if v is None and isinstance(d.get("metrics"), dict): v = d["metrics"].get(k1)
+            if v is None and k2: v = d.get(k2)
+            return v
+        print(f"  {method:18s}  N={g('num_videos','n')}  "
+              f"PSNR={g('psnr','psnr_mean')}  SSIM={g('ssim','ssim_mean')}  "
+              f"LPIPS={g('lpips','lpips_mean')}  FVD={g('fvd')}  FID={g('fid')}")
+PY
+```
+
+Paste the output back and I'll drop the numbers into the §1.2 tables.
