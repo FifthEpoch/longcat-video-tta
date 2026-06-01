@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -40,23 +41,50 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
+# Canonical video-id extraction
+# ---------------------------------------------------------------------------
+# Per-video records may carry method suffixes added by the runner, e.g.
+# saved generated videos look like ``panda_0010_delta_a.mp4`` while the
+# source dataset clips are just ``panda_0010.mp4``. We normalise both sides
+# to ``panda_0010`` so the dynamicness scores (computed on source clips)
+# can be joined with the per-video metric records (computed on generated
+# clips) by video identity.
+_CANONICAL_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*_\d+)")
+
+
+def _canonical_video_id(s: str) -> str:
+    """Strip directory, extension and method suffixes, keeping ``<prefix>_<num>``."""
+    if s is None:
+        return ""
+    stem = Path(str(s)).stem
+    m = _CANONICAL_PREFIX_RE.match(stem)
+    return m.group(1) if m else stem
+
+
+# ---------------------------------------------------------------------------
 # Per-video metric loading
 # ---------------------------------------------------------------------------
 def load_per_video_metrics(method_dir: Path) -> Dict[str, Dict[str, float]]:
-    """Return {video_id_basename -> {psnr, ssim, lpips}}.
+    """Return {canonical_video_id -> {psnr, ssim, lpips}}.
 
-    Scans chunk_*/results.json (the format used by run_delta_a.py + chunked
-    runners). Handles both 'results' wrapper and bare list schemas.
+    Scans ``chunk_*/summary.json``; per-video records live under the
+    ``results`` key as a list of dicts with at least ``video_name`` (or
+    ``video_path``) and ``psnr/ssim/lpips``. Falls back to a flat
+    ``summary.json`` if no chunk dirs exist.
+
+    For backward compatibility, also tries ``chunk_*/results.json`` and the
+    older nested ``results``-wrapper schema.
     """
     pv: Dict[str, Dict[str, float]] = {}
-    chunk_files = sorted(method_dir.glob("chunk_*/results.json"))
-    if not chunk_files:
-        # fall back to a flat results.json
-        flat = method_dir / "results.json"
+    candidates: List[Path] = sorted(method_dir.glob("chunk_*/summary.json"))
+    if not candidates:
+        candidates = sorted(method_dir.glob("chunk_*/results.json"))
+    if not candidates:
+        flat = method_dir / "summary.json"
         if flat.exists():
-            chunk_files = [flat]
+            candidates = [flat]
 
-    for cf in chunk_files:
+    for cf in candidates:
         try:
             d = json.load(open(cf))
         except Exception as e:  # noqa: BLE001
@@ -66,10 +94,18 @@ def load_per_video_metrics(method_dir: Path) -> Dict[str, Dict[str, float]]:
         if not isinstance(items, list):
             continue
         for r in items:
-            vid_raw = r.get("video_id") or r.get("video") or r.get("path")
+            if not isinstance(r, dict):
+                continue
+            vid_raw = (r.get("video_name")
+                       or r.get("video_id")
+                       or r.get("video")
+                       or r.get("video_path")
+                       or r.get("path"))
             if vid_raw is None:
                 continue
-            vid = Path(str(vid_raw)).name
+            vid = _canonical_video_id(str(vid_raw))
+            if not vid:
+                continue
             row = {
                 "psnr":  r.get("psnr",  r.get("avg_psnr")),
                 "ssim":  r.get("ssim",  r.get("avg_ssim")),
@@ -155,7 +191,7 @@ def main() -> int:
     for vid, info in dd["videos"].items():
         if "error" in info or info.get(args.flow_key) is None:
             continue
-        flow_by_vid[vid] = float(info[args.flow_key])
+        flow_by_vid[_canonical_video_id(vid)] = float(info[args.flow_key])
     print(f"Loaded {len(flow_by_vid)} dynamicness scores "
           f"(key={args.flow_key}, model={dd.get('model')}).")
 
