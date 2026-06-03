@@ -116,7 +116,7 @@ pip install \
     'torchvision==0.20.1' \
     'vbench==0.1.5' \
     'decord' \
-    'opencv-python-headless' \
+    'opencv-python-headless==4.11.0.86' \
     'einops' \
     'timm' \
     'pyiqa' \
@@ -131,8 +131,13 @@ pip install \
 if pip show opencv-python >/dev/null 2>&1; then
     echo "  [fix] removing opencv-python (libGL-dependent) ..."
     pip uninstall -y opencv-python
-    pip install --cache-dir "${PIP_CACHE_DIR}" 'opencv-python-headless'
+    pip install --cache-dir "${PIP_CACHE_DIR}" 'opencv-python-headless==4.11.0.86'
 fi
+
+# Belt-and-suspenders #2: opencv-python-headless 4.13+ requires numpy>=2,
+# which conflicts with vbench 0.1.5's numpy<2 pin. Re-pin numpy if anything
+# upgraded it during the install.
+pip install --cache-dir "${PIP_CACHE_DIR}" 'numpy==1.26.4'
 
 # ---- Verify all 7 dimensions import cleanly --------------------------------
 echo "[3/3] Verifying dimension imports + pre-downloading checkpoints ..."
