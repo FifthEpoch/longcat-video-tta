@@ -97,6 +97,44 @@ def _safe_corr(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, int]:
     return pearson, spearman, int(mask.sum())
 
 
+# Per-method update-magnitude field names. Different runners use different
+# conventions; we auto-detect by scanning each record for the first match.
+DELTA_NORM_FALLBACK_KEYS = [
+    "delta_norm",      # AdaSteer / Delta-A / Delta-B
+    "lora_delta_l2",   # LoRA runner
+    "mean_v_norm",     # TinyLoRA / SVD runner
+    "delta_l2",
+    "param_norm",
+    "adapter_norm",
+]
+
+
+def _detect_norm_key(records: Dict[str, Dict],
+                     preferred: Optional[str] = None) -> Optional[str]:
+    """Return the first field name from DELTA_NORM_FALLBACK_KEYS (or
+    ``preferred`` if given) that has at least one non-zero value across
+    records. Returns None if no usable field exists."""
+    candidates = ([preferred] if preferred else []) + DELTA_NORM_FALLBACK_KEYS
+    seen: set = set()
+    for key in candidates:
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+        nonzero = 0
+        for r in records.values():
+            v = r.get(key)
+            if v is None:
+                continue
+            try:
+                if abs(float(v)) > 1e-12:
+                    nonzero += 1
+                    if nonzero >= 1:
+                        return key
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--series-root", required=True, type=Path)
@@ -111,8 +149,10 @@ def main() -> int:
     ap.add_argument("--output-png", required=True, type=Path)
     ap.add_argument("--title", default="")
     ap.add_argument("--save-stats-json", type=Path, default=None)
-    ap.add_argument("--delta-norm-key", default="delta_norm",
-                    help="Field name in per-video records. Default: delta_norm.")
+    ap.add_argument("--delta-norm-key", default=None,
+                    help="Field name in per-video records. Auto-detected if "
+                         "omitted (tries delta_norm, lora_delta_l2, "
+                         "mean_v_norm, delta_l2, param_norm, adapter_norm).")
     args = ap.parse_args()
 
     # ---- load dynamicness scores ------------------------------------------
@@ -143,6 +183,7 @@ def main() -> int:
         ]
 
     tta_pv: Dict[str, Dict[str, Dict]] = {}
+    method_norm_keys: Dict[str, str] = {}
     for name, mdir in tta_specs:
         if not mdir.exists():
             print(f"[warn] {mdir} missing — skipping {name}", file=sys.stderr)
@@ -151,24 +192,27 @@ def main() -> int:
         if not recs:
             print(f"[warn] no records under {mdir}", file=sys.stderr)
             continue
-        # Quick check: any non-zero delta_norm?
-        norms = [r.get(args.delta_norm_key) for r in recs.values()]
-        norms = [float(n) for n in norms if n is not None]
-        if not norms:
-            print(f"[warn] {name} has no '{args.delta_norm_key}' field — "
-                  "skipping. Available keys (first record): "
-                  f"{sorted(next(iter(recs.values())).keys())[:30]}",
+        # auto-detect or use the user-specified key
+        norm_key = _detect_norm_key(recs, preferred=args.delta_norm_key)
+        if norm_key is None:
+            sample_keys = sorted(next(iter(recs.values())).keys())
+            print(f"[warn] {name}: no usable norm field found. Tried "
+                  f"{[args.delta_norm_key] + DELTA_NORM_FALLBACK_KEYS}. "
+                  f"Available keys (first record, first 30): {sample_keys[:30]}",
                   file=sys.stderr)
             continue
+        norms = [r.get(norm_key) for r in recs.values()]
+        norms = [float(n) for n in norms if n is not None]
         nz = sum(1 for n in norms if n > 1e-12)
-        print(f"  {name:20s} records={len(recs)}  delta_norms: "
+        print(f"  {name:20s} records={len(recs)}  norm_key='{norm_key}'  "
               f"min={min(norms):.4g} mean={np.mean(norms):.4g} "
               f"max={max(norms):.4g}  nonzero={nz}/{len(norms)}")
         if nz == 0:
-            print(f"[warn] {name} has all-zero delta_norm — TTA effectively "
-                  "no-op? Skipping panels for this method.", file=sys.stderr)
+            print(f"[warn] {name} has all-zero {norm_key} — skipping.",
+                  file=sys.stderr)
             continue
         tta_pv[name] = recs
+        method_norm_keys[name] = norm_key
 
     if not tta_pv:
         print("[error] no TTA methods with usable delta_norm — abort.",
@@ -200,9 +244,10 @@ def main() -> int:
     stats_record: Dict[str, Dict] = {}
 
     for row, (name, recs) in enumerate(tta_pv.items()):
+        norm_key = method_norm_keys[name]
         delta_norm = np.array(
-            [float(recs[v].get(args.delta_norm_key))
-             if recs[v].get(args.delta_norm_key) is not None else np.nan
+            [float(recs[v].get(norm_key))
+             if recs[v].get(norm_key) is not None else np.nan
              for v in common], dtype=float,
         )
         psnr_method = np.array(
@@ -221,7 +266,7 @@ def main() -> int:
         axA.scatter(flows, delta_norm, s=8, alpha=0.4, edgecolors="none")
         rA, sA, nA = _safe_corr(flows, delta_norm)
         axA.set_xlabel(f"Video dynamicness ({args.flow_key}, RAFT)")
-        axA.set_ylabel(f"{name}: {args.delta_norm_key}")
+        axA.set_ylabel(f"{name}: {norm_key}")
         axA.set_xscale("symlog", linthresh=0.1)
         axA.set_title(f"A. update size vs motion\n"
                       f"Pearson={rA:+.3f}  Spearman={sA:+.3f}  n={nA}",
@@ -233,7 +278,7 @@ def main() -> int:
         axB.scatter(delta_norm, delta_psnr, s=8, alpha=0.4, edgecolors="none")
         axB.axhline(0.0, color="grey", lw=0.8, alpha=0.6)
         rB, sB, nB = _safe_corr(delta_norm, delta_psnr)
-        axB.set_xlabel(f"{name}: {args.delta_norm_key}")
+        axB.set_xlabel(f"{name}: {norm_key}")
         axB.set_ylabel(f"Δ PSNR ({name} − {args.baseline_method}) [dB]")
         axB.set_title(f"B. effect of update on Δ\n"
                       f"Pearson={rB:+.3f}  Spearman={sB:+.3f}  n={nB}",
@@ -242,7 +287,6 @@ def main() -> int:
 
         # ---- Panel C: 2D scatter, ΔPSNR colored ------------------------
         axC = fig.add_subplot(gs[row, 2])
-        # color by ΔPSNR sign-magnitude
         sc = axC.scatter(flows, delta_norm, c=delta_psnr, s=10, alpha=0.7,
                          cmap="RdBu_r",
                          vmin=-np.nanpercentile(np.abs(delta_psnr), 95),
@@ -250,9 +294,9 @@ def main() -> int:
                          edgecolors="none")
         axC.set_xscale("symlog", linthresh=0.1)
         axC.set_xlabel(f"Video dynamicness ({args.flow_key}, RAFT)")
-        axC.set_ylabel(f"{name}: {args.delta_norm_key}")
+        axC.set_ylabel(f"{name}: {norm_key}")
         rC, sC, nC = _safe_corr(flows + 0.001 * delta_norm,
-                                delta_psnr)  # joint loose
+                                delta_psnr)
         axC.set_title(f"C. joint (color = Δ PSNR)\n"
                       f"red = method better, blue = baseline better",
                       fontsize=10)
@@ -262,6 +306,7 @@ def main() -> int:
 
         stats_record[name] = {
             "n": len(common),
+            "norm_key": norm_key,
             "panel_A_flow_vs_delta_norm":      {"pearson": rA, "spearman": sA, "n": nA},
             "panel_B_delta_norm_vs_dPSNR":     {"pearson": rB, "spearman": sB, "n": nB},
             "delta_norm_quartiles": np.nanquantile(delta_norm, [0, .25, .5, .75, 1]).tolist(),
@@ -312,7 +357,8 @@ def main() -> int:
             verdict = "Update size predicts harm — but not driven by motion"
         else:
             verdict = "MIXED"
-        print(f"  {name:20s}  ρ(flow, Δnorm)={rA:+.3f}  "
+        print(f"  {name:20s}  norm='{st['norm_key']}'  "
+              f"ρ(flow, Δnorm)={rA:+.3f}  "
               f"ρ(Δnorm, ΔPSNR)={rB:+.3f}  →  {verdict}")
     print("=" * 70)
     return 0
