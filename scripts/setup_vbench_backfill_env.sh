@@ -110,7 +110,7 @@ echo "       (wheels download to ${PIP_CACHE_DIR}, extract in ${TMPDIR})"
 
 pip install \
     --cache-dir "${PIP_CACHE_DIR}" \
-    'setuptools>=70' \
+    'setuptools>=70,<80' \
     'numpy==1.26.4' \
     'torch==2.5.1' \
     'torchvision==0.20.1' \
