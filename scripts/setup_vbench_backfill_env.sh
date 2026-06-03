@@ -110,12 +110,13 @@ echo "       (wheels download to ${PIP_CACHE_DIR}, extract in ${TMPDIR})"
 
 pip install \
     --cache-dir "${PIP_CACHE_DIR}" \
+    'setuptools>=70' \
     'numpy==1.26.4' \
     'torch==2.5.1' \
     'torchvision==0.20.1' \
     'vbench==0.1.5' \
     'decord' \
-    'opencv-python' \
+    'opencv-python-headless' \
     'einops' \
     'timm' \
     'pyiqa' \
@@ -123,6 +124,15 @@ pip install \
     'ftfy' \
     'regex' \
     'tqdm'
+
+# Belt-and-suspenders: if a transitive dep dragged opencv-python (with libGL
+# requirement) onto the env, replace it with the headless variant which
+# provides the same cv2 API but no system-libGL dependency.
+if pip show opencv-python >/dev/null 2>&1; then
+    echo "  [fix] removing opencv-python (libGL-dependent) ..."
+    pip uninstall -y opencv-python
+    pip install --cache-dir "${PIP_CACHE_DIR}" 'opencv-python-headless'
+fi
 
 # ---- Verify all 7 dimensions import cleanly --------------------------------
 echo "[3/3] Verifying dimension imports + pre-downloading checkpoints ..."
