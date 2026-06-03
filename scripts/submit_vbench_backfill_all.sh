@@ -91,7 +91,11 @@ while IFS=$'\t' read -r method_dir n_chunks n_with_videos total_videos existing 
         --account="${ACCOUNT}"
         --job-name="${job_name}"
         --export="ALL,METHOD_DIR=${method_dir},DIMS=${dims_space}"
-        "${SBATCH_SCRIPT}")
+    )
+    if [ -n "${PARTITION:-}" ]; then
+        cmd+=(--partition="${PARTITION}")
+    fi
+    cmd+=("${SBATCH_SCRIPT}")
 
     echo "  [submit] ${method_dir}"
     echo "           dims_to_backfill=${dims_space}"
