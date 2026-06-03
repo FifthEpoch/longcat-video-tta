@@ -183,6 +183,14 @@ def main() -> int:
                     choices=["mean_flow", "max_flow"])
     ap.add_argument("--save-binned-json", type=Path, default=None,
                     help="Optional: save binned numerical values for tables.")
+    ap.add_argument("--baseline-method", default="NOTTA",
+                    help="Method name to use as baseline for the win-rate "
+                         "panel. Default: NOTTA.")
+    ap.add_argument("--win-threshold-psnr", type=float, default=0.1,
+                    help="Per-video |Δ PSNR| below this is treated as a tie "
+                         "in the win-rate panel (dB). Default: 0.1.")
+    ap.add_argument("--no-winrate-panel", action="store_true",
+                    help="Disable the 4th win-rate panel.")
     args = ap.parse_args()
 
     # ---- load dynamicness scores ------------------------------------------
@@ -242,9 +250,13 @@ def main() -> int:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(1, len(METRIC_DEFS), figsize=(15, 4.2),
+    n_panels = len(METRIC_DEFS) + (
+        0 if args.no_winrate_panel or args.baseline_method not in per_method_pv
+        else 1
+    )
+    fig, axes = plt.subplots(1, n_panels, figsize=(5 * n_panels, 4.2),
                              sharex=True)
-    if len(METRIC_DEFS) == 1:
+    if n_panels == 1:
         axes = [axes]
 
     binned_record: Dict[str, Dict] = {}
@@ -273,6 +285,61 @@ def main() -> int:
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=8, loc="best")
 
+    # ---- 4th panel: per-quintile win/tie/loss rate vs baseline (PSNR) -----
+    winrate_record: Dict[str, Dict] = {}
+    if (not args.no_winrate_panel) and args.baseline_method in per_method_pv:
+        ax = axes[len(METRIC_DEFS)]
+        baseline_pv = per_method_pv[args.baseline_method]
+        ax.axhline(50.0, color="grey", linewidth=0.8, linestyle="--", alpha=0.5)
+        for name, pv in per_method_pv.items():
+            if name == args.baseline_method:
+                continue
+            # per-video Δ PSNR
+            delta = np.array(
+                [(pv[v]["psnr"] if pv[v]["psnr"] is not None else np.nan)
+                 - (baseline_pv[v]["psnr"] if baseline_pv[v]["psnr"] is not None else np.nan)
+                 for v in common], dtype=float,
+            )
+            win_pct = np.full(n_bins_eff, np.nan)
+            tie_pct = np.full(n_bins_eff, np.nan)
+            loss_pct = np.full(n_bins_eff, np.nan)
+            centers_x = np.full(n_bins_eff, np.nan)
+            for b in range(n_bins_eff):
+                mask = (bin_idx == b) & ~np.isnan(delta)
+                n = int(mask.sum())
+                if n == 0:
+                    continue
+                d = delta[mask]
+                wins = int(np.sum(d > args.win_threshold_psnr))
+                ties = int(np.sum(np.abs(d) <= args.win_threshold_psnr))
+                losses = int(np.sum(d < -args.win_threshold_psnr))
+                win_pct[b] = 100.0 * wins / n
+                tie_pct[b] = 100.0 * ties / n
+                loss_pct[b] = 100.0 * losses / n
+                centers_x[b] = float(np.mean(flows[mask]))
+
+            valid = ~np.isnan(win_pct)
+            ax.plot(centers_x[valid], win_pct[valid],
+                    marker="o", linewidth=1.6,
+                    label=f"{name} win", alpha=0.95)
+
+            winrate_record[name] = {
+                "bin_centers": centers_x.tolist(),
+                "win_pct":     win_pct.tolist(),
+                "tie_pct":     tie_pct.tolist(),
+                "loss_pct":    loss_pct.tolist(),
+                "threshold":   args.win_threshold_psnr,
+                "baseline":    args.baseline_method,
+            }
+
+        ax.set_xlabel(f"Video dynamicness "
+                      f"({args.flow_key.replace('_', ' ')}, RAFT)")
+        ax.set_ylabel(f"% videos where method PSNR > {args.baseline_method}\n"
+                      f"(threshold ±{args.win_threshold_psnr} dB)")
+        ax.set_ylim(0, 100)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8, loc="best")
+
     if args.title:
         fig.suptitle(args.title, fontsize=12)
     fig.tight_layout(rect=[0, 0, 1, 0.96] if args.title else None)
@@ -294,6 +361,7 @@ def main() -> int:
             "n_common_videos": len(common),
             "methods": list(per_method_pv.keys()),
             "binned": binned_record,
+            "winrate_psnr": winrate_record,
         }, f, indent=2)
     print(f"Wrote binned JSON: {args.save_binned_json}")
     return 0
