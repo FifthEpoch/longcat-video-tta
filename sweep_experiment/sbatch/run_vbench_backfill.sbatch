@@ -1,14 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=vbench_backfill
-#SBATCH --partition=h200,h200_courtesy
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24GB
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --time=12:00:00
 #SBATCH --output=sweep_experiment/slurm_log/vbench_backfill_%j.out
 #SBATCH --error=sweep_experiment/slurm_log/vbench_backfill_%j.err
+# Allow preemptible H200 GPUs; cancelled jobs will be requeued (per cluster IT guidance)
+#SBATCH --comment="preemption=yes;requeue=true"
 
 # ============================================================================
 # Backfill VBench++ dimensions on saved generated videos.
