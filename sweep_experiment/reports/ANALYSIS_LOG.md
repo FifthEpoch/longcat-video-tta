@@ -17,6 +17,51 @@ Body...
 
 ---
 
+## 2026-06-08 — Panda 1000v retrieval submission queued; merge step pending
+**Tags:** decision, in-flight, methodology
+**Owner:** Wenchen / agent
+**Refs:**
+- `sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh`
+- Submit command: `ONLY_DATASET=panda bash sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh`
+
+Decision: launch the Panda 1000v batch-retrieval sweep (4 methods ×
+10 chunks = 40 jobs) — this is the only paper-relevant retrieval
+experiment we never ran. UCF retrieval was uninformative due to
+class-block layout (see prior entry).
+
+**Configuration as of submission:**
+- Eval set: `datasets/panda_1000_480p` (1000 videos, 100 vids × 10 chunks)
+- Retrieval pool: `datasets/panda_2048_480p` (2048 clips) — **NOT** the
+  25K segment pool the user originally ambitioned. The 25K pool requires
+  Phase 2B (full Panda-70M metadata + segment extraction) which was
+  started in late May but never completed.
+- AdaSteer base: `delta_steps=10`, `delta_lr=5.0e-3` (same as 1000v ADA headline)
+- Methods: K5_RAND (sequential), K10_RAND (sequential), K5_SIM (similarity), K10_SIM
+- Wall-time: K=5 ~14h/chunk; K=10 ~22h/chunk; with 2-way GPU cap → ~3 days
+
+**REMINDER FOR FUTURE-ME:** When all 40 jobs finish, the merge step is:
+```bash
+cd /scratch/$USER/longcat-video-tta
+python sweep_experiment/scripts/merge_chunks.py \
+    --results-dir sweep_experiment/results/panda_1000v_retrieval \
+    --recursive
+python scripts/update_merged_with_vbench.py \
+    --series-dir sweep_experiment/results/panda_1000v_retrieval --force
+python scripts/build_paper_tables.py --regime panda_std \
+    --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_panda_retrieval_followup.md
+```
+After merge: re-run VBench backfill if any of the 7 dims are missing,
+then update `INDEX.md` row for `panda_1000v_retrieval` from `RUNNING`
+to `DONE` and append a new entry to this log with the result table.
+
+**Pool-size caveat for the paper:** if results show no gain even with
+the diverse 2048-clip pool, that's still a meaningful negative result
+(pool diversity was sufficient — retrieval didn't help). If results show
+some gain, the followup question is whether scaling pool to 25K helps
+further. We can defer the 25K build until we see the 2048-pool result.
+
+---
+
 ## 2026-06-08 — VBench backfill complete; saturation confirmed across all 1000v regimes
 **Tags:** finding, paper-narrative
 **Owner:** Wenchen / agent

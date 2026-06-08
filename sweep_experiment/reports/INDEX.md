@@ -56,17 +56,68 @@ Per-series N is small; FVD/FID values are sample-size-biased.
 
 ---
 
-## Datasets
+## Datasets and retrieval pools
+
+### Eval sets
 
 | Name | Cluster path | N | Notes |
 |---|---|---|---|
-| Panda 1000v eval | `datasets/panda_1000_480p/` (videos under `videos/`, captions in `metadata.csv`) | 1000 | Used for all Panda eval runs |
+| Panda 1000v eval | `datasets/panda_1000_480p/` | 1000 | Used for all Panda eval runs |
 | Panda 100v eval | `datasets/panda_100_480p/` | 100 | Discovery |
-| UCF-101 1000v eval | `datasets/ucf101_1000_480p/` (videos under `videos/`) | 1000 | Used for `ucf101_932v_*` runs |
+| UCF-101 1000v eval | `datasets/ucf101_1000_480p/` | 1000 | Used for `ucf101_932v_*` runs |
+| UCF-101 std eval | `datasets/ucf101_std_480p/` | (varies) | Used by `submit_retrieval_1000v_chunked.sh` for UCF retrieval |
 | UCF-101 test eval | `datasets/ucf101_test_480p/` | (varies) | Older runs |
-| Panda 2048-clip retrieval pool | `datasets/panda_2048_480p/` | 2048 | Built early-May. Has clip-level captions. |
-| Panda segment retrieval pool | `datasets/panda_segment_pool/` | ~3000 | Phase 2A segment extraction (mid-late May). Clean per-segment captions. **Pending: scale to 25K via full Panda-70M metadata.** |
-| UCF-101 max retrieval pool | `datasets/ucf101_pool_max/` | ~26000 | v2 chunked: each UCF clip cut into ~3 non-overlapping chunks. Built late-May. |
+
+### Retrieval pools — embedding-database status
+
+The retrieval-augmented sweeps require pre-computed `caption_embeddings.npy` +
+`caption_embeddings.json` in the pool directory. Without these, `K_SIM` runs
+fall back to encoding captions per-job (~30-60 s/job overhead). **Verify
+embedding presence before any retrieval submission.**
+
+| Pool name | Cluster path | Pool size (entries) | Embeddings precomputed? | Used by |
+|---|---|---|---|---|
+| Panda 2048-clip pool | `datasets/panda_2048_480p/` | 2048 | Yes (per submit_retrieval_1000v_chunked.sh header docstring; verify with `ls .../caption_embeddings.*`) | `panda_1000v_retrieval` (default in submit script) |
+| Panda segment pool (Phase 2A) | `datasets/panda_segment_pool/` | ~3000 | Status UNCONFIRMED — verify on cluster | not yet wired into any submit script |
+| Panda segment pool (Phase 2B target) | (would be `datasets/panda_segment_pool_25k/` or similar) | 25000+ | NOT BUILT — Phase 2B started late May, never completed | future: replace `panda_2048_480p` in retrieval submit script if built |
+| UCF-101 max chunked pool | `datasets/ucf101_pool_max/` | ~26000 | Yes (used successfully by completed `ucf101_932v_retrieval` sweep) | `ucf101_932v_retrieval` |
+
+**CURRENT GAP:** Panda retrieval submitted today uses the 2K-entry pool, not
+25K. UCF retrieval was already on a 26K pool. If the 2K-pool Panda result
+shows no gain, we still need the 25K Panda pool to fully claim "retrieval
+doesn't help" — pool diversity could be the confound.
+
+### Verify embedding-database presence (run on cluster)
+
+```bash
+cd /scratch/$USER/longcat-video-tta
+for pool in datasets/panda_2048_480p \
+            datasets/panda_segment_pool \
+            datasets/ucf101_pool_max; do
+    echo "=== $pool ==="
+    if [ -d "$pool" ]; then
+        ls -la "$pool"/caption_embeddings.* 2>&1 | head -5
+        if [ -f "$pool/caption_embeddings.npy" ]; then
+            python -c "
+import numpy as np, json
+e = np.load('$pool/caption_embeddings.npy')
+with open('$pool/caption_embeddings.json') as f: m = json.load(f)
+print(f'  shape={e.shape} dtype={e.dtype} entries={len(m) if isinstance(m, list) else len(m.get(\"captions\", m))}')"
+        fi
+    else
+        echo "  (pool dir does not exist)"
+    fi
+    echo
+done
+```
+
+---
+
+## Pending merges and in-flight sweeps (UPDATE WHEN STATUS CHANGES)
+
+| Sweep | Submit date | Job IDs (first/last) | Expected wall | Merge command |
+|---|---|---|---|---|
+| `panda_1000v_retrieval` (40 jobs, K5/K10 × SIM/RAND) | TBD (queued for 2026-06-08) | TBD | ~3 days with 2-way GPU cap | `python sweep_experiment/scripts/merge_chunks.py --results-dir sweep_experiment/results/panda_1000v_retrieval --recursive`; then `python scripts/update_merged_with_vbench.py --series-dir sweep_experiment/results/panda_1000v_retrieval --force`; then `python scripts/build_paper_tables.py --regime panda_std --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_panda_retrieval_followup.md` |
 
 ---
 
