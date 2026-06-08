@@ -11,9 +11,12 @@ substantive task. Update it whenever a new persistent artifact is created.
 | What | Path | Notes |
 |---|---|---|
 | **This index file** | `AGENTS.md` | Updated as artifacts are added |
+| **Master experiment index** | `sweep_experiment/reports/INDEX.md` | **Single source of truth** for what experiments exist + cluster paths. Read this first when picking up work. |
+| **Analysis log (decisions/findings)** | `sweep_experiment/reports/ANALYSIS_LOG.md` | Append-only log of paper-relevant findings and decisions. NEVER edit past entries. |
+| **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
 | **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-06-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
-| **Canonical results memory** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Often dehydrated locally (iCloud). For edits, pull from git via subagent. |
+| **Canonical results memory (legacy)** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Superseded by INDEX.md + ANALYSIS_LOG.md as of 2026-06-08, but kept for history. |
 | **Paper draft** | `sweep_experiment/reports/paper_draft.md` | LaTeX-aligned narrative + result placeholders. Often dehydrated locally. |
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
@@ -48,12 +51,57 @@ When the user pastes terminal/cluster output:
    timestamped section header.
 2. **Add a 1-3 line interpretation** below the raw block.
 3. If the output contains paper-grade metrics, also update the relevant
-   weekly recap table.
+   weekly recap table AND the master `INDEX.md`.
 4. If a new fact emerges that future agents must know (a path, a bug, a
    workflow change), add it to AGENTS.md.
 
 If the date file doesn't exist yet, create it with the standard header
 template in §4.
+
+### 2b-bis. Record-keeping commandments (ADDED 2026-06-08 after the user
+called out repeated record-keeping failures)
+
+These are NON-NEGOTIABLE. Every agent that touches this repo must follow
+them. The user has explicitly cited "bad record keeping" as a paper-blocking
+issue. Past failures included: stale `merged_summary.json` numbers leaking
+into recap tables; results not saved locally; no clear mapping from cluster
+paths to paper tables; no audit trail when narrative pivots happened.
+
+1. **Whenever you produce a table that the user might cite in the paper or
+   meeting,** save it as a dated Markdown file under
+   `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<short_name>.md` AND
+   push it to GitHub the same turn. Do NOT just emit it inline in chat
+   and move on.
+
+2. **Whenever a new experiment series finishes,** add a row to
+   `sweep_experiment/reports/INDEX.md`. Include cluster path, methods,
+   N, frames, status, and key finding. Update existing rows when a series
+   is re-merged or backfilled.
+
+3. **Whenever you reach a methodology decision or paper-narrative finding,**
+   append an entry to `sweep_experiment/reports/ANALYSIS_LOG.md` with date,
+   tags, refs, and 5–15 line body. Past entries are immutable; rebut with
+   a new entry.
+
+4. **Whenever the user pastes raw cluster output,** the rule from §2b
+   applies (append to `experiment_outputs/YYYY-MM-DD.md`). DO NOT skip
+   this even if the output seems "uninteresting" — context that looks
+   trivial today is what unblocks debugging next week.
+
+5. **Every paper-grade table must be regenerable from cluster data.**
+   Use `scripts/build_paper_tables.py --regime <regime>` to produce
+   tables from `merged_summary.json` files. If you produce a table by
+   any other means (manual edit, ad-hoc calculation), document it in
+   `ANALYSIS_LOG.md` so future agents know not to overwrite it.
+
+6. **Push every record-keeping update to GitHub the same turn.** The
+   local iCloud workspace is unreliable; GitHub is the persistence layer.
+   If you wrote to `INDEX.md` / `ANALYSIS_LOG.md` / `paper_tables/*.md`,
+   the next thing you do is dispatch the subagent push (§5).
+
+7. **If you find a stale or wrong number in a published table,** add a
+   new dated table file (don't edit the old one — keep the audit trail)
+   AND add an entry to `ANALYSIS_LOG.md` explaining what was stale and why.
 
 ### 2c. Local repo is mostly dehydrated
 
@@ -105,20 +153,29 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-06-01.
+**Date:** Updated 2026-06-08.
 
 - **Paper target:** CVPR 2027.
-- **Headline finding (today):** AdaSteer is competitive (not net-positive) on
-  in-domain in-distribution generation. Wins come from OOD (UCF) and
-  retrieval-augmented settings. See `weekly_recap_2026-06-01.md` for the
-  latest pivot.
-- **In-flight cluster jobs** (as of 2026-06-01 15:00 EDT):
-  - Phase 2B Panda segment-pool build (9970342) — pending `Priority`
-  - 20 UCF K_RAND retrieval chunks (9965102–9965122) — 2 running, 18 queued
-  - All other RAND chunks gated on `QOSMaxGRESPerUser` (~2 concurrent GPU cap)
-- **Pending decisions:** whether to add a `K5_SHUFFLED` true-random UCF
-  control (~1 h of code); whether to fix the UCF PSNR/SSIM NaN bug before
-  trusting per-frame UCF results.
+- **Headline finding (current):** AdaSteer matches No-TTA on every metric
+  in every regime at 1000v scale (full 7-dim VBench backfill complete).
+  LoRA-R8 trades quality dimensions (Aes↑, IQ↓) but doesn't strictly win.
+  In long-context Panda only, AdaSteer preserves Subj where LoRA worsens
+  it — possible "identity-preserving long-context TTA" angle. See
+  `sweep_experiment/reports/paper_tables/2026-06-08_headline_1000v.md`
+  and `sweep_experiment/reports/ANALYSIS_LOG.md` (entry 2026-06-08).
+- **Per-video story:** AdaSteer is per-video net-positive in OOD long-horizon
+  scenarios; saturated at the population level for in-domain short horizon.
+  (Per-video win/loss analysis from June 1–2 still stands.)
+- **The big missing experiment:** Panda 1000v batch-retrieval. The pool
+  was built and embedded but the sweep was never submitted. UCF retrieval
+  results are uninformative due to UCF's class-block layout (SIM≈RAND).
+- **In-flight cluster jobs** (as of 2026-06-08): all backfill jobs DONE.
+- **Pending decisions:**
+  - Submit Panda 1000v retrieval sweep (4 methods × 10 chunks)?
+  - Skip the small-N "gain compresses" comparison or use existing 26-100v
+    discovery rows as proxy?
+  - Whether to extend Panda segment pool from 3K → 25K via full Panda-70M
+    metadata (Phase 2B was started but not completed).
 
 ## 4. Daily-log template
 
