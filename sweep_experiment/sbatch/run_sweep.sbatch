@@ -160,6 +160,11 @@ CAPTION_GUARD_TOPK="${CAPTION_GUARD_TOPK:-5}"
 FIXED_CAPTION="${FIXED_CAPTION:-}"
 FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-fail}"
 
+# TTA caption ablation: when set, drop captions in the TTA training step
+# (inference prompt unchanged). Off by default. Used by the
+# submit_standard_1000v_noprompt.sh ablation.
+TTA_DISABLE_CAPTION="${TTA_DISABLE_CAPTION:-}"
+
 # Online FVD / FID / VBench++
 COMPUTE_FVD="${COMPUTE_FVD:-0}"
 COMPUTE_FID="${COMPUTE_FID:-0}"
@@ -203,6 +208,7 @@ echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
 echo "  Caption guard  : mode=${CAPTION_GUARD_MODE}, min_nonempty=${CAPTION_GUARD_MIN_NONEMPTY_RATIO}, min_unique=${CAPTION_GUARD_MIN_UNIQUE_RATIO}, max_top1=${CAPTION_GUARD_MAX_TOP1_RATIO}"
 echo "  Fixed caption  : ${FIXED_CAPTION:-<none>}"
+echo "  TTA no-caption : ${TTA_DISABLE_CAPTION:-0}"
 echo "  Feature guard  : ${FEATURE_FRAME_GUARD_MODE}"
 echo "  Augmentation   : enabled=${AUG_ENABLED:-0}, flip=${AUG_FLIP:-0}, rotate_deg=${AUG_ROTATE_DEG}"
 echo "  Online FVD     : ${COMPUTE_FVD}  FID: ${COMPUTE_FID}  VBench: ${COMPUTE_VBENCH}  min_videos: ${MIN_FVD_VIDEOS}"
@@ -354,6 +360,14 @@ if [ -n "${FIXED_CAPTION}" ]; then
 fi
 FEATURE_FLAGS="--feature-frame-guard-mode ${FEATURE_FRAME_GUARD_MODE}"
 
+# TTA caption-ablation flag (passed only to runners that own a TTA loop;
+# norm_tune/film/delta_b/delta_c don't expose it yet, so we omit it for
+# those methods to avoid argparse failures).
+NOPROMPT_FLAGS=""
+if [ "${TTA_DISABLE_CAPTION}" = "1" ]; then
+    NOPROMPT_FLAGS="--tta-disable-caption"
+fi
+
 EVAL_FLAGS=""
 [ "${COMPUTE_FVD}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fvd"
 [ "${COMPUTE_FID}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fid"
@@ -501,7 +515,8 @@ case "${METHOD}" in
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
         ${ES_FLAGS} \
-        ${AUG_FLAGS}
+        ${AUG_FLAGS} \
+        ${NOPROMPT_FLAGS}
     ;;
 
   delta_a)
@@ -555,7 +570,8 @@ case "${METHOD}" in
         ${CLIP_FLAGS} \
         ${EVAL_FLAGS} \
         ${ES_FLAGS} \
-        ${AUG_FLAGS}
+        ${AUG_FLAGS} \
+        ${NOPROMPT_FLAGS}
     ;;
 
   delta_b)

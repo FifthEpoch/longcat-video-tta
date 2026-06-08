@@ -17,6 +17,80 @@ Body...
 
 ---
 
+## 2026-06-09 (latest) — "TTA without text prompt" ablation: 80-job sweep queued
+**Tags:** decision, methodology, in-flight, paper-narrative
+**Owner:** Wenchen / agent
+**Refs:**
+- `sweep_experiment/sbatch/submit_standard_1000v_noprompt.sh` (new)
+- `delta_experiment/scripts/common.py` — added `add_tta_disable_caption_args` /
+  `tta_caption_for` helpers
+- Patched runners: `delta_experiment/scripts/run_delta_a.py`,
+  `delta_experiment/scripts/run_tinylora.py`,
+  `lora_experiment/scripts/run_lora_tta.py`
+- Patched sbatch wrappers: `sweep_experiment/sbatch/run_sweep.sbatch`,
+  `delta_experiment/sbatch/run_tinylora.sbatch` (translate
+  `TTA_DISABLE_CAPTION=1` → `--tta-disable-caption`)
+- Existing headline table being ablated: `paper_tables/2026-06-08_headline_1000v.md`
+
+**Hypothesis.** AdaSteer / LoRA / TinyLoRA all train against the
+flow-matching loss `MSE(model(x_t, t, encoder_hidden_states=text), v)` at
+TTA time, where `text` is the eval video's caption. We do not yet know
+whether the caption matters for the TTA gradient signal: the caption may
+be (a) useful prior for what content to preserve in the conditioning
+window, or (b) saturated noise — the visual reconstruction signal alone
+might dominate. If (b), TTA gains should be unchanged when we drop the
+caption, and we can claim "visual-only TTA" as a simpler primitive. If
+(a), we expect a measurable gap vs the headline ADA / LORA_R8_TTA /
+TL_* numbers, especially on UCF where captions are more class-y.
+
+**Configuration.** Identical to `submit_standard_1000v_chunked.sh` modulo
+two surgical changes:
+1. Run IDs are suffixed with `_NOPROMPT` (e.g. `ADA_NOPROMPT`,
+   `LORA_R8_TTA_NOPROMPT`, `TL_BARE_R2_NOPROMPT`, `TL_TIED_R2_NOPROMPT`).
+   NOTTA is omitted because there is no TTA step to disable the caption
+   for — `NOTTA_NOPROMPT` would be byte-identical to `NOTTA`.
+2. Each job is exported with `TTA_DISABLE_CAPTION=1`. The sbatch wrapper
+   translates this to `--tta-disable-caption` on the runner CLI; the
+   runner replaces the caption with `""` (the same null-prompt convention
+   used by `comparison_methods/savi_dno_longcat.py::_get_null_embeds`)
+   ONLY for the call to `encode_prompt(...)` that produces the TTA-time
+   `prompt_embeds`. The retrieval-augmented batch path (which we are not
+   submitting here but shares the same runners) blanks neighbour captions
+   too, since they all flow through the same code path. The
+   `pipe.generate_vc(..., prompt=eval_entry["caption"], ...)` inference
+   call is unchanged so the generated video and all downstream metrics
+   (PSNR / SSIM / LPIPS / FVD / FID / VBench) see the real caption.
+
+**Why empty string vs a special null token.** The project already uses
+`prompt=""` as the unconditional / CFG-null branch (see
+`comparison_methods/scripts/savi_dno_longcat.py:403`). UMT5 tokenizes
+`""` to mostly-padding input ids; the resulting `last_hidden_state`
+serves as the "null" conditioning. Mirroring this convention avoids a
+schema drift between TTA and inference unconditional branches.
+
+**Series dirs / merge plan.** The `_NOPROMPT` runs land in the SAME
+existing series dirs as the headline standard-horizon table —
+`sweep_experiment/results/panda_1000v_standard/`,
+`sweep_experiment/results/ucf101_1000v_standard/`,
+`delta_experiment/results/tinylora_panda_1000v_standard/`,
+`delta_experiment/results/tinylora_ucf101_1000v_standard/` — so the same
+`merge_chunks.py --recursive` command picks them up, and a single
+`build_paper_tables.py` run rebuilds the standard-horizon table with the
+ablation rows next to ADA / LORA_R8_TTA / TL_*.
+
+**Total compute.** 4 methods × 2 datasets × 10 chunks = 80 jobs.
+Per-chunk wall: 12 h for sweep methods (ADA, LORA), 16 h for tinylora;
+matches headline runs.
+
+**Workflow guard.** All four runners default `--tta-disable-caption=False`
+so the existing headline runs and any future submissions through the same
+sbatch wrappers without `TTA_DISABLE_CAPTION=1` are byte-identical to
+their pre-patch behaviour. Verified via `DRY_RUN=1` of the new submitter:
+80 sbatch lines, all with `TTA_DISABLE_CAPTION=1` in their `--export`
+clauses.
+
+---
+
 ## 2026-06-08 (latest) — Cancelled 40 t1kr_panda_* jobs that fired against 2K pool
 **Tags:** in-flight, methodology
 **Refs:** previous entry; user squeue paste at 12:15 AM 2026-06-09 UTC+8

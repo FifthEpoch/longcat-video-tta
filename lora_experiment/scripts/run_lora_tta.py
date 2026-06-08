@@ -68,6 +68,8 @@ from common import (
     add_tta_frame_args,
     add_caption_guard_args,
     add_caption_override_args,
+    add_tta_disable_caption_args,
+    tta_caption_for,
     add_feature_frame_guard_args,
     add_clip_gate_args,
     parse_speed_factors,
@@ -805,6 +807,7 @@ def main():
     add_tta_frame_args(parser)
     add_caption_guard_args(parser)
     add_caption_override_args(parser)
+    add_tta_disable_caption_args(parser)
     add_feature_frame_guard_args(parser)
     add_online_eval_args(parser)
     add_clip_gate_args(parser)
@@ -860,6 +863,7 @@ def main():
     print(f"Target FFN     : {args.target_ffn}")
     print(f"Learning rate  : {args.learning_rate}")
     print(f"Num steps      : {args.num_steps}")
+    print(f"TTA no-caption : {args.tta_disable_caption}")
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
 
@@ -1144,7 +1148,8 @@ def main():
                         holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
                     )
                     pe, pm = encode_prompt(
-                        tokenizer, text_encoder, te["caption"],
+                        tokenizer, text_encoder,
+                        tta_caption_for(args, te["caption"]),
                         device=args.device, dtype=torch.bfloat16,
                     )
                     batch_data.append({
@@ -1187,7 +1192,8 @@ def main():
                 )
 
                 prompt_embeds, prompt_mask = encode_prompt(
-                    tokenizer, text_encoder, caption,
+                    tokenizer, text_encoder,
+                    tta_caption_for(args, caption),
                     device=args.device, dtype=torch.bfloat16,
                 )
 

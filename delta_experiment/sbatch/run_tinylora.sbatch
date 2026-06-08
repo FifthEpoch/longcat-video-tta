@@ -86,6 +86,10 @@ CAPTION_GUARD_MODE="${CAPTION_GUARD_MODE:-warn}"
 FIXED_CAPTION="${FIXED_CAPTION:-}"
 FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-warn}"
 
+# TTA caption ablation: when set, drop captions in the TTA training step
+# (inference prompt unchanged). Off by default.
+TTA_DISABLE_CAPTION="${TTA_DISABLE_CAPTION:-}"
+
 # Online FVD / FID / VBench++
 COMPUTE_FVD="${COMPUTE_FVD:-0}"
 COMPUTE_FID="${COMPUTE_FID:-0}"
@@ -126,6 +130,7 @@ echo "  Augmentation   : enabled=${AUG_ENABLED:-0}, flip=${AUG_FLIP:-0}"
 echo "  CLIP gate      : enabled=${CLIP_GATE_ENABLED:-0}"
 echo "  Online FVD     : ${COMPUTE_FVD}  FID: ${COMPUTE_FID}"
 echo "  Save videos    : $([ "${NO_SAVE_VIDEOS}" = "1" ] && echo "no" || echo "yes")"
+echo "  TTA no-caption : ${TTA_DISABLE_CAPTION:-0}"
 echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Data dir       : ${DATA_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
@@ -270,6 +275,12 @@ if [ -n "${FIXED_CAPTION}" ]; then
 fi
 FEATURE_FLAGS="--feature-frame-guard-mode ${FEATURE_FRAME_GUARD_MODE}"
 
+# TTA caption-ablation flag
+NOPROMPT_FLAGS=""
+if [ "${TTA_DISABLE_CAPTION}" = "1" ]; then
+    NOPROMPT_FLAGS="--tta-disable-caption"
+fi
+
 # Online eval flags
 EVAL_FLAGS=""
 [ "${COMPUTE_FVD}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fvd"
@@ -312,7 +323,8 @@ echo "Starting TinyLoRA TTA..."
     ${CLIP_FLAGS} \
     ${CAPTION_FLAGS} \
     ${FEATURE_FLAGS} \
-    ${EVAL_FLAGS}
+    ${EVAL_FLAGS} \
+    ${NOPROMPT_FLAGS}
 
 echo ""
 echo "=============================================================================="

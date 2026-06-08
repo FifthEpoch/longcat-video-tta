@@ -53,6 +53,7 @@ Per-series N is small; FVD/FID values are sample-size-biased.
 | `full_iter_sweep`, `full_lr_sweep` | 99 | F1-F9 | Full fine-tune ablation | Discovery |
 | `lora_rank_sweep` | 99 | L1-L5 | LoRA rank sweep | Discovery |
 | `tinylora_sweep` | 100 | TL_* (13 variants) | TinyLoRA discovery | Superseded by `tinylora_panda_1000v_standard/{TL_BARE_R2, TL_TIED_R2}` |
+| `*_NOPROMPT` (in `panda_1000v_standard`, `ucf101_1000v_standard`, `tinylora_*_1000v_standard`) | 1000 | ADA_NOPROMPT, LORA_R8_TTA_NOPROMPT, TL_BARE_R2_NOPROMPT, TL_TIED_R2_NOPROMPT | "TTA without text prompt" ablation: drop caption only at TTA training time, keep caption at inference. Tests whether visual-only TTA gives different gains than visual+text TTA. | In-flight (queued 2026-06-09 via `submit_standard_1000v_noprompt.sh`) |
 
 ---
 
@@ -121,6 +122,7 @@ done
 | 2. Panda 25K segment pool build (extends existing 3.3K pool to ~25-30K via full metadata) | 2026-06-09 (12:30 AM UTC+8) | 10617270 | ~4-12 h on 16 CPU workers; idempotent (resumable) | After done: verify `ls datasets/panda_segment_pool/videos/*.mp4 \| wc -l` ≈ 25K+, then submit step 3 |
 | 3. Panda 25K embedding precompute | After step 2 | TBD | ~30 min on 1 GPU | After done: verify `caption_embeddings.npy` shape ≈ (25000+, 384), then launch step 4 |
 | 4. Panda 1000v retrieval sweep (40 jobs, K5/K10 × SIM/RAND, against 25K pool) | After step 3 | TBD | ~3 days with 2-way GPU cap | Merge: `python sweep_experiment/scripts/merge_chunks.py --results-dir sweep_experiment/results/panda_1000v_retrieval --recursive`; then `python scripts/update_merged_with_vbench.py --series-dir sweep_experiment/results/panda_1000v_retrieval --force`; then `python scripts/build_paper_tables.py --regime panda_std --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_panda_retrieval_followup.md` |
+| 5. Standard-horizon "TTA without text prompt" ablation (80 jobs: 4 methods × 2 datasets × 10 chunks) | 2026-06-09 | TBD | ~12-16 h per chunk (matches headline standard-horizon walls) | Submit: `bash sweep_experiment/sbatch/submit_standard_1000v_noprompt.sh`. Merge into the existing series dirs: `python sweep_experiment/scripts/merge_chunks.py --results-dir sweep_experiment/results/panda_1000v_standard --recursive` (and the matching `ucf101_1000v_standard`, `delta_experiment/results/tinylora_{panda,ucf101}_1000v_standard`). Then rebuild the standard-horizon paper table to add the *_NOPROMPT rows: `python scripts/build_paper_tables.py --regime panda_std --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_headline_1000v_noprompt.md` (and the `ucf_std` variant). |
 
 **Pivot rationale (2026-06-08):** the original same-day plan was to submit
 step 4 against the 2048-clip pool, but verification showed neither a 25K

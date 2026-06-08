@@ -60,6 +60,8 @@ from common import (
     add_tta_frame_args,
     add_caption_guard_args,
     add_caption_override_args,
+    add_tta_disable_caption_args,
+    tta_caption_for,
     add_feature_frame_guard_args,
     add_clip_gate_args,
     parse_speed_factors,
@@ -602,6 +604,7 @@ def main():
     add_tta_frame_args(parser)
     add_caption_guard_args(parser)
     add_caption_override_args(parser)
+    add_tta_disable_caption_args(parser)
     add_feature_frame_guard_args(parser)
     add_online_eval_args(parser)
     add_clip_gate_args(parser)
@@ -653,6 +656,7 @@ def main():
     print(f"Grad accum     : {args.tta_grad_accum}")
     print(f"Batch videos   : {args.batch_videos}")
     print(f"Batch method   : {args.batch_method}")
+    print(f"TTA no-caption : {args.tta_disable_caption}")
     if args.retrieval_pool_dir:
         print(f"Retrieval pool : {args.retrieval_pool_dir}")
     print(f"Resume from idx: {start_idx}")
@@ -866,7 +870,8 @@ def main():
 
                     _t = time.time()
                     prompt_embeds, prompt_mask = encode_prompt(
-                        tokenizer, text_encoder, caption,
+                        tokenizer, text_encoder,
+                        tta_caption_for(args, caption),
                         device=args.device, dtype=torch.bfloat16,
                     )
                     timing["encode_prompt"] += time.time() - _t

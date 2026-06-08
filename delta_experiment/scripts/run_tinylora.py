@@ -61,6 +61,8 @@ from common import (
     add_tta_frame_args,
     add_caption_guard_args,
     add_caption_override_args,
+    add_tta_disable_caption_args,
+    tta_caption_for,
     add_feature_frame_guard_args,
     add_clip_gate_args,
     add_online_eval_args,
@@ -244,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_tta_frame_args(parser)
     add_caption_guard_args(parser)
     add_caption_override_args(parser)
+    add_tta_disable_caption_args(parser)
     add_feature_frame_guard_args(parser)
     add_online_eval_args(parser)
     add_clip_gate_args(parser)
@@ -306,6 +309,7 @@ def main():
     print(f"TTA steps       : {args.tta_steps}")
     print(f"TTA LR          : {args.tta_lr}")
     print(f"Augmentation    : {args.aug_enabled}")
+    print(f"TTA no-caption  : {args.tta_disable_caption}")
     print(f"Gen start frame : {args.gen_start_frame}")
     print(f"Num cond frames : {args.num_cond_frames}")
     print(f"Num frames      : {args.num_frames}")
@@ -485,7 +489,8 @@ def main():
 
                 _t = time.time()
                 prompt_embeds, prompt_mask = encode_prompt(
-                    tokenizer, text_encoder, caption,
+                    tokenizer, text_encoder,
+                    tta_caption_for(args, caption),
                     device=args.device, dtype=torch.bfloat16,
                 )
                 timing["encode_prompt"] = time.time() - _t

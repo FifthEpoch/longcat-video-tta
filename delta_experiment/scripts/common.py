@@ -1585,6 +1585,39 @@ def add_caption_override_args(parser):
     return parser
 
 
+def add_tta_disable_caption_args(parser):
+    """Add a flag that drops captions only for the TTA training step.
+
+    When --tta-disable-caption is set, every caption fed into the TTA-time
+    text encoder (eval video AND retrieval-augmented neighbours) is replaced
+    with the empty string ""; the inference / generation prompt is left
+    unchanged so VBench / quality metrics still see the real caption. We
+    use "" because that is the existing convention for the unconditional
+    branch in encode_prompt() (see comparison_methods/savi_dno_longcat.py
+    self._null_embeds).
+    """
+    g = parser.add_argument_group("TTA caption ablation")
+    g.add_argument(
+        "--tta-disable-caption",
+        action="store_true",
+        help="Drop captions during TTA text encoding (replace with ''). "
+             "Inference prompt is unchanged. Off by default.",
+    )
+    return parser
+
+
+def tta_caption_for(args, caption: str) -> str:
+    """Return the caption to use for TTA-time text encoding.
+
+    If --tta-disable-caption was set, returns "" (empty unconditional prompt
+    consistent with the project's CFG null-branch convention). Otherwise
+    returns the caption unchanged.
+    """
+    if getattr(args, "tta_disable_caption", False):
+        return ""
+    return caption
+
+
 def add_feature_frame_guard_args(parser):
     """Add guard mode for feature frame-budget validation."""
     g = parser.add_argument_group("Feature frame budget guard")
