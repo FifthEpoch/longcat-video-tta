@@ -17,6 +17,33 @@ Body...
 
 ---
 
+## 2026-06-08 (latest) — Cancelled 40 t1kr_panda_* jobs that fired against 2K pool
+**Tags:** in-flight, methodology
+**Refs:** previous entry; user squeue paste at 12:15 AM 2026-06-09 UTC+8
+showing job IDs 10615946–10616023 all on `t1kr_panda_*`.
+
+Between the "submit now" instruction and the 25K-pool pivot, the user
+fired the 40-job sweep against the 2K pool (`panda_2048_480p`). Detected
+during pool-verification round-trip and cancelled before any chunk could
+complete (max wall at cancel time was ~25 min; smallest chunks need ~14 h).
+
+**Cancellation:**
+```bash
+scancel $(squeue -u $USER -h --format="%i %j" | awk '$2 ~ /^t1kr_panda_/ {print $1}')
+rm -rf sweep_experiment/results/panda_1000v_retrieval/
+```
+
+No useful outputs are lost (no chunk completed). Next: proceed to step 1
+of the 4-step pipeline (metadata download) per the previous entry.
+
+**Workflow lesson:** when a multi-step pivot follows a launch instruction
+in the same session, the cancel-cleanup commands should be paired with
+the pivot recommendation to prevent racing launches. Future agents:
+when you pivot, lead with `scancel` if any matching jobs are already
+queued, even if you didn't think the user had submitted yet.
+
+---
+
 ## 2026-06-08 (later) — Pivoted Panda submission to 4-step pipeline (build 25K pool first)
 **Tags:** decision, methodology, paper-narrative
 **Refs:**

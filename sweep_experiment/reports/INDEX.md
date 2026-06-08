@@ -128,6 +128,12 @@ nor any other Panda pool exists at the user's stated target size. We
 pivoted to a 4-step pipeline so the actual experiment lines up with the
 paper claim. Records of this pivot are in `ANALYSIS_LOG.md` (entry 2026-06-08).
 
+**Cancellation note (2026-06-08, 12:15 AM UTC+8 next day):** the user
+submitted the original 2K-pool sweep (job IDs 10615946–10616023, all
+`t1kr_panda_*`) before the pivot landed. All 40 jobs were cancelled
+before any chunk completed. The `sweep_experiment/results/panda_1000v_retrieval/`
+directory was wiped to avoid mixing 2K-pool and 25K-pool partial outputs.
+
 ---
 
 ## Code commits relevant to result reproducibility
