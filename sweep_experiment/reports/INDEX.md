@@ -115,9 +115,18 @@ done
 
 ## Pending merges and in-flight sweeps (UPDATE WHEN STATUS CHANGES)
 
-| Sweep | Submit date | Job IDs (first/last) | Expected wall | Merge command |
+| Sweep / job | Submit date | Job IDs | Expected wall | Next-step command |
 |---|---|---|---|---|
-| `panda_1000v_retrieval` (40 jobs, K5/K10 × SIM/RAND) | TBD (queued for 2026-06-08) | TBD | ~3 days with 2-way GPU cap | `python sweep_experiment/scripts/merge_chunks.py --results-dir sweep_experiment/results/panda_1000v_retrieval --recursive`; then `python scripts/update_merged_with_vbench.py --series-dir sweep_experiment/results/panda_1000v_retrieval --force`; then `python scripts/build_paper_tables.py --regime panda_std --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_panda_retrieval_followup.md` |
+| 1. Panda full metadata download (`panda_metadata_full/panda70m_training_full.csv`, ~2.73 GB) | TBD (queued for 2026-06-08) | TBD | ~30-60 min | After done: verify `wc -l datasets/panda_metadata_full/panda70m_training_full.csv` is large (~70M rows), then submit step 2 |
+| 2. Panda 25K segment pool build (extends existing 3.3K pool to ~25-30K via full metadata) | After step 1 | TBD | ~4-12 h on 16 CPU workers; idempotent (resumable) | After done: verify `ls datasets/panda_segment_pool/videos/*.mp4 \| wc -l` ≈ 25K+, then submit step 3 |
+| 3. Panda 25K embedding precompute | After step 2 | TBD | ~30 min on 1 GPU | After done: verify `caption_embeddings.npy` shape ≈ (25000+, 384), then launch step 4 |
+| 4. Panda 1000v retrieval sweep (40 jobs, K5/K10 × SIM/RAND, against 25K pool) | After step 3 | TBD | ~3 days with 2-way GPU cap | Merge: `python sweep_experiment/scripts/merge_chunks.py --results-dir sweep_experiment/results/panda_1000v_retrieval --recursive`; then `python scripts/update_merged_with_vbench.py --series-dir sweep_experiment/results/panda_1000v_retrieval --force`; then `python scripts/build_paper_tables.py --regime panda_std --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_panda_retrieval_followup.md` |
+
+**Pivot rationale (2026-06-08):** the original same-day plan was to submit
+step 4 against the 2048-clip pool, but verification showed neither a 25K
+nor any other Panda pool exists at the user's stated target size. We
+pivoted to a 4-step pipeline so the actual experiment lines up with the
+paper claim. Records of this pivot are in `ANALYSIS_LOG.md` (entry 2026-06-08).
 
 ---
 

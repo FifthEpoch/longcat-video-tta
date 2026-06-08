@@ -69,6 +69,13 @@
 #
 # Submit only specific run IDs (subset of K5_RAND K10_RAND K5_SIM K10_SIM):
 #   ONLY_METHODS="K5_RAND K5_SIM" bash sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh
+#
+# Override the retrieval pool (added 2026-06-08 to support the 25K Panda
+# segment pool without editing this script):
+#   PANDA_POOL=/scratch/$USER/longcat-video-tta/datasets/panda_segment_pool \
+#       ONLY_DATASET=panda \
+#       bash sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh
+#   UCF_POOL=...   (similar; defaults to ucf101_pool_max which is already 26K)
 # ============================================================================
 set -euo pipefail
 
@@ -101,6 +108,11 @@ GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 DRY_RUN="${DRY_RUN:-0}"
 ONLY_DATASET="${ONLY_DATASET:-both}"
 ONLY_METHODS="${ONLY_METHODS:-}"
+
+# Pool overrides (added 2026-06-08 to support paper-grade 25K Panda pool
+# without editing this script). Defaults preserve the prior behaviour.
+PANDA_POOL="${PANDA_POOL:-${PROJECT_ROOT}/datasets/panda_2048_480p}"
+UCF_POOL="${UCF_POOL:-${PROJECT_ROOT}/datasets/ucf101_pool_max}"
 
 count=0
 
@@ -249,7 +261,7 @@ echo ""
 if [ "${ONLY_DATASET}" = "panda" ] || [ "${ONLY_DATASET}" = "both" ]; then
     submit_dataset "panda" \
         "${PROJECT_ROOT}/datasets/panda_1000_480p" \
-        "${PROJECT_ROOT}/datasets/panda_2048_480p" \
+        "${PANDA_POOL}" \
         "sweep_experiment/results/panda_1000v_retrieval" \
         10 "5.0e-3" \
         1000 100
@@ -258,7 +270,7 @@ fi
 if [ "${ONLY_DATASET}" = "ucf" ] || [ "${ONLY_DATASET}" = "ucf101" ] || [ "${ONLY_DATASET}" = "both" ]; then
     submit_dataset "ucf101" \
         "${PROJECT_ROOT}/datasets/ucf101_std_480p" \
-        "${PROJECT_ROOT}/datasets/ucf101_pool_max" \
+        "${UCF_POOL}" \
         "sweep_experiment/results/ucf101_932v_retrieval" \
         5 "2.5e-3" \
         932 94

@@ -17,6 +17,44 @@ Body...
 
 ---
 
+## 2026-06-08 (later) — Pivoted Panda submission to 4-step pipeline (build 25K pool first)
+**Tags:** decision, methodology, paper-narrative
+**Refs:**
+- `sweep_experiment/reports/INDEX.md` "Pending merges and in-flight sweeps"
+- Verified pool state: `panda_2048_480p` has 2048 entries embedded;
+  `panda_segment_pool` has 3302 segments embedded; no 25K pool exists;
+  no `panda70m_training_*.csv` metadata on disk (was cleaned up after
+  the failed `build_panda_pool_10k` job in late May).
+
+The user explicitly asked: "Can we make sure the embedding database of
+25K embeddings are present for the 2 datasets?" UCF (`ucf101_pool_max`)
+is at 26K. Panda is at 3.3K maximum. To match the user's stated target
+and produce a paper-defensible Panda retrieval result, we need a 25K
+Panda pool BEFORE submitting `panda_1000v_retrieval`.
+
+**Pipeline pivot (replaces "submit retrieval now" plan):**
+
+1. Re-download full Panda-70M training metadata (`datasets/panda_metadata_full/panda70m_training_full.csv`, ~2.73 GB) via `download_panda70m_full_metadata.sbatch` (gdown). Wall ~30-60 min.
+
+2. Re-run `build_panda_segment_pool.sbatch` with `SOURCE_METADATA` pointing at the full CSV. Builder is idempotent — keeps existing 3,302 segments and adds new ones. Full metadata stores ~18.7 segs/video; matched against our 2300 source videos, projected ~25-30K segments after duration / score / desirable filters. Wall ~4-12 h on 16 CPU workers.
+
+3. Pre-compute embeddings on the expanded pool via `precompute_pool_embeddings.sbatch`. Wall ~30 min on 1 GPU.
+
+4. Launch the 40-job retrieval sweep with `PANDA_POOL=/scratch/$USER/longcat-video-tta/datasets/panda_segment_pool` (env-var override now supported in `submit_retrieval_1000v_chunked.sh` after today's patch). Wall ~3 days with the 2-way GPU cap.
+
+**Net cost vs the discarded "submit now" path:** ~6-14 hours of pre-launch
+work (mostly idle queueing) buys us a paper-grade 25K-pool Panda retrieval
+experiment instead of a 2K-pool one that would be re-litigated.
+
+**Why this was missed earlier:** Phase 2B job 9970342 failed in 1m52s
+(probably "metadata path missing" right after `build_panda_pool_10k`'s
+metadata was cleaned up to free disk). The failure was logged but the
+follow-up "redownload metadata + retry" step was never queued. INDEX.md
+"Pending merges and in-flight sweeps" section now exists specifically to
+prevent this kind of dropped-handoff failure mode.
+
+---
+
 ## 2026-06-08 — Panda 1000v retrieval submission queued; merge step pending
 **Tags:** decision, in-flight, methodology
 **Owner:** Wenchen / agent
