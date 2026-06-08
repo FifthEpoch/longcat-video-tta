@@ -117,8 +117,8 @@ done
 
 | Sweep / job | Submit date | Job IDs | Expected wall | Next-step command |
 |---|---|---|---|---|
-| 1. Panda full metadata download (`panda_metadata_full/panda70m_training_full.csv`, ~2.73 GB) | TBD (queued for 2026-06-08) | TBD | ~30-60 min | After done: verify `wc -l datasets/panda_metadata_full/panda70m_training_full.csv` is large (~70M rows), then submit step 2 |
-| 2. Panda 25K segment pool build (extends existing 3.3K pool to ~25-30K via full metadata) | After step 1 | TBD | ~4-12 h on 16 CPU workers; idempotent (resumable) | After done: verify `ls datasets/panda_segment_pool/videos/*.mp4 \| wc -l` ≈ 25K+, then submit step 3 |
+| 1. Panda full metadata download (`panda_metadata_full/panda70m_training_full.csv`, 12 GB CSV / 2.6 GB ZIP) | 2026-06-08 (no-op skip) | 10616455 (COMPLETED 35s — file already on disk from June 1) | n/a | DONE — proceed to step 2. The metadata had been on disk under `datasets/panda_metadata_full/` the whole time; earlier verification looked at the wrong path. |
+| 2. Panda 25K segment pool build (extends existing 3.3K pool to ~25-30K via full metadata) | 2026-06-09 (12:30 AM UTC+8) | 10617270 | ~4-12 h on 16 CPU workers; idempotent (resumable) | After done: verify `ls datasets/panda_segment_pool/videos/*.mp4 \| wc -l` ≈ 25K+, then submit step 3 |
 | 3. Panda 25K embedding precompute | After step 2 | TBD | ~30 min on 1 GPU | After done: verify `caption_embeddings.npy` shape ≈ (25000+, 384), then launch step 4 |
 | 4. Panda 1000v retrieval sweep (40 jobs, K5/K10 × SIM/RAND, against 25K pool) | After step 3 | TBD | ~3 days with 2-way GPU cap | Merge: `python sweep_experiment/scripts/merge_chunks.py --results-dir sweep_experiment/results/panda_1000v_retrieval --recursive`; then `python scripts/update_merged_with_vbench.py --series-dir sweep_experiment/results/panda_1000v_retrieval --force`; then `python scripts/build_paper_tables.py --regime panda_std --output sweep_experiment/reports/paper_tables/$(date +%Y-%m-%d)_panda_retrieval_followup.md` |
 
