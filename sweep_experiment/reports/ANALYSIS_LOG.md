@@ -17,7 +17,128 @@ Body...
 
 ---
 
-## 2026-06-09 (latest) — Panda 25K segment-pool build: csv-limit + per-segment-resume fixes
+## 2026-06-09 (latest) — Retrieval × NOPROMPT TTA ablation: 40-job Panda sweep queued (pending 25K pool)
+**Tags:** decision, methodology, in-flight, paper-narrative
+**Owner:** agent
+**Refs:**
+- `sweep_experiment/sbatch/submit_retrieval_1000v_noprompt.sh` (new)
+- Combines two existing knobs:
+  - `--tta-disable-caption` (added in commit 16c1532; helpers
+    `add_tta_disable_caption_args` / `tta_caption_for` in
+    `delta_experiment/scripts/common.py`)
+  - Batch-level retrieval (existing in
+    `sweep_experiment/sbatch/submit_retrieval_1000v_chunked.sh`;
+    `--batch-videos K --batch-method similarity|sequential
+    --retrieval-pool-dir ...`)
+- Runner: `delta_experiment/scripts/run_delta_a.py` (METHOD=delta_a in
+  `sweep_experiment/sbatch/run_sweep.sbatch`).
+- Pool dependency: `datasets/panda_segment_pool` after step 2 (25K-pool
+  build) + step 3 (caption-embedding precompute) — see `INDEX.md`
+  "Pending merges and in-flight sweeps" rows 2-3.
+- Paper-table destination: `paper_tables/<date>_panda_retrieval_noprompt.md`
+  (one of the rows is the existing NOTTA from `panda_1000v_standard`,
+  reused — NOTTA does not run TTA so dropping the TTA caption is a no-op).
+
+**Hypothesis.** The headline retrieval-augmented AdaSteer sweep
+(`K{5,10}_{SIM,RAND}`) trains on `[eval_video, n_1, n_2, ..., n_{K-1}]`
+where each entry contributes a flow-matching loss
+`MSE(model(x_t, t, encoder_hidden_states=text_i), v_i)`. Two effects
+plausibly drive any retrieval gain (or loss): (a) the additional VISUAL
+distribution coverage from neighbour clips, and (b) the additional TEXT
+diversity from neighbour captions. The standalone NOPROMPT ablation on
+the headline standard-horizon table (entry 2026-06-09 "TTA without text
+prompt", `submit_standard_1000v_noprompt.sh`) tests (b) at K=1. This
+sweep tests it at K∈{5,10}: if dropping captions at TTA time changes
+retrieval results substantially, the K-fold caption diversity carries
+real signal; if not, retrieval gains/losses come from neighbour-video
+variance alone and the caption channel is dispensable.
+
+**Configuration.** Identical to `submit_retrieval_1000v_chunked.sh`
+modulo surgical changes:
+1. Run IDs are suffixed with `_NOPROMPT` (`K5_SIM_NOPROMPT`,
+   `K5_RAND_NOPROMPT`, `K10_SIM_NOPROMPT`, `K10_RAND_NOPROMPT`).
+2. Each job is exported with `TTA_DISABLE_CAPTION=1`; `run_sweep.sbatch`
+   line 367-369 translates this to `--tta-disable-caption` on the
+   `delta_a` runner CLI (also wired for `lora` and `tinylora` but those
+   methods are NOT in this sweep). `run_delta_a.py` line 872 wraps the
+   per-entry TTA `encode_prompt(...)` with `tta_caption_for(args, caption)`,
+   which returns `""` when the flag is set. Because that call is inside
+   the `for entry in training_entries:` loop at line 848 — and
+   `training_entries = [eval_entry] + neighbors` at line 800 — the same
+   wrap covers BOTH the eval video caption AND every retrieved neighbour
+   caption in the same code path. The inference `pipe.generate(...,
+   prompt=eval_entry["caption"], ...)` at line 1118 is unchanged so
+   PSNR / SSIM / LPIPS / FVD / FID / VBench all see the real caption.
+3. Default scope is Panda ONLY (`ONLY_DATASET=panda` default); UCF
+   dispatch is wired but opt-in via `ONLY_DATASET={ucf,both}`. UCF was
+   already shown to be a poor retrieval testbed (class-block layout —
+   see headline `ucf101_932v_retrieval` row in `INDEX.md`).
+4. Default Panda pool: `datasets/panda_segment_pool` (the 25K-target
+   destination; currently 3,302 segments, pending the in-flight step 2
+   build + step 3 embedding precompute). Overridable via `PANDA_POOL=...`.
+   Default UCF pool unchanged: `datasets/ucf101_pool_max` (26K).
+5. Job-name prefix `t1krnp_` (retrieval + no-prompt; distinguishes from
+   `t1kr_` headline retrieval and `t1knp_` standard-horizon no-prompt).
+6. NOTTA is intentionally NOT in this sweep — NOTTA has no TTA step so
+   `NOTTA_NOPROMPT` would be byte-identical to `NOTTA`. The existing
+   NOTTA row from `panda_1000v_standard` is reused when building the
+   `paper_tables/<date>_panda_retrieval_noprompt.md` paper table.
+
+**Audit of `tta_caption_for` coverage (Task 1 of this sweep).**
+Verified that EVERY `encode_prompt(...)` call run during TTA training
+in both `delta_experiment/scripts/run_delta_a.py` and
+`lora_experiment/scripts/run_lora_tta.py` already wraps its caption
+argument with `tta_caption_for(args, ...)`. Findings:
+- `delta_experiment/scripts/run_delta_a.py:872` — the SOLE
+  `encode_prompt` call in the file; sits inside the
+  `for entry in training_entries:` loop (line 848) which iterates over
+  `[eval_entry] + neighbors` (line 800). Already wrapped. Inference
+  uses `pipe.generate(..., prompt=eval_entry["caption"], ...)` at line
+  1118 (unwrapped — correct: inference must see the real caption).
+  Other `encode_prompt` matches in this file are dict-key strings
+  (829, 838, 1258) or log strings (1028, 1324) — not call sites.
+- `lora_experiment/scripts/run_lora_tta.py:1150` (batch-level retrieval
+  path, inside `for te in training_entries:` at line 1136) — wrapped.
+- `lora_experiment/scripts/run_lora_tta.py:1194` (instance-level
+  fallback path, for `--batch-videos=1`) — wrapped. Inference at line
+  1339 uses raw `caption` (unwrapped — correct).
+No code edits were needed for Task 1; the previous no-prompt commit
+(16c1532) already covered the per-entry loop, which IS the
+neighbour-caption code path. The retrieval-noprompt ablation is
+therefore byte-accurate at the runner level.
+
+**Total compute.** 4 methods × 1 dataset × 10 chunks = 40 jobs.
+Per-chunk wall: 14 h for K=5, 22 h for K=10 (no-prompt does not change
+per-step cost). At the 2-way GPU cap, ~3 days wall.
+
+**Workflow guard.** `--tta-disable-caption` defaults to `False`. Without
+`TTA_DISABLE_CAPTION=1` in the export, behaviour is byte-identical to
+the headline retrieval submitter. Verified via DRY_RUN: default Panda-
+only prints exactly 40 sbatch lines (all with `TTA_DISABLE_CAPTION=1`
+and `--export` strings otherwise matching the headline retrieval
+submitter), `ONLY_DATASET=both` prints exactly 80, `ONLY_DATASET=ucf`
+prints exactly 40, and `ONLY_METHODS="K5_SIM_NOPROMPT"` filters to 10.
+
+**Launch sequence (gated on step 2 + 3 completion).**
+1. After step 2 finishes, verify pool size:
+   `ls datasets/panda_segment_pool/videos/*.mp4 | wc -l` ≈ 22-25K.
+2. Run step 3 (caption embeddings):
+   `sbatch --account=torch_pr_36_mren \
+       --export=ALL,POOL_DIR=/scratch/wc3013/longcat-video-tta/datasets/panda_segment_pool \
+       delta_experiment/sbatch/precompute_pool_embeddings.sbatch`.
+3. Verify `caption_embeddings.npy` + `.json` exist in the pool.
+4. Smoke-test before firing 40 jobs:
+   `DRY_RUN=0 NUM_CHUNKS=1 ONLY_METHODS="K5_SIM_NOPROMPT" \
+       bash sweep_experiment/sbatch/submit_retrieval_1000v_noprompt.sh`
+   This launches exactly 1 chunk × 1 method (~14 h wall). Validates the
+   pool / embeddings are wired and the `--tta-disable-caption` flag
+   reaches `run_delta_a.py`.
+5. Full launch:
+   `bash sweep_experiment/sbatch/submit_retrieval_1000v_noprompt.sh`.
+
+---
+
+## 2026-06-09 — Panda 25K segment-pool build: csv-limit + per-segment-resume fixes
 **Tags:** finding, decision, methodology, in-flight
 **Owner:** agent (relaunch pending)
 **Refs:**
