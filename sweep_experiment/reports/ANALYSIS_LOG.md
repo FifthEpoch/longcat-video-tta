@@ -17,7 +17,113 @@ Body...
 
 ---
 
-## 2026-06-09 (latest) — "TTA without text prompt" ablation: 80-job sweep queued
+## 2026-06-09 (latest) — Panda 25K segment-pool build: csv-limit + per-segment-resume fixes
+**Tags:** finding, decision, methodology, in-flight
+**Owner:** agent (relaunch pending)
+**Refs:**
+- `scripts/build_panda_segment_pool.py` (patched)
+- Failed job: `10617270` (`build_panda_segment_pool.sbatch`,
+  `SOURCE_METADATA=datasets/panda_metadata_full/panda70m_training_full.csv`)
+  crashed at 49 s during step 2/5 metadata streaming.
+- INDEX.md "Pending merges and in-flight sweeps" row 2.
+
+**Failure mode (csv field-size-limit).** The Python stdlib `csv` reader
+has a per-field hard limit of 131072 bytes by default. The full Panda-70M
+training metadata (`panda70m_training_full.csv`, ~12 GB) stores
+per-source captions, timestamps, and matching-score arrays as stringified
+JSON-ish lists inside single CSV cells. For long-form videos those cells
+routinely exceed 131072 bytes (~18.7 segments / source on average; cell
+sizes scale roughly linearly with segment count). The 800K-row
+`panda70m_training_2m.csv` subset that Phase 2A used capped at 2-3
+segments/source so the limit was never hit. The first long-source row in
+the full metadata triggered `_csv.Error: field larger than field limit
+(131072)` after only 49 seconds.
+
+**Resume-logic finding.** Independent of the csv crash, the pre-patch
+script tracked resume state per-source: it built
+`existing_sources: Set[str]` from `manifest.jsonl` and skipped any source
+whose `source_video_id` was already present. This was fine in Phase 2A
+(every source in the small subset only had ~3 segments and all were
+emitted in one shot) but is wrong for the 25K-pool extension: with the
+full metadata we want each of the 1614 already-processed sources to be
+re-scanned so the newly-visible chunk indices (~16-17 more per source on
+average, after filters) get emitted. The pre-patch behaviour would have
+limited the relaunch to processing only the 2048 - 1614 = 434
+not-yet-processed sources and cap the pool at roughly 3.3K + (434 ×
+~10 segs/source filtered) ≈ 7.6K segments — well short of the 25K
+target.
+
+**Fixes applied (single commit).**
+1. `scripts/build_panda_segment_pool.py`: after the imports, raise the
+   csv field-size limit:
+   ```python
+   try:
+       csv.field_size_limit(sys.maxsize)
+   except OverflowError:
+       csv.field_size_limit(2**31 - 1)
+   ```
+   The `try/except` guards platforms where `sys.maxsize` overflows the
+   underlying C `int` (Windows / 32-bit-int builds).
+2. `scripts/build_panda_segment_pool.py`: replace the per-source
+   `existing_sources: Set[str]` resume index with a per-segment
+   `done_chunks: Dict[str, Set[int]]` (source_video_id ->
+   set(chunk_index)). Build it from `manifest.jsonl`; drop the
+   source-level `if vid in existing_sources: continue` skip; inside the
+   per-row segment loop, skip individual segments via
+   `if seg["seg_idx"] in already_done_here: continue`. The per-source
+   `max_segments_per_source` budget is initialised to
+   `len(already_done_here)` so the cap acts as a TOTAL cap (existing +
+   new), preserving the docstring's semantics now that sources are
+   revisited. The existing per-file `dst.exists() and size > 100 KB`
+   guard inside `_encode_segment` remains as a last-line defence
+   against re-cuts.
+
+**Why the fix is correct.**
+- Raising the csv field limit is a no-op for the already-shipped 2m
+  subset (its cells fit comfortably under 131072) and is the documented
+  workaround for the full Panda-70M metadata (the Panda-70M repo's own
+  loader sets `csv.field_size_limit(sys.maxsize)` for the same reason).
+- The per-segment resume is strictly more permissive than the per-source
+  resume AND strictly more idempotent: the set of skipped (source,
+  chunk_index) pairs is exactly the set of mp4 files already present in
+  `panda_segment_pool/videos/`. ffmpeg is never invoked for those pairs
+  (they're filtered out before `segment_tasks` is queued), so the 3,302
+  existing clips cannot be re-cut. The 3,302 rows in `metadata.csv` and
+  `manifest.jsonl` are preserved verbatim by the existing manifest-read
+  + rebuild logic in step 4/5.
+
+**Expected pool size after relaunch.** Full Panda-70M averages ~18.7
+segments / source across all 2048 source videos. Conservative filtered
+yield (paper-grade settings: `desirable_filtering == "desirable"`,
+2 ≤ duration ≤ 20 s, `matching_score ≥ 0.0`) is ~10-12 segments/source
+on the long-form distribution. The 1,614 sources currently contributing
+~2 segs/source (3,302 / 1,614 ≈ 2.04) will pick up ~8-10 additional
+chunks each (≈13-16K new segments); the remaining 434
+not-yet-processed sources contribute ~4-5K new segments. Total
+projection: **~22-25K segments** after relaunch, up from the current
+**3,302**. Wall: ~4-12 h on the existing 16-CPU sbatch (idempotent;
+already-cut clips are zero-cost).
+
+**Relaunch command (user runs on cluster).**
+```
+sbatch --account=torch_pr_36_mren \
+    --export=ALL,SOURCE_METADATA=/scratch/wc3013/longcat-video-tta/datasets/panda_metadata_full/panda70m_training_full.csv \
+    datasets/build_panda_segment_pool.sbatch
+```
+No new env-var knob is required: the per-segment-resume path is
+strictly more correct than the pre-patch source-level path, so it is
+unconditional.
+
+**Verification when the job finishes.**
+```
+ls /scratch/wc3013/longcat-video-tta/datasets/panda_segment_pool/videos/*.mp4 | wc -l
+wc -l /scratch/wc3013/longcat-video-tta/datasets/panda_segment_pool/metadata.csv
+```
+Expect ~22-25K mp4 files and ~22-25K + 1 (header) rows.
+
+---
+
+## 2026-06-09 — "TTA without text prompt" ablation: 80-job sweep queued
 **Tags:** decision, methodology, in-flight, paper-narrative
 **Owner:** Wenchen / agent
 **Refs:**
