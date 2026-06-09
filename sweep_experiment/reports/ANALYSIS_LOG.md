@@ -17,6 +17,35 @@ Body...
 
 ---
 
+## 2026-06-09 (later x3) — Hotfix: Tier-3 gen-target auto-detection + env-activation note
+**Tags:** bugfix, infra, per-video, criteria
+**Refs:** [scripts/extract_video_features_for_tta.py](../../scripts/extract_video_features_for_tta.py) commit fix above
+
+First cluster run of the criteria-correlation pipeline (commit `187751c`)
+revealed two issues:
+
+1. **Tier-3 gen-target auto-detection was wrong** — set to `[0:48]` (same
+   as TTA-visible) instead of `[48:62]` for `panda_1000v_standard`. Made
+   the cross-window DINO/CLIP diagnostics self-similarity. Fixed in the
+   commit above by sourcing all four config constants
+   (`TTA_TOTAL_FRAMES`, `GEN_START_FRAME`, `NUM_FRAMES`, `NUM_COND_FRAMES`)
+   from `submit_standard_1000v_chunked.sh`.
+
+2. **`(base)` conda env on the cluster does not have torch.** Runner
+   sbatch wrappers activate `/scratch/$USER/conda-envs/longcat` before
+   invoking the trainer (see e.g. `sweep_experiment/sbatch/run_sweep.sbatch`
+   line 252, `delta_experiment/sbatch/run_tinylora.sbatch` line 151,
+   `lora_experiment/sbatch/run_lora_tta.sbatch` line 92, and the canonical
+   setup in `env_setup/01_setup_longcat_env.sbatch` line 52). Same
+   activation is required before running the feature-extraction script.
+   Cluster-command preamble updated below.
+
+**Lesson recorded above (do not lose):** any new analysis script that
+imports torch / transformers / open-clip MUST run in the same env as
+the TTA runners. Default `(base)` conda lacks these.
+
+---
+
 ## 2026-06-09 (latest+1) — Per-video feature battery: chasing a non-random ΔPSNR predictor
 **Tags:** methodology, decision, paper-narrative
 **Owner:** agent

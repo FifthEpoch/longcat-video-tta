@@ -164,8 +164,21 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 ```
 
 **Per-video feature-correlation follow-up (run after the gain analysis exists):**
+
+> NOTE: the feature-extraction script imports `torch` / `transformers`, so
+> it MUST be run inside the same conda env the TTA runners use. The
+> default `(base)` conda env on the cluster does NOT have torch — activate
+> `/scratch/$USER/conda-envs/longcat` first (env created by
+> `env_setup/01_setup_longcat_env.sbatch`; same env activated by
+> `sweep_experiment/sbatch/run_sweep.sbatch`,
+> `delta_experiment/sbatch/run_tinylora.sbatch`, etc.).
+
 ```bash
 cd /scratch/$USER/longcat-video-tta && git pull && \
+    module load anaconda3/2025.06 && \
+    source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh && \
+    conda activate /scratch/$USER/conda-envs/longcat && \
+    unset PYTHONHOME PYTHONPATH && \
     python3 scripts/extract_video_features_for_tta.py \
         --videos-dir datasets/panda_1000_480p \
         --captions-csv datasets/panda_1000_480p/metadata.csv \
