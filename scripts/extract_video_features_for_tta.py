@@ -61,6 +61,23 @@
 # Frame indices used by THIS SCRIPT (auto mode for panda_1000v_standard):
 #       TTA-visible:        [0, 48)   ->  48 frames per video
 #       Generation-target:  [48, 62)  ->  14 frames per video (Tier 3 only)
+#
+# AUTO-DETECTION CONSTANTS exposed below (named to match
+# `submit_standard_1000v_chunked.sh` env vars):
+#       TTA_TOTAL_FRAMES    = 48   (number of pre-anchor pixel frames TTA loads)
+#       GEN_START_FRAME     = 48   (first frame the diffusion sampler emits)
+#       NUM_FRAMES          = 28   (diffusion window length)
+#       NUM_COND_FRAMES     = 14   (conditioning prefix; remainder are new)
+# Derived:
+#       AUTO_TTA_VISIBLE_RANGE = (max(0, GEN_START_FRAME - TTA_TOTAL_FRAMES),
+#                                 GEN_START_FRAME)
+#                              = (0, 48)
+#       AUTO_GEN_TARGET_RANGE  = (GEN_START_FRAME,
+#                                 GEN_START_FRAME + (NUM_FRAMES - NUM_COND_FRAMES))
+#                              = (48, 62)
+# Override either window from the CLI with `--tta-visible-frames A:B` or
+# `--gen-target-frames A:B`; pass `--gen-target-frames none` to disable
+# Tier-3 columns entirely.
 # ============================================================================
 
 Tier-1 features computed on TTA-visible frames + caption (the model's actual
@@ -134,9 +151,31 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-# panda_1000v_standard frame geometry (see audit block at top of file).
-AUTO_TTA_VISIBLE_RANGE: Tuple[int, int] = (0, 48)
-AUTO_GEN_TARGET_RANGE: Tuple[int, int] = (48, 62)
+# panda_1000v_standard frame geometry — sourced verbatim from
+# `sweep_experiment/sbatch/submit_standard_1000v_chunked.sh` env vars and
+# matched by all four runners (delta_a / lora_tta / tinylora; see the audit
+# block at the top of this file for line numbers).  Editing one of these
+# four constants automatically reflows AUTO_TTA_VISIBLE_RANGE /
+# AUTO_GEN_TARGET_RANGE so the script stays consistent with the runners.
+TTA_TOTAL_FRAMES: int = 48      # pre-anchor pixel frames the TTA loop loads
+GEN_START_FRAME: int = 48       # first frame the diffusion sampler emits
+NUM_FRAMES: int = 28            # diffusion window length
+NUM_COND_FRAMES: int = 14       # conditioning prefix; (NUM_FRAMES - NUM_COND_FRAMES) are new
+
+# Derived: TTA-visible window (the runners' `start_frame=max(0, gen_start_frame
+# - tta_total_frames)` slice of length tta_total_frames).
+AUTO_TTA_VISIBLE_RANGE: Tuple[int, int] = (
+    max(0, GEN_START_FRAME - TTA_TOTAL_FRAMES),
+    GEN_START_FRAME,
+)
+# Derived: generation-target window — frames the diffusion sampler emits as
+# genuinely new content (the conditioning prefix is dropped because those
+# frames overlap TTA-visible).  Disjoint from AUTO_TTA_VISIBLE_RANGE by
+# construction whenever GEN_START_FRAME >= TTA_TOTAL_FRAMES.
+AUTO_GEN_TARGET_RANGE: Tuple[int, int] = (
+    GEN_START_FRAME,
+    GEN_START_FRAME + (NUM_FRAMES - NUM_COND_FRAMES),
+)
 
 # Histogram cut detector: Bhattacharyya distance threshold.  Calibrated so
 # that obvious hard cuts in panda_100 sample clips fire (>= 0.4 is the
@@ -491,15 +530,23 @@ def list_video_paths(videos_dir: Path) -> List[Path]:
 # ---------------------------------------------------------------------------
 # CLI / orchestration
 # ---------------------------------------------------------------------------
-def _parse_visible_arg(arg: str) -> Tuple[int, int]:
-    """Parse --tta-visible-frames.  'auto' -> AUTO_TTA_VISIBLE_RANGE; 'A:B' -> (A, B)."""
+def _parse_frame_range_arg(arg: str, default: Tuple[int, int]) -> Tuple[int, int]:
+    """Parse a 'start:end' frame-range CLI value.
+
+    Returns ``default`` when ``arg`` is empty / ``'auto'``; otherwise parses
+    ``'A:B'`` -> ``(int(A), int(B))``.  Used for both ``--tta-visible-frames``
+    and ``--gen-target-frames`` so each flag resolves to its OWN auto value
+    (previously a single helper aliased to AUTO_TTA_VISIBLE_RANGE was used
+    for both, which made ``--gen-target-frames auto`` collapse onto the
+    visible range and silently turn the Tier-3 columns into self-similarity).
+    """
     if not arg or arg.lower() == "auto":
-        return AUTO_TTA_VISIBLE_RANGE
+        return default
     if ":" in arg:
         a, b = arg.split(":", 1)
         return int(a), int(b)
     raise argparse.ArgumentTypeError(
-        f"--tta-visible-frames must be 'auto' or 'A:B', got {arg!r}"
+        f"frame-range arg must be 'auto' or 'A:B', got {arg!r}"
     )
 
 
@@ -514,14 +561,16 @@ def _parse_args() -> argparse.Namespace:
                     help="Panda metadata.csv (or UCF-style: filename,text).")
     ap.add_argument("--tta-visible-frames", type=str, default="auto",
                     help="'auto' (resolved from panda_1000v_standard audit: "
-                         f"{AUTO_TTA_VISIBLE_RANGE[0]}:{AUTO_TTA_VISIBLE_RANGE[1]}) "
-                         "or an explicit 'A:B' python-slice range.")
+                         f"{AUTO_TTA_VISIBLE_RANGE[0]}:{AUTO_TTA_VISIBLE_RANGE[1]}, "
+                         "i.e. [max(0, GEN_START_FRAME - TTA_TOTAL_FRAMES) : "
+                         "GEN_START_FRAME]) or an explicit 'A:B' python-slice range.")
     ap.add_argument("--gen-target-frames", type=str, default="auto",
                     help="'auto' (resolves to "
-                         f"{AUTO_GEN_TARGET_RANGE[0]}:{AUTO_GEN_TARGET_RANGE[1]}) "
-                         "or 'A:B'.  Used ONLY by Tier-3 diagnostic columns. "
-                         "Pass 'none' (or omit if visible == full clip) to "
-                         "leave those columns NaN.")
+                         f"{AUTO_GEN_TARGET_RANGE[0]}:{AUTO_GEN_TARGET_RANGE[1]}, "
+                         "i.e. [GEN_START_FRAME : GEN_START_FRAME + "
+                         "(NUM_FRAMES - NUM_COND_FRAMES)]) or an explicit 'A:B' "
+                         "python-slice range.  Used ONLY by Tier-3 diagnostic "
+                         "columns.  Pass 'none' to leave those columns NaN.")
     ap.add_argument("--output", type=Path, required=True,
                     help="CSV path. Idempotent — existing rows are reused "
                          "unless --force is passed.")
@@ -718,11 +767,15 @@ def _fieldnames() -> List[str]:
 
 def main() -> int:
     args = _parse_args()
-    visible_range = _parse_visible_arg(args.tta_visible_frames)
+    visible_range = _parse_frame_range_arg(
+        args.tta_visible_frames, default=AUTO_TTA_VISIBLE_RANGE,
+    )
     if args.gen_target_frames.lower() == "none":
         gen_range: Optional[Tuple[int, int]] = None
     else:
-        gen_range = _parse_visible_arg(args.gen_target_frames)
+        gen_range = _parse_frame_range_arg(
+            args.gen_target_frames, default=AUTO_GEN_TARGET_RANGE,
+        )
         # Sanity: don't let gen overlap visible (would mean Tier 3 == Tier 1
         # which would silently inflate diagnostic correlations).
         if gen_range[0] < visible_range[1]:
