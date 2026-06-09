@@ -17,6 +17,34 @@ Body...
 
 ---
 
+## 2026-06-09 (latest+1) — Per-video feature battery: chasing a non-random ΔPSNR predictor
+**Tags:** methodology, decision, paper-narrative
+**Owner:** agent
+**Refs:**
+- New scripts: `scripts/extract_video_features_for_tta.py`, `scripts/correlate_tta_gain_with_features.py` (commit `187751c`)
+- Builds on the per-video gains CSV from `74093eb`'s bundle at `sweep_experiment/reports/per_video_analysis/2026-06-09/per_video_gains.csv`.
+- Outputs target `sweep_experiment/reports/per_video_analysis/2026-06-09/{video_features.csv, criteria_correlation/}`.
+
+**User feedback:** we cannot ship "no per-video correlation" as a paper result —
+the three features the existing analysis tested (RAFT mean-flow, baseline PSNR,
+caption word count) all came in at |ρ| < 0.15 across every method. The bet is
+that *what makes a video easy for TTA* is not random, we just haven't tested the
+right features. Extend the per-video pipeline with a richer Tier-1 battery
+(scene cuts via PySceneDetect + RGB-histogram backup, CLIP image↔text alignment
+mean/var/min, DINOv2 temporal-L2, Laplacian-variance sharpness, RGB-histogram
+entropy colour-diversity) computed *only* on the TTA-visible frames (frames
+[0:48] for `panda_1000v_standard` per the audit block at the top of the
+extractor script), plus two Tier-3 diagnostics (DINO TTA↔gen-region mean
+similarity, CLIP↔gen-region caption alignment) flagged as not-online-actionable.
+
+If no Tier-1 feature clears |ρ| ≥ 0.2 for ≥ 2 methods, the summary.md template
+honestly says so and lists the next iteration's feature candidates (caption LM
+perplexity, action-vs-object classification, optical-flow second moments,
+CLIP-vs-DINO disagreement, base-VAE recon error on the visible window).
+We do not silently widen the threshold post-hoc.
+
+---
+
 ## 2026-06-09 (later) — Panda 1000v std NOPROMPT confirms TTA-caption is a noise channel
 **Tags:** finding, paper-narrative, ablation
 **Refs:**
