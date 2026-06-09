@@ -17,6 +17,40 @@ Body...
 
 ---
 
+## 2026-06-09 (latest+3) — Prompt-vs-NOPROMPT full-metrics table + per-video ΔLPIPS tail breakdown
+**Tags:** paper-table, noprompt, lpips-tail-breakdown
+**Refs:**
+- [`paper_tables/2026-06-09_panda_std_prompt_vs_noprompt_full_metrics.md`](paper_tables/2026-06-09_panda_std_prompt_vs_noprompt_full_metrics.md) (new)
+- Built from [`paper_tables/2026-06-08_headline_1000v.md`](paper_tables/2026-06-08_headline_1000v.md) (prompted full 7-dim VBench) and [`paper_tables/2026-06-09_panda_std_with_noprompt_partial.md`](paper_tables/2026-06-09_panda_std_with_noprompt_partial.md) (NOPROMPT 3-dim partial)
+- LPIPS tail computed from [`per_video_analysis/2026-06-09/per_video_gains.csv`](per_video_analysis/2026-06-09/per_video_gains.csv) (schema is `<METHOD>_lpips`, not `lpips_<METHOD>` as spec guessed)
+
+Consolidated the prompt-vs-NOPROMPT picture for Panda 1000v / 480p / 17-frame
+standard horizon: per-frame (PSNR / SSIM / LPIPS), distributional (FVD / FID),
+and the 3 in-runner VBench dims for all 5 methods (NOTTA + ADA + ADA_NOPROMPT +
+LORA_R8_TTA + LORA_R8_TTA_NOPROMPT), plus the full 7-dim VBench for the two
+prompted methods. Both NOPROMPT pairs sit within 0.01 PSNR / ≤0.001 SSIM /
+≤0.001 LPIPS / 4 FVD / 0.3 FID / 0.001 VBench-dim of their prompted siblings —
+the TTA-time text prompt is a noise channel on this regime for both the
+AdaSteer and LoRA-r8 families.
+
+Also added a per-video ΔLPIPS tail breakdown structured analogously to the
+existing ΔPSNR tail breakdown (LPIPS is the per-video perceptual analog of
+FVD, which is distributional and not per-video). Headline: **82.3 % of the
+999 clips are within ±0.005 LPIPS of NOTTA for TL_TIED_R2** (tightest), down
+to 54.8 % for ADA (loosest); same method ordering as the ΔPSNR tail (TinyLoRA
+tightest, LoRA-r8 middle, AdaSteer loosest), and median Δ is essentially 0
+for every method (|median Δ| ≤ 0.0006), confirming the population-level LPIPS
+saturation isn't hiding a one-sided per-video story. NOPROMPT variants are
+within ≤1.2 pp on every bucket of their prompted siblings — distributionally
+indistinguishable on the perceptual axis too.
+
+TODOs recorded in the new doc: (1) VBench Motn/Dyn/IQ/Flick backfill on the
+2 NOPROMPT methods, (2) TinyLoRA NOPROMPT pairings once cluster returns,
+(3) per-chunk ΔFVD sign analysis via `chunk_*/summary.json` once those files
+are accessible again.
+
+---
+
 ## 2026-06-09 (latest+2) — Pre-maintenance stocktake on per-video TTA suitability
 **Tags:** review, stocktake, paper-narrative
 **Refs:**
