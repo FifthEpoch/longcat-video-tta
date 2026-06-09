@@ -17,7 +17,138 @@ Body...
 
 ---
 
-## 2026-06-09 (latest) — Retrieval × NOPROMPT TTA ablation: 40-job Panda sweep queued (pending 25K pool)
+## 2026-06-09 (latest) — Per-video TTA-gain analysis tooling (winners/losers + feature correlations)
+**Tags:** methodology, decision, paper-narrative
+**Owner:** agent
+**Refs:**
+- New script: `scripts/analyze_per_video_tta_gain.py`
+- Sibling (kept, not modified): `scripts/plot_dynamicness_correlation.py`
+- INDEX.md "Analysis tools" row (new section)
+- Inputs assumed on cluster:
+  - Per-video metrics: `<series>/<METHOD>/chunk_*/summary.json["results"]`
+    under `sweep_experiment/results/panda_1000v_standard` and
+    `delta_experiment/results/tinylora_panda_1000v_standard`
+  - Dynamicness: `datasets/panda_1000_480p/dynamic_degree.json`
+    (RAFT-small mean optical flow, June 1-2; same JSON the headline
+    `plot_dynamicness_correlation.py` figure consumes)
+  - Captions: `datasets/panda_1000_480p/metadata.csv` (`filename`, `caption`)
+
+**Motivation.** The 80-job NOPROMPT sweep's first chunk-0 smoke run of
+`ADA_NOPROMPT` looked +0.68 dB PSNR better than the headline ADA, which
+would have been a meaningful ablation signal. When all 10 chunks merged,
+the gain washed out to ≈ 0 dB — the chunk-0 effect was pure sampling
+noise on the 100-video chunk. Combined with the broader 1000v
+saturation finding (ANALYSIS_LOG entry 2026-06-08 "VBench backfill
+complete; saturation confirmed across all 1000v regimes"), the question
+shifts from "does TTA improve on average?" (no) to "does TTA help on
+SOME videos and hurt others, with the average washing out?". If the
+answer is yes, the followup question is: what video-level features
+predict the winners? That changes the paper narrative from "AdaSteer is
+neutral at 1000v scale" to "AdaSteer is neutral at population level but
+non-trivially helpful on a characterizable subset of videos."
+
+**Hypotheses tested.** For each TTA method on `panda_1000v_standard`
+(ADA, LORA_R8_TTA, ADA_NOPROMPT, LORA_R8_TTA_NOPROMPT — plus the two
+TinyLoRA methods when their dirs exist), compute per-video
+ΔPSNR = method_psnr − NOTTA_psnr and correlate against:
+1. **Dynamicness.** RAFT mean optical flow per video. High-motion clips
+   may give TTA more "headroom" because NOTTA's prediction degrades
+   faster with motion. Reported as Pearson r AND Spearman ρ; visualised
+   as ΔPSNR vs flow-quintile (log-x).
+2. **Baseline difficulty.** The video's own NOTTA PSNR. Hypothesis: TTA
+   helps when NOTTA is bad (low-PSNR videos) and is a no-op (or
+   regression) when NOTTA is already strong. Tested via per-method
+   scatter of (NOTTA-PSNR, ΔPSNR) with a least-squares regression line;
+   negative slope = "TTA preferentially fixes hard cases".
+3. **Caption complexity.** Caption word-count quintiles. Hypothesis:
+   short captions (less prior) leave more room for TTA gradient signal
+   to matter. (The NOPROMPT ablation also pertains to this axis from
+   the opposite direction.)
+4. **Distribution shape.** Histogram of per-video ΔPSNR per method. A
+   symmetric ±2 dB spread around 0 means TTA has real per-video effects
+   that average to zero (wins paid for by losses); a right-skewed
+   distribution means TTA is net-positive on a subset. The "subset"
+   then needs to be characterizable for the paper to claim it.
+
+**Outputs of `scripts/analyze_per_video_tta_gain.py` (per --output-dir):**
+- `per_video_gains.csv` — long-format table, one row per video_id, with
+  every method's per-video PSNR/SSIM/LPIPS and the Δ-against-baseline
+  columns. Joinable to other per-video signal CSVs
+  (`per_video_difficulty_signals.py` etc.).
+- `delta_psnr_vs_dynamicness.png` — quintile-binned mean ΔPSNR ± SEM
+  per method, log-x on dynamicness, per-bin n annotated.
+- `delta_psnr_vs_baseline_psnr.png` — per-method scatter + LS-fit line;
+  panel title shows Pearson r and slope.
+- `delta_psnr_histogram.png` — overlaid translucent histograms; legend
+  shows per-method N, mean, and median.
+- `delta_psnr_vs_caption_length.png` — same shape as the dynamicness
+  plot, binned by caption-word-count quintile.
+- `summary.md` — data integrity table, per-method tail counts at
+  ±0.5 dB and ±1.0 dB (the "tails matter for the paper narrative"
+  number), per-method Pearson + Spearman correlations against the three
+  features, and top-10 winners + top-10 losers per method (video_id,
+  truncated caption, mean_flow, baseline PSNR, ΔPSNR).
+
+**Lesson — do NOT extrapolate from 1 chunk.** Each chunk in the
+`panda_1000v_standard` series is exactly 100 videos (10 chunks × 100 =
+999 videos, where one source video is silently skipped on filtering).
+The standard deviation of mean PSNR over 100-video subsamples of this
+eval set is roughly **0.4-0.7 dB** for any single method (estimable
+from the per-video PSNR variance of NOTTA: σ ≈ 5 dB / √100 ≈ 0.5 dB).
+A single chunk's mean PSNR differing from the population mean by
+±0.5-1.0 dB is therefore ENTIRELY consistent with the null hypothesis
+"this ablation does nothing." Future agents: when a smoke chunk shows
+a >0.3 dB effect, ALWAYS wait for at least 3-4 additional chunks before
+treating it as signal, and prefer estimating the per-chunk variance
+from the existing NOTTA chunks (which are reproducible per chunk) over
+arguing from a single delta. The corresponding diagnostic
+(reading per-chunk noise off NOTTA) lives in the per-video CSV
+emitted by this script: `NOTTA_psnr` standard deviation across rows
+divided by √100 gives the per-chunk-mean noise floor.
+
+**Smoke validation (local).**
+- `python3 -m py_compile scripts/analyze_per_video_tta_gain.py` clean.
+- `python3 scripts/analyze_per_video_tta_gain.py --help` prints full usage.
+- End-to-end synthetic 5-method × 60-video × 3-chunk run (locally
+  fabricated `summary.json` / `dynamic_degree.json` / `metadata.csv`)
+  produces all 5 output artefacts without crash and correctly drops
+  rows with NaN PSNR.
+
+**Cluster command (user runs this; NO slurm submission needed).**
+```bash
+cd /scratch/$USER/longcat-video-tta && git pull && \
+    python3 scripts/analyze_per_video_tta_gain.py \
+        --series-path sweep_experiment/results/panda_1000v_standard \
+        --tinylora-series-path delta_experiment/results/tinylora_panda_1000v_standard \
+        --output-dir sweep_experiment/reports/per_video_analysis/$(date +%Y-%m-%d)
+```
+
+**Note on partial NOPROMPT methods.** Currently only `ADA_NOPROMPT` and
+`LORA_R8_TTA_NOPROMPT` are 10/10-chunk complete on `panda_1000v_standard`.
+The TinyLoRA `_NOPROMPT` variants are still in flight (INDEX.md row 6).
+The script auto-detects every method dir with at least one chunk and
+proceeds; partially-merged methods will have fewer rows in the
+intersection but are still analysable. Re-run after each round of
+chunk completion.
+
+**What this script intentionally does NOT do.**
+- It does NOT recompute dynamicness (uses the precomputed June 1-2
+  RAFT JSON — re-running `scripts/compute_dynamic_degree.py` on the
+  same eval set should be byte-stable but is unnecessary).
+- It does NOT replace `scripts/plot_dynamicness_correlation.py` —
+  that script shows raw per-method metric curves vs flow bins and is
+  the right tool when the question is "does the underlying metric value
+  change with dynamicness?"; the new script focuses on ΔPSNR
+  distributions and adds caption / baseline-PSNR axes.
+- It does NOT classify themes (use `scripts/diagnose_long_horizon_failures.py`
+  for caption-keyword theme buckets) — the regex-based theme taxonomy
+  there is purpose-built for the long-horizon regression narrative and
+  is orthogonal to the dynamicness / baseline-difficulty / caption-length
+  hypotheses tested here.
+
+---
+
+## 2026-06-09 — Retrieval × NOPROMPT TTA ablation: 40-job Panda sweep queued (pending 25K pool)
 **Tags:** decision, methodology, in-flight, paper-narrative
 **Owner:** agent
 **Refs:**

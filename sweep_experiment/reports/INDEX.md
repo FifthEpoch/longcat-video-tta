@@ -138,6 +138,31 @@ directory was wiped to avoid mixing 2K-pool and 25K-pool partial outputs.
 
 ---
 
+## Analysis tools
+
+Stand-alone scripts that consume the per-method `chunk_*/summary.json`
+or `merged_summary.json` files and emit paper-narrative artefacts. They
+do NOT submit slurm jobs; the user runs them on the cluster after a
+fresh `git pull`.
+
+| Tool | Inputs | Outputs | Purpose |
+|---|---|---|---|
+| `scripts/plot_dynamicness_correlation.py` | `<series>/<METHOD>/chunk_*/summary.json` + `datasets/<eval>/dynamic_degree.json` | One multi-panel PNG (per-bin per-metric PSNR/SSIM/LPIPS + win-rate panel) + sidecar `.binned.json` | "Does raw per-video metric value vary with dynamicness?" Used for headline figure. |
+| `scripts/analyze_per_video_tta_gain.py` (new, 2026-06-09) | `<series>/<METHOD>/chunk_*/summary.json` (auto-detects methods under both `sweep_experiment/results/panda_1000v_standard` and `delta_experiment/results/tinylora_panda_1000v_standard`) + `datasets/<eval>/dynamic_degree.json` + `datasets/<eval>/metadata.csv` | `per_video_gains.csv`, four PNGs (`delta_psnr_vs_{dynamicness,baseline_psnr,caption_length}.png` + `delta_psnr_histogram.png`), `summary.md` with tails, top-10 winners/losers, Pearson + Spearman r vs three features | "Who wins / who loses from TTA, and what video-level features predict it?" Diagnostic for the per-video subset story when population-level ΔPSNR ≈ 0. See ANALYSIS_LOG entry 2026-06-09 for the motivating "+0.68 dB chunk-0 was sampling noise" lesson. |
+| `scripts/per_video_difficulty_signals.py` | `datasets/<eval>/` mp4 files + optional `--gains-csv` | Per-video signals CSV (cuts, SSIM, motion, hist χ²) + correlation tables | Frame-level difficulty (cuts, motion bursts, scene changes). Complements the dynamicness axis. |
+| `scripts/diagnose_long_horizon_failures.py` | NoTTA + treatment chunk dirs + dataset `metadata.csv` | Per-video deltas CSV + theme-bucket + quintile summary printed to stdout | Long-horizon AdaSteer regression diagnosis; coarse caption-keyword theme buckets. |
+
+**Recommended invocation (Panda standard horizon):**
+```bash
+cd /scratch/$USER/longcat-video-tta && git pull && \
+    python3 scripts/analyze_per_video_tta_gain.py \
+        --series-path sweep_experiment/results/panda_1000v_standard \
+        --tinylora-series-path delta_experiment/results/tinylora_panda_1000v_standard \
+        --output-dir sweep_experiment/reports/per_video_analysis/$(date +%Y-%m-%d)
+```
+
+---
+
 ## Code commits relevant to result reproducibility
 
 | Commit | Description | Affected series |
