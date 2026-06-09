@@ -17,6 +17,23 @@ Body...
 
 ---
 
+## 2026-06-09 (latest+2) — Pre-maintenance stocktake on per-video TTA suitability
+**Tags:** review, stocktake, paper-narrative
+**Refs:**
+- [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md) (new)
+- Companion: [`HYPOTHESES_per_video_tta_suitability_2026-06-09.md`](HYPOTHESES_per_video_tta_suitability_2026-06-09.md) (parallel literature pass)
+- INDEX.md "Standalone stocktake / review documents" section (new)
+
+Cluster is in maintenance for several days. Consolidated the completed-experiment
+conclusions on per-video TTA suitability (Panda 1000v / 480p / 17-frame), the
+hypotheses ruled out at this scale, the implemented-but-not-run experiment
+inventory, and the recommended next-wave priority order into one document so
+the next experimental wave starts from a known baseline. No new findings — see
+the review for citations into the existing `paper_tables/` and
+`per_video_analysis/` artefacts.
+
+---
+
 ## 2026-06-09 (later x3) — Hotfix: Tier-3 gen-target auto-detection + env-activation note
 **Tags:** bugfix, infra, per-video, criteria
 **Refs:** [scripts/extract_video_features_for_tta.py](../../scripts/extract_video_features_for_tta.py) commit fix above

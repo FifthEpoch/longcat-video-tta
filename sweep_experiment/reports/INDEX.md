@@ -212,3 +212,12 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 - **Analysis log (decisions, findings):** [`ANALYSIS_LOG.md`](ANALYSIS_LOG.md)
 - **VBench cache (compute reuse):** `/scratch/$USER/vbench-cache/` on cluster
 - **Backfill targets TSVs:** `sweep_experiment/reports/vbench_backfill_targets*.tsv`
+
+---
+
+## Standalone stocktake / review documents
+
+| Date | Document | Purpose |
+|---|---|---|
+| 2026-06-09 | [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md) | Pre-maintenance-window stocktake of where we stand on the per-video-TTA-suitability question: completed findings, hypotheses ruled out, implemented-but-not-run inventory, next-wave priority. Companion to `HYPOTHESES_per_video_tta_suitability_2026-06-09.md`. |
+| 2026-06-09 | [`HYPOTHESES_per_video_tta_suitability_2026-06-09.md`](HYPOTHESES_per_video_tta_suitability_2026-06-09.md) | Literature pass on new ideas for what predicts per-video TTA gain (parallel workstream to the review above). |
