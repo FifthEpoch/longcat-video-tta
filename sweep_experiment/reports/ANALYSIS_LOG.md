@@ -17,6 +17,41 @@ Body...
 
 ---
 
+## 2026-06-09 (later) — Panda 1000v std NOPROMPT confirms TTA-caption is a noise channel
+**Tags:** finding, paper-narrative, ablation
+**Refs:**
+- [`paper_tables/2026-06-09_panda_std_with_noprompt_partial.md`](paper_tables/2026-06-09_panda_std_with_noprompt_partial.md)
+- merge_chunks.py output for `panda_1000v_standard` ran 2026-06-09 15:39 UTC+8
+
+Both Panda standard-horizon NOPROMPT methods completed all 10 chunks and
+merged cleanly. Population-level results agree with headline within ~0.01 PSNR /
+~3 FVD / ~0.1 FID:
+
+| | PSNR | FVD |
+|---|---|---|
+| ADA → ADA_NOPROMPT | 17.94 → 17.93 (Δ −0.01) | 153.4 → 155.5 (Δ +2.1) |
+| LORA_R8_TTA → LORA_R8_TTA_NOPROMPT | 17.85 → 17.86 (Δ +0.01) | 157.9 → 154.0 (Δ −3.9) |
+
+**Conclusion for the paper:** the TTA-time text prompt contributes negligibly
+to the adaptation loss on Panda 1000v standard horizon. Adaptation is
+essentially video-conditioned. This is robust to dropping the caption
+unconditionally during TTA — the model's behaviour at inference (where the
+real prompt is restored) is unchanged within sample-size noise.
+
+**Open question:** is the population-level saturation hiding a winner/loser
+split? Earlier ADA_NOPROMPT smoke chunk_0 showed +0.68 PSNR vs ADA-merged
+(later attributed to chunk-0 happening to contain easier videos), so per-chunk
+or per-video variance is non-zero — we just need to characterise it. The
+new `scripts/analyze_per_video_tta_gain.py` (commit `5d92733`) is the right
+tool.
+
+**Lesson recorded above (do not lose):** per-chunk noise floor on this eval
+set is approximately 0.5 dB PSNR (NOTTA per-video PSNR std ≈ 5 dB / √100 ≈
+0.5 dB chunk-level standard error). Treat any chunk-level effect ≤ 0.5 dB
+as sampling variation until the merge confirms it.
+
+---
+
 ## 2026-06-09 (latest) — Per-video TTA-gain analysis tooling (winners/losers + feature correlations)
 **Tags:** methodology, decision, paper-narrative
 **Owner:** agent
