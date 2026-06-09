@@ -35,6 +35,9 @@ CONDA_ENV="${SCRATCH_BASE}/conda-envs/longcat"
 # ============================================================================
 GAINS_CSV="${GAINS_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/per_video_gains.csv}"
 FEATURES_CSV="${FEATURES_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/video_features.csv}"
+# Optional diffusion-OOD-score CSV (from compute_diffusion_ood_score.py); when
+# empty the correlation script analyses feature-extractor columns only.
+OOD_CSV="${OOD_CSV:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/criteria_correlation}"
 
 # ============================================================================
@@ -54,6 +57,7 @@ echo "  PROJECT_ROOT  : ${PROJECT_ROOT}"
 echo "  CONDA_ENV     : ${CONDA_ENV}"
 echo "  GAINS_CSV     : ${GAINS_CSV}"
 echo "  FEATURES_CSV  : ${FEATURES_CSV}"
+echo "  OOD_CSV       : ${OOD_CSV:-<not provided>}"
 echo "  OUTPUT_DIR    : ${OUTPUT_DIR}"
 echo "=============================================================================="
 
@@ -104,15 +108,25 @@ if [ ! -f "${FEATURES_CSV}" ]; then
     echo "ERROR: FEATURES_CSV not found: ${FEATURES_CSV}" >&2
     exit 1
 fi
+if [ -n "${OOD_CSV}" ] && [ ! -f "${OOD_CSV}" ]; then
+    echo "ERROR: OOD_CSV is set but file not found: ${OOD_CSV}" >&2
+    exit 1
+fi
 
 # ============================================================================
 # Run correlation
 # ============================================================================
+OOD_FLAG=""
+if [ -n "${OOD_CSV}" ]; then
+    OOD_FLAG="--ood-csv ${OOD_CSV}"
+fi
+
 echo "Starting correlation analysis..."
 
 "${PYTHON}" scripts/correlate_tta_gain_with_features.py \
     --gains-csv "${GAINS_CSV}" \
     --features-csv "${FEATURES_CSV}" \
+    ${OOD_FLAG} \
     --output-dir "${OUTPUT_DIR}"
 
 echo ""
