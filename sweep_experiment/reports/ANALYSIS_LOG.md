@@ -17,6 +17,22 @@ Body...
 
 ---
 
+## 2026-06-11 (later+2) — Runbook: Friday 2026-06-12 cluster-restart launch sequence
+**Tags:** runbook, cluster-restart, friday-morning
+**Refs:**
+- [`RUNBOOK_friday_morning_2026-06-12.md`](RUNBOOK_friday_morning_2026-06-12.md) (new) — single executable runbook
+- New code (Tier-3 probes, closes the gap noted in commit `38df1ba`): `scripts/compute_tier3_probes.py`, `scripts/sbatch/run_compute_tier3_probes.sbatch`
+- Extended: `scripts/sbatch/submit_per_video_feature_pipeline.sh` (now fans out Tier-3 in parallel with Stage 1a/1b; correlation depends on `afterok:1a:1b:1c`; `SKIP_TIER3=1` mirrors `SKIP_OOD=1`), `scripts/correlate_tta_gain_with_features.py` (new `--tier3-csv` flag; T3P tier appears alongside T1 / T3 / OOD in `correlation_table.md`, ranking, plots, and `summary.md`)
+- INDEX.md: new "Runbooks" section pointing at the runbook
+
+Single document consolidating every cluster-restart action authorised before the 2026-06-09 → 2026-06-12 maintenance window: (Track A1) gating Phase 0 — feature extraction + diffusion-OOD + Tier-3 probes via `submit_per_video_feature_pipeline.sh` (~3-4 h, 3 GPU jobs + 1 CPU correlation auto-chained on `afterok`); (Track A2) NOPROMPT sweep close-out via `submit_standard_1000v_noprompt.sh` (80 jobs; gated on a smoke check of `sacct -j 10618645`; ~5-7 wallclock days with the 2-way GPU cap); (Track B) the offline-investigation A1-A4 login-node CPU sequence from `PLAN_offline_investigations_2026-06-11.md` (~15 min total); (Track C) VBench backfill of the 4 NOPROMPT methods × 2 datasets after A2 merges (~1 day with 8-way parallelism), then paper-table rebuild via `build_paper_tables.py`. **Critical path:** A2 NOPROMPT sweep → C VBench backfill → paper-table rebuild (~6-7 wallclock days). Everything else completes inside the first 6 GPU h (A1) or 15 CPU min (B).
+
+**Implementation gap closed (the one thing flagged as "follow-up implementation task" in `PLAN_gating_experiment_2026-06-11.md` §2.5 / §3.1 + the same-day "Tier-3 probes wrapper TODO" surfaced in `ANALYSIS_LOG.md` 2026-06-11 (later) entry):** Tier-3 probes now have a runner and an sbatch wrapper. `compute_tier3_probes.py` mirrors `lora_experiment/scripts/run_lora_tta.py`'s LoRA recipe (r=8 / α=16 / lr=5.0e-5 / weight_decay=0.01 / targets=qkv,proj on all blocks, no FFN — verified against `sweep_experiment/sbatch/submit_standard_1000v_chunked.sh` line for `LORA_R8_TTA`); resets the LoRA adapter + re-instantiates the optimiser per (video, timestep) loop so there is zero carry-over between videos (the no-carryover guarantee in the gating plan §2.4 / HYPOTHESES H-T3-1+H-T3-2 spec); records `grad_norm_lora_t{T}` (L2 norm of LoRA-parameter gradients, H-T3-1) + `loss_drop_pct_t{T}` (fractional drop after one Adam step, H-T3-2) at timesteps 100/500/900, plus their means + per-timestep `loss_t0/loss_t1` audit columns. Output CSV schema (joined by `video_id`): `video_id, grad_norm_lora_t{100,500,900}, mean_grad_norm_lora, loss_drop_pct_t{100,500,900}, mean_loss_drop_pct, loss_t0_t{100,500,900}, loss_t1_t{100,500,900}, n_visible_frames, n_gen_target_frames, lora_rank, lora_alpha, lora_lr, lora_targets, seed`. Sbatch wrapper mirrors `run_compute_diffusion_ood.sbatch` directives (h200 GPU, 192G mem, 4h time, account `torch_pr_36_mren`, module + conda + unset PYTHONHOME/PYTHONPATH preamble, ERR trap).
+
+**Status:** runbook READY — executes when cluster comes back online. Cluster restart expected ~2026-06-12 morning per the user. No further plan work needed before launch.
+
+---
+
 ## 2026-06-11 (later+1) — Plan: offline investigations during cluster maintenance
 **Tags:** plan, offline-investigation, paper-narrative
 **Refs:**

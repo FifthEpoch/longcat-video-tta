@@ -2,7 +2,8 @@
 """Correlate per-video TTA gain (ΔPSNR) against the feature battery emitted
 by ``scripts/extract_video_features_for_tta.py`` AND (optionally) the
 diffusion-OOD-score battery emitted by
-``scripts/compute_diffusion_ood_score.py``.
+``scripts/compute_diffusion_ood_score.py`` AND (optionally) the Tier-3
+mini-TTA probe battery emitted by ``scripts/compute_tier3_probes.py``.
 
 Reads:
   * ``--gains-csv``     : the per_video_gains.csv produced by
@@ -21,6 +22,17 @@ Reads:
                           column so the combined report shows
                           ρ(ΔPSNR, X) for X in {feature-extractor columns} ∪
                           {OOD columns}.
+  * ``--tier3-csv``     : OPTIONAL. The tier3_probe_features.csv produced by
+                          scripts/compute_tier3_probes.py (one row per video,
+                          H-T3-1 grad_norm_θ0 and H-T3-2 single_step_loss_drop
+                          per timestep + the corresponding mean across
+                          timesteps + raw loss_t0/loss_t1 columns).  When
+                          present, its numeric columns are joined alongside
+                          the other feature sources under the ``T3P`` tier
+                          (Tier-3 Probe; kept distinct from the ``T3``
+                          gen-region-diagnostic tier in the feature CSV) and
+                          appear in the same correlation tables / online-
+                          actionable feature ranking.
 
 Emits, under ``--output-dir``:
   1.  ``correlation_table.md``           markdown ρ table, |ρ| highlights
@@ -86,6 +98,17 @@ OOD_NON_FEATURE_COLUMNS: Tuple[str, ...] = (
     "video_id", "n_visible_frames", "n_gen_target_frames", "seed",
 )
 
+# Non-feature Tier-3-probe columns: same convention as OOD — strip out the
+# book-keeping columns + the raw loss_t0/loss_t1 audit columns (those are
+# diagnostic, not predictive features; loss_drop_pct already represents
+# the H-T3-2 signal).  All other numeric columns are auto-promoted to
+# features (mirroring the OOD auto-discovery so the schema is decided by
+# whatever --timesteps the user passed to compute_tier3_probes.py).
+TIER3_NON_FEATURE_COLUMNS: Tuple[str, ...] = (
+    "video_id", "n_visible_frames", "n_gen_target_frames",
+    "lora_rank", "lora_alpha", "lora_lr", "lora_targets", "seed",
+)
+
 # Short one-liner interpretations used by top_features_per_method.md.
 FEATURE_INTERPRETATIONS: Dict[str, str] = {
     "cut_count_pyscenedetect":
@@ -129,6 +152,16 @@ FEATURE_INTERPRETATIONS: Dict[str, str] = {
     "latent_kurtosis":
         "OOD (Tier-1 cheap): excess kurtosis of VAE-latent values (fisher=True) "
         "— >0 ⇒ heavier-tailed than Gaussian, common for OOD content",
+    # Tier-3 probe (compute_tier3_probes.py)
+    "mean_grad_norm_lora":
+        "T3P (H-T3-1): mean across timesteps of ||∇_{θ_LoRA} L||_2 at the "
+        "unadapted weights — SAR-style large-gradient predictor of asymmetric "
+        "LoRA tails; high ⇒ LoRA TTA likely to swing this video either way",
+    "mean_loss_drop_pct":
+        "T3P (H-T3-2): mean across timesteps of (L_t0 − L_t1) / L_t0 after "
+        "ONE Adam step on a fresh LoRA r=8 adapter — DreamBooth-style overfit "
+        "screener; high ⇒ LoRA finds this video 'easy to fit' on the visible "
+        "window (predicts catastrophic-tail failures on the held-out gen target)",
 }
 
 
@@ -258,6 +291,41 @@ def load_ood_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
             raise ValueError(f"{path} has no header row")
         for fn in reader.fieldnames:
             if fn in OOD_NON_FEATURE_COLUMNS:
+                continue
+            feature_cols.append(fn)
+        for r in reader:
+            vid = (r.get("video_id") or "").strip()
+            if not vid:
+                continue
+            out[vid] = dict(r)
+    return out, feature_cols
+
+
+def load_tier3_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    """Return ({video_id -> row dict}, list_of_tier3_feature_columns).
+
+    Mirrors load_ood_csv but additionally strips the raw `loss_t0_t{T}` /
+    `loss_t1_t{T}` audit columns from the feature list (they're useful for
+    sanity-checking individual rows but not as predictive features — the
+    H-T3-2 signal is already represented by `loss_drop_pct_t{T}`).  Every
+    other numeric column — including the per-timestep `grad_norm_lora_t{T}`
+    + `loss_drop_pct_t{T}` columns and their mean-across-timesteps summaries
+    — is auto-promoted to a feature, so the schema follows whatever
+    --timesteps the user passed to compute_tier3_probes.py.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"--tier3-csv not found: {path}")
+    out: Dict[str, Dict[str, str]] = {}
+    feature_cols: List[str] = []
+    with path.open(newline="", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"{path} has no header row")
+        for fn in reader.fieldnames:
+            if fn in TIER3_NON_FEATURE_COLUMNS:
+                continue
+            if fn.startswith("loss_t0_t") or fn.startswith("loss_t1_t"):
+                # Raw t=0 / t=1 audit columns; not predictive features.
                 continue
             feature_cols.append(fn)
         for r in reader:
@@ -491,6 +559,8 @@ def write_correlation_table(
                  "Bold = |ρ| ≥ 0.2 ; bold+italic = |ρ| ≥ 0.3.  Tier `OOD` "
                  "columns come from the diffusion-OOD-score CSV (per-video "
                  "flow-matching MSE against the LongCat-Video base model); "
+                 "tier `T3P` columns come from the Tier-3 probe CSV "
+                 "(per-video LoRA-r8 grad-norm + single-step loss drop); "
                  "`T1` / `T3` columns come from the feature-extractor CSV.")
     lines.append("")
     header = "| feature | tier | " + " | ".join(f"`{m}`" for m in methods) + " |"
@@ -534,17 +604,20 @@ def write_top_features_per_method(
     tier_by_feature: Dict[str, str],
     rho_table: Dict[Tuple[str, str], Tuple[Optional[float], int]],
     top_k: int = 3,
-    online_tiers: Tuple[str, ...] = ("T1", "OOD"),
+    online_tiers: Tuple[str, ...] = ("T1", "OOD", "T3P"),
 ):
     lines: List[str] = []
     lines.append("# Top features per method (by |Spearman ρ|)")
     lines.append("")
     lines.append(
         "Restricted to ONLINE-ACTIONABLE features: Tier-1 visible-window "
-        "features (`T1`) and diffusion-OOD-score columns (`OOD`).  Both "
-        "are computable at deployment time from the TTA-visible frames "
-        "alone, so a per-video selection rule based on either is "
-        "implementable without privileged access to the generation target."
+        "features (`T1`), diffusion-OOD-score columns (`OOD`), and Tier-3 "
+        "probe columns (`T3P`).  All three are computable at deployment "
+        "time from the TTA-visible frames alone (the Tier-3 probe uses a "
+        "fresh LoRA adapter at θ_0 + one Adam step, not the eval video's "
+        "gen-target frames), so a per-video selection rule based on any of "
+        "them is implementable without privileged access to the generation "
+        "target."
     )
     lines.append("")
     online_features = [
@@ -673,7 +746,7 @@ def write_summary(
     n_videos: int,
     strongest_feature: Optional[str],
     strongest_mean_abs_rho: float,
-    online_tiers: Tuple[str, ...] = ("T1", "OOD"),
+    online_tiers: Tuple[str, ...] = ("T1", "OOD", "T3P"),
 ):
     lines: List[str] = []
     lines.append("# Per-video TTA-gain ↔ feature-battery correlation summary")
@@ -682,6 +755,8 @@ def write_summary(
     lines.append(f"- Features CSV: `{args.features_csv}`")
     if getattr(args, "ood_csv", None):
         lines.append(f"- OOD CSV: `{args.ood_csv}`")
+    if getattr(args, "tier3_csv", None):
+        lines.append(f"- Tier-3 CSV: `{args.tier3_csv}`")
     lines.append(f"- Methods analysed (non-baseline): {', '.join('`' + m + '`' for m in methods)}")
     lines.append(f"- Joined videos (intersection of gains ∩ all feature sources): **{n_videos}**")
     lines.append("")
@@ -697,9 +772,11 @@ def write_summary(
     lines.append("")
     lines.append(
         "Online-actionable = Tier-1 visible-window features (`T1`) + "
-        "diffusion-OOD-score columns (`OOD`).  Tier-3 columns "
-        "(diagnostic-only, use GT frames) are excluded from the ranking "
-        "but still appear in `correlation_table.{md,csv}`."
+        "diffusion-OOD-score columns (`OOD`) + Tier-3 probe columns "
+        "(`T3P`; grad-norm and one-step loss drop on a fresh LoRA adapter, "
+        "deployable at inference time).  Tier-3 gen-region diagnostic "
+        "columns (`T3`, which USE GT frames) are excluded from the "
+        "ranking but still appear in `correlation_table.{md,csv}`."
     )
     lines.append("")
     ranking: List[Tuple[str, str, float, int]] = []
@@ -886,6 +963,15 @@ def _parse_args() -> argparse.Namespace:
                          "loss columns plus the cheap VAE-latent statistics) "
                          "are joined alongside the feature CSV and analysed "
                          "in the same correlation tables under the `OOD` tier.")
+    ap.add_argument("--tier3-csv", type=Path, default=None,
+                    help="OPTIONAL tier3_probe_features.csv from "
+                         "compute_tier3_probes.py. When present, its feature "
+                         "columns (per-timestep grad_norm_lora_t{T} + "
+                         "loss_drop_pct_t{T} plus their mean-across-timesteps "
+                         "summaries) are joined alongside the other sources "
+                         "and analysed in the same correlation tables under "
+                         "the `T3P` tier (Tier-3 Probe; counted as online-"
+                         "actionable alongside `T1` and `OOD`).")
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--top-k", type=int, default=10,
                     help="Top-K winners / losers cohort size for the strongest feature.")
@@ -908,6 +994,7 @@ def main() -> int:
     print(f"Gains CSV    : {args.gains_csv}")
     print(f"Features CSV : {args.features_csv}")
     print(f"OOD CSV      : {args.ood_csv if args.ood_csv else '(not provided)'}")
+    print(f"Tier-3 CSV   : {args.tier3_csv if args.tier3_csv else '(not provided)'}")
     print(f"Output dir   : {args.output_dir}")
     print("=" * 70)
 
@@ -941,6 +1028,17 @@ def main() -> int:
             features=ood_feature_cols,
             tier_by_feature=ood_tier,
             label="ood",
+        ))
+    if args.tier3_csv is not None:
+        tier3_rows, tier3_feature_cols = load_tier3_csv(args.tier3_csv)
+        print(f"Tier-3 rows  : {len(tier3_rows)}  "
+              f"(feature columns: {tier3_feature_cols})")
+        tier3_tier = {f: "T3P" for f in tier3_feature_cols}
+        sources.append(FeatureSource(
+            rows=tier3_rows,
+            features=tier3_feature_cols,
+            tier_by_feature=tier3_tier,
+            label="tier3",
         ))
 
     if args.methods:
@@ -985,10 +1083,11 @@ def main() -> int:
     )
     print(f"Wrote correlation_table.{{md,csv}} and top_features_per_method.md")
 
-    # ---- per-feature plots (online-actionable: T1 + OOD) -----------------
+    # ---- per-feature plots (online-actionable: T1 + OOD + T3P) -----------
     plt = _setup_mpl()
     online_features = [
-        f for f in ordered_features if tier_by_feature.get(f) in ("T1", "OOD")
+        f for f in ordered_features
+        if tier_by_feature.get(f) in ("T1", "OOD", "T3P")
     ]
     for fname in online_features:
         fv = feature_by_name[fname]
@@ -999,9 +1098,10 @@ def main() -> int:
             title=f"ΔPSNR vs {fname} (quintile, 95% CI per method)",
         )
     print(f"Wrote {len(online_features)} per-online-actionable-feature plots "
-          "(plot_<feature>.png; tiers T1 + OOD)")
+          "(plot_<feature>.png; tiers T1 + OOD + T3P)")
 
     # ---- strongest online-actionable feature + winners/losers ------------
+    # Re-use the same online-actionable definition (T1 + OOD + T3P)
     feature_mean_abs_rho: List[Tuple[str, float]] = []
     for fname in online_features:
         rhos = [

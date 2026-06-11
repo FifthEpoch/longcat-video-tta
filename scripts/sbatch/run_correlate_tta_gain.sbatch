@@ -38,6 +38,8 @@ FEATURES_CSV="${FEATURES_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video
 # Optional diffusion-OOD-score CSV (from compute_diffusion_ood_score.py); when
 # empty the correlation script analyses feature-extractor columns only.
 OOD_CSV="${OOD_CSV:-}"
+# Optional Tier-3 probe CSV (from compute_tier3_probes.py); same convention.
+TIER3_CSV="${TIER3_CSV:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/criteria_correlation}"
 
 # ============================================================================
@@ -58,6 +60,7 @@ echo "  CONDA_ENV     : ${CONDA_ENV}"
 echo "  GAINS_CSV     : ${GAINS_CSV}"
 echo "  FEATURES_CSV  : ${FEATURES_CSV}"
 echo "  OOD_CSV       : ${OOD_CSV:-<not provided>}"
+echo "  TIER3_CSV     : ${TIER3_CSV:-<not provided>}"
 echo "  OUTPUT_DIR    : ${OUTPUT_DIR}"
 echo "=============================================================================="
 
@@ -112,6 +115,10 @@ if [ -n "${OOD_CSV}" ] && [ ! -f "${OOD_CSV}" ]; then
     echo "ERROR: OOD_CSV is set but file not found: ${OOD_CSV}" >&2
     exit 1
 fi
+if [ -n "${TIER3_CSV}" ] && [ ! -f "${TIER3_CSV}" ]; then
+    echo "ERROR: TIER3_CSV is set but file not found: ${TIER3_CSV}" >&2
+    exit 1
+fi
 
 # ============================================================================
 # Run correlation
@@ -120,6 +127,10 @@ OOD_FLAG=""
 if [ -n "${OOD_CSV}" ]; then
     OOD_FLAG="--ood-csv ${OOD_CSV}"
 fi
+TIER3_FLAG=""
+if [ -n "${TIER3_CSV}" ]; then
+    TIER3_FLAG="--tier3-csv ${TIER3_CSV}"
+fi
 
 echo "Starting correlation analysis..."
 
@@ -127,6 +138,7 @@ echo "Starting correlation analysis..."
     --gains-csv "${GAINS_CSV}" \
     --features-csv "${FEATURES_CSV}" \
     ${OOD_FLAG} \
+    ${TIER3_FLAG} \
     --output-dir "${OUTPUT_DIR}"
 
 echo ""
