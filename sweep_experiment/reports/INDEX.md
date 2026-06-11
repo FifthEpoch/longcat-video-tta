@@ -222,3 +222,11 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 |---|---|---|
 | 2026-06-09 | [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md) | Pre-maintenance-window stocktake of where we stand on the per-video-TTA-suitability question: completed findings, hypotheses ruled out, implemented-but-not-run inventory, next-wave priority. Companion to `HYPOTHESES_per_video_tta_suitability_2026-06-09.md`. |
 | 2026-06-09 | [`HYPOTHESES_per_video_tta_suitability_2026-06-09.md`](HYPOTHESES_per_video_tta_suitability_2026-06-09.md) | Literature pass on new ideas for what predicts per-video TTA gain (parallel workstream to the review above). |
+
+---
+
+## Plans / proposals (awaiting user authorisation)
+
+| Date | Document | Purpose | Status |
+|---|---|---|---|
+| 2026-06-11 | [`PLAN_gating_experiment_2026-06-11.md`](PLAN_gating_experiment_2026-06-11.md) | Paper-grade experimental plan for finding the optimal per-video TTA gating strategy on LongCat-Video. 20-feature master menu (Tier-1 / Tier-2 / Tier-3), five-phase protocol (data collection → univariate → multivariate → cost-aware Pareto → long-horizon validation), explicit recommendation criteria (held-out gain > 0.05 PSNR or > 0.005 LPIPS; coverage ≥ 50 %; feature compute ≤ 30 min / 999 videos), sanity controls (permutation null, leave-one-chunk-out CV, known-failure check on `panda_0098`, known-winner check on `panda_0461 / 0555 / 0862 / 0431`). | PLAN — awaiting user authorisation before execution |

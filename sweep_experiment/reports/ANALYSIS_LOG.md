@@ -17,6 +17,36 @@ Body...
 
 ---
 
+## 2026-06-11 — Plan: optimal per-video TTA gating-strategy experiment
+**Tags:** plan, gating-experiment, paper-narrative
+**Refs:**
+- [`PLAN_gating_experiment_2026-06-11.md`](PLAN_gating_experiment_2026-06-11.md) (new)
+- Companion docs: [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md), [`HYPOTHESES_per_video_tta_suitability_2026-06-09.md`](HYPOTHESES_per_video_tta_suitability_2026-06-09.md)
+- INDEX.md "Plans / proposals" section (new)
+
+Detailed five-phase plan for finding the optimal per-video gating strategy
+for TTA on LongCat-Video, integrating the diffusion-OOD scorer (commit
+`dc115e7`), the existing Tier-1 feature battery, and the 12 literature-
+grounded hypotheses across themes A/B/D/E/G into a 20-row master feature
+menu. Three gating families considered (binary apply/skip, between-family
+method routing, continuous gain prediction). Recommendation criteria are
+explicit: held-out gain > per-video noise floor (≥ 0.05 PSNR / ≥ 0.005
+LPIPS), coverage ≥ 50 %, feature compute ≤ 30 min per 999 videos.
+
+**Status: PLAN — requires user authorisation before execution.** The plan
+asks specifically for green-light on (a) Phase 0 cluster jobs via the
+existing `submit_per_video_feature_pipeline.sh` plus three new ≤ 100-LOC
+Tier-1 feature scripts (`extract_bpp_features.py`, `extract_vae_recerr_features.py`,
+`extract_fft_features.py`) and a ≤ 30-LOC patch to the OOD scorer for the
+score-norm feature; (b) Phase 1/2/3 CPU analysis scripts
+(`analyze_gating_univariate.py`, `analyze_gating_multivariate.py`,
+`build_gating_pareto.py`); (c) ~3 wallclock days total cost. Phase 4
+(long-horizon validation) is conditional on Phase 3 producing a clean or
+partial win; case 3 (no win) licenses the honest paper claim that gating
+awaits the long-horizon regime — fully consistent with REVIEW Story A.
+
+---
+
 ## 2026-06-09 (latest+3) — Prompt-vs-NOPROMPT full-metrics table + per-video ΔLPIPS tail breakdown
 **Tags:** paper-table, noprompt, lpips-tail-breakdown
 **Refs:**
