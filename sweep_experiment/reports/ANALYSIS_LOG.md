@@ -17,6 +17,20 @@ Body...
 
 ---
 
+## 2026-06-11 (later+1) — Plan: offline investigations during cluster maintenance
+**Tags:** plan, offline-investigation, paper-narrative
+**Refs:**
+- [`PLAN_offline_investigations_2026-06-11.md`](PLAN_offline_investigations_2026-06-11.md) (new)
+- [`REFRESHER_standard_vs_longhorizon_2026-06-11.md`](REFRESHER_standard_vs_longhorizon_2026-06-11.md) (new)
+- New scripts: `scripts/compare_horizons_per_video.py`, `scripts/analyze_per_chunk_fvd.py`, `scripts/aggregate_loss_history.py`; extended `scripts/analyze_per_video_tta_gain.py`
+- INDEX.md "Plans / proposals" + "Standalone stocktake / review documents" + "Analysis tools" sections (rows added)
+
+The GPU cluster is in maintenance through ~2026-06-15, but the login node still has filesystem access to every past experiment output. We laid out and committed a 5-analysis offline suite (A1–A5) that runs on the login-node CPU in ≤ 15 min total: (A1) long-horizon per-video gain analysis against `panda_longctx_1000v` + `tinylora_longctx_1000v` — this is the primary gap (the 2026-06-09 standard-horizon bundle has no long-horizon counterpart); (A2) side-by-side standard- vs long-horizon distribution comparison to test the user's 2026-06-11 hypothesis that long-horizon has fatter tails in BOTH directions even when the population mean is unchanged; (A3) per-chunk ΔFVD sign analysis on both regimes (closes the deferred TODO from `paper_tables/2026-06-09_panda_std_prompt_vs_noprompt_full_metrics.md`); (A4) per-video held-out-anchor-loss aggregation joined against ΔPSNR (per-step TRAINING loss is not persisted by any runner; the held-out anchor loss stored under `result['early_stopping_info']['loss_history']` is — it's the right quantity for the mechanism question anyway); (A5) record-keeping refactor of `analyze_per_video_tta_gain.py` to write ΔLPIPS tails + top-50-winner Jaccard matrix + sign-agreement statistics into `summary.md` natively (these were computed on-the-fly in the 2026-06-09 analysis but never persisted; the "6.3× lift" number now lands in the document automatically).
+
+**Loss-history availability finding (recorded for the audit trail):** the per-step training loss accumulated inside each runner's `optimize_*` function is **not** persisted to JSON (only `final_loss = losses[-1]` is) and is also **not** printed per-step to stdout, so slurm-log parsing would not recover it either. The held-out anchor-loss trajectory, by contrast, IS file-based — `early_stopping.py::AnchoredEarlyStopper.state` writes a `loss_history: List[(step, anchor_loss)]` into the per-video result dict whenever ES is enabled (the default). `aggregate_loss_history.py` therefore reads the anchor-loss path; the slurm-log fallback was deemed unnecessary.
+
+---
+
 ## 2026-06-11 (later) — Gating plan: all 4 open decisions resolved, Phases 0–3 authorised
 **Tags:** plan-resolution, gating-experiment, authorisation
 **Refs:**

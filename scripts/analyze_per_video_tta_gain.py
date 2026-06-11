@@ -306,6 +306,111 @@ def linear_fit(x: np.ndarray, y: np.ndarray) -> Optional[Tuple[float, float]]:
     return slope, intercept
 
 
+def topk_indices(delta: np.ndarray, k: int, *, lower_is_better: bool) -> np.ndarray:
+    """Return the indices of the top-k rows of ``delta`` (NaN-safe).
+
+    ``lower_is_better=False`` -> winners are largest values (e.g. ΔPSNR > 0).
+    ``lower_is_better=True``  -> winners are smallest values (e.g. ΔLPIPS < 0).
+    """
+    finite = np.where(~np.isnan(delta))[0]
+    if finite.size == 0:
+        return np.empty(0, dtype=int)
+    vals = delta[finite]
+    sign = 1.0 if lower_is_better else -1.0
+    order = finite[np.argsort(sign * vals, kind="mergesort")]
+    return order[: min(k, order.size)]
+
+
+def jaccard_matrix_topk(
+    delta_by_method: Dict[str, np.ndarray], k: int, *,
+    lower_is_better: bool = False,
+) -> Tuple[List[str], np.ndarray]:
+    """Cross-method top-k winner Jaccard matrix.
+
+    Returns (method_names, J) where J[i,j] = |top-k(i) ∩ top-k(j)| / |top-k(i) ∪ top-k(j)|.
+    Empty union -> NaN. Random-overlap baseline for two top-k sets out of N
+    videos is k/(2N-k) -> Jaccard ≈ k/(2N) when k << N. For paper output we
+    contrast the observed Jaccard against this baseline.
+    """
+    methods = list(delta_by_method.keys())
+    tops: Dict[str, set] = {}
+    for m in methods:
+        idxs = topk_indices(delta_by_method[m], k, lower_is_better=lower_is_better)
+        tops[m] = set(idxs.tolist())
+    n = len(methods)
+    J = np.full((n, n), np.nan)
+    for i in range(n):
+        for j in range(n):
+            a = tops[methods[i]]
+            b = tops[methods[j]]
+            u = a | b
+            if not u:
+                continue
+            J[i, j] = len(a & b) / len(u)
+    return methods, J
+
+
+def sign_agreement_stats(
+    delta_by_method: Dict[str, np.ndarray], *,
+    favourable_sign: int = +1,
+) -> dict:
+    """Count how often the per-video ΔPSNR sign agrees across ALL methods.
+
+    ``favourable_sign=+1`` -> "improved" means delta > 0 (PSNR / SSIM).
+    ``favourable_sign=-1`` -> "improved" means delta < 0 (LPIPS).
+
+    Returns a dict with both the observed unanimous counts and the
+    independence-baseline expectation (used as the "Nx lift" headline number
+    in the 2026-06-09 analysis).
+    """
+    methods = list(delta_by_method.keys())
+    if not methods:
+        return {"methods": [], "n_eval": 0}
+    arrs = [delta_by_method[m] for m in methods]
+    M = np.column_stack(arrs)
+    finite_mask = ~np.isnan(M).any(axis=1)
+    Mf = M[finite_mask]
+    if Mf.size == 0:
+        return {"methods": methods, "n_eval": 0}
+
+    if favourable_sign > 0:
+        win = Mf > 0.0
+        lose = Mf < 0.0
+    else:
+        win = Mf < 0.0
+        lose = Mf > 0.0
+
+    all_win = win.all(axis=1)
+    all_lose = lose.all(axis=1)
+    unanimous = all_win | all_lose
+
+    p_win = win.mean(axis=0)
+    p_lose = lose.mean(axis=0)
+    expected_all_win_frac = float(np.prod(p_win))
+    expected_all_lose_frac = float(np.prod(p_lose))
+    expected_unanimous_frac = expected_all_win_frac + expected_all_lose_frac
+
+    n_eval = int(Mf.shape[0])
+    obs_unanimous = int(unanimous.sum())
+    exp_unanimous = expected_unanimous_frac * n_eval
+    lift = (obs_unanimous / exp_unanimous) if exp_unanimous > 0 else float("inf")
+
+    return {
+        "methods": methods,
+        "n_eval": n_eval,
+        "p_win_per_method": {m: float(p_win[i]) for i, m in enumerate(methods)},
+        "p_lose_per_method": {m: float(p_lose[i]) for i, m in enumerate(methods)},
+        "n_all_win":  int(all_win.sum()),
+        "n_all_lose": int(all_lose.sum()),
+        "n_unanimous": obs_unanimous,
+        "expected_n_all_win_under_indep":  expected_all_win_frac * n_eval,
+        "expected_n_all_lose_under_indep": expected_all_lose_frac * n_eval,
+        "expected_n_unanimous_under_indep": exp_unanimous,
+        "lift_unanimous": lift,
+        "favourable_sign": int(favourable_sign),
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI / orchestration
 # ---------------------------------------------------------------------------
@@ -604,6 +709,7 @@ def write_summary_md(
     captions: List[str], dropped_per_method: Dict[str, int],
     intersection_size: int,
     intersection_missing_flow: int, intersection_missing_caption: int,
+    delta_lpips_by_method: Optional[Dict[str, np.ndarray]] = None,
 ):
     lines: List[str] = []
     lines.append(f"# Per-video TTA-gain analysis  (baseline = {baseline_name})")
@@ -724,6 +830,167 @@ def write_summary_md(
                     f"| {i} | {d[idx]:+.3f} | {bp_s} | {mf_s} | `{vid}` | {cap} |"
                 )
             lines.append("")
+
+    # ----- ΔLPIPS tail breakdown (perceptual analog of ΔPSNR tails) ---------
+    non_baseline = [m for m in methods if m != baseline_name]
+    if delta_lpips_by_method:
+        lines.append("## Per-method ΔLPIPS tail counts")
+        lines.append("")
+        lines.append("LPIPS is lower-is-better, so Δ<0 are winners (perceptual "
+                     "improvement) and Δ>0 are losers. Thresholds are listed in "
+                     "absolute LPIPS units (NOT dB); the headline ±0.005 band is "
+                     "the per-video LPIPS noise floor on this eval set.")
+        lines.append("")
+        lpips_thresholds = [0.01, 0.005]
+        header = "| method | N | mean Δ | median Δ |"
+        sep = "|---|---:|---:|---:|"
+        for t in lpips_thresholds:
+            header += f" Δ<−{t:.3f} | \\|Δ\\|≤{t:.3f} | Δ>+{t:.3f} |"
+            sep += "---:|---:|---:|"
+        lines.append(header)
+        lines.append(sep)
+        for m in non_baseline:
+            d = delta_lpips_by_method.get(m)
+            if d is None:
+                continue
+            arr = d[~np.isnan(d)]
+            n = int(arr.size)
+            mu = float(arr.mean()) if n else float("nan")
+            med = float(np.median(arr)) if n else float("nan")
+            row = f"| `{m}` | {n} | {mu:+.5f} | {med:+.5f} |"
+            for t in lpips_thresholds:
+                wins = int((arr < -t).sum())
+                ties = int((np.abs(arr) <= t).sum())
+                losses = int((arr > t).sum())
+                row += f" {wins} | {ties} | {losses} |"
+            lines.append(row)
+        lines.append("")
+
+    # ----- Cross-method top-K winner Jaccard matrix (ΔPSNR) -----------------
+    if len(non_baseline) >= 2:
+        k_jacc = max(50, args.top_k)
+        N_total = intersection_size
+        baseline_overlap = k_jacc / (2 * max(N_total, 1) - k_jacc) if N_total > 0 else 0.0
+        lines.append(f"## Cross-method top-{k_jacc} winner Jaccard matrix (ΔPSNR)")
+        lines.append("")
+        lines.append(f"Indices are the top-{k_jacc} videos by ΔPSNR for each "
+                     f"non-baseline method (largest gains). Jaccard = "
+                     f"|A∩B|/|A∪B|. Random-overlap baseline at this k and "
+                     f"N={N_total} is **{baseline_overlap:.3f}** (k/(2N−k) under "
+                     f"independent uniform sampling). Diagonal = 1.0 trivially.")
+        lines.append("")
+        jm_methods, J = jaccard_matrix_topk(
+            {m: delta_by_method[m] for m in non_baseline},
+            k=k_jacc, lower_is_better=False,
+        )
+        hdr = "| | " + " | ".join(f"`{m}`" for m in jm_methods) + " |"
+        sep = "|---|" + "---:|" * len(jm_methods)
+        lines.append(hdr)
+        lines.append(sep)
+        for i, m in enumerate(jm_methods):
+            cells = []
+            for j in range(len(jm_methods)):
+                v = J[i, j]
+                cells.append("n/a" if np.isnan(v) else f"{v:.3f}")
+            lines.append(f"| `{m}` | " + " | ".join(cells) + " |")
+        lines.append("")
+
+        # off-diagonal mean to surface the "lift over random" headline number
+        if J.shape[0] > 1:
+            mask = ~np.eye(J.shape[0], dtype=bool)
+            off_vals = J[mask]
+            off_vals = off_vals[~np.isnan(off_vals)]
+            if off_vals.size:
+                mean_off = float(off_vals.mean())
+                lift = mean_off / baseline_overlap if baseline_overlap > 0 else float("inf")
+                lines.append(
+                    f"- Off-diagonal mean Jaccard: **{mean_off:.3f}** "
+                    f"({lift:.2f}× the random baseline {baseline_overlap:.3f})."
+                )
+                lines.append("")
+
+    # ----- Sign-agreement across all non-baseline methods (ΔPSNR) -----------
+    if len(non_baseline) >= 2:
+        sa = sign_agreement_stats(
+            {m: delta_by_method[m] for m in non_baseline},
+            favourable_sign=+1,
+        )
+        if sa.get("n_eval", 0) > 0:
+            lines.append("## Sign agreement across all non-baseline methods (ΔPSNR)")
+            lines.append("")
+            lines.append(
+                f"For each of the {sa['n_eval']} videos with finite ΔPSNR for "
+                f"all {len(non_baseline)} non-baseline methods, count how often "
+                f"all methods agree on the sign of ΔPSNR. The independence "
+                f"baseline is the product of per-method positive-fraction "
+                f"(p_win). Observed-over-expected is the headline 'Nx lift' "
+                f"number cited as evidence that the winning-subset story is "
+                f"not method-specific noise."
+            )
+            lines.append("")
+            lines.append("| method | p(Δ>0) | p(Δ<0) |")
+            lines.append("|---|---:|---:|")
+            for m in non_baseline:
+                pw = sa["p_win_per_method"].get(m, float("nan"))
+                pl = sa["p_lose_per_method"].get(m, float("nan"))
+                lines.append(f"| `{m}` | {pw:.4f} | {pl:.4f} |")
+            lines.append("")
+            lines.append(
+                f"- Videos where **all** methods improved (Δ>0): "
+                f"**{sa['n_all_win']}** "
+                f"(expected under independence: "
+                f"{sa['expected_n_all_win_under_indep']:.2f}).\n"
+                f"- Videos where **all** methods regressed (Δ<0): "
+                f"**{sa['n_all_lose']}** "
+                f"(expected under independence: "
+                f"{sa['expected_n_all_lose_under_indep']:.2f}).\n"
+                f"- Unanimous (either all-win or all-lose): "
+                f"**{sa['n_unanimous']}** "
+                f"(expected under independence: "
+                f"{sa['expected_n_unanimous_under_indep']:.2f}; "
+                f"lift = **{sa['lift_unanimous']:.2f}×**)."
+            )
+            lines.append("")
+
+    # ----- Sign-agreement across all non-baseline methods (ΔLPIPS) ----------
+    if delta_lpips_by_method and len(non_baseline) >= 2:
+        sa_l = sign_agreement_stats(
+            {m: delta_lpips_by_method[m] for m in non_baseline
+             if delta_lpips_by_method.get(m) is not None},
+            favourable_sign=-1,  # LPIPS lower-is-better
+        )
+        if sa_l.get("n_eval", 0) > 0:
+            lines.append("## Sign agreement across all non-baseline methods (ΔLPIPS)")
+            lines.append("")
+            lines.append(
+                "For LPIPS, lower-is-better, so 'win' means Δ<0. Otherwise the "
+                "table reads identically to the ΔPSNR sign-agreement table above."
+            )
+            lines.append("")
+            lines.append("| method | p(Δ<0, win) | p(Δ>0, lose) |")
+            lines.append("|---|---:|---:|")
+            for m in non_baseline:
+                if delta_lpips_by_method.get(m) is None:
+                    continue
+                pw = sa_l["p_win_per_method"].get(m, float("nan"))
+                pl = sa_l["p_lose_per_method"].get(m, float("nan"))
+                lines.append(f"| `{m}` | {pw:.4f} | {pl:.4f} |")
+            lines.append("")
+            lines.append(
+                f"- Unanimous-win (all methods improved LPIPS): "
+                f"**{sa_l['n_all_win']}** "
+                f"(expected under independence: "
+                f"{sa_l['expected_n_all_win_under_indep']:.2f}).\n"
+                f"- Unanimous-lose (all methods worsened LPIPS): "
+                f"**{sa_l['n_all_lose']}** "
+                f"(expected under independence: "
+                f"{sa_l['expected_n_all_lose_under_indep']:.2f}).\n"
+                f"- Unanimous total: **{sa_l['n_unanimous']}** "
+                f"(expected: {sa_l['expected_n_unanimous_under_indep']:.2f}; "
+                f"lift = **{sa_l['lift_unanimous']:.2f}×**)."
+            )
+            lines.append("")
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -917,6 +1184,10 @@ def main() -> int:
         m: np.array([r[f"{m}_dpsnr"] for r in rows], dtype=float)
         for m in non_baseline
     }
+    delta_lpips_by_method: Dict[str, np.ndarray] = {
+        m: np.array([r[f"{m}_dlpips"] for r in rows], dtype=float)
+        for m in non_baseline
+    }
 
     # ---- write CSV ---------------------------------------------------------
     csv_path = args.output_dir / "per_video_gains.csv"
@@ -972,6 +1243,7 @@ def main() -> int:
         delta_by_method, mean_flow, baseline_psnr, caption_word_count,
         video_ids, captions, dropped_per_method, len(common_ids),
         intersection_missing_flow, intersection_missing_caption,
+        delta_lpips_by_method=delta_lpips_by_method,
     )
     print(f"Wrote {md_path}")
 
