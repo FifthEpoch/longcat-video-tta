@@ -17,6 +17,25 @@ Body...
 
 ---
 
+## 2026-06-11 (later) — Gating plan: all 4 open decisions resolved, Phases 0–3 authorised
+**Tags:** plan-resolution, gating-experiment, authorisation
+**Refs:**
+- [`PLAN_gating_experiment_2026-06-11.md`](PLAN_gating_experiment_2026-06-11.md) (now AUTHORISED; §8 rewritten from "Open questions" to "Resolved decisions"; §2.5 / §3.1 / §3.2 / §3.4 / §3.5 updated to reflect locked-in choices)
+- Earlier same-day entry below: original 4 open questions in §8
+
+User authorisation 2026-06-11 of all 4 open questions in the gating plan:
+
+1. **Phase 4 (long-horizon validation) auto-fire:** RESOLVED → Separate authorisation required after Phase 3's `RECOMMENDATION.md` is reviewed. Long-horizon shows a real method-asymmetry signal at population level (Subj 0.018 between AdaSteer and LoRA r=8 at 76-frame vs 0.005 at 28-frame; ref `paper_tables/2026-06-08_headline_1000v.md` Table 3), so Phase 4 is non-trivial and merits human review.
+2. **Cost-aware Pareto compute-saved interpretation:** RESOLVED → Immediate 999-video run only as the headline savings number. Transferable-to-future-research is implicit, not speculated about specific unrun benchmarks.
+3. **Multiple-comparison correction:** RESOLVED → Bonferroni α/192 primary, BH-FDR q=0.1 secondary. Both reported in every Spearman ρ table in §3.2 / §3.3 deliverables.
+4. **Tier-3 mini-TTA probes (H-T3-1 `grad_norm_θ0` + H-T3-2 `single_step_loss_drop`):** RESOLVED → Both included in Phase 0 per the user's explicit "test all hypotheses" instruction. Cost +~2 GPU hours per 999-video run. §2.5 deferred-follow-up framing removed; §3.1 Phase 0 scope updated.
+
+**Follow-up implementation task surfaced by Decision 4:** the Tier-3 probes need a `run_compute_tier3_probes.sbatch` wrapper (or inline integration with an existing extractor) plus an extension of `submit_per_video_feature_pipeline.sh` to schedule it, before Phase 0 can run end-to-end. This commit only updates the plan documents; the wrapper is flagged as a small follow-up implementation task to be landed in a separate commit when we're ready to fire Phase 0.
+
+**Plan status:** PLAN → PLAN-AUTHORISED. Phases 0–3 green-lit; Phase 4 gated on RECOMMENDATION.md review. See updated [`PLAN_gating_experiment_2026-06-11.md`](PLAN_gating_experiment_2026-06-11.md) §8 for the four resolved decisions verbatim with rationale, and §2.5 / §3.1 / §3.2 / §3.4 / §3.5 for the protocol-level language updates.
+
+---
+
 ## 2026-06-11 — Plan: optimal per-video TTA gating-strategy experiment
 **Tags:** plan, gating-experiment, paper-narrative
 **Refs:**

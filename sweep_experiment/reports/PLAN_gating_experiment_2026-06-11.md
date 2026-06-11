@@ -1,7 +1,7 @@
 # Plan: optimal per-video TTA gating strategy
 
 **Date:** 2026-06-11
-**Status:** PLAN — awaiting user authorisation before execution
+**Status:** PLAN — AUTHORISED 2026-06-11 (Phases 0–3 green-lit; Phase 4 requires explicit authorisation after RECOMMENDATION.md)
 **Companion documents:**
 - [REVIEW_per_video_tta_suitability_2026-06-09.md](REVIEW_per_video_tta_suitability_2026-06-09.md) — what we know
 - [HYPOTHESES_per_video_tta_suitability_2026-06-09.md](HYPOTHESES_per_video_tta_suitability_2026-06-09.md) — literature-grounded hypotheses (12 hypotheses across themes A/B/C/D/E/G; landed in commit `03d1a03`)
@@ -87,7 +87,9 @@ REVIEW §2 establishes population-level saturation at Panda 1000v / 480p / 17-fr
 
 **Implement now (high paper-leverage and cheap):** #11 (bpp confound — required to interpret #13–#19), #12 (VAE round-trip — orthogonal to existing features), #9 (HF FFT ratio — clean LoRA-vs-ADA differential prediction), #17 (score-norm — free if bolted onto #13), #16 (loss-variance — free post-processing of #13).
 
-**Defer to a follow-up wave (gated on Phase 1 results):** #18 (CFG-gap full — moderate cost; only worth it if #14's `delta` proxy shows a non-null signal), #19 (FLIPD — only if #13/#17 don't already explain LoRA tails), #20/#21 (mini-TTA probes — only if Phase 1 produces a partial-but-not-clean result on the LoRA-r8 catastrophic tail; the user prompt mandates "no new model training", which we read as "no full TTA runs"; one-step probes are arguably the boundary case — see Open Question 5 in §8).
+**Tier-3 mini-TTA probes — scheduled for Phase 0 per user authorisation 2026-06-11.** #20 (`grad_norm_θ0`) and #21 (`single_step_loss_drop`) are now part of the Phase-0 deliverables per Decision 4 in §8 (user's explicit "test all hypotheses" instruction). These two features are the closest to the actual TTA loss surface and have the highest expected signal of any feature in the menu. Cost: ~2 extra GPU hours per 999-video run. **Status: scheduled for Phase 0 per user authorisation 2026-06-11.** Implementation note: this requires either extending `submit_per_video_feature_pipeline.sh` to schedule a third sbatch (`run_compute_tier3_probes.sbatch`) or implementing those probes inline within an existing extractor; that wrapper is a small follow-up implementation task that must land before Phase 0 can run end-to-end (flagged here; to be implemented in a separate commit).
+
+**Defer to a follow-up wave (gated on Phase 1 results):** #18 (CFG-gap full — moderate cost; only worth it if #14's `delta` proxy shows a non-null signal), #19 (FLIPD — only if #13/#17 don't already explain LoRA tails).
 
 ## 3. Experimental protocol
 
@@ -108,10 +110,11 @@ All outputs land under `sweep_experiment/reports/gating_experiment/`. The direct
 | `fft_features.csv` (NEW; #9) | `video_id, hf_energy_ratio_3d, hf_energy_ratio_spatial_only, n_visible_frames` | NEW script `scripts/extract_fft_features.py` (CPU 3D real FFT on luma channel) | needs writing |
 | `score_norm_features.csv` (NEW; #17 — DERIVED, free) | `video_id, score_norm_t{100,500,900}, mean_score_norm` | Optional ≤ 30-line patch to `compute_diffusion_ood_score.py`: record `‖pred_v‖²` alongside the MSE | needs writing (single PR; bolts onto the existing OOD scorer) |
 | `loss_var_features.csv` (NEW; #16 — DERIVED, free) | `video_id, loss_var_caption, loss_var_uncond` | NEW script `scripts/derive_loss_variance.py` (reads `diffusion_ood_scores.csv`; pure pandas) | needs writing |
+| `tier3_probe_features.csv` (NEW; #20/#21 — Phase-0 per Decision 4 in §8) | `video_id, grad_norm_theta0, single_step_loss_drop, n_visible_frames, seed` | NEW `scripts/compute_tier3_probes.py` (reuses LoRA-r8 optimiser scaffolds from `lora_experiment/scripts/run_lora_tta.py` / `delta_experiment/scripts/run_delta_a.py`); requires a `run_compute_tier3_probes.sbatch` wrapper (or inline integration with an existing extractor) before Phase 0 can run end-to-end — small follow-up implementation task per Decision 4 in §8 | needs writing |
 
-**Estimated wallclock:** Stage 1a (`extract_video_features_for_tta.py`) ~25 min on one H200; stage 1b (`compute_diffusion_ood_score.py` + score-norm patch) ~2–3 h on one H200 (per the script's own docstring on noise-sample schedule); new T1 scripts (#11/#12/#9) combined ~40 min on one CPU + one H200; loss-variance derivation ~5 s. Total ≤ 1 wallclock day even with cluster queue.
+**Estimated wallclock:** Stage 1a (`extract_video_features_for_tta.py`) ~25 min on one H200; stage 1b (`compute_diffusion_ood_score.py` + score-norm patch) ~2–3 h on one H200 (per the script's own docstring on noise-sample schedule); new T1 scripts (#11/#12/#9) combined ~40 min on one CPU + one H200; loss-variance derivation ~5 s; Tier-3 probes (#20/#21) ~2 GPU hours per 999-video run (per Decision 4 in §8). Total ≤ 1 wallclock day even with cluster queue.
 
-**Concurrency:** `submit_per_video_feature_pipeline.sh` already fans 1a and 1b out in parallel and chains the correlation pass behind both with `afterok:1a:1b`. The new T1 scripts in #11/#12/#9 can be added as siblings to 1a in a single PR — Phase-0 ask: "add three new sbatch wrappers + extend the submit script". Do not modify the existing sbatch wrappers per the "no code under scripts/ or sbatch/" constraint of this plan (those edits are a separate authorisation).
+**Concurrency:** `submit_per_video_feature_pipeline.sh` already fans 1a and 1b out in parallel and chains the correlation pass behind both with `afterok:1a:1b`. The new T1 scripts in #11/#12/#9 can be added as siblings to 1a in a single PR — Phase-0 ask: "add three new sbatch wrappers + extend the submit script". The Tier-3 probes (#20/#21) authorised under Decision 4 in §8 require a further `run_compute_tier3_probes.sbatch` wrapper (or inline integration with an existing extractor); the submit script must be extended to schedule it alongside the other Phase-0 jobs. Do not modify the existing sbatch wrappers per the "no code under scripts/ or sbatch/" constraint of this *planning* PR (the Tier-3 wrapper lands in a separate implementation commit).
 
 ### 3.2 Phase 1 — univariate gating (≤ 1 day analysis, CPU)
 
@@ -124,7 +127,7 @@ All outputs land under `sweep_experiment/reports/gating_experiment/`. The direct
 3. For each `(τ, direction)` pair, compute `(gated mean Δ, coverage)`.
 4. Record the **best τ** per `(feature, method, metric)` cell, subject to coverage ≥ 25 % (anything below is over-selective).
 
-**Multiple-comparison correction.** With ~20 features expanding to ~30 scalar columns × 6 methods × 2 metrics ≈ 360 cells (the user-stated 192 was a smaller upper bound on the feature column count; we use the same Bonferroni convention but recompute the critical value against the actual column count we end up with — and we also report Benjamini–Hochberg FDR at q = 0.1 alongside Bonferroni as the secondary correction; see §8 Open Question 3). For n = 999, two-tailed α = 0.05 / 360 = 1.4 × 10⁻⁴, the critical |ρ| ≈ 0.121. Per the user-stated 192-cell convention, anything with **|ρ| < 0.13 is not paper-worthy as a single-feature gate** — we adopt that bar verbatim.
+**Multiple-comparison correction.** Per Decision 3 in §8, **both Bonferroni α/192 (primary) and Benjamini–Hochberg FDR at q = 0.1 (secondary) thresholds are reported in every Spearman ρ output table.** With ~20 features expanding to ~30 scalar columns × 6 methods × 2 metrics ≈ 360 cells (the user-stated 192 was a smaller upper bound on the feature column count; we use the same Bonferroni convention but recompute the critical value against the actual column count we end up with). For n = 999, two-tailed α = 0.05 / 360 = 1.4 × 10⁻⁴, the critical |ρ| ≈ 0.121. Per the user-stated 192-cell convention, anything with **|ρ| < 0.13 is not paper-worthy as a single-feature gate** — we adopt that bar verbatim. Bonferroni is the conservative headline that licenses any "feature X is a real predictor" paper claim; BH-FDR shows the texture and surfaces additional candidates worth follow-up.
 
 **Outputs (`sweep_experiment/reports/gating_experiment/phase1/`):**
 
@@ -144,7 +147,7 @@ All outputs land under `sweep_experiment/reports/gating_experiment/`. The direct
 2. **Shallow gradient-boosted tree** (`HistGradientBoostingClassifier(max_depth=3, max_iter=50, learning_rate=0.1)`): same target, same CV. Report permutation feature importances (sklearn `permutation_importance` on the held-out fold).
 3. **Per-method linear regressor** (`RidgeCV`): predict ΔPSNR magnitude directly. Report held-out R² and held-out gated mean Δ when used as the gate score.
 
-All three model families are re-run separately for ΔLPIPS as the target.
+All three model families are re-run separately for ΔLPIPS as the target. **Both Bonferroni α/192 and BH-FDR q=0.1 thresholds (per Decision 3 in §8) are reported alongside any Spearman ρ / Pearson r feature-importance statistics emitted by this phase**, mirroring the §3.2 convention.
 
 **Outputs (`sweep_experiment/reports/gating_experiment/phase2/`):**
 
@@ -171,6 +174,8 @@ Plot all strategies on `(x, y)`. Compute the Pareto frontier (the set of strateg
 
 **Three outcome cases for §5:** "clean win" (all three criteria met by ≥ 1 strategy), "partial win" (criteria met for one method family or one metric only), "no win" (no strategy clears all three).
 
+**Compute-saved interpretation (per Decision 2 in §8):** "compute saved" is computed **strictly against the immediate 999-video run with no speculative extrapolation to unrun benchmarks**. The measured 999-video savings is itself the headline transferable claim — future researchers running similar-sized benchmarks would see similar relative savings — but the plan does not quote scaled numbers for specific benchmarks we have not actually executed. Reviewer-defensible.
+
 **Outputs (`sweep_experiment/reports/gating_experiment/phase3/`):**
 
 | File | Schema | Producer | Status |
@@ -182,6 +187,8 @@ Plot all strategies on `(x, y)`. Compute the Pareto frontier (the set of strateg
 ### 3.5 Phase 4 — long-horizon validation (post-Phase-3, conditional)
 
 **Only fires if Phase 3 produces a `recommended` strategy** (case "clean win" or "partial win"). The plan ships even if Phase 3 produces "no win" — that result is the paper claim per §5 case 3.
+
+**Authorisation gate (per Decision 1 in §8):** the 2026-06-11 user authorisation green-lights Phases 0–3 only. Phase 4 requires **explicit separate user authorisation after the Phase-3 `RECOMMENDATION.md` is reviewed** — that document is the human-in-the-loop gate. Long-horizon already shows a method-asymmetry signal at population level that standard horizon does not (Subj diverges 0.018 between AdaSteer and LoRA r=8 at 76-frame vs 0.005 at 28-frame; ref `paper_tables/2026-06-08_headline_1000v.md` Table 3), so Phase 4 is non-trivial and merits human review before firing.
 
 **Inputs:** `sweep_experiment/results/panda_longctx_1000v/` (76-frame regime, all four methods done per INDEX.md row 5). Re-run `scripts/analyze_per_video_tta_gain.py` with `--series-path sweep_experiment/results/panda_longctx_1000v --output-dir sweep_experiment/reports/per_video_analysis/<DATE>_longctx` to produce the long-horizon per-video gain bundle (this is REVIEW §5.2's already-pending analysis-only task and incurs no new cluster compute).
 
@@ -216,7 +223,7 @@ A strategy clears criteria (1) and (2) but fails (3) — i.e., the gate works bu
 
 ### Case 3 — no win
 
-No strategy clears all three criteria. Paper claim: "**No per-video feature provides a useful gate at this scale (N = 999, standard horizon); gating awaits the long-horizon regime where REVIEW §4 already identifies population-level method divergence (Subj 0.775 vs 0.757) that the standard horizon does not have.**" This is fully consistent with Story A in REVIEW and is the same negative-but-honest result the existing per-video summary points at. **Phase 4 does not fire in case 3 by default** — see Open Question 1 in §8.
+No strategy clears all three criteria. Paper claim: "**No per-video feature provides a useful gate at this scale (N = 999, standard horizon); gating awaits the long-horizon regime where REVIEW §4 already identifies population-level method divergence (Subj 0.775 vs 0.757) that the standard horizon does not have.**" This is fully consistent with Story A in REVIEW and is the same negative-but-honest result the existing per-video summary points at. **Phase 4 does not fire in case 3 by default** — see Decision 1 in §8 (separate authorisation required after `RECOMMENDATION.md` review).
 
 ## 6. What this plan asks the user to authorise
 
@@ -234,16 +241,23 @@ No strategy clears all three criteria. Paper claim: "**No per-video feature prov
 ## 7. What this plan does NOT do
 
 - **No long-horizon experiments in scope.** Phase 4 only fires conditionally on Phase 3 producing a "clean win" or "partial win" (per §5).
-- **No new model training.** All gates are evaluated against the existing per-video gain bundle for the six TTA methods that already shipped. The only Tier-3 probes in §2.4 use a single Adam step on the LoRA adapter — they are not full TTA runs but they do touch the optimiser, which is why they sit behind a separate authorisation in §2.5 / §8 Open Question 5.
+- **No new model training.** All gates are evaluated against the existing per-video gain bundle for the six TTA methods that already shipped. The only Tier-3 probes in §2.4 use a single Adam step on the LoRA adapter — they are not full TTA runs but they do touch the optimiser; per Decision 4 in §8 (user authorisation 2026-06-11), they are now scheduled for Phase 0 (see §2.5 / §3.1).
 - **No new headline evaluation.** No new VBench / FVD computation, no new chunk-level metrics. The gain bundle is frozen at `per_video_gains.csv`.
 - **No retrieval / NOPROMPT-retrieval / VBench-backfill work** — those are separate workstreams in INDEX.md rows 4 / 5 / 6 and are unaffected by this plan.
 - **No edits to `scripts/` or `sbatch/`** during this *planning* PR. Phase-0 sbatch additions are a separate authorisation that this plan asks for in §6.
 
-## 8. Open questions for the user
+## 8. Resolved decisions
 
-1. **Should Phase 4 (long-horizon) auto-fire on Phase 3 success, or be a separate authorisation?** Default in this plan is "separate authorisation" — Phase 3's `RECOMMENDATION.md` is the gate. The user can flip this to "auto-fire on case 1 (clean win)" without re-spec'ing.
-2. **Is "compute saved" in the cost-aware Pareto allowed to count *projected* future runs** (e.g. "this gate would save 60 % of compute on a future 10 K-video benchmark"), or only the immediate 999-video run? Default in this plan is "immediate 999-video run only"; the projected-future interpretation is more publishable but harder to defend.
-3. **Bonferroni at α/192 is conservative; would BH-FDR at q = 0.1 be acceptable as the secondary correction?** Default in this plan: report *both* — Bonferroni as the primary (conservative, paper-headline-safe) and BH-FDR at q = 0.1 as the secondary (shows the texture). The user can flip the primary if they prefer.
-4. **Any features the user wants explicitly added or excluded from §2's master menu?** Features deferred per §2.5 (CFG-gap full / FLIPD / both mini-TTA probes) are the most natural extension candidates; explicit additions would also be welcome (e.g. CLIP-LongCLIP variant for the truncation issue flagged in HYPOTHESES Theme E, or VBench `dynamic_degree` if the §5.5 backfill lands first).
+All four open questions in the original plan draft were resolved by the user on 2026-06-11. The plan is now AUTHORISED for Phases 0–3; Phase 4 remains gated on a separate authorisation after `RECOMMENDATION.md` review (Decision 1 below).
 
-The plan ships with defaults answered (1) "separate", (2) "immediate run only", (3) "Bonferroni primary + BH-FDR q=0.1 secondary", (4) "menu as written"; any of these is one-line-changeable on user direction.
+**Decision 1 — Phase 4 (long-horizon validation) auto-fire:** RESOLVED → **Separate authorisation required.**
+Rationale: Phase 4's relevance depends on Phase 3's outcome (a clean win, partial win, and no-win each license different long-horizon experiments). Long-horizon already shows a method-asymmetry signal at population level that standard horizon does not (Subj diverges 0.018 between AdaSteer and LoRA r=8 at 76-frame vs 0.005 at 28-frame; ref `paper_tables/2026-06-08_headline_1000v.md` Table 3), so Phase 4 is non-trivial and merits human-in-the-loop review of `RECOMMENDATION.md` before authorisation.
+
+**Decision 2 — Cost-aware Pareto compute-saved interpretation:** RESOLVED → **Immediate 999-video run only.**
+Rationale: The savings measured on the 999-video benchmark is itself a transferable claim — future researchers running similar benchmarks would see similar relative savings. We cite the measured 999-video number as the headline result; we do not speculate about specific scaled benchmarks we have not run. Reviewer-defensible.
+
+**Decision 3 — Multiple-comparison correction:** RESOLVED → **Bonferroni α/192 primary, BH-FDR q=0.1 secondary.**
+Rationale: Standard practice for the paper's audience. Bonferroni is the conservative headline that licenses any "feature X is a real predictor" claim; BH-FDR shows the texture and surfaces additional candidates worth follow-up implementation. Both reported in §3.2 and §3.3 deliverables.
+
+**Decision 4 — Tier-3 mini-TTA probes (H-T3-1 `grad_norm_θ0` and H-T3-2 `single_step_loss_drop`):** RESOLVED → **Both included in Phase 0.**
+Rationale: User explicit instruction to "test all hypotheses". These two features are the closest to the actual TTA loss surface and have the highest expected signal of any feature in the menu. Cost: ~2 extra GPU hours per 999-video run. Note: this requires the Phase-0 sbatch wrapper to also schedule these probes; §2.5 deferred-followup language must be removed.
