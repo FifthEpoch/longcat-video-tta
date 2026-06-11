@@ -17,6 +17,27 @@ Body...
 
 ---
 
+## 2026-06-11 (later+3) — Presentation: 5-bucket principle-based hypothesis taxonomy
+**Tags:** presentation, hypothesis-taxonomy, paper-narrative
+**Refs:**
+- [`PRESENTATION_hypothesis_taxonomy_2026-06-11.md`](PRESENTATION_hypothesis_taxonomy_2026-06-11.md) (new) — ~30-minute talk-walkthrough notes (1533 lines of structured markdown)
+- Companion: [`HYPOTHESES_per_video_tta_suitability_2026-06-09.md`](HYPOTHESES_per_video_tta_suitability_2026-06-09.md), [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md), [`PLAN_gating_experiment_2026-06-11.md`](PLAN_gating_experiment_2026-06-11.md)
+- INDEX.md "Presentations" section (new row)
+
+Talk-walkthrough markdown organising the 12+ per-video TTA-suitability hypotheses around theoretical principle rather than compute cost. Five buckets:
+
+- **A. Model-perceived difficulty** (diffusion likelihood / OOD): mean_diffusion_loss_caption, score_norm_t*, lid_flipd, latent moments — Theme B in HYPOTHESES
+- **B. Loss-landscape geometry** (gradient norm / single-step probes): grad_norm_θ0 (H-T3-1), single_step_loss_drop (H-T3-2), loss_var_t (H-T2-5) — Themes A + C + G in HYPOTHESES
+- **C. Visual / temporal complexity** (model-independent video features): flow distribution shape (H-T1-4), hf_energy_ratio (H-T1-3), bpp (H-T1-2), scene-cuts (H-T1-6), DINO temporal-L2 / Laplacian variance / RGB-hist entropy — Theme D in HYPOTHESES
+- **D. Cross-modal alignment** (caption-video matching): CLIP_min (H-T1-5), cfg_gap (H-T2-3), delta_caption_minus_uncond — Theme E in HYPOTHESES
+- **E. Reconstruction observability** (VAE round-trip error): rec_err_l1 / rec_err_lpips (H-T1-1) — bucket I proposed without a direct HYPOTHESES theme, grounded in the latent-space-typicality line (Ding et al. 2025, Järve et al. 2025)
+
+Each bucket maps to a different paper subsection structure if its top feature wins the gating experiment. Bucket B is flagged as the tail-risk predictor (catastrophic-failure detection — `panda_0098` 44.55→22.16 dB) while A/C/D/E predict modal gain; the closing recommendation is to combine B × {A or C} as a multivariate gate for the deployment story. 9 features have non-trivial secondary affinities (cross-bucket spans: bpp is C primary + A confound covariate; score_norm is A primary + B geometric flavour; FLIPD is A primary + C complexity; loss_var_t is B per spec + A loss-values flavour; flow distribution shape is C primary + B sparse-gradient mechanism; scene cuts are C primary + B non-stationary-landscape mechanism; CFG-gap is D primary + A ε-field; rec-err is E primary + A latent-space-typicality; delta_caption_minus_uncond is A primary + D lite-alignment-proxy). No feature is unbucketed; no 6th bucket proposed.
+
+~30-minute talk content structured as 13 slides (0 title; 1 saturation puzzle; 2 ruled-out hypotheses; 3 5-bucket table; 4–8 per-bucket detail; 9 synthesis with modal-gain-vs-tail-risk + method-agnostic-vs-method-specific + ensemble-gate hypothesis + cross-bucket prediction matrix; 10 four-scenario recommendation; 11 limitations + open questions; 12 appendix with per-feature commentary + pre-registered analysis plan + contingency planning + glossary + quick-reference card). Companion to PLAN_gating_experiment_2026-06-11.md (which tests every feature in this taxonomy across Phase 0–3) and HYPOTHESES_per_video_tta_suitability_2026-06-09.md (literature-grounded hypothesis menu). No code or sbatch changes; this is taxonomy + narrative on top of the already-AUTHORISED Phase-0 protocol.
+
+---
+
 ## 2026-06-11 (later+2) — Runbook: Friday 2026-06-12 cluster-restart launch sequence
 **Tags:** runbook, cluster-restart, friday-morning
 **Refs:**

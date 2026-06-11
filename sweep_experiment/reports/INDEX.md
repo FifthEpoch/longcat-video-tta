@@ -229,6 +229,14 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 
 ---
 
+## Presentations
+
+| Date | Document | Purpose |
+|---|---|---|
+| 2026-06-11 | [`PRESENTATION_hypothesis_taxonomy_2026-06-11.md`](PRESENTATION_hypothesis_taxonomy_2026-06-11.md) | ~30-minute talk-walkthrough notes for grad-school presentation prep. Organises every per-video TTA-suitability hypothesis from `HYPOTHESES_per_video_tta_suitability_2026-06-09.md` around a 5-bucket principle-based taxonomy (A. Model-perceived difficulty / B. Loss-landscape geometry / C. Visual-temporal complexity / D. Cross-modal alignment / E. Reconstruction observability) rather than the existing T1/T2/T3 compute-cost axis. Each bucket maps to a different paper subsection structure if its top feature wins the gating experiment; Bucket B is flagged as the tail-risk predictor (catastrophic-failure detection) while A/C/D/E predict modal gain; closing recommendation is to combine B × {A or C} as a multivariate gate. Companion to `PLAN_gating_experiment_2026-06-11.md` (which tests every feature in the taxonomy across Phases 0–3). |
+
+---
+
 ## Plans / proposals (awaiting user authorisation)
 
 | Date | Document | Purpose | Status |
