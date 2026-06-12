@@ -17,6 +17,27 @@ Body...
 
 ---
 
+## 2026-06-12 (later) — Literature pass: TTA recipe modifications worth trying after gating Phase 0-3
+**Tags:** literature, recipe-modification, paper-narrative
+**Refs:**
+- [`LITERATURE_tta_recipe_modifications_2026-06-12.md`](LITERATURE_tta_recipe_modifications_2026-06-12.md) (new) — 10-theme literature pass + 5 selected modifications with mechanism / cost / falsification / priority
+- INDEX.md (new "Literature passes" section pointing at this file)
+- Companion to: [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md) (saturation evidence) and [`PLAN_gating_experiment_2026-06-11.md`](PLAN_gating_experiment_2026-06-11.md) (the gating experiment this pass slots behind)
+
+Targeted literature pass on TTA *recipe* modifications (not gating) worth queuing behind gating Phase 0-3 RECOMMENDATION.md. Ten themes searched (TTA-for-diffusion specifically; latent-space-only TTA; anchor-frame consistency loss; MEMO/TTT-MAE augmentation-consistency; CFG-aware TTA; prompt ensembling; curriculum/annealed-timestep TTA; meta-learning/amortized TTA; continual streaming TTA; recent CVPR/ICCV/NeurIPS 2024-2026 video-diffusion work). Five modifications selected (each with primary + secondary citation, mechanism, cost, falsification criterion):
+
+1. **Anchor-frame x0 consistency loss** (Theme 3) — *priority 1*, small/medium cost. Add `‖pred_x0_train − train_latents‖²` (or VAE-decoded perceptual variant) auxiliary term to `compute_flow_matching_loss_conditioned`. Exploits free supervisory signal from visible frames 0-47 currently discarded. Citations: Sangare et al. CVPR 2026 x0-supervision, RaMViD 2022, MiVID 2025, CustomTTT AAAI 2025.
+2. **VAE-decoder-only TTA** (Theme 2) — *priority 2*, small/medium cost recipe pivot. Freeze DiT, adapt only VAE decoder weights on round-trip reconstruction MSE + LPIPS. Tests the user's "VAE is the bottleneck" hypothesis directly. Citations: REPA-E ICCV 2025, LeanVAE ICCV 2025.
+3. **Augmentation-consistency TTA (MEMO/TTT-MAE)** (Theme 4) — *priority 3*, small cost. Convert existing per-step round-robin over augmented variants into a cross-augmentation consistency loss on predicted x0. Citations: MEMO NeurIPS 2022, TTT-MAE NeurIPS 2022.
+4. **Annealed-timestep curriculum + limited-interval guidance** (Themes 5+7) — *priority 4*, small cost easy add (bundle with priority-1 sbatch wave). Anneal σ-sampling from large to small across TTA steps; restrict CFG to a middle σ interval at inference. Citations: Yi et al. CVPR 2024 DTC, Kynkäänniemi et al. NeurIPS 2024 LIG.
+5. **Continual streaming TTA with stochastic weight restoration** (Theme 9) — *priority 5*, medium cost recipe pivot, conditional on 1+2 results. Don't reset adapter between videos; apply CoTTA-style stochastic restoration to control drift. Citations: Wang/Sun/Gandelsman JMLR 2025, CoTTA CVPR 2022.
+
+Total to clear priorities 1-4: ~10 days wallclock, ~220 GPU-h. Priority 5 is conditional and expensive (~400 GPU-h serial across chunks). Honest "what the literature does NOT support" section calls out Theme 6 prompt ensembling as dead for our setting (NOPROMPT already ruled it out at population level) and flags TTOM 2026's saturation-then-degradation observation as the explicit literature argument against simply increasing TTA iteration count. Five open questions for the user on λ-sweep, pure-latent vs VAE-decoded anchor variants, Modification-2 baselines, streaming serialisation strategy, and Modification 1×3 interaction.
+
+**Honest threat-finding:** TTOM (ICLR 2026 submission, [OpenReview](https://openreview.net/pdf?id=wqCwcTZsrv)) explicitly reports saturation-then-degradation when test-time optimization iterations exceed a soft optimum on a different video-diffusion task (layout-controlled generation). Their setting is not ours but the qualitative shape matches and confirms we should not be expecting a "more iterations" recipe to work. No paper directly forecloses our research question (per-video TTA on LongCat-Video continuation at 1000v scale with conditioning frames as the only supervisory signal); the closest prior art (CustomTTT AAAI 2025) uses teacher-LoRA distillation, not self-supervised reconstruction, so the research gap remains open.
+
+---
+
 ## 2026-06-12 — Repo cleanup: hypothesis + presentation docs removed from main
 **Tags:** repo-cleanup, removal, record-keeping
 **Owner:** agent (per Wenchen request)

@@ -228,6 +228,14 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 
 ---
 
+## Literature passes
+
+| Date | Document | Purpose |
+|---|---|---|
+| 2026-06-12 | [`LITERATURE_tta_recipe_modifications_2026-06-12.md`](LITERATURE_tta_recipe_modifications_2026-06-12.md) | Targeted literature pass on TTA *recipe modifications* (not gating) worth queuing behind the gating experiment Phase 0–3. Ten search themes covered (TTA-for-diffusion specifically, latent-space-only TTA, anchor-frame consistency loss, MEMO/TTT-MAE augmentation-consistency, CFG-aware TTA, prompt ensembling, curriculum/annealed timesteps, meta-learning/amortized TTA, continual streaming TTA, recent CVPR/ICCV/NeurIPS 2024–2026 video-diffusion work). Selected five modifications: (1) anchor-frame x0 consistency loss — priority 1, small cost, exploits free supervisory signal from visible frames 0–47; (2) VAE-decoder-only TTA — priority 2, small/medium cost recipe pivot, tests the "VAE is the bottleneck" hypothesis; (3) augmentation-consistency MEMO/TTT-MAE — priority 3, small cost, layers on (1); (4) annealed-timestep curriculum — priority 4, small cost easy add (bundle with priority-1 sbatch wave); (5) continual streaming TTA with CoTTA-style stochastic restoration — priority 5, medium cost, conditional on 1+2 results. Each entry includes mechanism, cost, expected effect on the saturation finding, primary + secondary citations, falsification criterion, and priority. ~31 references covering 2022–2026. Honest "what the literature does NOT support" section (Theme 6 prompt ensembling is dead for our setting; more TTA iterations is contraindicated per TTOM 2026). Open questions for the user on λ-sweep, pure-latent vs VAE-decoded anchor variants, baselines for Modification 2, streaming serialisation strategy, and Modification 1 × 3 interaction. |
+
+---
+
 ## Plans / proposals (awaiting user authorisation)
 
 | Date | Document | Purpose | Status |
