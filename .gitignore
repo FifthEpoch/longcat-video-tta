@@ -53,3 +53,7 @@ comparison_methods/slurm_log/
 
 # Cursor IDE
 .cursor/
+
+# Documentation-only artifacts not needed on cluster (added 2026-06-12)
+sweep_experiment/reports/HYPOTHESES_*.md
+sweep_experiment/reports/PRESENTATION_*.md

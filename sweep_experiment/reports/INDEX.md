@@ -225,15 +225,6 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 |---|---|---|
 | 2026-06-11 | [`REFRESHER_standard_vs_longhorizon_2026-06-11.md`](REFRESHER_standard_vs_longhorizon_2026-06-11.md) | Tight side-by-side refresher of standard- vs long-horizon population-level results on Panda 1000v: per-method PSNR / SSIM / LPIPS / FVD / FID / VBench in both regimes, the largest regime-to-regime deltas (e.g. NOTTA PSNR drops 17.93 → 12.77 dB and Subj drops 0.907 → 0.774 on the longer window), method-ranking preservation across regimes, and the "what's missing" pointer to the offline-investigation suite. Companion to `PLAN_offline_investigations_2026-06-11.md`. |
 | 2026-06-09 | [`REVIEW_per_video_tta_suitability_2026-06-09.md`](REVIEW_per_video_tta_suitability_2026-06-09.md) | Pre-maintenance-window stocktake of where we stand on the per-video-TTA-suitability question: completed findings, hypotheses ruled out, implemented-but-not-run inventory, next-wave priority. Companion to `HYPOTHESES_per_video_tta_suitability_2026-06-09.md`. |
-| 2026-06-09 | [`HYPOTHESES_per_video_tta_suitability_2026-06-09.md`](HYPOTHESES_per_video_tta_suitability_2026-06-09.md) | Literature pass on new ideas for what predicts per-video TTA gain (parallel workstream to the review above). |
-
----
-
-## Presentations
-
-| Date | Document | Purpose |
-|---|---|---|
-| 2026-06-11 | [`PRESENTATION_hypothesis_taxonomy_2026-06-11.md`](PRESENTATION_hypothesis_taxonomy_2026-06-11.md) | ~30-minute talk-walkthrough notes for grad-school presentation prep. Organises every per-video TTA-suitability hypothesis from `HYPOTHESES_per_video_tta_suitability_2026-06-09.md` around a 5-bucket principle-based taxonomy (A. Model-perceived difficulty / B. Loss-landscape geometry / C. Visual-temporal complexity / D. Cross-modal alignment / E. Reconstruction observability) rather than the existing T1/T2/T3 compute-cost axis. Each bucket maps to a different paper subsection structure if its top feature wins the gating experiment; Bucket B is flagged as the tail-risk predictor (catastrophic-failure detection) while A/C/D/E predict modal gain; closing recommendation is to combine B × {A or C} as a multivariate gate. Companion to `PLAN_gating_experiment_2026-06-11.md` (which tests every feature in the taxonomy across Phases 0–3). |
 
 ---
 

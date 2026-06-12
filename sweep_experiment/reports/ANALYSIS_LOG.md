@@ -17,6 +17,18 @@ Body...
 
 ---
 
+## 2026-06-12 — Repo cleanup: hypothesis + presentation docs removed from main
+**Tags:** repo-cleanup, removal, record-keeping
+**Owner:** agent (per Wenchen request)
+**Refs:**
+- `.gitignore` (new section: `sweep_experiment/reports/HYPOTHESES_*.md`, `sweep_experiment/reports/PRESENTATION_*.md`)
+- `sweep_experiment/reports/INDEX.md` (HYPOTHESES row removed from "Standalone stocktake / review documents"; "Presentations" section removed entirely)
+- Removed from main: `sweep_experiment/reports/HYPOTHESES_per_video_tta_suitability_2026-06-09.md` (still in history at commit `03d1a03`); `sweep_experiment/reports/PRESENTATION_hypothesis_taxonomy_2026-06-11.md` (still in history at commit `6e9a984`)
+
+Both files were documentation-only artifacts not needed on the cluster (no code, no sbatch, no result-reproducibility role). User wants them local-only to keep the cluster checkout lean. Files remain accessible via `git show 03d1a03:sweep_experiment/reports/HYPOTHESES_per_video_tta_suitability_2026-06-09.md` and `git show 6e9a984:sweep_experiment/reports/PRESENTATION_hypothesis_taxonomy_2026-06-11.md` if needed. `.gitignore` updated with `HYPOTHESES_*.md` / `PRESENTATION_*.md` patterns under `sweep_experiment/reports/` so future drafts don't get re-pushed by accident. Operational documents (RUNBOOK, PLAN_offline_investigations, PLAN_gating_experiment, REFRESHER, REVIEW, paper_tables, per_video_analysis bundles) are unchanged.
+
+---
+
 ## 2026-06-11 (later+3) — Presentation: 5-bucket principle-based hypothesis taxonomy
 **Tags:** presentation, hypothesis-taxonomy, paper-narrative
 **Refs:**
