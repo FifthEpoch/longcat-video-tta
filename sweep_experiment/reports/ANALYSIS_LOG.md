@@ -17,6 +17,18 @@ Body...
 
 ---
 
+## 2026-06-12 (later+1) — Paper fragment: TTOM positioning paragraph for related-work
+**Tags:** paper-defense, ttom, positioning, related-work
+**Refs:**
+- [`PAPER_FRAGMENT_ttom_positioning_2026-06-12.md`](PAPER_FRAGMENT_ttom_positioning_2026-06-12.md) (new) — full draft positioning paragraph + supporting context (TTOM claim summary, ≥3 axes of difference, suggested iteration-sweep control)
+- INDEX.md (new "Paper fragments" section seeded with this row)
+- Source paper: TTOM (Qu et al., ICLR 2026 — [OpenReview](https://openreview.net/pdf?id=wqCwcTZsrv); [arXiv 2510.07940](https://arxiv.org/abs/2510.07940)). PDF read end-to-end via WebFetch — no reliance on secondary sources.
+- Companion to: [`LITERATURE_tta_recipe_modifications_2026-06-12.md`](LITERATURE_tta_recipe_modifications_2026-06-12.md) §1 / §5 (where TTOM was first flagged as the strongest "your saturation may be real" precedent).
+
+Draft 200-400-word positioning paragraph for the AdaSteer paper's related-work section, distinguishing our per-video reconstructive TTA setting from TTOM's iteration-axis saturate-then-degrade observation. **Strongest axis of difference:** the *supervisory signal*: TTOM optimizes a JSD against an LLM-synthesized layout proxy (no ground-truth video), whereas we optimize a flow-matching loss against the clean visible frames of the held-out video itself — a direct self-supervised signal that materially changes what "more iterations" means mechanistically. Two further axes (optimization variable: three adapter families incl. non-LoRA AdaSteer vs. their fixed rank-32 cross-attention LoRA; test-time loop scope: per-video reset vs. their cross-prompt streaming memory) round out the defense. Honest "where comparison is close" section flags the LoRA-on-cross-attention-DiT axis as one where overclaiming difference would be tactically weak — both papers are in the same small recent literature that updates DiT-attached parameters at inference time. **Specific control TTOM suggests we add:** an explicit iteration sweep on a stratified ~100-video Panda-1000v subsample (`--tta-steps ∈ {10,20,40,80,160}` × three method families × 100 videos ≈ 125 GPU-h serial — well below the ~220 GPU-h priority-1–4 recipe-modifications budget). Either outcome of that sweep is paper-defensible: crossover seen → "our saturation has the same mechanism as TTOM's"; monotonic flat → "our saturation is at the per-video noise floor, mechanistically distinct from TTOM's over-optimization saturation". No code or sbatch changes in this commit — pure paper-fragment delivery.
+
+---
+
 ## 2026-06-12 (later) — Literature pass: TTA recipe modifications worth trying after gating Phase 0-3
 **Tags:** literature, recipe-modification, paper-narrative
 **Refs:**

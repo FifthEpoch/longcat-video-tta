@@ -236,6 +236,16 @@ cd /scratch/$USER/longcat-video-tta && git pull && \
 
 ---
 
+## Paper fragments
+
+Standalone paper-defense paragraphs / footnotes / subparagraphs drafted for the AdaSteer paper's related-work section, ready for the user to edit and drop into the manuscript. One row per fragment.
+
+| Date | Document | Purpose |
+|---|---|---|
+| 2026-06-12 | [`PAPER_FRAGMENT_ttom_positioning_2026-06-12.md`](PAPER_FRAGMENT_ttom_positioning_2026-06-12.md) | Paper-defense positioning paragraph distinguishing our per-video reconstructive TTA setting from TTOM (Qu et al., ICLR 2026 — [OpenReview](https://openreview.net/pdf?id=wqCwcTZsrv)), whose iteration-axis saturate-then-degrade observation is the closest "your saturation may be real" evidence in recent literature. Distinguishes on three mechanistic axes (optimization variable: three adapter families incl. non-LoRA AdaSteer vs. their fixed rank-32 cross-attention LoRA; supervisory signal: flow-matching loss on clean visible frames vs. their JSD on LLM-generated layout masks; test-time loop scope: per-video reset vs. their cross-prompt streaming memory). Honest "where comparison is close" section calls out the LoRA-on-cross-attention-DiT axis where overclaiming difference would be tactically weak. Flags one specific control (an iteration sweep on a stratified ~100-video subset, ~125 GPU-h) the paper should report rather than wave past, with the outcome-interpretation rule that either outcome (crossover seen vs. not seen) is paper-defensible. |
+
+---
+
 ## Plans / proposals (awaiting user authorisation)
 
 | Date | Document | Purpose | Status |
