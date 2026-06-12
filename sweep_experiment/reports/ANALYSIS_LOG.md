@@ -17,6 +17,18 @@ Body...
 
 ---
 
+## 2026-06-13 — Wrapper landed: TTOM iteration-saturation sweep (Track D Wave D2 fire-ready)
+**Tags:** runbook, track-d, d2, ttom-control
+**Refs:**
+- `sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh` (new) — 3 methods (ADA / LORA_R8_TTA / TL_BARE_R2) × 5 TTA-step values ({10, 20, 40, 80, 160}) × Panda 1000v chunk_0 = 15 jobs; per-method TTA-step env-var verified against the case statements in `sweep_experiment/sbatch/run_sweep.sbatch` (`delta_a` → `DELTA_STEPS`, `lora` → `NUM_STEPS`) and `delta_experiment/sbatch/run_tinylora.sbatch` (`tinylora` → `TTA_STEPS`); all other knobs frozen at the headline Panda recipes from `submit_standard_1000v_chunked.sh` so the only changing variable is the TTA-step count.
+- `sweep_experiment/reports/RUNBOOK_friday_morning_2026-06-12.md` §4 D2 — status flipped from BLOCKED to READY; `**Command:**` block + new "Wrapper exists" line replace the prior "**TODO**" bullet.
+- `sweep_experiment/reports/RUNBOOK_friday_morning_2026-06-12.md` §5 dependency graph — D2 row updated from "BLOCKED on submit_ttom_iteration_sweep.sh" to "READY ; fire alongside D1 + A1".
+- `sweep_experiment/reports/INDEX.md` "Implemented but not yet run (recipe modifications)" — new row pointing at the wrapper.
+
+Authorisation flow: user awoke briefly during overnight off-hours and explicitly authorised landing the D2 wrapper *without* the prior gate of "wait for D1 positive signal" — so D1, A1, and D2 can fire as a single submission burst on cluster restart. Wrapper is wrapper-only (no runner / sbatch-target changes), syntax-validated, dry-run produces 15 sbatch lines with correct run-ids (`ADA_TTA{N}`, `LORA_R8_TTA_TTA{N}`, `TL_BARE_R2_TTA{N}`) and correct method-specific TTA-step env-vars. Output dirs land alongside the headline cells (`{ADA,LORA_R8_TTA}_TTA{N}` under `panda_1000v_standard/`; `TL_BARE_R2_TTA{N}` under `tinylora_panda_1000v_standard/`) so paper-table builders pick them up naturally. Fire command: `bash sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh`.
+
+---
+
 ## 2026-06-12 (later+3) — Runbook update: Track D (recipe-modification & TTOM control) added
 **Tags:** runbook, track-d, recipe-modifications, ttom-control
 **Refs:**

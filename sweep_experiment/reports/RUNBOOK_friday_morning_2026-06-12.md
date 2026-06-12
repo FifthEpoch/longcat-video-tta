@@ -343,17 +343,23 @@ bash sweep_experiment/sbatch/submit_smoke_x0_loss.sh
 
 ### D2. TTOM iteration-saturation sweep (~125 GPU h serial on H200; ~1500 TTA runs)
 
-- **Status:** spec'd but **sbatch wrapper does not yet exist**. Must be implemented before submission.
+- **Status:** READY; sbatch wrapper exists.
+- **Command:**
+
+```bash
+bash sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh
+```
+
 - **Spec (from `PAPER_FRAGMENT_ttom_positioning_2026-06-12.md` §"Suggested control"):**
-  - `--tta-steps ∈ {10, 20, 40, 80, 160}` × {ADA, LORA_R8_TTA, TL_BARE_R2} × stratified ~100-video Panda 1000v subset.
-  - ≈ 1500 TTA runs ≈ 125 GPU-h serial on H200.
+  - `--tta-steps ∈ {10, 20, 40, 80, 160}` × {ADA, LORA_R8_TTA, TL_BARE_R2} × Panda 1000v `chunk_0` (videos 0–99; matches D1 smoke for direct comparability and overlaps the existing per-video analysis at `sweep_experiment/reports/per_video_analysis/2026-06-09/`).
+  - 3 methods × 5 tta-steps × 1 chunk = 15 jobs ≈ 125 GPU-h serial on H200.
   - Plot ΔPSNR / ΔLPIPS / ΔFVD vs. iteration count; the 16-iter regression point in TTOM Table 8 motivates including the high-iter end of the sweep deliberately as an over-shoot.
-- **Dependency:** none (can fire any time after cluster restart; **not** gated on Phase 0–3); BLOCKED on sbatch-wrapper implementation.
+- **Dependency:** none (can fire any time after cluster restart; **not** gated on Phase 0–3 and **not** gated on D1).
 - **Decision rule:**
   - TTOM-style saturate-then-degrade crossover observed → shared mechanism with TTOM; paper claim is "we reproduce TTOM's saturation-then-degradation in a different setting, mechanism is over-optimization".
   - Monotonic-flat curve at noise floor → distinct mechanism (per-video noise floor); paper claim is "TTOM's mechanism does not transfer; per-video reconstructive TTA is rate-limited by a different bottleneck".
 - **What success on this wave gives the paper:** pre-empts the obvious reviewer challenge ("did you just not run enough TTA iterations?") and turns the TTOM citation into either a confirmation or a contrast finding.
-- **TODO before this wave can fire:** write `sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh` (~100 LOC, mirrors `submit_standard_1000v_chunked.sh` but iterates over `TTA_STEPS` env-var grid and uses a 100-video subset). Defer until either Wave D1 produces a positive signal OR the user explicitly authorizes the wrapper.
+- ~~**TODO before this wave can fire:** write `sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh` (~100 LOC, mirrors `submit_standard_1000v_chunked.sh` but iterates over `TTA_STEPS` env-var grid and uses a 100-video subset). Defer until either Wave D1 produces a positive signal OR the user explicitly authorizes the wrapper.~~ **Wrapper exists** at `sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh` (added 2026-06-13 under user authorization for overnight fire). Outputs land in `panda_1000v_standard/{ADA,LORA_R8_TTA}_TTA{10,20,40,80,160}/chunk_0/` and `tinylora_panda_1000v_standard/TL_BARE_R2_TTA{10,20,40,80,160}/chunk_0/` — alongside the headline cells so paper-table builders pick them up naturally.
 
 ---
 
@@ -380,8 +386,8 @@ D1 smoke (anchor-x0 loss; LORA_R8_TTA × Panda chunk_0; ~2 GPU h on H200; NOT ga
 └─→ if median |ΔPSNR| > 0.5 dB: scale up to 4-method × 4-λ × 10-chunk sweep (~80 GPU h; wrapper TBD)
 └─→ if NaN grads OR |ΔPSNR| < 0.05 dB: pivot to Modification 2 (VAE-decoder-only TTA)
 
-D2 TTOM iteration-saturation sweep (3 methods × 5 tta-steps × ~100 videos = ~1500 runs ≈ ~125 GPU h serial; NOT gated on Phase 0–3)
-└─→ BLOCKED on submit_ttom_iteration_sweep.sh (defer until D1 positive OR user authorises wrapper)
+D2 TTOM iteration-saturation sweep (3 methods × 5 tta-steps × Panda chunk_0 = 15 jobs ≈ ~125 GPU h serial; READY; fire alongside D1 + A1)
+└─→ bash sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh
 ```
 
 ---
