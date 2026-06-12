@@ -107,6 +107,7 @@ def optimize_tinylora(
     dtype: torch.dtype = torch.bfloat16,
     early_stopper=None,
     train_latents_variants: Optional[List[Dict]] = None,
+    anchor_x0_weight: float = 0.0,
 ) -> Dict:
     """Optimise TinyLoRA v-parameters on conditioning latents."""
     trainable = wrapper.get_trainable_params()
@@ -136,6 +137,7 @@ def optimize_tinylora(
             prompt_mask=prompt_mask,
             device=device,
             dtype=dtype,
+            anchor_x0_weight=anchor_x0_weight,
         )
 
         loss.backward()
@@ -224,6 +226,13 @@ def build_parser() -> argparse.ArgumentParser:
     g = parser.add_argument_group("TTA optimisation")
     g.add_argument("--tta-steps", type=int, default=20)
     g.add_argument("--tta-lr", type=float, default=1e-3)
+    g.add_argument(
+        "--anchor-x0-weight", type=float, default=0.0,
+        help="Weight for the anchor-frame x0 consistency auxiliary loss "
+             "(rectified-flow recovery; Modification 1 of "
+             "sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md). "
+             "Default 0.0 = byte-identical to pre-patch behaviour.",
+    )
 
     g = parser.add_argument_group("Video / generation settings")
     g.add_argument("--num-cond-frames", type=int, default=14)
@@ -295,8 +304,12 @@ def main():
         start_idx = ckpt.get("next_idx", 0)
         _ckpt_results = ckpt.get("results", [])
 
+    method_label = "tinylora"
+    if args.anchor_x0_weight > 0.0:
+        method_label = f"tinylora + x0 (λ={args.anchor_x0_weight:g})"
+
     print("=" * 70)
-    print("TinyLoRA TTA for LongCat-Video")
+    print(f"TinyLoRA TTA for LongCat-Video  [{method_label}]")
     print("=" * 70)
     print(f"Checkpoint dir  : {args.checkpoint_dir}")
     print(f"Data dir        : {args.data_dir}")
@@ -308,6 +321,7 @@ def main():
     print(f"Target blocks   : {args.target_blocks}")
     print(f"TTA steps       : {args.tta_steps}")
     print(f"TTA LR          : {args.tta_lr}")
+    print(f"Anchor-x0 wt    : {args.anchor_x0_weight}")
     print(f"Augmentation    : {args.aug_enabled}")
     print(f"TTA no-caption  : {args.tta_disable_caption}")
     print(f"Gen start frame : {args.gen_start_frame}")
@@ -603,6 +617,7 @@ def main():
                     dtype=torch.bfloat16,
                     early_stopper=early_stopper if (val_latents is not None) else None,
                     train_latents_variants=train_latents_variants,
+                    anchor_x0_weight=args.anchor_x0_weight,
                 )
                 timing["tta_train"] = time.time() - _t
                 train_time = time.time() - _t_train_start
@@ -737,6 +752,7 @@ def main():
         "param_summary": param_summary,
         "tta_steps": args.tta_steps,
         "tta_lr": args.tta_lr,
+        "anchor_x0_weight": args.anchor_x0_weight,
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,
         "gen_start_frame": args.gen_start_frame,

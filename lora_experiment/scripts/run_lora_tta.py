@@ -472,6 +472,7 @@ def finetune_lora_on_conditioning(
     early_stopper: Optional[AnchoredEarlyStopper] = None,
     lora_param_fn=None,
     train_latents_variants: Optional[List[Dict]] = None,
+    anchor_x0_weight: float = 0.0,
 ) -> Dict:
     """Fine-tune LoRA adapters using conditioning-aware loss.
 
@@ -544,6 +545,7 @@ def finetune_lora_on_conditioning(
             prompt_mask=prompt_mask,
             device=device,
             dtype=dtype,
+            anchor_x0_weight=anchor_x0_weight,
         )
 
         loss.backward()
@@ -632,6 +634,7 @@ def finetune_lora_batch(
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     lora_param_fn=None,
+    anchor_x0_weight: float = 0.0,
 ) -> Dict:
     """Fine-tune shared LoRA adapters across multiple videos (round-robin).
 
@@ -678,6 +681,7 @@ def finetune_lora_batch(
             prompt_mask=pm,
             device=device,
             dtype=dtype,
+            anchor_x0_weight=anchor_x0_weight,
         )
 
         loss.backward()
@@ -801,6 +805,12 @@ def main():
                         help="Directory containing the larger retrieval pool dataset. "
                              "Required when --batch-videos > 1.")
 
+    parser.add_argument("--anchor-x0-weight", type=float, default=0.0,
+                        help="Weight for the anchor-frame x0 consistency auxiliary loss "
+                             "(rectified-flow recovery; Modification 1 of "
+                             "sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md). "
+                             "Default 0.0 = byte-identical to pre-patch behaviour.")
+
     # Early stopping
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
@@ -848,8 +858,12 @@ def main():
 
     target_modules = [m.strip() for m in args.target_modules.split(",")]
 
+    method_label = "LoRA TTA"
+    if args.anchor_x0_weight > 0.0:
+        method_label = f"LoRA TTA + x0 (λ={args.anchor_x0_weight:g})"
+
     print("=" * 70)
-    print("LoRA Test-Time Adaptation for LongCat-Video")
+    print(f"{method_label} (Test-Time Adaptation) for LongCat-Video")
     print("=" * 70)
     print(f"Checkpoint dir : {args.checkpoint_dir}")
     print(f"Data dir       : {args.data_dir}")
@@ -863,6 +877,7 @@ def main():
     print(f"Target FFN     : {args.target_ffn}")
     print(f"Learning rate  : {args.learning_rate}")
     print(f"Num steps      : {args.num_steps}")
+    print(f"Anchor-x0 wt   : {args.anchor_x0_weight}")
     print(f"TTA no-caption : {args.tta_disable_caption}")
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
@@ -1171,6 +1186,7 @@ def main():
                     max_grad_norm=args.max_grad_norm,
                     device=args.device, dtype=torch.bfloat16,
                     lora_param_fn=_get_lora_params,
+                    anchor_x0_weight=args.anchor_x0_weight,
                 )
                 del batch_data
 
@@ -1265,6 +1281,7 @@ def main():
                     early_stopper=early_stopper if val_latents is not None else None,
                     train_latents_variants=train_latents_variants,
                     lora_param_fn=_get_lora_params,
+                    anchor_x0_weight=args.anchor_x0_weight,
                 )
 
                 if args.tta_total_frames >= args.num_cond_frames:

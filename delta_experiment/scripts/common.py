@@ -448,7 +448,9 @@ def compute_flow_matching_loss_conditioned(
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
     forward_fn=None,
-) -> torch.Tensor:
+    anchor_x0_weight: float = 0.0,
+    return_components: bool = False,
+):
     """Conditioning-aware flow-matching loss matching LongCat inference.
 
     During LongCat-Video inference, conditioning latent tokens receive
@@ -468,6 +470,17 @@ def compute_flow_matching_loss_conditioned(
     target_latents : training target latents [B, C, T_target, H, W]
     forward_fn     : optional custom forward; signature
                      ``(hidden_states, timestep, num_cond_latents) -> pred``
+    anchor_x0_weight : if > 0, add an auxiliary x0-consistency term
+        ``anchor_x0_weight * MSE(pred_x0_target, target_latents)`` to the
+        returned loss, where ``pred_x0_target = noisy_target - sigma * pred_v``
+        is the rectified-flow x0 recovery on the noised target portion (Sangare
+        et al., CVPR 2026, "Improving Controllable Generation via x0-Supervision";
+        Modification 1 of ``LITERATURE_tta_recipe_modifications_2026-06-12.md``).
+        Default 0.0 is byte-identical to the pre-patch behaviour: no extra
+        compute is performed when off.
+    return_components : if True, return ``(loss_total, {"v_pred_loss": ...,
+        "x0_loss": ...})`` for debugging / logging. Default False preserves
+        the existing scalar API contract.
     """
     cfg = _get_model_config(dit)
     B, C, T_cond, H_lat, W_lat = cond_latents.shape
@@ -510,8 +523,33 @@ def compute_flow_matching_loss_conditioned(
     pred_target = pred[:, :, T_cond:].to(torch.float32)
     velocity_target = (noise - target_latents).to(torch.float32)
 
-    loss = F.mse_loss(pred_target, velocity_target)
-    return loss
+    v_pred_loss = F.mse_loss(pred_target, velocity_target)
+
+    if anchor_x0_weight > 0.0:
+        # Rectified-flow x0 recovery on the noised target portion:
+        #     x_0 = x_t - sigma * v   (since x_t = (1-sigma)*x_0 + sigma*noise
+        #     and v = noise - x_0, so x_t = x_0 + sigma*v).
+        # sigma is per-sample [B,1,1,1,1] — same broadcast shape used to build
+        # noisy_target above, so no per-token indexing is needed even though
+        # the DiT receives per-token timesteps (cond=0, target=sigma*1000):
+        # the noise was only applied to the target portion at this per-sample
+        # sigma, so the recovery is well-defined exactly there.
+        noisy_target_f32 = noisy_target.to(torch.float32)
+        target_latents_f32 = target_latents.to(torch.float32)
+        pred_x0_target = noisy_target_f32 - sigma_expanded * pred_target
+        x0_loss = F.mse_loss(pred_x0_target, target_latents_f32)
+        loss_total = v_pred_loss + anchor_x0_weight * x0_loss
+    else:
+        x0_loss = None
+        loss_total = v_pred_loss
+
+    if return_components:
+        components = {
+            "v_pred_loss": v_pred_loss.detach(),
+            "x0_loss": x0_loss.detach() if x0_loss is not None else None,
+        }
+        return loss_total, components
+    return loss_total
 
 
 def compute_flow_matching_loss_conditioned_fixed(

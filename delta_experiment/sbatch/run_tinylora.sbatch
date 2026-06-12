@@ -90,6 +90,12 @@ FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-warn}"
 # (inference prompt unchanged). Off by default.
 TTA_DISABLE_CAPTION="${TTA_DISABLE_CAPTION:-}"
 
+# Anchor-frame x0 consistency auxiliary loss (Modification 1 of
+# sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md).
+# Default 0.0 = byte-identical to pre-patch behaviour (the --anchor-x0-weight
+# flag is not passed to the runner). Set > 0 to activate.
+ANCHOR_X0_WEIGHT="${ANCHOR_X0_WEIGHT:-0.0}"
+
 # Online FVD / FID / VBench++
 COMPUTE_FVD="${COMPUTE_FVD:-0}"
 COMPUTE_FID="${COMPUTE_FID:-0}"
@@ -131,6 +137,7 @@ echo "  CLIP gate      : enabled=${CLIP_GATE_ENABLED:-0}"
 echo "  Online FVD     : ${COMPUTE_FVD}  FID: ${COMPUTE_FID}"
 echo "  Save videos    : $([ "${NO_SAVE_VIDEOS}" = "1" ] && echo "no" || echo "yes")"
 echo "  TTA no-caption : ${TTA_DISABLE_CAPTION:-0}"
+echo "  Anchor-x0 wt   : ${ANCHOR_X0_WEIGHT}"
 echo "  Checkpoint dir : ${CHECKPOINT_DIR}"
 echo "  Data dir       : ${DATA_DIR}"
 echo "  Output dir     : ${OUTPUT_DIR}"
@@ -281,6 +288,18 @@ if [ "${TTA_DISABLE_CAPTION}" = "1" ]; then
     NOPROMPT_FLAGS="--tta-disable-caption"
 fi
 
+# Anchor-frame x0 loss flag — only emitted when > 0 so the byte-identical
+# pre-patch guarantee holds for any submit wrapper that doesn't set
+# ANCHOR_X0_WEIGHT.
+X0_FLAGS=""
+case "${ANCHOR_X0_WEIGHT}" in
+    0|0.0|0.00|0.000|"")
+        : ;;
+    *)
+        X0_FLAGS="--anchor-x0-weight ${ANCHOR_X0_WEIGHT}"
+        ;;
+esac
+
 # Online eval flags
 EVAL_FLAGS=""
 [ "${COMPUTE_FVD}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fvd"
@@ -324,7 +343,8 @@ echo "Starting TinyLoRA TTA..."
     ${CAPTION_FLAGS} \
     ${FEATURE_FLAGS} \
     ${EVAL_FLAGS} \
-    ${NOPROMPT_FLAGS}
+    ${NOPROMPT_FLAGS} \
+    ${X0_FLAGS}
 
 echo ""
 echo "=============================================================================="

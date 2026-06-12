@@ -36,6 +36,18 @@ for audit trail.
 
 ---
 
+## Implemented but not yet run (recipe modifications)
+
+Patches landed in the repo but awaiting cluster availability for verification.
+Smoke-tests in this section gate scale-up to a full sweep — they fire as soon
+as the cluster returns from maintenance.
+
+| Series / wrapper | Modification | Implementation commit | Smoke-test command | Decision rule | Then |
+|---|---|---|---|---|---|
+| `panda_1000v_standard/LORA_R8_TTA_X0_W1.0` (single chunk × 100 videos) — wrapper [`sweep_experiment/sbatch/submit_smoke_x0_loss.sh`](../sbatch/submit_smoke_x0_loss.sh) | **Modification 1: anchor-frame x0 consistency loss** — adds `pred_x0 = noisy_target − σ·pred_v` MSE term to `compute_flow_matching_loss_conditioned`, controlled by `--anchor-x0-weight` CLI flag (default 0.0 = byte-identical to pre-patch). Per Sangare et al. CVPR 2026; rationale in [`LITERATURE_tta_recipe_modifications_2026-06-12.md §3.1`](LITERATURE_tta_recipe_modifications_2026-06-12.md). | This commit (anchor-frame x0 loss landing) | After cluster returns: `cd /scratch/wc3013/longcat-video-tta && git pull && bash sweep_experiment/sbatch/submit_smoke_x0_loss.sh` (~2 GPU h on H200) | Compare chunk_0 PSNR vs headline `LORA_R8_TTA/chunk_0`. **Scale up** if median \|ΔPSNR\| > 0.5 dB in either direction. **Move to Modification 2** if NaN grads OR \|ΔPSNR\| < 0.05 dB (loss formulation not the binding constraint). | If scale-up: 4-method × 4-λ × 10-chunk sweep (λ ∈ {0.01, 0.1, 1.0, 10.0}; ADA / LORA_R8_TTA / TL_BARE_R2 / TL_TIED_R2) ≈ 80 GPU-h per LITERATURE doc §4 priority-1 row. |
+
+---
+
 ## Active discovery / ablation experiments (not paper-grade, kept for audit)
 
 These exist but should NOT be mixed with headline tables. They are kept to

@@ -17,6 +17,22 @@ Body...
 
 ---
 
+## 2026-06-12 (later+2) — Implementation: anchor-frame x0 consistency loss (Modification 1)
+**Tags:** recipe-modification, anchor-x0-loss, implementation
+**Refs:**
+- `delta_experiment/scripts/common.py` — `compute_flow_matching_loss_conditioned` gains optional `anchor_x0_weight: float = 0.0` parameter (default 0.0 is byte-identical to pre-patch, verified by a regression test that hits the code path with `forward_fn` stubbed) plus a `return_components: bool = False` debug flag.
+- `delta_experiment/scripts/run_tinylora.py`, `delta_experiment/scripts/run_delta_a.py`, `lora_experiment/scripts/run_lora_tta.py` — new `--anchor-x0-weight FLOAT` CLI flag (default 0.0), threaded through the `optimize_tinylora` / `optimize_delta_a` / `_optimize_delta_a_batch` / `finetune_lora_on_conditioning` / `finetune_lora_batch` call sites; banner prints the resolved value; method-label suffix `+ x0 (λ=<weight>)` is shown when active.
+- `sweep_experiment/sbatch/run_sweep.sbatch`, `delta_experiment/sbatch/run_tinylora.sbatch`, `lora_experiment/sbatch/run_lora_tta.sbatch` — accept `ANCHOR_X0_WEIGHT` env-var override; the `--anchor-x0-weight` runner flag is emitted only when the weight is strictly > 0 (case statement matches `0|0.0|0.00|0.000|""`) so legacy submit wrappers that don't set the env var produce byte-identical runner invocations.
+- `sweep_experiment/sbatch/submit_smoke_x0_loss.sh` (new) — single-chunk `LORA_R8_TTA` smoke-test at λ=1.0 on Panda 1000v, output to `sweep_experiment/results/panda_1000v_standard/LORA_R8_TTA_X0_W1.0/chunk_0/`. Uses the EXACT headline LORA_R8_TTA hyperparameters (rank=8 / α=16 / lr=5e-5 / 10 steps / wd=0.01 / max-grad-norm=10) from `submit_standard_1000v_chunked.sh` so the ONLY changing variable is the x0-loss term. ~2 GPU h on H200.
+- `sweep_experiment/reports/INDEX.md` — new "Implemented but not yet run (recipe modifications)" section pointing at the smoke-test wrapper as the cluster-restart verification step.
+- `sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md` — Modification 1 implementation-status line updated.
+
+Modification 1 of 5 from the 2026-06-12 literature pass. The patch is a ≤80-LOC bolt-on to `compute_flow_matching_loss_conditioned`: at every TTA step, when `anchor_x0_weight > 0`, compute the rectified-flow x0 recovery `pred_x0 = noisy_target − σ · pred_v` on the noised target portion and add `anchor_x0_weight · F.mse_loss(pred_x0, target_latents)` to the returned scalar loss. Sigma broadcasts as `[B,1,1,1,1]` (the same per-sample broadcast shape used to build `noisy_target` two lines above) — no per-token indexing is needed even though the DiT receives per-token timesteps (cond=0, target=σ·1000) because the noise was applied at this per-sample sigma only on the target portion, so the recovery is well-defined exactly there. Per Sangare et al. CVPR 2026, the existing v-prediction MSE implicitly down-weights global-structure gradients by `(α/σ)²` at low SNR, exactly where the conditioning-on-clean-frames signal should pay off most; the x0 term restores that signal. Zero extra forward passes.
+
+**Verification before scale-up:** the smoke-test fires when the cluster returns from maintenance (`bash sweep_experiment/sbatch/submit_smoke_x0_loss.sh`). Decision rule per the literature doc §3.1 falsification criterion: if median |ΔPSNR| > 0.5 dB on the chunk vs the headline LORA_R8_TTA chunk_0, scale to the full 4-method × 4-λ × 10-chunk sweep (~80 GPU-h). If λ=1.0 produces NaN grads OR |ΔPSNR| < 0.05 dB, the loss formulation is not the binding constraint — pivot to Modification 2 (VAE-decoder-only TTA). The byte-identical-when-off guarantee means this commit is safe to ship to main even though the cluster is offline; existing submit wrappers that don't set `ANCHOR_X0_WEIGHT` are unchanged.
+
+---
+
 ## 2026-06-12 (later+1) — Paper fragment: TTOM positioning paragraph for related-work
 **Tags:** paper-defense, ttom, positioning, related-work
 **Refs:**

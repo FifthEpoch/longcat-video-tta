@@ -52,6 +52,12 @@ ES_NOISE_DRAWS="${ES_NOISE_DRAWS:-2}"
 ES_STRATEGY="${ES_STRATEGY:-patience}"
 ES_HOLDOUT_FRACTION="${ES_HOLDOUT_FRACTION:-0.25}"
 
+# Anchor-frame x0 consistency auxiliary loss (Modification 1 of
+# sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md).
+# Default 0.0 = byte-identical to pre-patch behaviour (the --anchor-x0-weight
+# flag is not passed to the runner). Set > 0 to activate.
+ANCHOR_X0_WEIGHT="${ANCHOR_X0_WEIGHT:-0.0}"
+
 # ============================================================================
 # Path Setup
 # ============================================================================
@@ -80,6 +86,7 @@ echo "  Num frames        : ${NUM_FRAMES}"
 echo "  Gen start         : ${GEN_START_FRAME}"
 echo "  Inference steps   : ${NUM_INFERENCE_STEPS}"
 echo "  Guidance scale    : ${GUIDANCE_SCALE}"
+echo "  Anchor-x0 wt      : ${ANCHOR_X0_WEIGHT}"
 echo "  Checkpoint dir    : ${CHECKPOINT_DIR}"
 echo "  Data dir          : ${DATA_DIR}"
 echo "  Output dir        : ${OUTPUT_DIR}"
@@ -148,6 +155,17 @@ ES_FLAGS="${ES_FLAGS} --es-noise-draws ${ES_NOISE_DRAWS}"
 ES_FLAGS="${ES_FLAGS} --es-strategy ${ES_STRATEGY}"
 ES_FLAGS="${ES_FLAGS} --es-holdout-fraction ${ES_HOLDOUT_FRACTION}"
 
+# Anchor-frame x0 loss flag — only emitted when > 0 so byte-identical to
+# pre-patch when ANCHOR_X0_WEIGHT is unset / 0.
+X0_FLAGS=""
+case "${ANCHOR_X0_WEIGHT}" in
+    0|0.0|0.00|0.000|"")
+        : ;;
+    *)
+        X0_FLAGS="--anchor-x0-weight ${ANCHOR_X0_WEIGHT}"
+        ;;
+esac
+
 # ============================================================================
 # Run LoRA TTA
 # ============================================================================
@@ -172,7 +190,8 @@ python lora_experiment/scripts/run_lora_tta.py \
     --resolution "${RESOLUTION}" \
     --seed "${SEED}" \
     ${EXTRA_FLAGS} \
-    ${ES_FLAGS}
+    ${ES_FLAGS} \
+    ${X0_FLAGS}
 
 echo ""
 echo "=============================================================================="

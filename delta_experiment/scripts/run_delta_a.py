@@ -244,6 +244,7 @@ def optimize_delta_a(
     anchor_reg_sigmas: Optional[List[float]] = None,
     anchor_reg_noise_draws: int = 1,
     anchor_reg_video_id: str = "",
+    anchor_x0_weight: float = 0.0,
 ) -> Dict:
     """Optimize the delta vector using conditioning-aware loss.
 
@@ -303,6 +304,7 @@ def optimize_delta_a(
                 prompt_mask=prompt_mask,
                 device=device,
                 dtype=dtype,
+                anchor_x0_weight=anchor_x0_weight,
             )
             base_loss = loss
             anchor_loss = None
@@ -451,6 +453,7 @@ def _optimize_delta_a_batch(
     lr: float = 1e-3,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
+    anchor_x0_weight: float = 0.0,
 ) -> Dict:
     """Optimize a shared delta vector across multiple videos.
 
@@ -485,6 +488,7 @@ def _optimize_delta_a_batch(
             prompt_mask=pm,
             device=device,
             dtype=dtype,
+            anchor_x0_weight=anchor_x0_weight,
         )
 
         loss.backward()
@@ -599,6 +603,11 @@ def main():
                         help="Comma-separated fixed sigma values for anchor regularization.")
     parser.add_argument("--anchor-reg-noise-draws", type=int, default=1,
                         help="Number of deterministic noise draws per sigma for anchor regularization.")
+    parser.add_argument("--anchor-x0-weight", type=float, default=0.0,
+                        help="Weight for the anchor-frame x0 consistency auxiliary loss "
+                             "(rectified-flow recovery; Modification 1 of "
+                             "sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md). "
+                             "Default 0.0 = byte-identical to pre-patch behaviour.")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -643,14 +652,19 @@ def main():
         start_idx = ckpt.get("next_idx", 0)
         _ckpt_results = ckpt.get("results", [])
 
+    method_label = "Delta-A (AdaSteer)"
+    if args.anchor_x0_weight > 0.0:
+        method_label = f"Delta-A (AdaSteer) + x0 (λ={args.anchor_x0_weight:g})"
+
     print("=" * 70)
-    print("Delta-A TTA for LongCat-Video")
+    print(f"{method_label} TTA for LongCat-Video")
     print("=" * 70)
     print(f"Checkpoint dir : {args.checkpoint_dir}")
     print(f"Data dir       : {args.data_dir}")
     print(f"Output dir     : {args.output_dir}")
     print(f"Delta steps    : {args.delta_steps}")
     print(f"Delta LR       : {args.delta_lr}")
+    print(f"Anchor-x0 wt   : {args.anchor_x0_weight}")
     print(f"Augmentation   : {args.aug_enabled}")
     print(f"Rollout steps  : {args.rollout_steps}")
     print(f"Grad accum     : {args.tta_grad_accum}")
@@ -920,6 +934,7 @@ def main():
                         lr=args.delta_lr,
                         device=args.device,
                         dtype=torch.bfloat16,
+                        anchor_x0_weight=args.anchor_x0_weight,
                     )
                 else:
                     bd = batch_data[0]
@@ -1013,6 +1028,7 @@ def main():
                         anchor_reg_sigmas=args.anchor_reg_sigmas_parsed,
                         anchor_reg_noise_draws=args.anchor_reg_noise_draws,
                         anchor_reg_video_id=bd["video_name"],
+                        anchor_x0_weight=args.anchor_x0_weight,
                     )
                     timing["tta_train"] = time.time() - _t
 

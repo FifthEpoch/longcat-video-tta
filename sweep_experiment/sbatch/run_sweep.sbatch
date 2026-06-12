@@ -165,6 +165,15 @@ FEATURE_FRAME_GUARD_MODE="${FEATURE_FRAME_GUARD_MODE:-fail}"
 # submit_standard_1000v_noprompt.sh ablation.
 TTA_DISABLE_CAPTION="${TTA_DISABLE_CAPTION:-}"
 
+# Anchor-frame x0 consistency auxiliary loss (Modification 1 of
+# sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md).
+# Default 0.0 = byte-identical to pre-patch behaviour: the runner sees no
+# --anchor-x0-weight flag at all and the loss function short-circuits.
+# Honoured by the lora / delta_a runners. Set > 0 to activate the
+# pred_x0 = noisy_target - sigma * pred_v MSE term against the clean
+# train_latents. Used by submit_smoke_x0_loss.sh.
+ANCHOR_X0_WEIGHT="${ANCHOR_X0_WEIGHT:-0.0}"
+
 # Online FVD / FID / VBench++
 COMPUTE_FVD="${COMPUTE_FVD:-0}"
 COMPUTE_FID="${COMPUTE_FID:-0}"
@@ -368,6 +377,19 @@ if [ "${TTA_DISABLE_CAPTION}" = "1" ]; then
     NOPROMPT_FLAGS="--tta-disable-caption"
 fi
 
+# Anchor-frame x0 loss flag (Modification 1). Only passed when > 0 so the
+# pre-patch byte-identical guarantee holds for legacy submit wrappers that
+# don't set ANCHOR_X0_WEIGHT. Honoured by the lora / delta_a branches only;
+# norm_tune / film / delta_b / delta_c don't expose --anchor-x0-weight yet.
+X0_FLAGS=""
+case "${ANCHOR_X0_WEIGHT}" in
+    0|0.0|0.00|0.000|"")
+        : ;;
+    *)
+        X0_FLAGS="--anchor-x0-weight ${ANCHOR_X0_WEIGHT}"
+        ;;
+esac
+
 EVAL_FLAGS=""
 [ "${COMPUTE_FVD}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fvd"
 [ "${COMPUTE_FID}" = "1" ] && EVAL_FLAGS="${EVAL_FLAGS} --compute-fid"
@@ -463,6 +485,7 @@ case "${METHOD}" in
     echo "  Warmup steps   : ${WARMUP_STEPS}"
     echo "  Batch videos   : ${BATCH_VIDEOS}"
     echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
+    echo "  Anchor-x0 wt   : ${ANCHOR_X0_WEIGHT}"
     echo "=============================================================================="
 
     EXTRA_FLAGS=""
@@ -516,7 +539,8 @@ case "${METHOD}" in
         ${EVAL_FLAGS} \
         ${ES_FLAGS} \
         ${AUG_FLAGS} \
-        ${NOPROMPT_FLAGS}
+        ${NOPROMPT_FLAGS} \
+        ${X0_FLAGS}
     ;;
 
   delta_a)
@@ -529,6 +553,7 @@ case "${METHOD}" in
     echo "  Retrieval pool : ${RETRIEVAL_POOL_DIR:-<same as DATA_DIR>}"
     echo "  Anchor gate    : mode=${ANCHOR_GATE_MODE}, threshold=${ANCHOR_GATE_THRESHOLD}, soft_scale=${ANCHOR_GATE_SOFT_SCALE}"
     echo "  Anchor reg     : weight=${ANCHOR_REG_WEIGHT}, sigmas=${ANCHOR_REG_SIGMAS}, draws=${ANCHOR_REG_NOISE_DRAWS}"
+    echo "  Anchor-x0 wt   : ${ANCHOR_X0_WEIGHT}"
     echo "=============================================================================="
 
     POOL_FLAGS=""
@@ -571,7 +596,8 @@ case "${METHOD}" in
         ${EVAL_FLAGS} \
         ${ES_FLAGS} \
         ${AUG_FLAGS} \
-        ${NOPROMPT_FLAGS}
+        ${NOPROMPT_FLAGS} \
+        ${X0_FLAGS}
     ;;
 
   delta_b)
