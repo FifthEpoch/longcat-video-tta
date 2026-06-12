@@ -320,7 +320,44 @@ git push origin main
 
 ---
 
-## 4. Dependency graph (ASCII)
+## 4. Track D — Recipe-modification & TTOM control (Friday afternoon, conditional on Phase 0-3 results)
+
+Two waves, both **independent of Phase 0–3** (can fire any time after the cluster restart). D1 is ready to submit; D2 is BLOCKED on the missing sbatch wrapper `sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh`. Track D is **additive** to Tracks A/B/C, not a replacement. The "conditional on Phase 0–3 results" qualifier in the heading refers to the *paper-narrative* gating (whether the gating recommendation lands first changes which way we tell the Track D story), not to the scheduling gate — the jobs themselves do not read any Phase 0–3 output.
+
+### D1. Modification 1 smoke-test — anchor-frame x0 consistency loss (~2 GPU h on H200; single chunk × 100 videos)
+
+- **Status:** ready; sbatch wrapper exists.
+- **Command:**
+
+```bash
+bash sweep_experiment/sbatch/submit_smoke_x0_loss.sh
+```
+
+- **What it submits:** single-chunk `LORA_R8_TTA` on Panda 1000v with `ANCHOR_X0_WEIGHT=1.0`; 100 videos, chunk 0. Uses the exact headline `LORA_R8_TTA` hyperparameters (rank=8 / α=16 / lr=5e-5 / 10 steps / wd=0.01 / max-grad-norm=10) so the *only* changing variable vs the headline cell is the x0 loss term.
+- **Output:** `sweep_experiment/results/panda_1000v_standard/LORA_R8_TTA_X0_W1.0/chunk_0/`.
+- **Dependency:** none (can fire any time after cluster restart; **not** gated on Phase 0–3).
+- **Decision rule (verbatim from `LITERATURE_tta_recipe_modifications_2026-06-12.md` §1):**
+  - Median \|ΔPSNR\| > 0.5 dB vs `LORA_R8_TTA/chunk_0` (either direction) → scale up to full 4-method × 4-λ × 10-chunk sweep (~80 GPU-h, sbatch wrapper TBD).
+  - NaN gradients OR \|ΔPSNR\| < 0.05 dB → loss formulation is not the binding constraint; pivot to Modification 2 (VAE-decoder-only TTA).
+- **What success on this wave gives the paper:** evidence that the v-prediction-only loss was the binding constraint (Sangare CVPR 2026 critique applies), justifying the recipe change as a paper contribution.
+
+### D2. TTOM iteration-saturation sweep (~125 GPU h serial on H200; ~1500 TTA runs)
+
+- **Status:** spec'd but **sbatch wrapper does not yet exist**. Must be implemented before submission.
+- **Spec (from `PAPER_FRAGMENT_ttom_positioning_2026-06-12.md` §"Suggested control"):**
+  - `--tta-steps ∈ {10, 20, 40, 80, 160}` × {ADA, LORA_R8_TTA, TL_BARE_R2} × stratified ~100-video Panda 1000v subset.
+  - ≈ 1500 TTA runs ≈ 125 GPU-h serial on H200.
+  - Plot ΔPSNR / ΔLPIPS / ΔFVD vs. iteration count; the 16-iter regression point in TTOM Table 8 motivates including the high-iter end of the sweep deliberately as an over-shoot.
+- **Dependency:** none (can fire any time after cluster restart; **not** gated on Phase 0–3); BLOCKED on sbatch-wrapper implementation.
+- **Decision rule:**
+  - TTOM-style saturate-then-degrade crossover observed → shared mechanism with TTOM; paper claim is "we reproduce TTOM's saturation-then-degradation in a different setting, mechanism is over-optimization".
+  - Monotonic-flat curve at noise floor → distinct mechanism (per-video noise floor); paper claim is "TTOM's mechanism does not transfer; per-video reconstructive TTA is rate-limited by a different bottleneck".
+- **What success on this wave gives the paper:** pre-empts the obvious reviewer challenge ("did you just not run enough TTA iterations?") and turns the TTOM citation into either a confirmation or a contrast finding.
+- **TODO before this wave can fire:** write `sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh` (~100 LOC, mirrors `submit_standard_1000v_chunked.sh` but iterates over `TTA_STEPS` env-var grid and uses a 100-video subset). Defer until either Wave D1 produces a positive signal OR the user explicitly authorizes the wrapper.
+
+---
+
+## 5. Dependency graph (ASCII)
 
 Times are wallclock from Friday-morning T=0 (login node, immediately after `git pull`).
 
@@ -338,11 +375,18 @@ A2.0 smoke OK? ─→ A2.1 NOPROMPT 80-job sweep ─→ A2.2 merge ─→ C.1-C.
 
 B1 → B2 → B3 → B4 (CPU; ~15 min total; runs alongside everything in Track A from T=0)
 └─→ git commit + push offline-investigation bundle
+
+D1 smoke (anchor-x0 loss; LORA_R8_TTA × Panda chunk_0; ~2 GPU h on H200; NOT gated on Phase 0–3)
+└─→ if median |ΔPSNR| > 0.5 dB: scale up to 4-method × 4-λ × 10-chunk sweep (~80 GPU h; wrapper TBD)
+└─→ if NaN grads OR |ΔPSNR| < 0.05 dB: pivot to Modification 2 (VAE-decoder-only TTA)
+
+D2 TTOM iteration-saturation sweep (3 methods × 5 tta-steps × ~100 videos = ~1500 runs ≈ ~125 GPU h serial; NOT gated on Phase 0–3)
+└─→ BLOCKED on submit_ttom_iteration_sweep.sh (defer until D1 positive OR user authorises wrapper)
 ```
 
 ---
 
-## 5. Critical path
+## 6. Critical path
 
 **A2.1 NOPROMPT 80-job sweep (~5–7 wallclock days)** dominates the critical path. Every Track-C step (VBench backfill, paper-table rebuild) and the eventual NOPROMPT row in the paper headline table is gated on A2.1 completion.
 
@@ -354,7 +398,7 @@ B1 → B2 → B3 → B4 (CPU; ~15 min total; runs alongside everything in Track 
 
 ---
 
-## 6. After completion
+## 7. After completion
 
 Each track has its own "what lands in git" line; running the runbook end-to-end produces these commits.
 
@@ -386,7 +430,7 @@ git push origin main
 
 ---
 
-## 7. What is NOT in this runbook (deferred or out of scope)
+## 8. What is NOT in this runbook (deferred or out of scope)
 
 - **Gating-experiment Phases 1–3.** Univariate / multivariate / Pareto analysis is CPU-only and runs from a separate analysis session after A1's CSVs land (`PLAN_gating_experiment_2026-06-11.md` §3.2–§3.4). The scripts `analyze_gating_univariate.py` / `analyze_gating_multivariate.py` / `build_gating_pareto.py` are themselves a separate implementation task — none of them exist on disk today.
 - **Gating-experiment Phase 4 (long-horizon validation).** Explicitly gated on Phase-3 `RECOMMENDATION.md` review per Decision 1 in `PLAN_gating_experiment_2026-06-11.md` §8. Requires separate user authorisation after the standard-horizon recommendation is in.

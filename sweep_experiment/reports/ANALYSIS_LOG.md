@@ -17,6 +17,17 @@ Body...
 
 ---
 
+## 2026-06-12 (later+3) — Runbook update: Track D (recipe-modification & TTOM control) added
+**Tags:** runbook, track-d, recipe-modifications, ttom-control
+**Refs:**
+- [`RUNBOOK_friday_morning_2026-06-12.md`](RUNBOOK_friday_morning_2026-06-12.md) — new §4 Track D with Wave D1 (Modification 1 smoke-test) and Wave D2 (TTOM iteration-saturation sweep); §5 dependency graph updated to show Track D as a separate downstream branch ungated on Phase 0–3; sections 4→5, 5→6, 6→7, 7→8 renumbered to make room.
+- Commit `870aea3` — Modification 1 implementation (anchor-frame x0 consistency loss; `sweep_experiment/sbatch/submit_smoke_x0_loss.sh` wrapper landed).
+- Commit `a388b8e` — TTOM positioning paper fragment (`PAPER_FRAGMENT_ttom_positioning_2026-06-12.md`; the §"Suggested control" block is the D2 spec).
+
+Adds a Friday-afternoon work track covering two waves that can fire any time after the cluster restart, **independent of Phase 0–3 results**. D1 (Modification 1 anchor-frame x0 consistency loss smoke-test) is ready — `submit_smoke_x0_loss.sh` exists, ~2 GPU h on H200 (single chunk × 100 videos), decision rule lifted verbatim from `LITERATURE_tta_recipe_modifications_2026-06-12.md` §1. D2 (TTOM iteration-saturation sweep, 3 methods × 5 tta-steps × ~100 videos ≈ ~1500 runs ≈ ~125 GPU h serial) is spec'd from `PAPER_FRAGMENT_ttom_positioning_2026-06-12.md` "Suggested control" but BLOCKED on a missing sbatch wrapper (`sweep_experiment/sbatch/submit_ttom_iteration_sweep.sh`), explicitly deferred until D1 produces a positive signal OR the user separately authorises the wrapper. Pure documentation update; no code, sbatch, or script changes.
+
+---
+
 ## 2026-06-12 (later+2) — Implementation: anchor-frame x0 consistency loss (Modification 1)
 **Tags:** recipe-modification, anchor-x0-loss, implementation
 **Refs:**
