@@ -17,6 +17,45 @@ Body...
 
 ---
 
+## 2026-06-14 (~04:00 AM UTC+8) — Cluster job submissions: Mod 2 smoke re-fire + Phase 0 extract-only re-fire
+**Tags:** cluster-ops, job-submissions, mod2-smoke, phase0
+**Refs:**
+- Mod 2 smoke job `10756668` — submitted via `bash sweep_experiment/sbatch/submit_smoke_vae_decoder_tta.sh` at cluster git HEAD **`5d2a871`** (round-3 cv2 bypass; includes Mod 2 runner but **NOT** OOM fix `b802835`).
+- Phase 0 extract job `10756670` + correlate job `10756671` — submitted via `SKIP_OOD=1 SKIP_TIER3=1 bash scripts/sbatch/submit_per_video_feature_pipeline.sh` at HEAD **`5d2a871`** (round-3 numpy histogram bypass). Broken `video_features.csv` deleted before submit; prior-run OOD + Tier3 CSVs (~1000 rows each) retained on disk.
+
+**Session git-pull timeline (cluster checkout):**
+1. First `git pull` landed **`5d2a871`** (extract round-3 cv2 bypass) but **not** **`b802835`** (Mod 2 OOM fix — DiT offload during decoder TTA).
+2. Mod 2 smoke `10756668` fired immediately after that pull → **RISK: may execute pre-OOM-fix code** if the job starts before `b802835` is pulled.
+3. Second `git pull` reported "Already up to date" at `5d2a871` — still missing `b802835` unless pulled again later.
+
+**Action required — Mod 2 smoke `10756668`:**
+```bash
+cd /scratch/$USER/longcat-video-tta && git pull   # must reach b802835
+squeue -j 10756668 -h -o "%T"                     # if PD → scancel 10756668
+bash sweep_experiment/sbatch/submit_smoke_vae_decoder_tta.sh
+```
+Prior smoke **`10737006`** (2026-06-13) was **INVALID** — 100/100 `success=False` from DiT-resident OOM (~137 GiB), not a recipe null. Fix is in `b802835`.
+
+**Phase 0 extract `10756670` — verification:**
+```bash
+wc -l sweep_experiment/reports/per_video_analysis/2026-06-09/video_features.csv
+# expect ~1001 lines (header + ~1000 videos) after job completes
+```
+
+**Phase 0 correlate `10756671` — partial by design:**
+Correlate depends on extract only; OOD/Tier3 stages were skipped in submit args (`SKIP_OOD=1 SKIP_TIER3=1`). Expect a **features-only partial** correlation report. After extract succeeds, re-run full correlate against the **existing** OOD + Tier3 CSVs from the prior overnight run (1000 rows each, still on disk):
+```bash
+# after 10756670 completes and video_features.csv has ~1000 rows:
+bash scripts/sbatch/submit_per_video_feature_pipeline.sh   # full pipeline, or correlate-only if wrapper supports it
+```
+
+**Prior context (unchanged):**
+- D1 Mod 1 smoke: **PIVOT** (median ΔPSNR +0.009 dB — below 0.05 dB threshold).
+- A1 extract failed rounds 1–3 on cluster until `5d2a871` numpy bypass.
+- Other jobs still in flight from earlier sessions: D2 TTOM iteration sweep, A2 NOPROMPT ablation, etc. (see `INDEX.md` pending-merges table).
+
+---
+
 ## 2026-06-14 — Mod 2 smoke invalid: VAE-decoder TTA OOM (job 10737006)
 **Tags:** mod2, oom-fix, vae-decoder-tta, bug-fix, negative-result
 **Refs:**
