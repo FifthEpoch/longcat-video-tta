@@ -754,6 +754,7 @@ case "${METHOD}" in
     # VAE-Decoder-Only TTA (Modification 2 of
     # sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md).
     # Freeze the DiT; adapt only vae.decoder on round-trip reconstruction.
+    export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
     VAE_TTA_STEPS="${VAE_TTA_STEPS:-10}"
     VAE_TTA_LR="${VAE_TTA_LR:-1e-5}"
     VAE_TTA_LPIPS_WEIGHT="${VAE_TTA_LPIPS_WEIGHT:-0.0}"

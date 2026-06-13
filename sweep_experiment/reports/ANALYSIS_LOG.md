@@ -17,6 +17,17 @@ Body...
 
 ---
 
+## 2026-06-14 — Mod 2 smoke invalid: VAE-decoder TTA OOM (job 10737006)
+**Tags:** mod2, oom-fix, vae-decoder-tta, bug-fix, negative-result
+**Refs:**
+- Job `10737006` — Mod 2 smoke `panda_1000v_standard/VAE_DEC_TTA_LR1e-5/chunk_0`: **100/100 videos `success=False`**, every failure `CUDA out of memory` at `run_vae_decoder_tta.py:196` (`vae.decode()` inside `optimize_vae_decoder`). Wall 5:39 (≈3 s/video) because OOM aborts before meaningful TTA or inference. GPU snapshot before decode: **139.44 GiB in use / 137.54 GiB PyTorch allocated** — the full LongCat stack (DiT + VAE + text encoder) stayed on GPU during decoder-only Adam; the runner's `dit.to("cpu")` path did not effectively free DiT memory.
+- `delta_experiment/scripts/run_vae_decoder_tta.py` — fix: robust `offload_dit_for_vae_tta()` / `reload_dit_for_inference()` helpers (move via direct refs + `pipe.dit` / `pipe.text_encoder`, `torch_gc` + `cuda.synchronize`, post-offload mem log + >20 GiB warn); immediate post-load DiT/text CPU offload; per-video re-offload before TTA and after generation; slice-by-slice latent decode in `optimize_vae_decoder` (mirrors Wan VAE `_decode`) to cap activation peak during backward.
+- `sweep_experiment/sbatch/run_sweep.sbatch` — `METHOD=vae_decoder` sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (allocator hygiene; not sufficient alone).
+
+**Verdict:** Smoke 10737006 is an **invalid null** — infrastructure OOM bug, not evidence that VAE-decoder TTA fails the Mod 2 falsification criterion. Re-fire after `git pull`: `bash sweep_experiment/sbatch/submit_smoke_vae_decoder_tta.sh`. Expected TTA-phase peak GPU ≈ **8–15 GiB** (VAE encoder+decoder + 48-frame latents + one-slice decode activations) vs pre-fix ~137 GiB with DiT resident.
+
+---
+
 ## 2026-06-14 — Phase 0 round-3 fix: bypass cv2.calcHist with numpy.histogramdd
 **Tags:** phase-0, bug-fix, extract-video-features, round-3, cv2-bypass
 **Refs:**

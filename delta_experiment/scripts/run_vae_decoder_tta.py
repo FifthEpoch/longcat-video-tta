@@ -90,6 +90,58 @@ from common import (
 
 
 # ============================================================================
+# GPU memory helpers (DiT must leave GPU during decoder-only TTA)
+# ============================================================================
+
+def _gpu_mem_allocated_gb() -> float:
+    if not torch.cuda.is_available():
+        return 0.0
+    return float(torch.cuda.memory_allocated() / (1024 ** 3))
+
+
+def offload_dit_for_vae_tta(dit, text_encoder, pipe, *, log: bool = True) -> None:
+    """Move DiT + text_encoder off GPU; only the VAE should remain for decoder TTA."""
+    modules = [dit, text_encoder]
+    if pipe is not None:
+        if getattr(pipe, "dit", None) is not None:
+            modules.append(pipe.dit)
+        if getattr(pipe, "text_encoder", None) is not None:
+            modules.append(pipe.text_encoder)
+
+    seen = set()
+    for mod in modules:
+        if mod is None or id(mod) in seen:
+            continue
+        seen.add(id(mod))
+        mod.to("cpu")
+
+    torch_gc()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    if log:
+        mem_gb = _gpu_mem_allocated_gb()
+        print(f"  [mem] after DiT/text offload: {mem_gb:.2f} GiB PyTorch allocated")
+        if mem_gb > 20.0:
+            print(
+                f"  [WARN] GPU still at {mem_gb:.1f} GiB after DiT offload — "
+                "decoder TTA may OOM; check that pipe.dit moved to CPU."
+            )
+
+
+def reload_dit_for_inference(dit, text_encoder, pipe, device: str) -> None:
+    """Restore DiT + text_encoder to GPU for pipeline generation."""
+    for mod in (text_encoder, dit):
+        mod.to(device)
+    if pipe is not None:
+        if getattr(pipe, "text_encoder", None) is not None:
+            pipe.text_encoder.to(device)
+        if getattr(pipe, "dit", None) is not None:
+            pipe.dit.to(device)
+    torch_gc()
+
+
+# ============================================================================
 # Decoder snapshot helpers
 # ============================================================================
 
@@ -185,29 +237,53 @@ def optimize_vae_decoder(
 
     from common import denormalize_latents
 
-    # Pre-decode normalisation: vae.decode expects latents in the
-    # *unnormalised* (raw VAE-output) space. We need to denorm before each
-    # decode but we keep the (normalised) latents tensor stable across steps.
+    # vae.decode expects latents in the *unnormalised* (raw VAE-output) space.
+    # Denorm once; reuse the normalised latents tensor across Adam steps.
+    lat_for_decode = denormalize_latents(vae, latents)
+    T_lat = lat_for_decode.shape[2]
+    pix_target = pixel_frames.to(torch.float32)
+
     for step in range(num_steps):
         optimizer.zero_grad(set_to_none=True)
 
-        # Denormalize → decode (grad flows through the decoder only).
-        lat_for_decode = denormalize_latents(vae, latents)
-        decoded = vae.decode(lat_for_decode.to(vae.dtype), return_dict=False)[0]
-        # decoded is in [-1, 1] (vae output convention). Match pixel_frames range.
-        # pixel_frames as produced by load_video_frames() is also in [-1, 1].
+        # Decode one latent temporal slice at a time (mirrors Wan VAE _decode) so
+        # peak activation memory stays bounded during the decoder backward pass.
+        pix_loss_sum = torch.zeros((), device=pix_target.device, dtype=torch.float32)
+        lpips_loss_sum = torch.zeros((), device=pix_target.device, dtype=torch.float32)
+        n_pix_elems = 0
+        n_lpips_frames = 0
+        pixel_offset = 0
 
-        # Float32 loss for numerical stability at low LR.
-        diff = decoded.to(torch.float32) - pixel_frames.to(torch.float32)
-        pix_loss = (diff * diff).mean()
+        for t in range(T_lat):
+            lat_slice = lat_for_decode[:, :, t:t + 1].to(vae.dtype)
+            dec_slice = vae.decode(lat_slice, return_dict=False)[0]
+            t_pix = dec_slice.shape[2]
+            pix_slice = pix_target[:, :, pixel_offset:pixel_offset + t_pix]
+            n = min(pix_slice.shape[2], t_pix)
+            if n <= 0:
+                break
+            pix_slice = pix_slice[:, :, :n]
+            dec_slice = dec_slice[:, :, :n]
 
-        if lpips_weight > 0.0 and lpips_model is not None:
-            # LPIPS expects [N, 3, H, W] in [-1, 1]. decoded/pixels are
-            # [B, 3, T, H, W]; fold time into batch.
-            B, C, T, H, W = decoded.shape
-            d2 = decoded.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W).to(torch.float32)
-            p2 = pixel_frames.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W).to(torch.float32)
-            lpips_loss = lpips_model(d2.clamp(-1, 1), p2.clamp(-1, 1)).mean()
+            diff = dec_slice.to(torch.float32) - pix_slice
+            pix_loss_sum = pix_loss_sum + (diff * diff).sum()
+            n_pix_elems += diff.numel()
+
+            if lpips_weight > 0.0 and lpips_model is not None:
+                B, C, T, H, W = dec_slice.shape
+                d2 = dec_slice.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+                p2 = pix_slice.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+                lpips_loss_sum = lpips_loss_sum + lpips_model(
+                    d2.clamp(-1, 1), p2.clamp(-1, 1)
+                ).sum()
+                n_lpips_frames += B * T
+
+            pixel_offset += t_pix
+            del dec_slice, lat_slice, diff, pix_slice
+
+        pix_loss = pix_loss_sum / max(n_pix_elems, 1)
+        if lpips_weight > 0.0 and lpips_model is not None and n_lpips_frames > 0:
+            lpips_loss = lpips_loss_sum / n_lpips_frames
         else:
             lpips_loss = torch.zeros((), device=pix_loss.device, dtype=torch.float32)
 
@@ -231,8 +307,6 @@ def optimize_vae_decoder(
         pix_losses.append(float(pix_loss.detach().item()))
         lpips_losses.append(float(lpips_loss.detach().item()) if lpips_weight > 0.0 else None)
 
-        # Cleanup intermediate tensors.
-        del decoded, lat_for_decode, diff
         torch_gc()
 
     vae.decoder.eval()
@@ -378,6 +452,11 @@ def main():
     n_dec_params = sum(p.numel() for p in vae.decoder.parameters())
     print(f"  Decoder params : {n_dec_params/1e6:.1f}M")
 
+    # DiT + text_encoder are not used during decoder TTA; keep them on CPU until
+    # the per-video generation phase to avoid ~130 GiB idle on GPU.
+    print("\nOffloading DiT + text_encoder to CPU (VAE-only GPU for decoder TTA)...")
+    offload_dit_for_vae_tta(dit, text_encoder, pipe)
+
     # Optional LPIPS model.
     lpips_model = None
     if args.vae_tta_lpips_weight > 0.0:
@@ -491,12 +570,7 @@ def main():
 
             # ── TTA train ──
             if not clip_gate_info.get("tta_skipped", False) and args.vae_tta_steps > 0:
-                # During TTA we need the DiT and text_encoder OFF GPU to free
-                # memory for the decoder forward+backward. The pipe will move
-                # them back on demand.
-                dit.to("cpu")
-                text_encoder.to("cpu")
-                torch.cuda.empty_cache()
+                offload_dit_for_vae_tta(dit, text_encoder, pipe, log=False)
 
                 _t_train_start = time.time()
                 opt_result = optimize_vae_decoder(
@@ -526,11 +600,6 @@ def main():
                     print(f"  Grad norm: first={gn[0]:.3f}  median={np.median(gn):.3f}  last={gn[-1]:.3f}")
                 print(f"  Decoder drift (||Δw||_2): {decoder_drift:.4f}")
 
-                # Move text_encoder back on (DiT will be moved back by the pipe
-                # the first time it is invoked).
-                text_encoder.to(args.device)
-                dit.to(args.device)
-                torch.cuda.empty_cache()
             elif clip_gate_info.get("tta_skipped", False):
                 print("  CLIP gate triggered: skip TTA (decoder remains pristine).")
 
@@ -555,6 +624,8 @@ def main():
             gen_time = 0.0
             if not args.skip_generation:
                 from PIL import Image
+
+                reload_dit_for_inference(dit, text_encoder, pipe, args.device)
 
                 gen_pf = _gen_cond_frames_cpu.to(args.device)
                 pf = gen_pf.squeeze(0)
@@ -616,6 +687,7 @@ def main():
 
                 del gen_pf
                 torch_gc()
+                offload_dit_for_vae_tta(dit, text_encoder, pipe, log=False)
 
             result["gen_time"] = gen_time
             result["total_time"] = (
