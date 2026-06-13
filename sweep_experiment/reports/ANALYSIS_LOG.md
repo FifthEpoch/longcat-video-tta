@@ -17,6 +17,20 @@ Body...
 
 ---
 
+## 2026-06-14 — Phase 0 round-3 fix: bypass cv2.calcHist with numpy.histogramdd
+**Tags:** phase-0, bug-fix, extract-video-features, round-3, cv2-bypass
+**Refs:**
+- `scripts/extract_video_features_for_tta.py` — three new numpy helpers (`_joint_hist_3ch_np`, `_bhattacharyya_np`, `_l2_normalize_np`) added just below `_to_uint8_hwc_stack_for_cv2`; bodies of `count_cuts_histogram` and `rgb_histogram_entropy_mean` rewritten to call them instead of `cv2.calcHist` / `cv2.normalize` / `cv2.compareHist`; the inner `import cv2` lines in those two functions are removed (not needed); the round-2 helper `_to_uint8_hwc_stack_for_cv2` is preserved for its shape-coercion role and its docstring updated to note that the cv2-binding-compat motivation is now obsolete.
+- Job `10739993` — fresh evidence that the round-2 helper from commit `557292c` did NOT resolve the OpenCV error: the helper completes without raising any of its shape/dtype asserts (frames are correctly `(T, H, W, 3)` uint8 contiguous), yet `cv2.calcHist` at the immediately-following line still rejects the per-frame slice with `Bad argument / 'Sequence item with index 0 has a wrong type'` at extract line 389 (post-round-2).
+
+**Why round-2 was insufficient:** the round-2 helper successfully fixed every input-side variable we could control (container, shape, dtype, contiguity) and the asserts pin those down at runtime — but OpenCV-4.9.0's Python binding still rejects the per-frame numpy view. This is a *binding-level* incompatibility, not an input-form bug; we cannot beat it by tweaking how we hand the array to cv2. Replacing the three cv2 calls (`calcHist` / `normalize` / `compareHist`) with numpy equivalents removes the failure surface entirely. The numpy implementations are bit-equivalent on well-formed uint8 HWC input (`np.histogramdd` with `range=[[0,256]]*3` returns the same bin counts as `cv2.calcHist`; L2/L1 normalisation is straightforward; OpenCV's `HISTCMP_BHATTACHARYYA` is the Hellinger-distance variant `sqrt(1 - sum(sqrt(p1*p2)))` on L1-normalised histograms, which we compute analytically).
+
+**Sanity-tested on macOS before push** (the worker's environment): identical-frame Bhattacharyya distance = 0.000000; random-pair distance ≈ 0.019 (in `(0, 1)` as required); joint-histogram pixel-sum equals `H × W` exactly; CHW-float input is properly coerced via the preserved `_to_uint8_hwc_stack_for_cv2` helper and yields the same entropy as the HWC-uint8 baseline. The function signatures and return types of `count_cuts_histogram` and `rgb_histogram_entropy_mean` are unchanged, so the CSV schema, CLI surface, and env-var contract are preserved — existing sbatch wrappers and the correlation join continue to work without modification.
+
+**Re-fire path** (after user `git pull`s on the cluster): same as round-2 — `rm sweep_experiment/reports/per_video_analysis/2026-06-09/{video_features,diffusion_ood_scores,tier3_probe_features}.csv && bash scripts/sbatch/submit_per_video_feature_pipeline.sh`. If Stage 1a errors again, it will be on a different code path (`laplacian_variance_mean`, CLIP/DINO, or PyAV decode) — the histogram features no longer touch cv2.
+
+---
+
 ## 2026-06-13 (later) — Phase 0 round-2 fix: cv2.calcHist still failing post-`0802d5a`
 **Tags:** phase-0, bug-fix, extract-video-features, round-2
 **Refs:**

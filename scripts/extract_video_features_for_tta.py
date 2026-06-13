@@ -300,22 +300,27 @@ def decode_window(
 # Cheap CPU features (cuts + texture + colour)
 # ---------------------------------------------------------------------------
 def _to_uint8_hwc_stack_for_cv2(arr) -> np.ndarray:
-    """Coerce a frame stack to a contiguous uint8 ``(T, H, W, 3)`` numpy array
-    that ``cv2.calcHist`` (and friends) will accept on a per-frame slice.
+    """Coerce a frame stack to a contiguous uint8 ``(T, H, W, 3)`` numpy array.
+
+    Round-3 note (commit landing this docstring update): the original
+    cv2-binding-compat motivation for this helper is now obsolete --
+    ``count_cuts_histogram`` and ``rgb_histogram_entropy_mean`` no longer
+    call ``cv2.calcHist`` / ``cv2.normalize`` / ``cv2.compareHist`` at all
+    (numpy ``histogramdd`` + manual L2/L1 normalisation + analytic
+    Bhattacharyya replace them; see ``_joint_hist_3ch_np`` for the
+    motivation -- OpenCV-4.9.0's Python binding rejected even
+    correctly-formed numpy views in job 10739993).  The helper is kept
+    for its *shape-coercion* role: the numpy histogram code path still
+    needs a well-formed ``(T, H, W, 3)`` uint8 stack, and several other
+    feature functions further down the file (``laplacian_variance_mean``,
+    the CLIP/DINO encoders) still benefit from a single defensive
+    coercion at the entry point.
 
     Round-1 fix (commit ``0802d5a``) coerced *dtype* and *contiguity* but
     not *shape* or *container*: an upstream producer that hands this
     script a torch tensor, a Python list of per-frame arrays, or a
-    channels-first ``(T, C, H, W)`` stack still trips OpenCV's
-
-        (-5:Bad argument) in function 'calcHist'
-        > Overload resolution failed:
-        >  - Can't parse 'images'. Sequence item with index 0 has a wrong type
-
-    because the per-frame slice that the cv2 loop hands ``calcHist`` is
-    then either not a numpy array, not 3-channel HWC, or both.  Job
-    10737160 reproduced this on every video despite the round-1 helper
-    running -- see ANALYSIS_LOG entry tagged ``round-2``.
+    channels-first ``(T, C, H, W)`` stack still trips downstream
+    consumers expecting ``(T, H, W, 3)`` uint8.
 
     Coercion pipeline (all steps no-ops on the happy ``np.uint8`` HWC
     path that PyAV's ``frame.to_ndarray(format="rgb24")`` produces, so
@@ -329,8 +334,7 @@ def _to_uint8_hwc_stack_for_cv2(arr) -> np.ndarray:
       * non-contiguous view -> ``np.ascontiguousarray``
 
     The trailing asserts pin the output contract so any *5th* malformed
-    input shape surfaces with a useful message in the .err log instead
-    of OpenCV's cryptic wrong-type string.
+    input shape surfaces with a useful message in the .err log.
     """
     if hasattr(arr, "detach") and hasattr(arr, "cpu") and hasattr(arr, "numpy"):
         arr = arr.detach().cpu().numpy()
@@ -362,34 +366,82 @@ def _to_uint8_hwc_stack_for_cv2(arr) -> np.ndarray:
     return arr
 
 
+def _joint_hist_3ch_np(frame_hwc: np.ndarray, bins_per_channel: int) -> np.ndarray:
+    """3D joint RGB histogram, numpy-only equivalent of
+    ``cv2.calcHist([f], [0,1,2], None, [b]*3, [0,256]*3)``.
+
+    Round-3 bug-fix: bypasses cv2.calcHist (which silently rejects
+    correctly-formed numpy views in OpenCV-4.9.0's Python binding --
+    job 10739993 reproduced this with the round-2 helper running
+    successfully but cv2 still raising 'wrong type' on the per-frame
+    slice).
+
+    Returns a float32 array of shape (bins, bins, bins) that is
+    bit-equivalent to cv2.calcHist's output for uint8 HWC input.
+    """
+    assert frame_hwc.ndim == 3 and frame_hwc.shape[-1] == 3, (
+        f"Expected (H, W, 3) uint8 frame, got shape {frame_hwc.shape}"
+    )
+    pixels = frame_hwc.reshape(-1, 3)
+    hist, _ = np.histogramdd(
+        pixels,
+        bins=[bins_per_channel] * 3,
+        range=[[0, 256], [0, 256], [0, 256]],
+    )
+    return hist.astype(np.float32)
+
+
+def _bhattacharyya_np(h1: np.ndarray, h2: np.ndarray) -> float:
+    """Bhattacharyya distance, numpy equivalent of
+    ``cv2.compareHist(h1, h2, cv2.HISTCMP_BHATTACHARYYA)``.
+
+    Both histograms must be already-normalised (cv2.normalize default
+    is L2; we mirror that).  Formula matches OpenCV's
+    HISTCMP_BHATTACHARYYA (which is actually the Hellinger distance
+    variant -- see OpenCV source).
+    """
+    h1 = h1.astype(np.float64)
+    h2 = h2.astype(np.float64)
+    s1 = float(h1.sum())
+    s2 = float(h2.sum())
+    if s1 <= 0.0 or s2 <= 0.0:
+        return 1.0
+    p1 = h1 / s1
+    p2 = h2 / s2
+    bc = float(np.sqrt(p1 * p2).sum())
+    return float(np.sqrt(max(0.0, 1.0 - bc)))
+
+
+def _l2_normalize_np(hist: np.ndarray) -> np.ndarray:
+    """L2-normalise a histogram, mirroring cv2.normalize default."""
+    hist = hist.astype(np.float32)
+    norm = float(np.linalg.norm(hist))
+    if norm > 0.0:
+        hist = hist / norm
+    return hist
+
+
 def count_cuts_histogram(frames_rgb: np.ndarray,
                          bins_per_channel: int = HIST_BINS_PER_CHANNEL,
                          thresh: float = HIST_BHATTACHARYYA_THRESH) -> int:
     """Count consecutive frame pairs whose RGB joint-histogram Bhattacharyya
     distance exceeds ``thresh``.  Cheap, fully deterministic backup for
     PySceneDetect.
-    """
-    import cv2
 
-    T = frames_rgb.shape[0]
+    Round-3: cv2.calcHist replaced with numpy.histogramdd to bypass an
+    OpenCV-4.9.0 binding incompatibility -- see ``_joint_hist_3ch_np``.
+    """
+    T = frames_rgb.shape[0] if hasattr(frames_rgb, "shape") else len(frames_rgb)
     if T < 2:
         return 0
-    # cv2.calcHist requires uint8 + contiguous HWC AND a 3-channel
-    # trailing axis on the per-frame slice -- coerce the whole stack
-    # once.  See ``_to_uint8_hwc_stack_for_cv2`` for the full constraint
-    # list and the round-2 bug-fix history.
     frames_rgb = _to_uint8_hwc_stack_for_cv2(frames_rgb)
-    hist_size = [bins_per_channel] * 3
-    ranges = [0, 256, 0, 256, 0, 256]
     prev_hist = None
     cuts = 0
     for t in range(T):
-        # cv2 expects BGR -- but Bhattacharyya on a *joint* histogram does
-        # not care about channel order as long as it is consistent.
-        hist = cv2.calcHist([frames_rgb[t]], [0, 1, 2], None, hist_size, ranges)
-        cv2.normalize(hist, hist)
+        hist = _joint_hist_3ch_np(frames_rgb[t], bins_per_channel)
+        hist = _l2_normalize_np(hist)
         if prev_hist is not None:
-            dist = float(cv2.compareHist(prev_hist, hist, cv2.HISTCMP_BHATTACHARYYA))
+            dist = _bhattacharyya_np(prev_hist, hist)
             if dist >= thresh:
                 cuts += 1
         prev_hist = hist
@@ -454,19 +506,16 @@ def rgb_histogram_entropy_mean(frames_rgb: np.ndarray,
 
     A featureless monochrome frame entropy -> ~0; a richly-coloured
     natural frame approaches log2(bins_per_channel ** 3).
-    """
-    import cv2
 
+    Round-3: cv2.calcHist replaced with numpy.histogramdd to bypass an
+    OpenCV-4.9.0 binding incompatibility -- see ``_joint_hist_3ch_np``.
+    The L1 normalisation that cv2.normalize would have applied is done
+    manually via ``hist / hist.sum()``.
+    """
     vals: List[float] = []
-    hist_size = [bins_per_channel] * 3
-    ranges = [0, 256, 0, 256, 0, 256]
-    # cv2.calcHist requires uint8 + contiguous HWC + 3-channel trailing
-    # axis (same constraint chain as count_cuts_histogram; see the
-    # ``_to_uint8_hwc_stack_for_cv2`` docstring for the round-2 fix).
     frames_rgb = _to_uint8_hwc_stack_for_cv2(frames_rgb)
     for t in range(frames_rgb.shape[0]):
-        hist = cv2.calcHist([frames_rgb[t]], [0, 1, 2], None, hist_size, ranges)
-        hist = hist.flatten()
+        hist = _joint_hist_3ch_np(frames_rgb[t], bins_per_channel).flatten()
         total = float(hist.sum())
         if total <= 0:
             continue
