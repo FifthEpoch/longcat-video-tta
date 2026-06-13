@@ -299,6 +299,43 @@ def decode_window(
 # ---------------------------------------------------------------------------
 # Cheap CPU features (cuts + texture + colour)
 # ---------------------------------------------------------------------------
+def _to_uint8_hwc_for_cv2(arr: np.ndarray) -> np.ndarray:
+    """Coerce a frame (or frame stack) to contiguous uint8 for cv2 ops.
+
+    cv2.calcHist (and other multi-channel cv2 entry points) require each
+    input ndarray to have ``dtype=np.uint8`` AND a contiguous HWC memory
+    layout.  Violating either constraint raises OpenCV's
+
+        (-5:Bad argument) in function 'calcHist'
+        > Overload resolution failed:
+        >  - Can't parse 'images'. Sequence item with index 0 has a wrong type
+
+    error -- which is exactly what the cluster's overnight Phase-0 run
+    hit on every video (cf. ANALYSIS_LOG entry 2026-06-13 phase-0
+    bug-fix; the same constraint applies whether the offending input is
+    a non-contiguous numpy slice, a torch tensor passed by mistake, or a
+    float dtype produced upstream).  Normalising once at the helper
+    level keeps the per-frame cv2 loops invariant on the happy uint8
+    path:
+
+      * uint8 (any contiguity) -> ``np.ascontiguousarray`` (no-op or copy).
+      * float in [0, 1]        -> scale to [0, 255], clip, cast.
+      * float in [0, 255]      -> clip, cast.
+
+    Works for HxWx3 frames and (T, H, W, 3) stacks alike: once the stack
+    itself is contiguous uint8, slicing ``stack[t]`` yields a contiguous
+    HWC view that cv2 accepts directly.
+    """
+    if arr.dtype == np.uint8:
+        return np.ascontiguousarray(arr)
+    if np.issubdtype(arr.dtype, np.floating):
+        finite_max = float(np.nanmax(arr)) if arr.size else 0.0
+        if finite_max <= 1.5:
+            arr = arr * 255.0
+        arr = np.clip(arr, 0.0, 255.0)
+    return np.ascontiguousarray(arr.astype(np.uint8, copy=False))
+
+
 def count_cuts_histogram(frames_rgb: np.ndarray,
                          bins_per_channel: int = HIST_BINS_PER_CHANNEL,
                          thresh: float = HIST_BHATTACHARYYA_THRESH) -> int:
@@ -311,6 +348,10 @@ def count_cuts_histogram(frames_rgb: np.ndarray,
     T = frames_rgb.shape[0]
     if T < 2:
         return 0
+    # cv2.calcHist requires uint8 / contiguous HWC input -- normalise the
+    # whole stack once so per-frame slices are guaranteed safe.  See
+    # ``_to_uint8_hwc_for_cv2`` for the exact OpenCV constraint.
+    frames_rgb = _to_uint8_hwc_for_cv2(frames_rgb)
     hist_size = [bins_per_channel] * 3
     ranges = [0, 256, 0, 256, 0, 256]
     prev_hist = None
@@ -392,6 +433,9 @@ def rgb_histogram_entropy_mean(frames_rgb: np.ndarray,
     vals: List[float] = []
     hist_size = [bins_per_channel] * 3
     ranges = [0, 256, 0, 256, 0, 256]
+    # cv2.calcHist requires uint8 / contiguous HWC input -- coerce once
+    # for the whole stack (same OpenCV constraint as count_cuts_histogram).
+    frames_rgb = _to_uint8_hwc_for_cv2(frames_rgb)
     for t in range(frames_rgb.shape[0]):
         hist = cv2.calcHist([frames_rgb[t]], [0, 1, 2], None, hist_size, ranges)
         hist = hist.flatten()

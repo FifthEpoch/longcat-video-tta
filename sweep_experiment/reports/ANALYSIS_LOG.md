@@ -17,6 +17,23 @@ Body...
 
 ---
 
+## 2026-06-13 — Phase 0 bug-fix: cv2.calcHist dtype + tier3-probe DiT OOM
+**Tags:** phase-0, bug-fix, extract-video-features, tier3-probes
+**Refs:**
+- `scripts/extract_video_features_for_tta.py` — new helper `_to_uint8_hwc_for_cv2` + per-frame coercion at the start of `count_cuts_histogram` (call site of the cluster traceback, line 321 pre-patch) and `rgb_histogram_entropy_mean` (the second `cv2.calcHist` site that would have hit the same constraint on the next video).
+- `scripts/compute_tier3_probes.py` — new context manager `_dit_blocks_gradient_checkpoint` + per-block `torch.utils.checkpoint(use_reentrant=False)` wrap inside `_fixed_conditioned_loss._forward()` on the gradient-bearing path; no changes to `LongCat-Video/longcat_video/modules/longcat_video_dit.py`.
+- `sweep_experiment/reports/INDEX.md` — new "Pending merges and in-flight sweeps" row 7 (Phase 0 gating feature pipeline, re-fire ready).
+
+The overnight Phase 0 run logged `errored: 1000` on every video and produced header-only CSVs across all three Stage-1 outputs. Two independent bugs:
+
+**Bug 1 root cause:** `cv2.calcHist` (OpenCV 4.9) raised `Bad argument / 'Sequence item with index 0 has a wrong type'` on the per-frame call at `extract_video_features_for_tta.py:321`; OpenCV requires each input ndarray to have `dtype=np.uint8` and a contiguous HWC layout, and the cluster's PyAV/np.stack pathway was producing an offending array on every video. **Fix:** added a `_to_uint8_hwc_for_cv2(arr)` helper that runs `np.ascontiguousarray(arr, dtype=np.uint8)` (with a defensive float-[0,1] / float-[0,255] rescale branch that is dead on the happy uint8 path), applied once for the whole stack at the top of `count_cuts_histogram` AND `rgb_histogram_entropy_mean`; semantics are invariant on well-formed uint8 input.
+
+**Bug 2 root cause:** the gradient-bearing DiT forward at `compute_tier3_probes.py:403` OOM'd at 138.5 GB allocated on the H200 (140 GB capacity) because the H-T3-1 grad_norm probe needs gradients and all 48 LongCat-Video transformer blocks' activations were retained until the backward — exceeding the budget at FFN.w2. **Fix:** wrapped each `dit.blocks[i].forward` in `torch.utils.checkpoint.checkpoint(..., use_reentrant=False, ...)` for the duration of the loss_t0 forward via a context manager (`_dit_blocks_gradient_checkpoint`); confined to the probe script, no production-path code modified. Estimated peak memory drops from ~140 GB to ~13 GB (48 × ~3 GB activation → one extra ~10 GB recompute pass), and the H-T3-1 grad-norm scalar is bit-equivalent up to the standard recompute numerical roundoff.
+
+**Re-fire path** (after the user `git pull`s on the cluster): delete the broken header-only outputs first so the correlation Stage 2 cannot pick them up by accident — `rm sweep_experiment/reports/per_video_analysis/2026-06-09/{video_features,diffusion_ood_scores,tier3_probe_features}.csv` — then `bash scripts/sbatch/submit_per_video_feature_pipeline.sh`. The wrapper's default is `RESUME=0` (overwrite); pass `RESUME=1` only if a partial successful run produced rows worth keeping (it did not on the overnight run). CLI surface, env-var contract, and CSV output schema of both scripts are unchanged, so existing sbatch wrappers (`run_extract_video_features.sbatch`, `run_compute_tier3_probes.sbatch`) and the correlation join continue to work without modification.
+
+---
+
 ## 2026-06-13 (later) — Implementation: VAE-Decoder-Only TTA (Modification 2; post-D1 PIVOT)
 **Tags:** recipe-modification, vae-decoder-tta, implementation, post-d1-pivot
 **Refs:**

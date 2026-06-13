@@ -117,6 +117,7 @@ canonical sbatch invocation):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import hashlib
 import math
@@ -353,6 +354,71 @@ def _load_existing_ids(path: Path) -> Tuple[List[Dict[str, str]], List[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Per-block gradient checkpointing for the LongCat-Video DiT.
+#
+# The probe needs gradients (H-T3-1 grad_norm_lora) so all 48 LongCat-Video
+# transformer blocks' activations are retained across the forward pass.  At
+# the panda_1000v_standard sequence length × bf16 × 48 blocks, that exceeds
+# the H200's 140 GB budget and the overnight Phase-0 run OOM'd on every
+# video at FFN.w2 (the last per-block tensor allocated in the forward path):
+#
+#     File "LongCat-Video/longcat_video/modules/longcat_video_dit.py", l. 343
+#         block_outputs = block(...)
+#     File "LongCat-Video/longcat_video/modules/blocks.py", line 39
+#         return self.w2(F.silu(self.w1(x)) * self.w3(x))
+#     torch.OutOfMemoryError: CUDA out of memory.
+#
+# Per-block torch.utils.checkpoint trades one extra forward pass for ~Nx
+# less peak activation memory; estimated ~13 GB instead of ~140 GB on the
+# H200 panda_1000v_standard probe (48 blocks × ~3 GB activation + one
+# extra ~10 GB forward at the end of the backward pass).
+#
+# Implementation: monkey-patch each ``dit.blocks[i].forward`` for the
+# duration of a context manager.  Confined to this probe script -- the
+# production DiT module ``longcat_video_dit.py`` is NOT modified, so all
+# inference / training code paths are unaffected.
+#
+# Semantic invariance: ``torch.utils.checkpoint(use_reentrant=False)``
+# produces bit-identical loss tensors on the forward pass and gradients
+# that match the non-checkpointed path up to the usual recompute
+# numerical roundoff (well below the precision at which we report the
+# H-T3-1 grad-norm scalar).
+# ---------------------------------------------------------------------------
+@contextlib.contextmanager
+def _dit_blocks_gradient_checkpoint(dit):
+    """Context-manage per-block torch.utils.checkpoint over ``dit.blocks``.
+
+    Each ``dit.blocks[i].forward`` is wrapped in
+    ``torch.utils.checkpoint.checkpoint(..., use_reentrant=False, ...)``
+    on entry and restored to the original bound method on exit (including
+    on exception).  ``use_reentrant=False`` is required because the block
+    inputs (``hidden_states``, etc.) are detached upstream and therefore
+    do NOT have ``requires_grad=True`` -- only the LoRA params inside the
+    block do.  The non-reentrant path also handles **kwargs cleanly,
+    which the LongCat block forwards rely on.
+    """
+    import torch.utils.checkpoint as _ckpt
+
+    blocks = list(dit.blocks)
+    originals = [b.forward for b in blocks]
+
+    def _make_wrapped(orig_forward):
+        def _wrapped(*args, **kwargs):
+            return _ckpt.checkpoint(
+                orig_forward, *args, use_reentrant=False, **kwargs,
+            )
+        return _wrapped
+
+    for b, orig in zip(blocks, originals):
+        b.forward = _make_wrapped(orig)
+    try:
+        yield
+    finally:
+        for b, orig in zip(blocks, originals):
+            b.forward = orig
+
+
+# ---------------------------------------------------------------------------
 # Fixed-(sigma, noise) forward path. We re-implement
 # compute_flow_matching_loss_conditioned with grad enabled and DETERMINISTIC
 # (sigma, noise) so loss_t0 / loss_t1 at a given (video, t) measure the
@@ -414,7 +480,14 @@ def _fixed_conditioned_loss(
     if use_no_grad:
         with torch.no_grad():
             return _forward()
-    return _forward()
+    # Per-block gradient checkpointing keeps peak activation memory to
+    # ~13 GB instead of the ~140 GB the non-checkpointed forward needs
+    # on the H200 (the forward retains all 48 LongCat-Video blocks'
+    # activations until the backward).  See
+    # ``_dit_blocks_gradient_checkpoint`` docstring for the full
+    # rationale + semantic-invariance argument.
+    with _dit_blocks_gradient_checkpoint(dit):
+        return _forward()
 
 
 # ---------------------------------------------------------------------------
