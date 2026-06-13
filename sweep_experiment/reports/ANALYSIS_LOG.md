@@ -17,6 +17,18 @@ Body...
 
 ---
 
+## 2026-06-13 (later) — Phase 0 round-2 fix: cv2.calcHist still failing post-`0802d5a`
+**Tags:** phase-0, bug-fix, extract-video-features, round-2
+**Refs:**
+- `scripts/extract_video_features_for_tta.py` — helper renamed `_to_uint8_hwc_for_cv2` → `_to_uint8_hwc_stack_for_cv2` and the body rewritten as a defensive *container + shape + dtype* coercion pipeline; applied at the same two `cv2.calcHist` call sites (`count_cuts_histogram` line 389 post-patch, `rgb_histogram_entropy_mean` line 468 post-patch).
+- Job `10737160` (completed 2026-06-13T04:33 EDT, exit 0:0, `errored: 1000`) — fresh evidence that the round-1 fix from commit `0802d5a` did NOT resolve the OpenCV error; traceback line shifted from `321` → `362` (confirming the round-1 helper was being invoked) but the cv2 `Bad argument / Sequence item with index 0 has a wrong type` error still fired on every video.
+
+**Why round-1 was insufficient:** the round-1 helper (`_to_uint8_hwc_for_cv2`) coerced *dtype* (→ uint8) and *contiguity* (→ `np.ascontiguousarray`) but did NOT coerce *shape* or *container*. The two cv2 constraints we addressed are necessary but not sufficient — cv2.calcHist also requires the per-frame slice to be (a) a numpy ndarray, not a torch tensor, list, or other duck-typed container, and (b) shaped `(H, W, 3)` rather than `(3, H, W)`, otherwise the Python binding's Mat-from-numpy conversion fails with the same opaque "wrong type" message. From code inspection alone we cannot determine which of the four candidate root causes (torch tensor, list, CHW, non-contiguous-view) is the actual offender — `decode_window` calls PyAV's `frame.to_ndarray(format="rgb24")` which is documented to return `(H, W, 3)` uint8, so the surface code path looks right — but whatever upstream condition produces the malformed input fires on 100 % of videos, so the fix needs to cover all four. The round-2 helper coerces all four uniformly: torch tensor → `detach().cpu().numpy()`, list/tuple → `np.stack`, `(T, 3, H, W)` → `np.transpose(0, 2, 3, 1)`, float dtype → uint8 rescale-and-cast, non-contiguous → `np.ascontiguousarray`. Bit-identical to round-1 on the well-formed `np.uint8` HWC happy path; the assertion-pinned output contract (`ndim == 4`, `shape[-1] == 3`) means a 5th regression surfaces with a useful message in the `.err` log instead of the cryptic OpenCV string.
+
+**Re-fire path:** the user `git pull`s on the cluster and re-submits via `SKIP_OOD=1 SKIP_TIER3=1 bash scripts/sbatch/submit_per_video_feature_pipeline.sh` (the still-PD `compute_diffusion_ood` job 10737161 should be killed first; `compute_tier3_probes` 10737162 and `correlate_tta_gain` 10737163 are unaffected — they don't depend on extract output and were already gated on Stage 1a completion). The CSV schema, CLI surface, and env-var contract are unchanged. If `errored` is non-zero on re-fire, the per-video traceback in the `.err` log will now print either the explicit shape/channel-axis from the `assert` (well-defined regression) or some non-cv2 exception from a different code path (new symptom; not the cv2 wrong-type loop).
+
+---
+
 ## 2026-06-13 — Phase 0 bug-fix: cv2.calcHist dtype + tier3-probe DiT OOM
 **Tags:** phase-0, bug-fix, extract-video-features, tier3-probes
 **Refs:**
