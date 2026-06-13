@@ -33,7 +33,7 @@ CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
 DATA_DIR="${DATA_DIR:-${SCRATCH_BASE}/longcat-video-tta/datasets/panda_100_480p}"
 
 # Method and run identification
-METHOD="${METHOD:?ERROR: METHOD env var is required (full|lora|delta_a|delta_b|delta_c|norm_tune|film)}"
+METHOD="${METHOD:?ERROR: METHOD env var is required (full|lora|delta_a|delta_b|delta_c|norm_tune|film|vae_decoder)}"
 RUN_ID="${RUN_ID:?ERROR: RUN_ID env var is required}"
 SERIES_NAME="${SERIES_NAME:-sweep}"
 
@@ -750,8 +750,55 @@ case "${METHOD}" in
         ${AUG_FLAGS}
     ;;
 
+  vae_decoder)
+    # VAE-Decoder-Only TTA (Modification 2 of
+    # sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md).
+    # Freeze the DiT; adapt only vae.decoder on round-trip reconstruction.
+    VAE_TTA_STEPS="${VAE_TTA_STEPS:-10}"
+    VAE_TTA_LR="${VAE_TTA_LR:-1e-5}"
+    VAE_TTA_LPIPS_WEIGHT="${VAE_TTA_LPIPS_WEIGHT:-0.0}"
+    VAE_TTA_GRAD_CLIP="${VAE_TTA_GRAD_CLIP:-1.0}"
+    VAE_TTA_WEIGHT_DECAY="${VAE_TTA_WEIGHT_DECAY:-0.0}"
+
+    echo "Method-specific config:"
+    echo "  VAE TTA steps  : ${VAE_TTA_STEPS}"
+    echo "  VAE TTA LR     : ${VAE_TTA_LR}"
+    echo "  VAE LPIPS wt   : ${VAE_TTA_LPIPS_WEIGHT}"
+    echo "  Grad clip      : ${VAE_TTA_GRAD_CLIP}"
+    echo "  Weight decay   : ${VAE_TTA_WEIGHT_DECAY}"
+    echo "=============================================================================="
+
+    "$PYTHON" delta_experiment/scripts/run_vae_decoder_tta.py \
+        --checkpoint-dir "${CHECKPOINT_DIR}" \
+        --data-dir "${DATA_DIR}" \
+        --output-dir "${OUTPUT_DIR}" \
+        --max-videos "${MAX_VIDEOS}" \
+        --start-video-idx "${START_VIDEO_IDX}" \
+        --chunk-size "${CHUNK_SIZE}" \
+        --vae-tta-steps "${VAE_TTA_STEPS}" \
+        --vae-tta-lr "${VAE_TTA_LR}" \
+        --vae-tta-lpips-weight "${VAE_TTA_LPIPS_WEIGHT}" \
+        --vae-tta-grad-clip "${VAE_TTA_GRAD_CLIP}" \
+        --vae-tta-weight-decay "${VAE_TTA_WEIGHT_DECAY}" \
+        --num-cond-frames "${NUM_COND_FRAMES}" \
+        --num-frames "${NUM_FRAMES}" \
+        --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
+        --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+        --guidance-scale "${GUIDANCE_SCALE}" \
+        --resolution "${RESOLUTION}" \
+        --seed "${SEED}" \
+        ${SAVE_FLAGS} \
+        ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
+        ${CLIP_FLAGS} \
+        ${EVAL_FLAGS} \
+        ${NOPROMPT_FLAGS}
+    ;;
+
   *)
-    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|delta_a|delta_b|delta_c|norm_tune|film" >&2
+    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|delta_a|delta_b|delta_c|norm_tune|film|vae_decoder" >&2
     exit 1
     ;;
 esac

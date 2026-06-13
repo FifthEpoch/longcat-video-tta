@@ -2294,6 +2294,7 @@ def save_video_from_numpy(
 _METHOD_SLUG = {
     "delta_a": "adasteer", "delta_b": "adasteer-B", "delta_c": "adasteer-C",
     "lora_tta": "lora", "full_tta": "no-TTA", "tinylora": "tinylora",
+    "vae_decoder_tta": "vae-dec",
 }
 
 def _sanitize_caption(caption: str, max_len: int = 80) -> str:
