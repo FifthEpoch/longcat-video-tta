@@ -17,6 +17,18 @@ Body...
 
 ---
 
+## 2026-06-14 — Mod 2 OOM round-2: b802835 insufficient; job 10756668 still 0/100 OOM
+**Tags:** mod2, oom-fix, vae-decoder-tta, bug-fix, round-2
+**Refs:**
+- Job `10756668` — Mod 2 smoke `panda_1000v_standard/VAE_DEC_TTA_LR1e-5/chunk_0`: **100/100 `success=False`**, identical OOM to `10737006` (`CUDA out of memory` at `vae.decode()` inside `optimize_vae_decoder`; **137.54 GiB PyTorch allocated** on 139.80 GiB H200). Wall 2:43 (≈1.6 s/video). Job ran **after** cluster `git pull` reached **`b802835`** (`offload_dit_for_vae_tta` + slice decode) — so `.to("cpu")` offload did **not** release DiT weights on the cluster.
+- `delta_experiment/scripts/run_vae_decoder_tta.py` — **round-2 fix:** two-phase load — `load_vae_only_components()` never loads DiT to GPU; `load_dit_and_build_pipe()` lazy-loads DiT only for `generate_video_continuation`; `release_dit_after_inference()` deletes `dit` and nulls `pipe.dit`. Explicit `[mem]` logging at load / pre-TTA / post-TTA / post-DiT-load / post-DiT-release; `assert_vae_only_gpu_budget()` fails fast if allocated > 25 GiB before decoder Adam. Slice-by-slice decode in `optimize_vae_decoder` retained from `b802835`.
+
+**Why b802835 failed:** `dit.to("cpu")` + `pipe.dit.to("cpu")` left ~137 GiB allocated — likely CUDA allocator / module graph retention on LongCat DiT with flash-attn; moving modules is insufficient. Not loading DiT at all during TTA is the only reliable guarantee.
+
+**Verdict:** Smokes `10737006` and `10756668` are **invalid nulls** — infrastructure OOM, not Mod 2 falsification. Re-fire after `git pull` (round-2 commit): `bash sweep_experiment/sbatch/submit_smoke_vae_decoder_tta.sh`. Expected TTA-phase peak GPU ≈ **8–15 GiB** (VAE + latents + one-slice decode activations); DiT load only during generation (~130 GiB peak, then released).
+
+---
+
 ## 2026-06-14 (~04:00 AM UTC+8) — Cluster job submissions: Mod 2 smoke re-fire + Phase 0 extract-only re-fire
 **Tags:** cluster-ops, job-submissions, mod2-smoke, phase0
 **Refs:**

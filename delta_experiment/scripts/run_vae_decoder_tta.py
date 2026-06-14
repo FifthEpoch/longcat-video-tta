@@ -58,7 +58,6 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (
-    load_longcat_components,
     load_video_frames,
     encode_video,
     encode_prompt,
@@ -90,8 +89,11 @@ from common import (
 
 
 # ============================================================================
-# GPU memory helpers (DiT must leave GPU during decoder-only TTA)
+# Two-phase load: VAE-only on GPU for decoder TTA; DiT lazy-loaded for inference
 # ============================================================================
+
+_DIT_GPU_MEM_WARN_GB = 25.0
+
 
 def _gpu_mem_allocated_gb() -> float:
     if not torch.cuda.is_available():
@@ -99,46 +101,137 @@ def _gpu_mem_allocated_gb() -> float:
     return float(torch.cuda.memory_allocated() / (1024 ** 3))
 
 
-def offload_dit_for_vae_tta(dit, text_encoder, pipe, *, log: bool = True) -> None:
-    """Move DiT + text_encoder off GPU; only the VAE should remain for decoder TTA."""
-    modules = [dit, text_encoder]
-    if pipe is not None:
-        if getattr(pipe, "dit", None) is not None:
-            modules.append(pipe.dit)
-        if getattr(pipe, "text_encoder", None) is not None:
-            modules.append(pipe.text_encoder)
+def log_gpu_mem(tag: str) -> float:
+    """Log PyTorch CUDA allocated memory; return GiB."""
+    mem_gb = _gpu_mem_allocated_gb()
+    print(f"  [mem] {tag}: {mem_gb:.2f} GiB PyTorch allocated")
+    return mem_gb
 
-    seen = set()
-    for mod in modules:
-        if mod is None or id(mod) in seen:
-            continue
-        seen.add(id(mod))
-        mod.to("cpu")
+
+def assert_vae_only_gpu_budget(tag: str, max_gb: float = _DIT_GPU_MEM_WARN_GB) -> None:
+    """Fail fast before decoder TTA if DiT (or other bulk weights) stayed on GPU."""
+    mem_gb = log_gpu_mem(tag)
+    if mem_gb > max_gb:
+        raise RuntimeError(
+            f"GPU memory {mem_gb:.1f} GiB exceeds {max_gb:.1f} GiB budget at {tag} — "
+            "DiT must not be resident during VAE-decoder TTA. "
+            "Use two-phase load (VAE-only, lazy DiT)."
+        )
+
+
+def load_vae_only_components(
+    checkpoint_dir: str,
+    device: str = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
+    cp_split_hw: Optional[List[int]] = None,
+) -> Dict[str, object]:
+    """Load tokenizer, text_encoder (CPU), VAE (GPU), scheduler. DiT is deferred."""
+    if cp_split_hw is None:
+        cp_split_hw = [1, 1]
+
+    from transformers import AutoTokenizer, UMT5EncoderModel
+    from longcat_video.modules.scheduling_flow_match_euler_discrete import (
+        FlowMatchEulerDiscreteScheduler,
+    )
+    from longcat_video.modules.autoencoder_kl_wan import AutoencoderKLWan
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        checkpoint_dir, subfolder="tokenizer", torch_dtype=dtype, use_fast=False,
+    )
+    text_encoder = UMT5EncoderModel.from_pretrained(
+        checkpoint_dir, subfolder="text_encoder", torch_dtype=dtype,
+    ).to("cpu")
+    vae = AutoencoderKLWan.from_pretrained(
+        checkpoint_dir, subfolder="vae", torch_dtype=dtype,
+    ).to(device)
+    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+        checkpoint_dir, subfolder="scheduler", torch_dtype=dtype,
+    )
+
+    torch_gc()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+
+    return {
+        "tokenizer": tokenizer,
+        "text_encoder": text_encoder,
+        "vae": vae,
+        "scheduler": scheduler,
+        "dit": None,
+        "pipe": None,
+        "checkpoint_dir": checkpoint_dir,
+        "cp_split_hw": cp_split_hw,
+        "dtype": dtype,
+    }
+
+
+def load_dit_and_build_pipe(
+    components: Dict[str, object],
+    device: str,
+) -> Dict[str, object]:
+    """Lazy-load DiT onto GPU and assemble the pipeline for generation."""
+    from longcat_video.modules.longcat_video_dit import LongCatVideoTransformer3DModel
+    from longcat_video.pipeline_longcat_video import LongCatVideoPipeline
+
+    checkpoint_dir = components["checkpoint_dir"]
+    dtype = components["dtype"]
+    cp_split_hw = components["cp_split_hw"]
+
+    dit = LongCatVideoTransformer3DModel.from_pretrained(
+        checkpoint_dir,
+        subfolder="dit",
+        cp_split_hw=cp_split_hw,
+        enable_flashattn2=True,
+        torch_dtype=dtype,
+    ).to(device)
+    dit.eval()
+    for p in dit.parameters():
+        p.requires_grad = False
+
+    text_encoder = components["text_encoder"].to(device)
+    pipe = LongCatVideoPipeline(
+        tokenizer=components["tokenizer"],
+        text_encoder=text_encoder,
+        vae=components["vae"],
+        scheduler=components["scheduler"],
+        dit=dit,
+    )
 
     torch_gc()
     if torch.cuda.is_available():
         torch.cuda.synchronize()
 
-    if log:
-        mem_gb = _gpu_mem_allocated_gb()
-        print(f"  [mem] after DiT/text offload: {mem_gb:.2f} GiB PyTorch allocated")
-        if mem_gb > 20.0:
-            print(
-                f"  [WARN] GPU still at {mem_gb:.1f} GiB after DiT offload — "
-                "decoder TTA may OOM; check that pipe.dit moved to CPU."
-            )
+    components["dit"] = dit
+    components["pipe"] = pipe
+    components["text_encoder"] = text_encoder
+    log_gpu_mem("after DiT lazy-load for inference")
+    return components
 
 
-def reload_dit_for_inference(dit, text_encoder, pipe, device: str) -> None:
-    """Restore DiT + text_encoder to GPU for pipeline generation."""
-    for mod in (text_encoder, dit):
-        mod.to(device)
+def release_dit_after_inference(components: Dict[str, object]) -> None:
+    """Delete DiT and move text_encoder off GPU; keep only VAE on GPU for TTA."""
+    pipe = components.get("pipe")
+    dit = components.get("dit")
+    text_encoder = components.get("text_encoder")
+
     if pipe is not None:
-        if getattr(pipe, "text_encoder", None) is not None:
-            pipe.text_encoder.to(device)
-        if getattr(pipe, "dit", None) is not None:
-            pipe.dit.to(device)
+        pipe.dit = None
+    if dit is not None:
+        del dit
+    components["dit"] = None
+    components["pipe"] = None
+
+    if text_encoder is not None:
+        text_encoder.to("cpu")
+        components["text_encoder"] = text_encoder
+
     torch_gc()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+
+    log_gpu_mem("after DiT release (VAE-only for next video)")
 
 
 # ============================================================================
@@ -425,37 +518,26 @@ def main():
     print(f"Resume from idx: {start_idx}")
     print("=" * 70)
 
-    # Load model components.
-    print("\nLoading model components...")
-    components = load_longcat_components(
+    # Load VAE-only (DiT deferred until generation — guarantees no DiT on GPU during TTA).
+    print("\nLoading VAE-only components (DiT deferred)...")
+    components = load_vae_only_components(
         args.checkpoint_dir, device=args.device, dtype=torch.bfloat16
     )
-    dit = components["dit"]
     vae = components["vae"]
-    pipe = components["pipe"]
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
-
-    # Freeze the DiT once. We never train the DiT in this recipe.
-    for p in dit.parameters():
-        p.requires_grad = False
-    dit.eval()
+    log_gpu_mem("after VAE-only load")
+    assert_vae_only_gpu_budget("post-load VAE-only budget check")
 
     # Freeze the VAE encoder once. We never train the encoder.
     for p in vae.encoder.parameters():
         p.requires_grad = False
     vae.encoder.eval()
 
-    # Snapshot the pristine decoder state once. Restored per-video.
     print("\nSnapshotting pristine VAE decoder weights (per-video restore baseline)...")
     decoder_snapshot = snapshot_decoder_state(vae)
     n_dec_params = sum(p.numel() for p in vae.decoder.parameters())
     print(f"  Decoder params : {n_dec_params/1e6:.1f}M")
-
-    # DiT + text_encoder are not used during decoder TTA; keep them on CPU until
-    # the per-video generation phase to avoid ~130 GiB idle on GPU.
-    print("\nOffloading DiT + text_encoder to CPU (VAE-only GPU for decoder TTA)...")
-    offload_dit_for_vae_tta(dit, text_encoder, pipe)
 
     # Optional LPIPS model.
     lpips_model = None
@@ -570,7 +652,7 @@ def main():
 
             # ── TTA train ──
             if not clip_gate_info.get("tta_skipped", False) and args.vae_tta_steps > 0:
-                offload_dit_for_vae_tta(dit, text_encoder, pipe, log=False)
+                assert_vae_only_gpu_budget("pre-decoder-TTA budget check")
 
                 _t_train_start = time.time()
                 opt_result = optimize_vae_decoder(
@@ -599,6 +681,7 @@ def main():
                     gn = opt_result["grad_norms"]
                     print(f"  Grad norm: first={gn[0]:.3f}  median={np.median(gn):.3f}  last={gn[-1]:.3f}")
                 print(f"  Decoder drift (||Δw||_2): {decoder_drift:.4f}")
+                log_gpu_mem("after decoder TTA optimize")
 
             elif clip_gate_info.get("tta_skipped", False):
                 print("  CLIP gate triggered: skip TTA (decoder remains pristine).")
@@ -625,7 +708,8 @@ def main():
             if not args.skip_generation:
                 from PIL import Image
 
-                reload_dit_for_inference(dit, text_encoder, pipe, args.device)
+                load_dit_and_build_pipe(components, args.device)
+                pipe = components["pipe"]
 
                 gen_pf = _gen_cond_frames_cpu.to(args.device)
                 pf = gen_pf.squeeze(0)
@@ -687,7 +771,7 @@ def main():
 
                 del gen_pf
                 torch_gc()
-                offload_dit_for_vae_tta(dit, text_encoder, pipe, log=False)
+                release_dit_after_inference(components)
 
             result["gen_time"] = gen_time
             result["total_time"] = (
