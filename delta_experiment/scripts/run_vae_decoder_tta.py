@@ -60,8 +60,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (
     load_video_frames,
     encode_video,
-    encode_prompt,
-    generate_video_continuation,
     save_results,
     save_video_from_numpy,
     rename_videos_with_metrics,
@@ -74,7 +72,6 @@ from common import (
     add_tta_disable_caption_args,
     add_feature_frame_guard_args,
     add_clip_gate_args,
-    evaluate_generation_metrics,
     evaluate_clip_gate,
     summarize_clip_gate_stats,
     validate_caption_quality,
@@ -119,6 +116,43 @@ def assert_vae_only_gpu_budget(tag: str, max_gb: float = _DIT_GPU_MEM_WARN_GB) -
         )
 
 
+def purge_generation_refs(components: Dict[str, object], tag: str = "") -> None:
+    """Null pipeline / DiT handles so nothing generation-related stays on GPU."""
+    pipe = components.get("pipe")
+    dit = components.get("dit")
+    if pipe is not None:
+        if hasattr(pipe, "dit"):
+            pipe.dit = None
+        components["pipe"] = None
+    if dit is not None:
+        del dit
+    components["dit"] = None
+    components["pipe"] = None
+    text_encoder = components.get("text_encoder")
+    if text_encoder is not None:
+        text_encoder.to("cpu")
+        components["text_encoder"] = text_encoder
+    torch_gc()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    if tag:
+        log_gpu_mem(tag)
+
+
+def materialize_vae_on_gpu(vae, device: str, dtype: torch.dtype) -> None:
+    """Force VAE weights onto GPU before budget checks (avoids lazy-load surprises)."""
+    with torch.no_grad():
+        dummy = torch.zeros(1, 3, 5, 64, 64, device=device, dtype=dtype)
+        try:
+            vae.encode(dummy)
+        except Exception as exc:
+            print(f"  [WARN] VAE warmup encode failed ({exc}); continuing anyway.")
+    torch_gc()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    log_gpu_mem("after VAE warmup encode")
+
+
 def load_vae_only_components(
     checkpoint_dir: str,
     device: str = "cuda",
@@ -147,6 +181,8 @@ def load_vae_only_components(
     scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
         checkpoint_dir, subfolder="scheduler", torch_dtype=dtype,
     )
+
+    materialize_vae_on_gpu(vae, device, dtype)
 
     torch_gc()
     if torch.cuda.is_available():
@@ -309,9 +345,11 @@ def optimize_vae_decoder(
       - grad_norms      : list[float], pre-clip total gradient L2 norm
       - num_steps       : int (= num_steps unless something aborts)
     """
+    log_gpu_mem("optimize_vae_decoder: entry (before encode)")
     # 1. Encode the visible clip once (no grad on the encoder).
     with torch.no_grad():
         latents = encode_video(vae, pixel_frames, normalize=True)
+    log_gpu_mem("optimize_vae_decoder: after encode_video")
 
     # 2. Set up decoder for training.
     vae.decoder.train()
@@ -348,6 +386,8 @@ def optimize_vae_decoder(
         pixel_offset = 0
 
         for t in range(T_lat):
+            if step == 0 and t == 0:
+                log_gpu_mem("optimize_vae_decoder: first decode slice (step=0,t=0)")
             lat_slice = lat_for_decode[:, :, t:t + 1].to(vae.dtype)
             dec_slice = vae.decode(lat_slice, return_dict=False)[0]
             t_pix = dec_slice.shape[2]
@@ -494,14 +534,26 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Resume support.
+    # Resume support (phase-aware: tta → gen).
     ckpt_path = os.path.join(args.output_dir, "checkpoint.json")
     ckpt = load_checkpoint(ckpt_path)
-    start_idx = 0
-    _ckpt_results = []
+    run_phase = "tta"
+    tta_start_idx = 0
+    gen_start_idx = 0
+    tta_records: Dict[str, dict] = {}
+    all_results: List[dict] = []
     if ckpt:
-        start_idx = ckpt.get("next_idx", 0)
-        _ckpt_results = ckpt.get("results", [])
+        run_phase = ckpt.get("phase", "tta")
+        tta_start_idx = ckpt.get("tta_next_idx", ckpt.get("next_idx", 0))
+        gen_start_idx = ckpt.get("gen_next_idx", 0)
+        for rec in ckpt.get("tta_records", []):
+            tta_records[rec["video_name"]] = rec
+        if ckpt.get("tta_complete"):
+            run_phase = "gen"
+        if ckpt.get("results"):
+            all_results = list(ckpt["results"])
+
+    log_gpu_mem("startup after imports, before model load")
 
     print("=" * 70)
     print("VAE-Decoder-Only TTA for LongCat-Video (Modification 2)")
@@ -515,14 +567,15 @@ def main():
     print(f"Grad clip      : {args.vae_tta_grad_clip}")
     print(f"Weight decay   : {args.vae_tta_weight_decay}")
     print(f"TTA frames     : {args.tta_total_frames}  (ctx {args.tta_context_frames})")
-    print(f"Resume from idx: {start_idx}")
+    print(f"Resume phase   : {run_phase}  (tta_idx={tta_start_idx}, gen_idx={gen_start_idx})")
     print("=" * 70)
 
-    # Load VAE-only (DiT deferred until generation — guarantees no DiT on GPU during TTA).
+    # Load VAE-only (DiT deferred until generation phase — never during TTA).
     print("\nLoading VAE-only components (DiT deferred)...")
     components = load_vae_only_components(
         args.checkpoint_dir, device=args.device, dtype=torch.bfloat16
     )
+    purge_generation_refs(components, "after VAE-only load (purge gen refs)")
     vae = components["vae"]
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
@@ -576,7 +629,11 @@ def main():
 
     print(f"\nEvaluation videos: {len(eval_videos)}")
 
-    all_results = list(_ckpt_results)
+    decoder_adapted_dir = os.path.join(args.output_dir, "decoder_adapted")
+    gen_cond_dir = os.path.join(args.output_dir, "gen_cond")
+    os.makedirs(decoder_adapted_dir, exist_ok=True)
+    os.makedirs(gen_cond_dir, exist_ok=True)
+
     videos_dir = os.path.join(args.output_dir, "videos")
     fvd_accumulator = OnlineFrechetAccumulator(
         device=args.device, compute_fid=args.compute_fid,
@@ -584,134 +641,256 @@ def main():
         gt_cache_path=getattr(args, "gt_features_cache", None),
     ) if args.compute_fvd else None
     fvd_ckpt_path = os.path.join(args.output_dir, "fvd_checkpoint.npz")
-    if fvd_accumulator is not None and start_idx > 0:
+    if fvd_accumulator is not None and gen_start_idx > 0:
         fvd_accumulator.load_stats(fvd_ckpt_path)
     if not args.skip_generation and not args.no_save_videos:
         os.makedirs(videos_dir, exist_ok=True)
 
-    # ── Per-video loop ──
-    for v_idx, eval_entry in enumerate(eval_videos):
-        if v_idx < start_idx:
-            continue
+    first_optimize_logged = False
 
-        eval_name = Path(eval_entry["video_path"]).stem
-        print(f"\n{'='*70}")
-        print(f"[{v_idx + 1}/{len(eval_videos)}] {eval_name}")
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 1 — decoder TTA for every video (VAE-only on GPU; DiT absent)
+    # ══════════════════════════════════════════════════════════════════════
+    if run_phase == "tta":
+        print("\n" + "=" * 70)
+        print("PHASE 1: VAE-decoder TTA (DiT not loaded)")
+        print("=" * 70)
+        purge_generation_refs(components, "phase-1 start")
 
-        clip_gate_info = evaluate_clip_gate(
-            video_path=eval_entry["video_path"],
-            caption=eval_entry["caption"],
-            gen_start_frame=args.gen_start_frame,
-            tta_total_frames=args.tta_total_frames,
-            device=args.device,
-            enabled=args.clip_gate_enabled,
-            threshold=args.clip_gate_threshold,
-            backend=args.clip_gate_backend,
-            model_name=args.clip_gate_model,
-            sample_frames=args.clip_gate_sample_frames,
-            aggregation=args.clip_gate_aggregation,
-            sampling_mode=args.clip_gate_sampling_mode,
-            late_fraction=args.clip_gate_late_fraction,
-            late_only=args.clip_gate_late_only,
-            fail_open=args.clip_gate_fail_open,
-            log_only=args.clip_gate_log_only,
-        )
+        for v_idx, eval_entry in enumerate(eval_videos):
+            if v_idx < tta_start_idx:
+                continue
 
-        timing = {
-            "load_frames": 0.0, "encode_latents": 0.0, "tta_train": 0.0,
-            "decoder_restore": 0.0,
-        }
-        opt_result = {
-            "losses": [], "pix_losses": [], "lpips_losses": [], "grad_norms": [],
-            "num_steps": 0,
-        }
-        train_time = 0.0
-        decoder_drift = 0.0
+            eval_name = Path(eval_entry["video_path"]).stem
+            print(f"\n{'='*70}")
+            print(f"[TTA {v_idx + 1}/{len(eval_videos)}] {eval_name}")
 
-        try:
-            # ── Load TTA pixel frames ──
-            tta_start = args.gen_start_frame - args.tta_total_frames
-            _t = time.time()
-            pixel_frames = load_video_frames(
-                eval_entry["video_path"], args.tta_total_frames,
-                height=480, width=832,
-                start_frame=max(0, tta_start),
-            ).to(args.device, torch.bfloat16)
-            timing["load_frames"] = time.time() - _t
+            if v_idx == tta_start_idx:
+                log_gpu_mem("first video loop iteration (phase 1)")
 
-            # ── Snapshot gen-time cond frames (the last num_cond_frames of the
-            #     TTA window) BEFORE TTA so we hand them to the pipe later. ──
-            if args.tta_total_frames >= args.num_cond_frames:
-                _gen_cond_frames_cpu = pixel_frames[:, :, -args.num_cond_frames:].clone().cpu()
-            else:
-                gen_cond_start = args.gen_start_frame - args.num_cond_frames
-                _gen_cond_frames_cpu = load_video_frames(
-                    eval_entry["video_path"], args.num_cond_frames,
-                    height=480, width=832, start_frame=max(0, gen_cond_start),
-                ).cpu()
+            clip_gate_info = evaluate_clip_gate(
+                video_path=eval_entry["video_path"],
+                caption=eval_entry["caption"],
+                gen_start_frame=args.gen_start_frame,
+                tta_total_frames=args.tta_total_frames,
+                device=args.device,
+                enabled=args.clip_gate_enabled,
+                threshold=args.clip_gate_threshold,
+                backend=args.clip_gate_backend,
+                model_name=args.clip_gate_model,
+                sample_frames=args.clip_gate_sample_frames,
+                aggregation=args.clip_gate_aggregation,
+                sampling_mode=args.clip_gate_sampling_mode,
+                late_fraction=args.clip_gate_late_fraction,
+                late_only=args.clip_gate_late_only,
+                fail_open=args.clip_gate_fail_open,
+                log_only=args.clip_gate_log_only,
+            )
 
-            # ── TTA train ──
-            if not clip_gate_info.get("tta_skipped", False) and args.vae_tta_steps > 0:
-                assert_vae_only_gpu_budget("pre-decoder-TTA budget check")
-
-                _t_train_start = time.time()
-                opt_result = optimize_vae_decoder(
-                    vae=vae,
-                    pixel_frames=pixel_frames,
-                    num_steps=args.vae_tta_steps,
-                    lr=args.vae_tta_lr,
-                    lpips_weight=args.vae_tta_lpips_weight,
-                    lpips_model=lpips_model,
-                    device=args.device,
-                    weight_decay=args.vae_tta_weight_decay,
-                    grad_clip=(args.vae_tta_grad_clip if args.vae_tta_grad_clip > 0 else None),
-                )
-                train_time = time.time() - _t_train_start
-                decoder_drift = compute_decoder_drift(vae, decoder_snapshot)
-                timing["tta_train"] = train_time
-
-                print(f"  Train time: {train_time:.1f}s   ({len(opt_result['losses'])} steps)")
-                if opt_result["pix_losses"]:
-                    print(f"  Pix MSE:   first={opt_result['pix_losses'][0]:.5f}  "
-                          f"last={opt_result['pix_losses'][-1]:.5f}")
-                if opt_result["losses"] and args.vae_tta_lpips_weight > 0:
-                    print(f"  LPIPS:     first={opt_result['lpips_losses'][0]:.5f}  "
-                          f"last={opt_result['lpips_losses'][-1]:.5f}")
-                if opt_result["grad_norms"]:
-                    gn = opt_result["grad_norms"]
-                    print(f"  Grad norm: first={gn[0]:.3f}  median={np.median(gn):.3f}  last={gn[-1]:.3f}")
-                print(f"  Decoder drift (||Δw||_2): {decoder_drift:.4f}")
-                log_gpu_mem("after decoder TTA optimize")
-
-            elif clip_gate_info.get("tta_skipped", False):
-                print("  CLIP gate triggered: skip TTA (decoder remains pristine).")
-
-            # ── Build result record ──
-            result = {
-                "video_name": eval_name,
-                "video_path": eval_entry["video_path"],
-                "caption": eval_entry["caption"],
-                "train_time": train_time,
-                "vae_tta_steps_actual": opt_result["num_steps"],
-                "vae_tta_losses": opt_result["losses"],
-                "vae_tta_pix_losses": opt_result["pix_losses"],
-                "vae_tta_lpips_losses": opt_result["lpips_losses"],
-                "vae_tta_grad_norms": opt_result["grad_norms"],
-                "decoder_drift": decoder_drift,
-                "timing": timing,
-                "success": True,
+            timing = {
+                "load_frames": 0.0, "encode_latents": 0.0, "tta_train": 0.0,
+                "decoder_restore": 0.0,
             }
-            result.update(clip_gate_info)
+            opt_result = {
+                "losses": [], "pix_losses": [], "lpips_losses": [], "grad_norms": [],
+                "num_steps": 0,
+            }
+            train_time = 0.0
+            decoder_drift = 0.0
+            adapted_decoder_path = os.path.join(decoder_adapted_dir, f"{eval_name}.pt")
+            gen_cond_path = os.path.join(gen_cond_dir, f"{eval_name}.pt")
 
-            # ── Generate with the (per-video-tuned) decoder ──
+            try:
+                purge_generation_refs(components, "pre-video TTA purge")
+
+                tta_start = args.gen_start_frame - args.tta_total_frames
+                _t = time.time()
+                pixel_frames = load_video_frames(
+                    eval_entry["video_path"], args.tta_total_frames,
+                    height=480, width=832,
+                    start_frame=max(0, tta_start),
+                ).to(args.device, torch.bfloat16)
+                timing["load_frames"] = time.time() - _t
+
+                if args.tta_total_frames >= args.num_cond_frames:
+                    gen_cond_frames_cpu = pixel_frames[:, :, -args.num_cond_frames:].clone().cpu()
+                else:
+                    gen_cond_start = args.gen_start_frame - args.num_cond_frames
+                    gen_cond_frames_cpu = load_video_frames(
+                        eval_entry["video_path"], args.num_cond_frames,
+                        height=480, width=832, start_frame=max(0, gen_cond_start),
+                    ).cpu()
+                torch.save(gen_cond_frames_cpu, gen_cond_path)
+
+                if not clip_gate_info.get("tta_skipped", False) and args.vae_tta_steps > 0:
+                    assert_vae_only_gpu_budget("pre-decoder-TTA budget check")
+                    if not first_optimize_logged:
+                        log_gpu_mem("immediately before first optimize_vae_decoder call")
+                        first_optimize_logged = True
+
+                    _t_train_start = time.time()
+                    opt_result = optimize_vae_decoder(
+                        vae=vae,
+                        pixel_frames=pixel_frames,
+                        num_steps=args.vae_tta_steps,
+                        lr=args.vae_tta_lr,
+                        lpips_weight=args.vae_tta_lpips_weight,
+                        lpips_model=lpips_model,
+                        device=args.device,
+                        weight_decay=args.vae_tta_weight_decay,
+                        grad_clip=(args.vae_tta_grad_clip if args.vae_tta_grad_clip > 0 else None),
+                    )
+                    train_time = time.time() - _t_train_start
+                    decoder_drift = compute_decoder_drift(vae, decoder_snapshot)
+                    timing["tta_train"] = train_time
+
+                    torch.save(snapshot_decoder_state(vae), adapted_decoder_path)
+
+                    print(f"  Train time: {train_time:.1f}s   ({len(opt_result['losses'])} steps)")
+                    if opt_result["pix_losses"]:
+                        print(f"  Pix MSE:   first={opt_result['pix_losses'][0]:.5f}  "
+                              f"last={opt_result['pix_losses'][-1]:.5f}")
+                    if opt_result["losses"] and args.vae_tta_lpips_weight > 0:
+                        print(f"  LPIPS:     first={opt_result['lpips_losses'][0]:.5f}  "
+                              f"last={opt_result['lpips_losses'][-1]:.5f}")
+                    if opt_result["grad_norms"]:
+                        gn = opt_result["grad_norms"]
+                        print(f"  Grad norm: first={gn[0]:.3f}  median={np.median(gn):.3f}  last={gn[-1]:.3f}")
+                    print(f"  Decoder drift (||Δw||_2): {decoder_drift:.4f}")
+                    log_gpu_mem("after decoder TTA optimize")
+                elif clip_gate_info.get("tta_skipped", False):
+                    print("  CLIP gate triggered: skip TTA (decoder remains pristine).")
+                else:
+                    torch.save(snapshot_decoder_state(vae), adapted_decoder_path)
+
+                tta_rec = {
+                    "video_name": eval_name,
+                    "video_path": eval_entry["video_path"],
+                    "caption": eval_entry["caption"],
+                    "train_time": train_time,
+                    "vae_tta_steps_actual": opt_result["num_steps"],
+                    "vae_tta_losses": opt_result["losses"],
+                    "vae_tta_pix_losses": opt_result["pix_losses"],
+                    "vae_tta_lpips_losses": opt_result["lpips_losses"],
+                    "vae_tta_grad_norms": opt_result["grad_norms"],
+                    "decoder_drift": decoder_drift,
+                    "timing": timing,
+                    "adapted_decoder_path": adapted_decoder_path,
+                    "gen_cond_path": gen_cond_path,
+                }
+                tta_rec.update(clip_gate_info)
+                tta_records[eval_name] = tta_rec
+
+                _t = time.time()
+                restore_decoder_state(vae, decoder_snapshot)
+                timing["decoder_restore"] = time.time() - _t
+                tta_rec["timing"]["decoder_restore"] = timing["decoder_restore"]
+
+                del pixel_frames, gen_cond_frames_cpu
+                torch_gc()
+
+                save_checkpoint({
+                    "phase": "tta",
+                    "tta_next_idx": v_idx + 1,
+                    "gen_next_idx": 0,
+                    "tta_complete": False,
+                    "tta_records": list(tta_records.values()),
+                }, ckpt_path)
+
+            except Exception as e:
+                import traceback
+                print(f"  ERROR (phase 1): {e}")
+                traceback.print_exc()
+                try:
+                    restore_decoder_state(vae, decoder_snapshot)
+                except Exception:
+                    pass
+                tta_records[eval_name] = {
+                    "video_name": eval_name,
+                    "video_path": eval_entry["video_path"],
+                    "error": str(e),
+                    "tta_failed": True,
+                }
+                save_checkpoint({
+                    "phase": "tta",
+                    "tta_next_idx": v_idx + 1,
+                    "gen_next_idx": 0,
+                    "tta_complete": False,
+                    "tta_records": list(tta_records.values()),
+                }, ckpt_path)
+                torch_gc()
+
+        assert_vae_only_gpu_budget("end of phase-1 decoder TTA (all videos)")
+        save_checkpoint({
+            "phase": "gen",
+            "tta_next_idx": len(eval_videos),
+            "gen_next_idx": 0,
+            "tta_complete": True,
+            "tta_records": list(tta_records.values()),
+        }, ckpt_path)
+        run_phase = "gen"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 2 — generation with lazy DiT load (once), after all decoder TTA
+    # ══════════════════════════════════════════════════════════════════════
+    if not args.skip_generation and run_phase == "gen":
+        from PIL import Image
+        from common import evaluate_generation_metrics, generate_video_continuation
+
+        print("\n" + "=" * 70)
+        print("PHASE 2: generation (lazy DiT load — after all decoder TTA)")
+        print("=" * 70)
+
+        if not tta_records and ckpt:
+            for rec in ckpt.get("tta_records", []):
+                tta_records[rec["video_name"]] = rec
+
+        load_dit_and_build_pipe(components, args.device)
+        pipe = components["pipe"]
+
+        for v_idx, eval_entry in enumerate(eval_videos):
+            if v_idx < gen_start_idx:
+                continue
+
+            eval_name = Path(eval_entry["video_path"]).stem
+            tta_rec = tta_records.get(eval_name, {})
+            if tta_rec.get("tta_failed"):
+                all_results.append({
+                    "video_name": eval_name,
+                    "video_path": eval_entry["video_path"],
+                    "error": tta_rec.get("error", "tta_failed"),
+                    "success": False,
+                })
+                save_checkpoint({
+                    "phase": "gen",
+                    "tta_next_idx": len(eval_videos),
+                    "gen_next_idx": v_idx + 1,
+                    "tta_complete": True,
+                    "tta_records": list(tta_records.values()),
+                    "results": all_results,
+                }, ckpt_path)
+                continue
+
+            print(f"\n{'='*70}")
+            print(f"[GEN {v_idx + 1}/{len(eval_videos)}] {eval_name}")
+
+            clip_gate_info = {k: tta_rec.get(k) for k in (
+                "clip_gate_enabled", "clip_gate_decision", "clip_gate_reason",
+                "tta_skipped", "clip_gate_eval_time",
+            ) if k in tta_rec}
+            train_time = float(tta_rec.get("train_time", 0.0))
             gen_time = 0.0
-            if not args.skip_generation:
-                from PIL import Image
 
-                load_dit_and_build_pipe(components, args.device)
-                pipe = components["pipe"]
+            try:
+                adapted_path = tta_rec.get("adapted_decoder_path",
+                                            os.path.join(decoder_adapted_dir, f"{eval_name}.pt"))
+                gen_cond_path = tta_rec.get("gen_cond_path",
+                                            os.path.join(gen_cond_dir, f"{eval_name}.pt"))
+                if os.path.isfile(adapted_path):
+                    restore_decoder_state(vae, torch.load(adapted_path, map_location="cpu"))
+                gen_cond_frames_cpu = torch.load(gen_cond_path, map_location="cpu")
 
-                gen_pf = _gen_cond_frames_cpu.to(args.device)
+                gen_pf = gen_cond_frames_cpu.to(args.device)
                 pf = gen_pf.squeeze(0)
                 pf = ((pf + 1.0) / 2.0).clamp(0, 1)
                 cond_images = []
@@ -753,6 +932,28 @@ def main():
                         gt_frames_hwc=_gt_for_fvd,
                     )
 
+                result = {
+                    "video_name": eval_name,
+                    "video_path": eval_entry["video_path"],
+                    "caption": eval_entry["caption"],
+                    "train_time": train_time,
+                    "vae_tta_steps_actual": tta_rec.get("vae_tta_steps_actual", 0),
+                    "vae_tta_losses": tta_rec.get("vae_tta_losses", []),
+                    "vae_tta_pix_losses": tta_rec.get("vae_tta_pix_losses", []),
+                    "vae_tta_lpips_losses": tta_rec.get("vae_tta_lpips_losses", []),
+                    "vae_tta_grad_norms": tta_rec.get("vae_tta_grad_norms", []),
+                    "decoder_drift": tta_rec.get("decoder_drift", 0.0),
+                    "timing": tta_rec.get("timing", {}),
+                    "gen_time": gen_time,
+                    "total_time": (
+                        float(tta_rec.get("clip_gate_eval_time", 0.0))
+                        + train_time
+                        + gen_time
+                    ),
+                    "success": True,
+                }
+                result.update(clip_gate_info)
+
                 if not args.no_save_videos:
                     output_path = os.path.join(videos_dir, f"{eval_name}.mp4")
                     save_video_from_numpy(
@@ -769,49 +970,70 @@ def main():
                 lpv = result["lpips"] if result["lpips"] is not None else float("nan")
                 print(f"    Metrics: PSNR={psnr:.2f}, SSIM={ssim:.4f}, LPIPS={lpv:.4f}")
 
-                del gen_pf
+                del gen_pf, gen_cond_frames_cpu
                 torch_gc()
-                release_dit_after_inference(components)
-
-            result["gen_time"] = gen_time
-            result["total_time"] = (
-                float(clip_gate_info.get("clip_gate_eval_time", 0.0))
-                + train_time
-                + gen_time
-            )
-            all_results.append(result)
-
-            save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
-            if fvd_accumulator is not None:
-                fvd_accumulator.save_stats(fvd_ckpt_path)
-
-            # ── Restore decoder for the next video ──
-            _t = time.time()
-            restore_decoder_state(vae, decoder_snapshot)
-            timing["decoder_restore"] = time.time() - _t
-
-            del pixel_frames, _gen_cond_frames_cpu
-            torch_gc()
-
-        except Exception as e:
-            import traceback
-            print(f"  ERROR: {e}")
-            traceback.print_exc()
-            # Restore decoder even on failure so the next video starts clean.
-            try:
                 restore_decoder_state(vae, decoder_snapshot)
-            except Exception:
-                pass
-            all_results.append({
-                "video_name": eval_name,
-                "video_path": eval_entry["video_path"],
-                "error": str(e),
-                "success": False,
-            })
-            save_checkpoint({"next_idx": v_idx + 1, "results": all_results}, ckpt_path)
-            if fvd_accumulator is not None:
-                fvd_accumulator.save_stats(fvd_ckpt_path)
-            torch_gc()
+
+                all_results.append(result)
+                save_checkpoint({
+                    "phase": "gen",
+                    "tta_next_idx": len(eval_videos),
+                    "gen_next_idx": v_idx + 1,
+                    "tta_complete": True,
+                    "tta_records": list(tta_records.values()),
+                    "results": all_results,
+                }, ckpt_path)
+                if fvd_accumulator is not None:
+                    fvd_accumulator.save_stats(fvd_ckpt_path)
+
+            except Exception as e:
+                import traceback
+                print(f"  ERROR (phase 2): {e}")
+                traceback.print_exc()
+                try:
+                    restore_decoder_state(vae, decoder_snapshot)
+                except Exception:
+                    pass
+                all_results.append({
+                    "video_name": eval_name,
+                    "video_path": eval_entry["video_path"],
+                    "error": str(e),
+                    "success": False,
+                })
+                save_checkpoint({
+                    "phase": "gen",
+                    "tta_next_idx": len(eval_videos),
+                    "gen_next_idx": v_idx + 1,
+                    "tta_complete": True,
+                    "tta_records": list(tta_records.values()),
+                    "results": all_results,
+                }, ckpt_path)
+                if fvd_accumulator is not None:
+                    fvd_accumulator.save_stats(fvd_ckpt_path)
+                torch_gc()
+
+        release_dit_after_inference(components)
+
+    elif args.skip_generation:
+        # TTA-only run: promote tta_records to results without generation metrics.
+        for eval_entry in eval_videos:
+            eval_name = Path(eval_entry["video_path"]).stem
+            tta_rec = tta_records.get(eval_name, {})
+            if tta_rec.get("tta_failed"):
+                all_results.append({
+                    "video_name": eval_name,
+                    "video_path": eval_entry["video_path"],
+                    "error": tta_rec.get("error", "tta_failed"),
+                    "success": False,
+                })
+            else:
+                rec = dict(tta_rec)
+                rec["success"] = True
+                rec["gen_time"] = 0.0
+                rec["total_time"] = float(tta_rec.get("clip_gate_eval_time", 0.0)) + float(
+                    tta_rec.get("train_time", 0.0)
+                )
+                all_results.append(rec)
 
     # ── Final summary ──
     successful = [r for r in all_results if r.get("success", False)]

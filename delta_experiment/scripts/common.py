@@ -35,8 +35,10 @@ from longcat_video.modules.scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
 from longcat_video.modules.autoencoder_kl_wan import AutoencoderKLWan
-from longcat_video.modules.longcat_video_dit import LongCatVideoTransformer3DModel
-from longcat_video.pipeline_longcat_video import LongCatVideoPipeline, retrieve_latents
+
+# DiT / pipeline imports are deferred to call sites (load_longcat_components,
+# encode_video, generate_video_continuation) so VAE-only runners never pull
+# LongCat DiT modules — or their import-time side effects — at ``import common``.
 
 
 def _install_st_compat_shim() -> None:
@@ -79,6 +81,9 @@ def load_longcat_components(
     """
     if cp_split_hw is None:
         cp_split_hw = [1, 1]
+
+    from longcat_video.modules.longcat_video_dit import LongCatVideoTransformer3DModel
+    from longcat_video.pipeline_longcat_video import LongCatVideoPipeline
 
     tokenizer = AutoTokenizer.from_pretrained(
         checkpoint_dir, subfolder="tokenizer", torch_dtype=dtype,
@@ -190,6 +195,8 @@ def encode_video(
     If *normalize* is True, applies the VAE's latent normalization
     (mean/std shift) that LongCat-Video expects.
     """
+    from longcat_video.pipeline_longcat_video import retrieve_latents
+
     with torch.no_grad():
         posterior = vae.encode(pixel_frames)
         latents = retrieve_latents(posterior)
@@ -297,7 +304,7 @@ def _get_model_config(dit):
 
 
 def compute_flow_matching_loss(
-    dit: LongCatVideoTransformer3DModel,
+    dit: Any,
     latents: torch.Tensor,
     prompt_embeds: torch.Tensor,
     prompt_mask: torch.Tensor,
@@ -369,7 +376,7 @@ def compute_flow_matching_loss(
 
 
 def compute_flow_matching_loss_fixed(
-    dit: LongCatVideoTransformer3DModel,
+    dit: Any,
     latents: torch.Tensor,
     prompt_embeds: torch.Tensor,
     prompt_mask: torch.Tensor,
@@ -690,7 +697,7 @@ def compute_flow_matching_loss_conditioned_fixed_grad(
 # ============================================================================
 
 def generate_video_continuation(
-    pipe: LongCatVideoPipeline,
+    pipe: Any,
     video_frames: list,
     prompt: str,
     num_cond_frames: int = 13,

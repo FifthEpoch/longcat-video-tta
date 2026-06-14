@@ -37,6 +37,20 @@ wc -l sweep_experiment/reports/per_video_analysis/2026-06-09/video_features.csv 
 
 ---
 
+## 2026-06-14 — Mod 2 OOM round-3: 6be47d2 two-phase load insufficient; job 10780689 still 0/100 OOM
+**Tags:** mod2, oom-fix, vae-decoder-tta, bug-fix, round-3
+**Refs:**
+- Job `10780689` — Mod 2 smoke `panda_1000v_standard/VAE_DEC_TTA_LR1e-5/chunk_0`: **100/100 `success=False`**, identical OOM to `10737006` / `10756668` (`CUDA out of memory` at `vae.decode()` inside `optimize_vae_decoder`; **137.54 GiB PyTorch allocated** on 139.44 GiB H200). Wall 2:26 (≈1.5 s/video). Job ran at cluster git **`6be47d2`** (round-2 two-phase load: `load_vae_only_components` + lazy `load_dit_and_build_pipe`).
+- Log shows post-load budget check **PASSED** at **0.24 GiB** (`[mem] after VAE-only load` / `post-load VAE-only budget check`) — but runtime OOM with full DiT footprint. DiT (or equivalent ~137 GiB resident weights) loaded **between** the post-load budget check and the first video's decoder TTA, despite `load_dit_and_build_pipe` being deferred until after TTA in the per-video loop.
+- `delta_experiment/scripts/run_vae_decoder_tta.py` — **round-3 fix:** (1) strict **two-phase execution** — Phase 1 runs decoder TTA for **all** videos with VAE-only on GPU; Phase 2 lazy-loads DiT **once** after every video's TTA completes; (2) `purge_generation_refs()` nulls `pipe`/`dit` before every TTA video; (3) VAE warmup encode materializes weights before budget assert; (4) extended `[mem]` logging at startup, first loop iteration, immediately before first `optimize_vae_decoder`, and inside first decode slice; (5) per-video adapted decoder + gen-cond tensors saved to disk between phases.
+- `delta_experiment/scripts/common.py` — defer `LongCatVideoTransformer3DModel` / `LongCatVideoPipeline` imports to call sites so `import common` during VAE-only runners does not pull DiT modules at import time.
+
+**Why 6be47d2 failed:** two-phase *per-video* load (TTA → lazy DiT → release → next video) was insufficient — something still resident DiT (~137 GiB) before the first `optimize_vae_decoder` call even though `load_dit_and_build_pipe` was not invoked yet. Likely causes: (a) `import common` pulled DiT pipeline modules at module load; (b) lazy weight materialization on first VAE forward loaded beyond VAE-only budget; (c) per-video DiT load/release left stale GPU refs. Round-3 separates phases entirely and blocks DiT import until generation.
+
+**Verdict:** Smokes `10737006`, `10756668`, and `10780689` are **invalid nulls** — infrastructure OOM, not Mod 2 falsification. Re-fire after `git pull` (round-3 commit): `bash sweep_experiment/sbatch/submit_smoke_vae_decoder_tta.sh`. Expected Phase-1 peak GPU ≈ **8–15 GiB**; verify `.out` shows `PHASE 1` completing with `[mem] end of phase-1` < 25 GiB before `PHASE 2: generation (lazy DiT load)`.
+
+---
+
 ## 2026-06-14 — Mod 2 OOM round-2: b802835 insufficient; job 10756668 still 0/100 OOM
 **Tags:** mod2, oom-fix, vae-decoder-tta, bug-fix, round-2
 **Refs:**
