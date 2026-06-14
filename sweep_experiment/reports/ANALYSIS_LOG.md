@@ -17,6 +17,26 @@ Body...
 
 ---
 
+## 2026-06-14 — Phase 0 round-4 fix: eliminate remaining cv2 in extract (laplacian + resize)
+**Tags:** phase-0, bug-fix, extract-video-features, round-4, cv2-bypass
+**Refs:**
+- Job `10756670` (git HEAD `5d2a871`, wall ~10 min) — round-3 numpy histogram bypass **still** produced header-only `video_features.csv` (`wc -l` = 1) with `errored=1000`. Runtime longer than rounds 1–3 (~2 min) because histogram now succeeds and failure moved to the **next** cv2 call site.
+- `scripts/extract_video_features_for_tta.py` — round-4 removes **all runtime cv2 usage**: `decode_window` resize now uses `torch.nn.functional.interpolate` (same pattern as `delta_experiment/scripts/common.py::load_video_frames`, which is why OOD succeeded on the same 1000 videos); `laplacian_variance_mean` rewritten as numpy discrete Laplacian + ITU-R BT.601 grayscale; per-feature-group try/except so a single optional-feature failure emits NaN instead of skipping the whole video; first-video `[diag]` prints (decode shape/dtype, cut_hist, lap_var, hist_ent, CLIP/DINO shapes); PyAV open/decode errors (e.g. `moov atom not found` on corrupt mp4) wrapped as `ValueError` and skip individual videos.
+- `scripts/sbatch/run_extract_video_features.sbatch` — `SKIP_PYSCENEDETECT=1` default (PSD is optional + slow on full-video scan); `MAX_VIDEOS` env forwarded to `--max-videos` for smoke runs.
+
+**Root cause:** round-3 fixed `cv2.calcHist` / `cv2.compareHist` / `cv2.normalize` but left `cv2.cvtColor` + `cv2.Laplacian` in `laplacian_variance_mean` (line ~783 in `extract_one_video`, immediately after histogram) and `cv2.resize` in `decode_window`. OpenCV-4.9.0's Python binding rejects numpy views on **every** cv2 entry point on the cluster — not just calcHist — so 100 % of videos still excepted after histogram completed. OOD never hit this because `load_video_frames` resizes with torch and never calls cv2.
+
+**Re-fire path:**
+```bash
+cd /scratch/$USER/longcat-video-tta && git pull
+rm -f sweep_experiment/reports/per_video_analysis/2026-06-09/video_features.csv
+SKIP_OOD=1 SKIP_TIER3=1 bash scripts/sbatch/submit_per_video_feature_pipeline.sh
+# smoke: MAX_VIDEOS=3 sbatch scripts/sbatch/run_extract_video_features.sbatch
+wc -l sweep_experiment/reports/per_video_analysis/2026-06-09/video_features.csv  # expect ~1001
+```
+
+---
+
 ## 2026-06-14 — Mod 2 OOM round-2: b802835 insufficient; job 10756668 still 0/100 OOM
 **Tags:** mod2, oom-fix, vae-decoder-tta, bug-fix, round-2
 **Refs:**

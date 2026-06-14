@@ -253,6 +253,30 @@ def caption_for_clip(captions: List[str]) -> str:
 # ---------------------------------------------------------------------------
 # Video frame decoding (PyAV; matches delta_experiment/scripts/common.py)
 # ---------------------------------------------------------------------------
+def _resize_frame_stack_uint8(
+    frames_rgb: np.ndarray,
+    resize_hw: Tuple[int, int],
+) -> np.ndarray:
+    """Resize a ``(T, H, W, 3)`` uint8 stack via torch bilinear interpolate.
+
+    Round-4: replaces ``cv2.resize`` in ``decode_window``.  The OOD runner
+    already resizes with ``torch.nn.functional.interpolate`` (see
+    ``delta_experiment/scripts/common.py::load_video_frames``); keeping
+    extract on the same path avoids OpenCV-4.9.0's numpy-binding failures
+    on the cluster.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    h_t, w_t = resize_hw
+    if frames_rgb.shape[1] == h_t and frames_rgb.shape[2] == w_t:
+        return frames_rgb
+    t = torch.from_numpy(frames_rgb).permute(0, 3, 1, 2).float()  # T,3,H,W
+    t = F.interpolate(t, size=(h_t, w_t), mode="bilinear", align_corners=False)
+    out = t.permute(0, 2, 3, 1).clamp(0.0, 255.0).numpy().astype(np.uint8)
+    return np.ascontiguousarray(out)
+
+
 def decode_window(
     video_path: str,
     start_frame: int,
@@ -263,12 +287,16 @@ def decode_window(
 
     Returns array shaped (T, H, W, 3) with len(T) == num_frames (padded by
     repeating the last frame if the source clip is too short).  Optional
-    ``resize_hw=(h, w)`` resizes each decoded frame with OpenCV INTER_AREA.
+    ``resize_hw=(h, w)`` resizes the decoded stack with torch bilinear
+    interpolate (no OpenCV).
     """
     import av
-    import cv2  # noqa: F401  -- used below if resize_hw
 
-    container = av.open(video_path)
+    try:
+        container = av.open(video_path)
+    except Exception as exc:  # noqa: BLE001  -- av.AVError, OSError, etc.
+        raise ValueError(f"Cannot open {video_path}: {exc}") from exc
+
     frames: List[np.ndarray] = []
     decoded = 0
     try:
@@ -279,13 +307,10 @@ def decode_window(
             if len(frames) >= num_frames:
                 break
             img = frame.to_ndarray(format="rgb24")
-            if resize_hw is not None:
-                import cv2 as _cv
-                h_t, w_t = resize_hw
-                if img.shape[0] != h_t or img.shape[1] != w_t:
-                    img = _cv.resize(img, (w_t, h_t), interpolation=_cv.INTER_AREA)
             frames.append(img)
             decoded += 1
+    except Exception as exc:  # noqa: BLE001  -- InvalidDataError (moov atom), etc.
+        raise ValueError(f"Decode failed for {video_path}: {exc}") from exc
     finally:
         container.close()
 
@@ -293,7 +318,10 @@ def decode_window(
         raise ValueError(f"No frames decoded from {video_path} at start={start_frame}")
     while len(frames) < num_frames:
         frames.append(frames[-1].copy())
-    return np.stack(frames[:num_frames], axis=0)
+    stacked = np.stack(frames[:num_frames], axis=0)
+    if resize_hw is not None:
+        stacked = _resize_frame_stack_uint8(stacked, resize_hw)
+    return stacked
 
 
 # ---------------------------------------------------------------------------
@@ -488,13 +516,27 @@ def count_cuts_pyscenedetect(video_path: str, start_frame: int,
 
 
 def laplacian_variance_mean(frames_rgb: np.ndarray) -> float:
-    """Mean over frames of Var(cv2.Laplacian(gray)).  Sharpness proxy."""
-    import cv2
+    """Mean over frames of Var(Laplacian(gray)).  Sharpness proxy.
 
+    Round-4: numpy-only discrete Laplacian replaces ``cv2.cvtColor`` /
+    ``cv2.Laplacian`` — the remaining cv2 calls after round-3's histogram
+    bypass were the actual cluster failure surface (job 10756670: 10 min,
+    ``errored=1000``, header-only CSV).
+    """
+    frames_rgb = _to_uint8_hwc_stack_for_cv2(frames_rgb)
     vals: List[float] = []
     for t in range(frames_rgb.shape[0]):
-        gray = cv2.cvtColor(frames_rgb[t], cv2.COLOR_RGB2GRAY)
-        lap = cv2.Laplacian(gray, cv2.CV_64F)
+        gray = (
+            0.299 * frames_rgb[t, :, :, 0].astype(np.float64)
+            + 0.587 * frames_rgb[t, :, :, 1].astype(np.float64)
+            + 0.114 * frames_rgb[t, :, :, 2].astype(np.float64)
+        )
+        g_pad = np.pad(gray, 1, mode="edge")
+        lap = (
+            g_pad[:-2, 1:-1] + g_pad[2:, 1:-1]
+            + g_pad[1:-1, :-2] + g_pad[1:-1, 2:]
+            - 4.0 * g_pad[1:-1, 1:-1]
+        )
         vals.append(float(lap.var()))
     return float(np.mean(vals)) if vals else float("nan")
 
@@ -758,6 +800,7 @@ def extract_one_video(
     resize_hw: Tuple[int, int],
     batch_size: int,
     skip_pyscenedetect: bool,
+    diagnostic: bool = False,
 ) -> dict:
     vs, ve = visible_range
     n_visible = ve - vs
@@ -769,42 +812,96 @@ def extract_one_video(
         str(video_path), start_frame=vs, num_frames=n_visible,
         resize_hw=resize_hw,
     )
+    if diagnostic:
+        print(
+            f"[diag] {video_path.name}: decode "
+            f"shape={visible_frames.shape} dtype={visible_frames.dtype} "
+            f"contig={visible_frames.flags['C_CONTIGUOUS']}",
+            flush=True,
+        )
 
-    # ---- cheap CPU features -----------------------------------------------
-    cut_hist = count_cuts_histogram(visible_frames)
-    cut_psd: Optional[int] = (
-        None if skip_pyscenedetect
-        else count_cuts_pyscenedetect(str(video_path), start_frame=vs, end_frame=ve)
-    )
+    # ---- cheap CPU features (isolated so one bad feature -> NaN, not skip) --
+    cut_hist: Optional[int] = None
+    cut_psd: Optional[int] = None
+    cut_density = float("nan")
+    lap_var_mean = float("nan")
+    hist_ent_mean = float("nan")
+
+    try:
+        cut_hist = count_cuts_histogram(visible_frames)
+        if diagnostic:
+            print(f"[diag] {video_path.name}: cut_hist={cut_hist}", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {video_path.name}: cut_count_histogram failed ({exc})",
+              file=sys.stderr)
+
+    if not skip_pyscenedetect:
+        cut_psd = count_cuts_pyscenedetect(str(video_path), start_frame=vs, end_frame=ve)
     cut_density = (
         (cut_psd / n_visible) if (cut_psd is not None and n_visible > 0)
         else float("nan")
     )
-    lap_var_mean = laplacian_variance_mean(visible_frames)
-    hist_ent_mean = rgb_histogram_entropy_mean(visible_frames)
+
+    try:
+        lap_var_mean = laplacian_variance_mean(visible_frames)
+        if diagnostic:
+            print(f"[diag] {video_path.name}: lap_var={lap_var_mean:.6f}",
+                  flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {video_path.name}: laplacian_variance_mean failed ({exc})",
+              file=sys.stderr)
+
+    try:
+        hist_ent_mean = rgb_histogram_entropy_mean(visible_frames)
+        if diagnostic:
+            print(f"[diag] {video_path.name}: hist_ent={hist_ent_mean:.6f}",
+                  flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {video_path.name}: rgb_histogram_entropy_mean failed ({exc})",
+              file=sys.stderr)
 
     # ---- CLIP image embeddings (visible region) ---------------------------
-    clip_img_visible = clip.encode_images(visible_frames, batch_size=batch_size)
-    clip_text_vec = (
-        clip.encode_text(caption_text)
-        if caption_text else None
-    )
-    if clip_text_vec is not None and clip_img_visible.shape[0] > 0:
-        sims_visible = clip_img_visible @ clip_text_vec  # cosine since normalised
-        ct_mean = float(sims_visible.mean())
-        ct_var = float(sims_visible.var(ddof=0))
-        ct_min = float(sims_visible.min())
-    else:
-        ct_mean = ct_var = ct_min = float("nan")
+    ct_mean = ct_var = ct_min = float("nan")
+    clip_text_vec = None
+    try:
+        clip_img_visible = clip.encode_images(visible_frames, batch_size=batch_size)
+        if diagnostic:
+            print(
+                f"[diag] {video_path.name}: clip_img "
+                f"shape={clip_img_visible.shape}",
+                flush=True,
+            )
+        clip_text_vec = (
+            clip.encode_text(caption_text)
+            if caption_text else None
+        )
+        if clip_text_vec is not None and clip_img_visible.shape[0] > 0:
+            sims_visible = clip_img_visible @ clip_text_vec  # cosine since normalised
+            ct_mean = float(sims_visible.mean())
+            ct_var = float(sims_visible.var(ddof=0))
+            ct_min = float(sims_visible.min())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {video_path.name}: CLIP features failed ({exc})",
+              file=sys.stderr)
 
     # ---- DINO temporal coherence on visible region ------------------------
-    dino_visible = dino.encode_images(visible_frames, batch_size=batch_size)
-    if dino_visible.shape[0] >= 2:
-        diffs = dino_visible[1:] - dino_visible[:-1]
-        l2 = np.linalg.norm(diffs, axis=1)
-        dino_temp_l2 = float(l2.mean())
-    else:
-        dino_temp_l2 = float("nan")
+    dino_temp_l2 = float("nan")
+    dino_visible = np.zeros((0, 1), dtype=np.float32)
+    try:
+        dino_visible = dino.encode_images(visible_frames, batch_size=batch_size)
+        if diagnostic:
+            print(
+                f"[diag] {video_path.name}: dino_visible "
+                f"shape={dino_visible.shape}",
+                flush=True,
+            )
+        if dino_visible.shape[0] >= 2:
+            diffs = dino_visible[1:] - dino_visible[:-1]
+            l2 = np.linalg.norm(diffs, axis=1)
+            dino_temp_l2 = float(l2.mean())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {video_path.name}: DINO features failed ({exc})",
+              file=sys.stderr)
 
     # ---- Tier 3: generation-target region (diagnostic only) ---------------
     dino_tta_vs_gen = float("nan")
@@ -849,7 +946,9 @@ def extract_one_video(
         "cut_count_pyscenedetect": (
             float("nan") if cut_psd is None else int(cut_psd)
         ),
-        "cut_count_histogram": int(cut_hist),
+        "cut_count_histogram": (
+            float("nan") if cut_hist is None else int(cut_hist)
+        ),
         "cut_density_per_frame": float(cut_density),
         "clip_text_image_sim_mean": float(ct_mean),
         "clip_text_image_sim_var": float(ct_var),
@@ -992,6 +1091,7 @@ def main() -> int:
                 resize_hw=resize_hw,
                 batch_size=args.batch_size,
                 skip_pyscenedetect=args.skip_pyscenedetect,
+                diagnostic=(n_done == 0 and n_errored == 0),
             )
         except Exception as exc:  # noqa: BLE001
             import traceback

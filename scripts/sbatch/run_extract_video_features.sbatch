@@ -43,6 +43,8 @@ OUTPUT_CSV="${OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_ana
 TTA_VISIBLE_FRAMES="${TTA_VISIBLE_FRAMES:-auto}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 DEVICE="${DEVICE:-cuda}"
+MAX_VIDEOS="${MAX_VIDEOS:-0}"
+SKIP_PYSCENEDETECT="${SKIP_PYSCENEDETECT:-1}"
 
 # ============================================================================
 # Banner
@@ -65,6 +67,8 @@ echo "  OUTPUT_CSV         : ${OUTPUT_CSV}"
 echo "  TTA_VISIBLE_FRAMES : ${TTA_VISIBLE_FRAMES}"
 echo "  BATCH_SIZE         : ${BATCH_SIZE}"
 echo "  DEVICE             : ${DEVICE}"
+echo "  MAX_VIDEOS         : ${MAX_VIDEOS}"
+echo "  SKIP_PYSCENEDETECT : ${SKIP_PYSCENEDETECT}"
 echo "=============================================================================="
 
 # ============================================================================
@@ -123,13 +127,22 @@ echo ""
 # ============================================================================
 echo "Starting feature extraction..."
 
-"${PYTHON}" scripts/extract_video_features_for_tta.py \
-    --videos-dir "${VIDEOS_DIR}" \
-    --captions-csv "${CAPTIONS_CSV}" \
-    --output "${OUTPUT_CSV}" \
-    --tta-visible-frames "${TTA_VISIBLE_FRAMES}" \
-    --device "${DEVICE}" \
+EXTRACT_ARGS=(
+    --videos-dir "${VIDEOS_DIR}"
+    --captions-csv "${CAPTIONS_CSV}"
+    --output "${OUTPUT_CSV}"
+    --tta-visible-frames "${TTA_VISIBLE_FRAMES}"
+    --device "${DEVICE}"
     --batch-size "${BATCH_SIZE}"
+)
+if [ "${SKIP_PYSCENEDETECT}" = "1" ]; then
+    EXTRACT_ARGS+=(--skip-pyscenedetect)
+fi
+if [ "${MAX_VIDEOS}" -gt 0 ] 2>/dev/null; then
+    EXTRACT_ARGS+=(--max-videos "${MAX_VIDEOS}")
+fi
+
+"${PYTHON}" scripts/extract_video_features_for_tta.py "${EXTRACT_ARGS[@]}"
 
 echo ""
 echo "=============================================================================="
