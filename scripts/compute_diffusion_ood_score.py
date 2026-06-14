@@ -69,6 +69,10 @@ emitted at the actual --timesteps values):
     latent_norm_mean,
     latent_norm_std,
     latent_kurtosis,
+    score_norm_caption_t{T} for each T in --timesteps,
+    score_norm_uncond_t{T}  for each T in --timesteps,
+    mean_score_norm_caption,
+    mean_score_norm_uncond,
     n_visible_frames,
     n_gen_target_frames,
     seed
@@ -283,6 +287,10 @@ def _fieldnames(timesteps: List[int]) -> List[str]:
         cols.append(f"diffusion_loss_caption_t{t}")
     for t in timesteps:
         cols.append(f"diffusion_loss_uncond_t{t}")
+    for t in timesteps:
+        cols.append(f"score_norm_caption_t{t}")
+    for t in timesteps:
+        cols.append(f"score_norm_uncond_t{t}")
     cols.extend([
         "mean_diffusion_loss_caption",
         "mean_diffusion_loss_uncond",
@@ -290,6 +298,8 @@ def _fieldnames(timesteps: List[int]) -> List[str]:
         "latent_norm_mean",
         "latent_norm_std",
         "latent_kurtosis",
+        "mean_score_norm_caption",
+        "mean_score_norm_uncond",
         "n_visible_frames",
         "n_gen_target_frames",
         "seed",
@@ -436,7 +446,7 @@ def _compute_one_video(
 
     losses: Dict[str, float] = {}
 
-    def _forward_one(timestep_int: int, embeds, mask, noise) -> float:
+    def _forward_one(timestep_int: int, embeds, mask, noise) -> Tuple[float, float]:
         # Match compute_flow_matching_loss_conditioned() in
         # delta_experiment/scripts/common.py exactly: noise in bfloat16
         # (.randn_like(target_latents) in the reference), arithmetic in
@@ -461,7 +471,9 @@ def _compute_one_video(
             )
         pred_target = pred[:, :, T_cond:].to(torch.float32)
         velocity_target = (noise_bf16 - target_latents).to(torch.float32)
-        return float(F.mse_loss(pred_target, velocity_target).item())
+        mse = float(F.mse_loss(pred_target, velocity_target).item())
+        score_norm = float((pred_target ** 2).mean().item())
+        return mse, score_norm
 
     for t in timesteps:
         # Re-seed per (video, timestep) so each timestep gets an independent,
@@ -473,17 +485,21 @@ def _compute_one_video(
             target_latents.shape, generator=gen,
             device=device, dtype=torch.float32,
         )
-        losses[f"diffusion_loss_caption_t{t}"] = _forward_one(
-            t, cap_embeds, cap_mask, noise,
-        )
-        losses[f"diffusion_loss_uncond_t{t}"] = _forward_one(
-            t, uncond_embeds, uncond_mask, noise,
-        )
+        cap_mse, cap_sn = _forward_one(t, cap_embeds, cap_mask, noise)
+        unc_mse, unc_sn = _forward_one(t, uncond_embeds, uncond_mask, noise)
+        losses[f"diffusion_loss_caption_t{t}"] = cap_mse
+        losses[f"diffusion_loss_uncond_t{t}"] = unc_mse
+        losses[f"score_norm_caption_t{t}"] = cap_sn
+        losses[f"score_norm_uncond_t{t}"] = unc_sn
 
     cap_vals = [losses[f"diffusion_loss_caption_t{t}"] for t in timesteps]
     unc_vals = [losses[f"diffusion_loss_uncond_t{t}"] for t in timesteps]
+    sn_cap_vals = [losses[f"score_norm_caption_t{t}"] for t in timesteps]
+    sn_unc_vals = [losses[f"score_norm_uncond_t{t}"] for t in timesteps]
     mean_cap = float(np.mean(cap_vals)) if cap_vals else float("nan")
     mean_unc = float(np.mean(unc_vals)) if unc_vals else float("nan")
+    mean_sn_cap = float(np.mean(sn_cap_vals)) if sn_cap_vals else float("nan")
+    mean_sn_unc = float(np.mean(sn_unc_vals)) if sn_unc_vals else float("nan")
 
     out: Dict[str, float] = {
         "video_id": video_id,
@@ -494,6 +510,8 @@ def _compute_one_video(
         "latent_norm_mean": norm_mean,
         "latent_norm_std": norm_std,
         "latent_kurtosis": kurt,
+        "mean_score_norm_caption": mean_sn_cap,
+        "mean_score_norm_uncond": mean_sn_unc,
         "n_visible_frames": int(n_visible),
         "n_gen_target_frames": int(AUTO_GEN_TARGET_FRAMES),
         "seed": int(seed),

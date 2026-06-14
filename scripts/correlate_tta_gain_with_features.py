@@ -73,6 +73,20 @@ TIER1_FEATURES: Tuple[str, ...] = (
     "dino_temporal_l2_mean",
     "laplacian_variance_mean",
     "rgb_histogram_entropy_mean",
+    # H-T1-4 flow distribution shape (extract_flow_shape_features.py)
+    "mean_flow",
+    "flow_max",
+    "flow_entropy",
+    "flow_max_over_mean",
+    # H-T1-2 bpp (extract_bpp_features.py)
+    "bpp_h264",
+    "bpp_png_avg",
+    # H-T1-3 FFT (extract_fft_features.py)
+    "hf_energy_ratio_3d",
+    "hf_energy_ratio_spatial_only",
+    # H-T1-1 VAE round-trip (extract_vae_recerr_features.py)
+    "rec_err_l1",
+    "rec_err_lpips",
 )
 TIER3_FEATURES: Tuple[str, ...] = (
     "dino_tta_vs_genregion_sim",
@@ -90,6 +104,22 @@ OOD_SUMMARY_COLUMNS: Tuple[str, ...] = (
     "latent_norm_mean",
     "latent_norm_std",
     "latent_kurtosis",
+    "mean_score_norm_caption",
+    "mean_score_norm_uncond",
+)
+
+# H-T2-5 loss variance (derive_loss_variance.py)
+LOSS_VAR_FEATURES: Tuple[str, ...] = (
+    "loss_var_caption",
+    "loss_var_uncond",
+)
+
+# Non-feature columns stripped from auxiliary Tier-1 CSVs.
+AUX_NON_FEATURE_COLUMNS: Tuple[str, ...] = (
+    "video_id", "n_frames_used", "n_visible_frames", "tta_visible_range",
+    "gen_target_range", "input_size_h", "input_size_w", "flow_model",
+    "file_size_bytes", "container_frame_count", "frame_h", "frame_w",
+    "n_frame_pairs", "lpips_available", "n_timesteps",
 )
 
 # Non-feature OOD columns: documentation / book-keeping that should NOT be
@@ -129,6 +159,30 @@ FEATURE_INTERPRETATIONS: Dict[str, str] = {
         "higher Laplacian variance — sharper / more-textured visible frames",
     "rgb_histogram_entropy_mean":
         "higher RGB-histogram entropy — more colour diversity in the visible window",
+    "mean_flow":
+        "H-T1-4: RAFT mean flow magnitude on TTA-visible window",
+    "flow_max":
+        "H-T1-4: global max RAFT flow magnitude — sparse-motion concentration",
+    "flow_entropy":
+        "H-T1-4: Shannon entropy of flow-magnitude histogram — motion spread",
+    "flow_max_over_mean":
+        "H-T1-4: flow_max / mean_flow — peak-to-average motion concentration",
+    "bpp_h264":
+        "H-T1-2: container bits-per-pixel (ffprobe) — compression complexity proxy",
+    "bpp_png_avg":
+        "H-T1-2: mean lossless PNG bpp over visible frames",
+    "hf_energy_ratio_3d":
+        "H-T1-3: 3D spatiotemporal FFT high-frequency energy fraction",
+    "hf_energy_ratio_spatial_only":
+        "H-T1-3: per-frame spatial high-frequency energy fraction (mean)",
+    "rec_err_l1":
+        "H-T1-1: LongCat-VAE round-trip L1 recon error on visible frames",
+    "rec_err_lpips":
+        "H-T1-1: LongCat-VAE round-trip LPIPS (or MSE fallback) recon error",
+    "loss_var_caption":
+        "H-T2-5: variance of caption-conditioned diffusion loss across timesteps",
+    "loss_var_uncond":
+        "H-T2-5: variance of unconditional diffusion loss across timesteps",
     "dino_tta_vs_genregion_sim":
         "TIER 3: TTA-region DINO mean ≈ generation-region DINO mean (continuity)",
     "clip_text_genregion_sim_mean":
@@ -152,6 +206,10 @@ FEATURE_INTERPRETATIONS: Dict[str, str] = {
     "latent_kurtosis":
         "OOD (Tier-1 cheap): excess kurtosis of VAE-latent values (fisher=True) "
         "— >0 ⇒ heavier-tailed than Gaussian, common for OOD content",
+    "mean_score_norm_caption":
+        "OOD (H-T2-2): mean squared L2 norm of predicted velocity (caption mode)",
+    "mean_score_norm_uncond":
+        "OOD (H-T2-2): mean squared L2 norm of predicted velocity (uncond mode)",
     # Tier-3 probe (compute_tier3_probes.py)
     "mean_grad_norm_lora":
         "T3P (H-T3-1): mean across timesteps of ||∇_{θ_LoRA} L||_2 at the "
@@ -299,6 +357,65 @@ def load_ood_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
                 continue
             out[vid] = dict(r)
     return out, feature_cols
+
+
+def load_aux_csv(
+    path: Path,
+    feature_cols: Optional[List[str]] = None,
+    tier: str = "T1",
+) -> Tuple[Dict[str, Dict[str, str]], List[str], Dict[str, str]]:
+    """Load an auxiliary feature CSV; auto-discover numeric columns if needed."""
+    if not path.exists():
+        raise FileNotFoundError(f"aux CSV not found: {path}")
+    out: Dict[str, Dict[str, str]] = {}
+    cols: List[str] = []
+    tier_map: Dict[str, str] = {}
+    with path.open(newline="", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"{path} has no header row")
+        if feature_cols is None:
+            for fn in reader.fieldnames:
+                if fn in AUX_NON_FEATURE_COLUMNS:
+                    continue
+                cols.append(fn)
+        else:
+            cols = [c for c in feature_cols if c in reader.fieldnames]
+        tier_map = {c: tier for c in cols}
+        for r in reader:
+            vid = (r.get("video_id") or "").strip()
+            if not vid:
+                continue
+            out[vid] = dict(r)
+    return out, cols, tier_map
+
+
+def load_loss_var_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    rows, cols, _ = load_aux_csv(path, list(LOSS_VAR_FEATURES), tier="OOD")
+    return rows, cols
+
+
+def load_flow_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    flow_cols = ["mean_flow", "flow_max", "flow_entropy", "flow_max_over_mean"]
+    rows, cols, _ = load_aux_csv(path, flow_cols, tier="T1")
+    return rows, cols
+
+
+def load_bpp_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    rows, cols, _ = load_aux_csv(path, ["bpp_h264", "bpp_png_avg"], tier="T1")
+    return rows, cols
+
+
+def load_fft_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    rows, cols, _ = load_aux_csv(
+        path, ["hf_energy_ratio_3d", "hf_energy_ratio_spatial_only"], tier="T1",
+    )
+    return rows, cols
+
+
+def load_vae_recerr_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    rows, cols, _ = load_aux_csv(path, ["rec_err_l1", "rec_err_lpips"], tier="T1")
+    return rows, cols
 
 
 def load_tier3_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
@@ -757,6 +874,16 @@ def write_summary(
         lines.append(f"- OOD CSV: `{args.ood_csv}`")
     if getattr(args, "tier3_csv", None):
         lines.append(f"- Tier-3 CSV: `{args.tier3_csv}`")
+    if getattr(args, "flow_csv", None):
+        lines.append(f"- Flow CSV: `{args.flow_csv}`")
+    if getattr(args, "bpp_csv", None):
+        lines.append(f"- BPP CSV: `{args.bpp_csv}`")
+    if getattr(args, "fft_csv", None):
+        lines.append(f"- FFT CSV: `{args.fft_csv}`")
+    if getattr(args, "vae_recerr_csv", None):
+        lines.append(f"- VAE-recerr CSV: `{args.vae_recerr_csv}`")
+    if getattr(args, "loss_var_csv", None):
+        lines.append(f"- Loss-var CSV: `{args.loss_var_csv}`")
     lines.append(f"- Methods analysed (non-baseline): {', '.join('`' + m + '`' for m in methods)}")
     lines.append(f"- Joined videos (intersection of gains ∩ all feature sources): **{n_videos}**")
     lines.append("")
@@ -972,6 +1099,16 @@ def _parse_args() -> argparse.Namespace:
                          "and analysed in the same correlation tables under "
                          "the `T3P` tier (Tier-3 Probe; counted as online-"
                          "actionable alongside `T1` and `OOD`).")
+    ap.add_argument("--flow-csv", type=Path, default=None,
+                    help="OPTIONAL flow_shape_features.csv (H-T1-4).")
+    ap.add_argument("--bpp-csv", type=Path, default=None,
+                    help="OPTIONAL bpp_features.csv (H-T1-2).")
+    ap.add_argument("--fft-csv", type=Path, default=None,
+                    help="OPTIONAL fft_features.csv (H-T1-3).")
+    ap.add_argument("--vae-recerr-csv", type=Path, default=None,
+                    help="OPTIONAL vae_recerr_features.csv (H-T1-1).")
+    ap.add_argument("--loss-var-csv", type=Path, default=None,
+                    help="OPTIONAL loss_var_features.csv (H-T2-5 derived).")
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--top-k", type=int, default=10,
                     help="Top-K winners / losers cohort size for the strongest feature.")
@@ -995,6 +1132,11 @@ def main() -> int:
     print(f"Features CSV : {args.features_csv}")
     print(f"OOD CSV      : {args.ood_csv if args.ood_csv else '(not provided)'}")
     print(f"Tier-3 CSV   : {args.tier3_csv if args.tier3_csv else '(not provided)'}")
+    print(f"Flow CSV     : {args.flow_csv if args.flow_csv else '(not provided)'}")
+    print(f"BPP CSV      : {args.bpp_csv if args.bpp_csv else '(not provided)'}")
+    print(f"FFT CSV      : {args.fft_csv if args.fft_csv else '(not provided)'}")
+    print(f"VAE-rec CSV  : {args.vae_recerr_csv if args.vae_recerr_csv else '(not provided)'}")
+    print(f"Loss-var CSV : {args.loss_var_csv if args.loss_var_csv else '(not provided)'}")
     print(f"Output dir   : {args.output_dir}")
     print("=" * 70)
 
@@ -1004,12 +1146,18 @@ def main() -> int:
     print(f"Feature rows : {len(feats_rows)}")
 
     # ---- Build feature sources -------------------------------------------
+    # Only include T1 columns present in the features CSV (avoid NaN-only cols).
+    sample_row = next(iter(feats_rows.values()), {})
     feat_tier_by_name: Dict[str, str] = {}
+    feat_features: List[str] = []
     for f in TIER1_FEATURES:
-        feat_tier_by_name[f] = "T1"
+        if f in sample_row:
+            feat_tier_by_name[f] = "T1"
+            feat_features.append(f)
     for f in TIER3_FEATURES:
-        feat_tier_by_name[f] = "T3"
-    feat_features = list(TIER1_FEATURES) + list(TIER3_FEATURES)
+        if f in sample_row:
+            feat_tier_by_name[f] = "T3"
+            feat_features.append(f)
     feat_source = FeatureSource(
         rows=feats_rows,
         features=feat_features,
@@ -1018,6 +1166,34 @@ def main() -> int:
     )
 
     sources: List[FeatureSource] = [feat_source]
+
+    def _add_aux_source(
+        path: Optional[Path],
+        loader,
+        label: str,
+        tier: str,
+    ) -> None:
+        if path is None:
+            return
+        rows, cols = loader(path)
+        print(f"{label:12s} : {len(rows)} rows  (cols: {cols})")
+        if not cols:
+            print(f"[warn] {label} CSV has no usable feature columns; skipping",
+                  file=sys.stderr)
+            return
+        sources.append(FeatureSource(
+            rows=rows,
+            features=cols,
+            tier_by_feature={c: tier for c in cols},
+            label=label,
+        ))
+
+    _add_aux_source(args.flow_csv, load_flow_csv, "flow", "T1")
+    _add_aux_source(args.bpp_csv, load_bpp_csv, "bpp", "T1")
+    _add_aux_source(args.fft_csv, load_fft_csv, "fft", "T1")
+    _add_aux_source(args.vae_recerr_csv, load_vae_recerr_csv, "vae_recerr", "T1")
+    _add_aux_source(args.loss_var_csv, load_loss_var_csv, "loss_var", "OOD")
+
     if args.ood_csv is not None:
         ood_rows, ood_feature_cols = load_ood_csv(args.ood_csv)
         print(f"OOD rows     : {len(ood_rows)}  "

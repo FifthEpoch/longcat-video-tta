@@ -59,6 +59,11 @@ PROJECT_ROOT="${PROJECT_ROOT:-/scratch/${USER}/longcat-video-tta}"
 EXTRACT_SBATCH="${EXTRACT_SBATCH:-scripts/sbatch/run_extract_video_features.sbatch}"
 OOD_SBATCH="${OOD_SBATCH:-scripts/sbatch/run_compute_diffusion_ood.sbatch}"
 TIER3_SBATCH="${TIER3_SBATCH:-scripts/sbatch/run_compute_tier3_probes.sbatch}"
+FLOW_SBATCH="${FLOW_SBATCH:-scripts/sbatch/run_extract_flow_shape_features.sbatch}"
+BPP_SBATCH="${BPP_SBATCH:-scripts/sbatch/run_extract_bpp_features.sbatch}"
+FFT_SBATCH="${FFT_SBATCH:-scripts/sbatch/run_extract_fft_features.sbatch}"
+VAE_RECERR_SBATCH="${VAE_RECERR_SBATCH:-scripts/sbatch/run_extract_vae_recerr_features.sbatch}"
+LOSS_VAR_SBATCH="${LOSS_VAR_SBATCH:-scripts/sbatch/run_derive_loss_variance.sbatch}"
 CORR_SBATCH="${CORR_SBATCH:-scripts/sbatch/run_correlate_tta_gain.sbatch}"
 
 # ============================================================================
@@ -100,6 +105,20 @@ LORA_TARGET_BLOCKS="${LORA_TARGET_BLOCKS:-all}"
 LORA_TARGET_FFN="${LORA_TARGET_FFN:-0}"
 
 # ============================================================================
+# Stage 1d–1g (gating Tier-1 hypotheses H-T1-1..4) — parallel with 1a–1c
+# ============================================================================
+SKIP_FLOW="${SKIP_FLOW:-0}"
+SKIP_BPP="${SKIP_BPP:-0}"
+SKIP_FFT="${SKIP_FFT:-0}"
+SKIP_VAE_RECERR="${SKIP_VAE_RECERR:-0}"
+SKIP_LOSS_VAR="${SKIP_LOSS_VAR:-0}"
+FLOW_OUTPUT_CSV="${FLOW_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/flow_shape_features.csv}"
+BPP_OUTPUT_CSV="${BPP_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/bpp_features.csv}"
+FFT_OUTPUT_CSV="${FFT_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/fft_features.csv}"
+VAE_RECERR_OUTPUT_CSV="${VAE_RECERR_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/vae_recerr_features.csv}"
+LOSS_VAR_OUTPUT_CSV="${LOSS_VAR_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/loss_var_features.csv}"
+
+# ============================================================================
 # Stage 2 (correlation) defaults — passed through to run_correlate_tta_gain.sbatch
 # Default FEATURES_CSV to match stage 1a's OUTPUT_CSV so the chain is
 # consistent when neither is overridden. OOD_CSV defaults to stage 1b's
@@ -111,6 +130,11 @@ GAINS_CSV="${GAINS_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analy
 FEATURES_CSV="${FEATURES_CSV:-${OUTPUT_CSV}}"
 OOD_CSV="${OOD_CSV:-${OOD_OUTPUT_CSV}}"
 TIER3_CSV="${TIER3_CSV:-${TIER3_OUTPUT_CSV}}"
+FLOW_CSV="${FLOW_CSV:-${FLOW_OUTPUT_CSV}}"
+BPP_CSV="${BPP_CSV:-${BPP_OUTPUT_CSV}}"
+FFT_CSV="${FFT_CSV:-${FFT_OUTPUT_CSV}}"
+VAE_RECERR_CSV="${VAE_RECERR_CSV:-${VAE_RECERR_OUTPUT_CSV}}"
+LOSS_VAR_CSV="${LOSS_VAR_CSV:-${LOSS_VAR_OUTPUT_CSV}}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/criteria_correlation}"
 
 # ============================================================================
@@ -255,6 +279,68 @@ if [ "${SKIP_TIER3}" != "1" ]; then
 fi
 
 # ============================================================================
+# Stage 1d: H-T1-4 flow shape (GPU, parallel)
+# ============================================================================
+FLOW_JID=""
+if [ "${SKIP_FLOW}" != "1" ]; then
+    FLOW_JID=$(sbatch --parsable \
+        --export="ALL,VIDEOS_DIR=${VIDEOS_DIR},OUTPUT_CSV=${FLOW_OUTPUT_CSV},TTA_VISIBLE_FRAMES=${TTA_VISIBLE_FRAMES},DEVICE=${DEVICE},RESUME=${RESUME}" \
+        "${FLOW_SBATCH}")
+    echo "Submitted flow-shape extraction (H-T1-4): ${FLOW_JID}"
+fi
+
+# ============================================================================
+# Stage 1e: H-T1-2 bpp (CPU, parallel)
+# ============================================================================
+BPP_JID=""
+if [ "${SKIP_BPP}" != "1" ]; then
+    BPP_JID=$(sbatch --parsable \
+        --export="ALL,VIDEOS_DIR=${VIDEOS_DIR},OUTPUT_CSV=${BPP_OUTPUT_CSV},TTA_VISIBLE_FRAMES=${TTA_VISIBLE_FRAMES},RESUME=${RESUME}" \
+        "${BPP_SBATCH}")
+    echo "Submitted bpp extraction (H-T1-2): ${BPP_JID}"
+fi
+
+# ============================================================================
+# Stage 1f: H-T1-3 FFT (CPU, parallel)
+# ============================================================================
+FFT_JID=""
+if [ "${SKIP_FFT}" != "1" ]; then
+    FFT_JID=$(sbatch --parsable \
+        --export="ALL,VIDEOS_DIR=${VIDEOS_DIR},OUTPUT_CSV=${FFT_OUTPUT_CSV},TTA_VISIBLE_FRAMES=${TTA_VISIBLE_FRAMES},RESUME=${RESUME}" \
+        "${FFT_SBATCH}")
+    echo "Submitted FFT extraction (H-T1-3): ${FFT_JID}"
+fi
+
+# ============================================================================
+# Stage 1g: H-T1-1 VAE recerr (GPU, parallel)
+# ============================================================================
+VAE_RECERR_JID=""
+if [ "${SKIP_VAE_RECERR}" != "1" ]; then
+    VAE_RECERR_JID=$(sbatch --parsable \
+        --export="ALL,CHECKPOINT_DIR=${CHECKPOINT_DIR},VIDEOS_DIR=${VIDEOS_DIR},OUTPUT_CSV=${VAE_RECERR_OUTPUT_CSV},TTA_VISIBLE_FRAMES=${TTA_VISIBLE_FRAMES},DEVICE=${DEVICE},RESUME=${RESUME}" \
+        "${VAE_RECERR_SBATCH}")
+    echo "Submitted VAE recerr extraction (H-T1-1): ${VAE_RECERR_JID}"
+fi
+
+# ============================================================================
+# Stage 1h: H-T2-5 loss variance (CPU, depends on OOD when OOD runs)
+# ============================================================================
+LOSS_VAR_JID=""
+if [ "${SKIP_LOSS_VAR}" != "1" ]; then
+    if [ -n "${OOD_JID}" ]; then
+        LOSS_VAR_JID=$(sbatch --parsable \
+            --dependency="afterok:${OOD_JID}" \
+            --export="ALL,OOD_CSV=${OOD_OUTPUT_CSV},OUTPUT_CSV=${LOSS_VAR_OUTPUT_CSV}" \
+            "${LOSS_VAR_SBATCH}")
+    else
+        LOSS_VAR_JID=$(sbatch --parsable \
+            --export="ALL,OOD_CSV=${OOD_OUTPUT_CSV},OUTPUT_CSV=${LOSS_VAR_OUTPUT_CSV}" \
+            "${LOSS_VAR_SBATCH}")
+    fi
+    echo "Submitted loss-variance derivation (H-T2-5): ${LOSS_VAR_JID}"
+fi
+
+# ============================================================================
 # Stage 2: correlation (afterok on every stage-1 job that was submitted)
 #
 # Slurm dependency grammar: `--dependency=afterok:A:B:C` means "after ALL of
@@ -272,16 +358,44 @@ if [ -n "${TIER3_JID}" ]; then
     DEP_JIDS="${DEP_JIDS}:${TIER3_JID}"
     DEP_DESC="${DEP_DESC} + ${TIER3_JID}"
 fi
+if [ -n "${FLOW_JID}" ]; then
+    DEP_JIDS="${DEP_JIDS}:${FLOW_JID}"
+    DEP_DESC="${DEP_DESC} + ${FLOW_JID}"
+fi
+if [ -n "${BPP_JID}" ]; then
+    DEP_JIDS="${DEP_JIDS}:${BPP_JID}"
+    DEP_DESC="${DEP_DESC} + ${BPP_JID}"
+fi
+if [ -n "${FFT_JID}" ]; then
+    DEP_JIDS="${DEP_JIDS}:${FFT_JID}"
+    DEP_DESC="${DEP_DESC} + ${FFT_JID}"
+fi
+if [ -n "${VAE_RECERR_JID}" ]; then
+    DEP_JIDS="${DEP_JIDS}:${VAE_RECERR_JID}"
+    DEP_DESC="${DEP_DESC} + ${VAE_RECERR_JID}"
+fi
+if [ -n "${LOSS_VAR_JID}" ]; then
+    DEP_JIDS="${DEP_JIDS}:${LOSS_VAR_JID}"
+    DEP_DESC="${DEP_DESC} + ${LOSS_VAR_JID}"
+fi
 DEP_SPEC="afterok:${DEP_JIDS}"
 
-# Explicitly clear OOD_CSV / TIER3_CSV when skipped so any externally-set
-# value leaking through ALL does not silently re-enable the join.
 EFFECTIVE_OOD_CSV="${OOD_CSV}"
 [ "${SKIP_OOD}"   = "1" ] && EFFECTIVE_OOD_CSV=""
 EFFECTIVE_TIER3_CSV="${TIER3_CSV}"
 [ "${SKIP_TIER3}" = "1" ] && EFFECTIVE_TIER3_CSV=""
+EFFECTIVE_FLOW_CSV="${FLOW_CSV}"
+[ "${SKIP_FLOW}" = "1" ] && EFFECTIVE_FLOW_CSV=""
+EFFECTIVE_BPP_CSV="${BPP_CSV}"
+[ "${SKIP_BPP}" = "1" ] && EFFECTIVE_BPP_CSV=""
+EFFECTIVE_FFT_CSV="${FFT_CSV}"
+[ "${SKIP_FFT}" = "1" ] && EFFECTIVE_FFT_CSV=""
+EFFECTIVE_VAE_RECERR_CSV="${VAE_RECERR_CSV}"
+[ "${SKIP_VAE_RECERR}" = "1" ] && EFFECTIVE_VAE_RECERR_CSV=""
+EFFECTIVE_LOSS_VAR_CSV="${LOSS_VAR_CSV}"
+[ "${SKIP_LOSS_VAR}" = "1" ] && EFFECTIVE_LOSS_VAR_CSV=""
 
-CORR_EXPORT="ALL,GAINS_CSV=${GAINS_CSV},FEATURES_CSV=${FEATURES_CSV},OOD_CSV=${EFFECTIVE_OOD_CSV},TIER3_CSV=${EFFECTIVE_TIER3_CSV},OUTPUT_DIR=${OUTPUT_DIR}"
+CORR_EXPORT="ALL,GAINS_CSV=${GAINS_CSV},FEATURES_CSV=${FEATURES_CSV},OOD_CSV=${EFFECTIVE_OOD_CSV},TIER3_CSV=${EFFECTIVE_TIER3_CSV},FLOW_CSV=${EFFECTIVE_FLOW_CSV},BPP_CSV=${EFFECTIVE_BPP_CSV},FFT_CSV=${EFFECTIVE_FFT_CSV},VAE_RECERR_CSV=${EFFECTIVE_VAE_RECERR_CSV},LOSS_VAR_CSV=${EFFECTIVE_LOSS_VAR_CSV},OUTPUT_DIR=${OUTPUT_DIR}"
 
 CORR_JID=$(sbatch --parsable \
     --dependency="${DEP_SPEC}" \
@@ -294,6 +408,11 @@ echo "============================================================"
 N_SUBMITTED=1
 [ -n "${OOD_JID}" ]   && N_SUBMITTED=$((N_SUBMITTED + 1))
 [ -n "${TIER3_JID}" ] && N_SUBMITTED=$((N_SUBMITTED + 1))
+[ -n "${FLOW_JID}" ]  && N_SUBMITTED=$((N_SUBMITTED + 1))
+[ -n "${BPP_JID}" ]   && N_SUBMITTED=$((N_SUBMITTED + 1))
+[ -n "${FFT_JID}" ]   && N_SUBMITTED=$((N_SUBMITTED + 1))
+[ -n "${VAE_RECERR_JID}" ] && N_SUBMITTED=$((N_SUBMITTED + 1))
+[ -n "${LOSS_VAR_JID}" ] && N_SUBMITTED=$((N_SUBMITTED + 1))
 N_SUBMITTED=$((N_SUBMITTED + 1))  # +correlation
 echo "Submitted ${N_SUBMITTED} jobs."
 echo ""
@@ -303,12 +422,21 @@ echo ""
 SQ_LIST="${EXTRACT_JID}"
 [ -n "${OOD_JID}" ]   && SQ_LIST="${SQ_LIST},${OOD_JID}"
 [ -n "${TIER3_JID}" ] && SQ_LIST="${SQ_LIST},${TIER3_JID}"
+[ -n "${FLOW_JID}" ]  && SQ_LIST="${SQ_LIST},${FLOW_JID}"
+[ -n "${BPP_JID}" ]   && SQ_LIST="${SQ_LIST},${BPP_JID}"
+[ -n "${FFT_JID}" ]   && SQ_LIST="${SQ_LIST},${FFT_JID}"
+[ -n "${VAE_RECERR_JID}" ] && SQ_LIST="${SQ_LIST},${VAE_RECERR_JID}"
+[ -n "${LOSS_VAR_JID}" ] && SQ_LIST="${SQ_LIST},${LOSS_VAR_JID}"
 SQ_LIST="${SQ_LIST},${CORR_JID}"
 
-# And the squeue grep filter, again restricted to jobs we submitted.
 GREP_RE="extract_video_features"
 [ -n "${OOD_JID}" ]   && GREP_RE="${GREP_RE}|compute_diffusion_ood"
 [ -n "${TIER3_JID}" ] && GREP_RE="${GREP_RE}|compute_tier3_probes"
+[ -n "${FLOW_JID}" ]  && GREP_RE="${GREP_RE}|extract_flow_shape"
+[ -n "${BPP_JID}" ]   && GREP_RE="${GREP_RE}|extract_bpp"
+[ -n "${FFT_JID}" ]   && GREP_RE="${GREP_RE}|extract_fft"
+[ -n "${VAE_RECERR_JID}" ] && GREP_RE="${GREP_RE}|extract_vae_recerr"
+[ -n "${LOSS_VAR_JID}" ] && GREP_RE="${GREP_RE}|derive_loss_var"
 GREP_RE="${GREP_RE}|correlate_tta_gain"
 
 echo "Monitor:"

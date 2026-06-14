@@ -40,6 +40,11 @@ FEATURES_CSV="${FEATURES_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video
 OOD_CSV="${OOD_CSV:-}"
 # Optional Tier-3 probe CSV (from compute_tier3_probes.py); same convention.
 TIER3_CSV="${TIER3_CSV:-}"
+FLOW_CSV="${FLOW_CSV:-}"
+BPP_CSV="${BPP_CSV:-}"
+FFT_CSV="${FFT_CSV:-}"
+VAE_RECERR_CSV="${VAE_RECERR_CSV:-}"
+LOSS_VAR_CSV="${LOSS_VAR_CSV:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/criteria_correlation}"
 
 # ============================================================================
@@ -61,6 +66,11 @@ echo "  GAINS_CSV     : ${GAINS_CSV}"
 echo "  FEATURES_CSV  : ${FEATURES_CSV}"
 echo "  OOD_CSV       : ${OOD_CSV:-<not provided>}"
 echo "  TIER3_CSV     : ${TIER3_CSV:-<not provided>}"
+echo "  FLOW_CSV      : ${FLOW_CSV:-<not provided>}"
+echo "  BPP_CSV       : ${BPP_CSV:-<not provided>}"
+echo "  FFT_CSV       : ${FFT_CSV:-<not provided>}"
+echo "  VAE_RECERR_CSV: ${VAE_RECERR_CSV:-<not provided>}"
+echo "  LOSS_VAR_CSV  : ${LOSS_VAR_CSV:-<not provided>}"
 echo "  OUTPUT_DIR    : ${OUTPUT_DIR}"
 echo "=============================================================================="
 
@@ -119,6 +129,13 @@ if [ -n "${TIER3_CSV}" ] && [ ! -f "${TIER3_CSV}" ]; then
     echo "ERROR: TIER3_CSV is set but file not found: ${TIER3_CSV}" >&2
     exit 1
 fi
+for _opt_var in FLOW_CSV BPP_CSV FFT_CSV VAE_RECERR_CSV LOSS_VAR_CSV; do
+    _val="${!_opt_var:-}"
+    if [ -n "${_val}" ] && [ ! -f "${_val}" ]; then
+        echo "ERROR: ${_opt_var} is set but file not found: ${_val}" >&2
+        exit 1
+    fi
+done
 
 # ============================================================================
 # Run correlation
@@ -131,6 +148,26 @@ TIER3_FLAG=""
 if [ -n "${TIER3_CSV}" ]; then
     TIER3_FLAG="--tier3-csv ${TIER3_CSV}"
 fi
+FLOW_FLAG=""
+if [ -n "${FLOW_CSV}" ]; then
+    FLOW_FLAG="--flow-csv ${FLOW_CSV}"
+fi
+BPP_FLAG=""
+if [ -n "${BPP_CSV}" ]; then
+    BPP_FLAG="--bpp-csv ${BPP_CSV}"
+fi
+FFT_FLAG=""
+if [ -n "${FFT_CSV}" ]; then
+    FFT_FLAG="--fft-csv ${FFT_CSV}"
+fi
+VAE_FLAG=""
+if [ -n "${VAE_RECERR_CSV}" ]; then
+    VAE_FLAG="--vae-recerr-csv ${VAE_RECERR_CSV}"
+fi
+LOSSVAR_FLAG=""
+if [ -n "${LOSS_VAR_CSV}" ]; then
+    LOSSVAR_FLAG="--loss-var-csv ${LOSS_VAR_CSV}"
+fi
 
 echo "Starting correlation analysis..."
 
@@ -139,6 +176,11 @@ echo "Starting correlation analysis..."
     --features-csv "${FEATURES_CSV}" \
     ${OOD_FLAG} \
     ${TIER3_FLAG} \
+    ${FLOW_FLAG} \
+    ${BPP_FLAG} \
+    ${FFT_FLAG} \
+    ${VAE_FLAG} \
+    ${LOSSVAR_FLAG} \
     --output-dir "${OUTPUT_DIR}"
 
 echo ""
