@@ -107,6 +107,36 @@ def find_mp4(
     return None
 
 
+def _mp4_readable(path: Path, *, min_frames: int = 28) -> bool:
+    """Return True if PyAV can open and decode at least *min_frames* frames.
+
+    Oracle FVD scores frames [14:28] (14 cond + 14 gen).  Truncated outputs
+    (``moov atom not found``) fail here so eval_fvd does not silently drop
+    pairs and shrink ``num_valid_pairs``.
+    """
+    try:
+        import av
+    except ImportError:
+        return True  # defer to eval_fvd when av unavailable at build time
+
+    try:
+        container = av.open(str(path))
+    except Exception:
+        return False
+
+    n = 0
+    try:
+        for _ in container.decode(video=0):
+            n += 1
+            if n >= min_frames:
+                break
+    except Exception:
+        return False
+    finally:
+        container.close()
+    return n >= min_frames
+
+
 def _is_under_dir(path: Path, parent: Optional[Path]) -> bool:
     if parent is None:
         return False
@@ -295,6 +325,13 @@ def build_policy_dir(
                 continue
             except ValueError:
                 pass
+        if not _mp4_readable(src):
+            missing.append(f"{vid}->UNREADABLE({src.name})")
+            print(
+                f"  SKIP unreadable mp4: {vid} <- {src}",
+                file=sys.stderr,
+            )
+            continue
         dst = out_dir / f"{vid}.mp4"
         if dst.exists() or dst.is_symlink():
             dst.unlink()
