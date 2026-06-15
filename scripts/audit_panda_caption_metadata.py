@@ -115,7 +115,9 @@ def main() -> int:
             "All paths now fall back to caption[0]. To align with the "
             "downloaded clip segment, add chunk_index to metadata.csv "
             "(see datasets/download_panda70m_subset.py manifest) or rebuild "
-            "via scripts/build_panda_segment_pool.py for per-segment captions."
+            "via scripts/build_panda_segment_pool.py for per-segment captions, "
+            "or run scripts/patch_panda_metadata_segment_index.py to infer "
+            "chunk_index from datasets/panda_1000/manifest.jsonl + Panda-70M CSV."
         )
     return 0
 

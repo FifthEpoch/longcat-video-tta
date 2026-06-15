@@ -28,14 +28,21 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 from scipy.linalg import sqrtm
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.caption_utils import canonical_video_id
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -216,6 +223,89 @@ def extract_fid_features(
 # ---------------------------------------------------------------------------
 # Frechet distance (shared by FVD and FID)
 # ---------------------------------------------------------------------------
+def _canonical_video_id_from_path(path: Path) -> str:
+    """Map any saved mp4 name back to ``panda_XXXX`` (or ``ucf_XXXX``)."""
+    stem = path.stem
+    vid = canonical_video_id(stem)
+    if vid:
+        return vid
+    m = re.search(r"(\d+)", stem)
+    if m:
+        prefix = "panda" if "panda" in stem.lower() else "video"
+        return f"{prefix}_{int(m.group(1)):04d}"
+    return stem
+
+
+def _pair_videos_by_id(
+    gen_paths: List[Path],
+    ref_paths: List[Path],
+) -> List[Tuple[Path, Path]]:
+    """Pair generated and reference clips by canonical video id."""
+    ref_by_id: Dict[str, Path] = {}
+    for rp in ref_paths:
+        vid = _canonical_video_id_from_path(rp)
+        if vid:
+            ref_by_id[vid] = rp
+
+    pairs: List[Tuple[Path, Path]] = []
+    missing_ref: List[str] = []
+    identical: List[str] = []
+    for gp in gen_paths:
+        vid = _canonical_video_id_from_path(gp)
+        if not vid or vid not in ref_by_id:
+            missing_ref.append(vid or gp.name)
+            continue
+        rp = ref_by_id[vid]
+        if gp.resolve() == rp.resolve():
+            identical.append(vid)
+            continue
+        pairs.append((gp, rp))
+
+    if missing_ref:
+        print(
+            f"WARNING: {len(missing_ref)} generated videos have no reference "
+            f"match (showing up to 5): {missing_ref[:5]}",
+            file=sys.stderr,
+        )
+    if identical:
+        print(
+            f"ERROR: {len(identical)} generated/reference pairs resolve to the "
+            f"same file (gen==ref → FVD≈0). First examples: {identical[:5]}",
+            file=sys.stderr,
+        )
+        print(
+            "  This usually means oracle/gen symlinks fell back to GT source "
+            "videos. Rebuild policy dirs with build_oracle_policy_dirs.py.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return pairs
+
+
+def compute_frechet_from_sufficient_stats(
+    sum_a: np.ndarray,
+    cov_a: np.ndarray,
+    n_a: int,
+    sum_b: np.ndarray,
+    cov_b: np.ndarray,
+    n_b: int,
+    eps: float = _COV_EPS,
+) -> float:
+    """Frechet distance from running sums (matches merge_chunks.py)."""
+    mu_a = sum_a / n_a
+    mu_b = sum_b / n_b
+    sigma_a = cov_a / n_a - np.outer(mu_a, mu_a)
+    sigma_b = cov_b / n_b - np.outer(mu_b, mu_b)
+    sigma_a += eps * np.eye(sigma_a.shape[0])
+    sigma_b += eps * np.eye(sigma_b.shape[0])
+    diff = mu_a - mu_b
+    covmean, _ = sqrtm(sigma_a @ sigma_b, disp=False)
+    if np.iscomplexobj(covmean):
+        covmean = covmean.real
+    return float(diff @ diff + np.trace(sigma_a + sigma_b - 2 * covmean))
+
+
 def compute_frechet_distance(
     feats_a: np.ndarray,
     feats_b: np.ndarray,
@@ -261,8 +351,9 @@ def main():
         help="Directory of generated videos (.mp4)",
     )
     parser.add_argument(
-        "--ref-dir", type=str, required=True,
-        help="Directory of reference/ground-truth videos (.mp4)",
+        "--ref-dir", type=str, default=None,
+        help="Directory of reference/ground-truth videos (.mp4). "
+        "Required unless --gt-cache is set.",
     )
     parser.add_argument(
         "--num-frames", type=int, default=16,
@@ -290,38 +381,84 @@ def main():
         "--self-check", action="store_true",
         help="Run a self-consistency test (FVD of ref vs ref should be ~0)",
     )
+    parser.add_argument(
+        "--gt-cache", type=str, default=None,
+        help="Optional precomputed GT .npz (from precompute_gt_features.py). "
+        "When set, reference I3D stats are loaded from cache instead of "
+        "--ref-dir, matching the online-FVD protocol used in headline sweeps.",
+    )
+    parser.add_argument(
+        "--pair-by-id", action=argparse.BooleanOptionalAction, default=True,
+        help="Pair gen/ref clips by canonical video id (panda_XXXX). "
+        "Disable only for legacy sorted-order pairing.",
+    )
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
+
+    if args.gt_cache is None and not args.ref_dir:
+        print("ERROR: --ref-dir is required unless --gt-cache is provided.",
+              file=sys.stderr)
+        sys.exit(1)
 
     t0 = time.time()
 
     # ------------------------------------------------------------------ discover videos
     gen_paths = sorted(Path(args.gen_dir).glob("*.mp4"))
-    ref_paths = sorted(Path(args.ref_dir).glob("*.mp4"))
-    print(f"Found {len(gen_paths)} generated, {len(ref_paths)} reference videos.")
+    print(f"Found {len(gen_paths)} generated videos in {args.gen_dir}.")
 
-    n = min(len(gen_paths), len(ref_paths))
-    if n == 0:
-        print("ERROR: No videos found in one or both directories.", file=sys.stderr)
+    if not gen_paths:
+        print("ERROR: No generated videos found.", file=sys.stderr)
         sys.exit(1)
+
+    use_gt_cache = args.gt_cache is not None
+    ref_paths: List[Path] = []
+    pairs: List[Tuple[Path, Path]] = []
+    if use_gt_cache:
+        if not Path(args.gt_cache).exists():
+            print(f"ERROR: GT cache not found: {args.gt_cache}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Using GT feature cache: {args.gt_cache}")
+    else:
+        ref_paths = sorted(Path(args.ref_dir).glob("*.mp4"))
+        print(f"Found {len(ref_paths)} reference videos in {args.ref_dir}.")
+        if not ref_paths:
+            print("ERROR: No reference videos found.", file=sys.stderr)
+            sys.exit(1)
+        if args.pair_by_id:
+            pairs = _pair_videos_by_id(gen_paths, ref_paths)
+        else:
+            n = min(len(gen_paths), len(ref_paths))
+            pairs = list(zip(gen_paths[:n], ref_paths[:n]))
 
     # ------------------------------------------------------------------ load videos
     print("Loading generated videos...")
     gen_tensors: List[torch.Tensor] = []
-    for vp in gen_paths[:n]:
+    gen_paths_valid: List[Path] = []
+    if use_gt_cache:
+        load_targets = gen_paths
+    else:
+        load_targets = [gp for gp, _ in pairs]
+
+    for vp in load_targets:
         t = load_video_as_tensor(str(vp), args.num_frames)
         if t is not None:
             gen_tensors.append(t)
+            gen_paths_valid.append(vp)
 
-    print("Loading reference videos...")
     ref_tensors: List[torch.Tensor] = []
-    for vp in ref_paths[:n]:
-        t = load_video_as_tensor(str(vp), args.num_frames)
-        if t is not None:
-            ref_tensors.append(t)
+    if not use_gt_cache:
+        print("Loading reference videos...")
+        ref_by_gen = {gp: rp for gp, rp in pairs}
+        for gp in gen_paths_valid:
+            rp = ref_by_gen.get(gp)
+            if rp is None:
+                continue
+            t = load_video_as_tensor(str(rp), args.num_frames)
+            if t is not None:
+                ref_tensors.append(t)
 
-    n_valid = min(len(gen_tensors), len(ref_tensors))
+    n_valid = len(gen_tensors) if use_gt_cache else min(len(gen_tensors), len(ref_tensors))
     print(f"Valid video pairs: {n_valid}")
 
     # ------------------------------------------------------------------ sample-size guard
@@ -339,7 +476,8 @@ def main():
         print(f"WARNING (--force): {msg}", file=sys.stderr)
 
     gen_tensors = gen_tensors[:n_valid]
-    ref_tensors = ref_tensors[:n_valid]
+    if not use_gt_cache:
+        ref_tensors = ref_tensors[:n_valid]
 
     # ------------------------------------------------------------------ load I3D
     print("Loading I3D (Kinetics-400 TorchScript)...")
@@ -355,25 +493,45 @@ def main():
     )
     print(f"  shape: {feats_gen.shape}")
 
-    print("Extracting I3D features (reference)...")
-    feats_ref = extract_i3d_features(
-        ref_tensors, i3d_model, args.device, args.batch_size,
-    )
-    print(f"  shape: {feats_ref.shape}")
+    ref_from_cache = False
+    cache = None
+    ref_count = 0
+    if use_gt_cache:
+        cache = np.load(args.gt_cache, allow_pickle=True)
+        ref_sum = cache["ref_fvd_sum"].astype(np.float64)
+        ref_cov = cache["ref_fvd_cov"].astype(np.float64)
+        ref_count = int(cache["ref_fvd_count"])
+        ref_from_cache = True
+        print(f"GT cache reference: {ref_count} videos")
+    else:
+        print("Extracting I3D features (reference)...")
+        feats_ref = extract_i3d_features(
+            ref_tensors, i3d_model, args.device, args.batch_size,
+        )
+        print(f"  shape: {feats_ref.shape}")
 
     assert feats_gen.shape[1] == _I3D_FEATURE_DIM, (
         f"Expected {_I3D_FEATURE_DIM}-dim I3D features, got {feats_gen.shape[1]}"
     )
 
     # ------------------------------------------------------------------ FVD
-    fvd_score = compute_frechet_distance(feats_gen, feats_ref)
+    if use_gt_cache:
+        gen_sum = feats_gen.sum(axis=0)
+        gen_cov = feats_gen.T @ feats_gen
+        gen_count = feats_gen.shape[0]
+        fvd_score = compute_frechet_from_sufficient_stats(
+            gen_sum, gen_cov, gen_count,
+            ref_sum, ref_cov, ref_count,
+        )
+    else:
+        fvd_score = compute_frechet_distance(feats_gen, feats_ref)
     print(f"\nFVD: {fvd_score:.4f}")
 
     result = {
         "fvd": round(fvd_score, 6),
         "fid": None,
         "num_gen_videos": len(gen_tensors),
-        "num_ref_videos": len(ref_tensors),
+        "num_ref_videos": ref_count if use_gt_cache else len(ref_tensors),
         "num_valid_pairs": n_valid,
         "num_frames_per_clip": args.num_frames,
         "feature_extractor": "i3d_kinetics400_torchscript",
@@ -382,7 +540,10 @@ def main():
         "i3d_weights_sha256": i3d_hash,
         "sample_size_warning": sample_size_warning,
         "gen_dir": str(args.gen_dir),
-        "ref_dir": str(args.ref_dir),
+        "ref_dir": str(args.ref_dir) if args.ref_dir else None,
+        "gt_cache": str(args.gt_cache) if use_gt_cache else None,
+        "pair_by_id": args.pair_by_id,
+        "ref_from_gt_cache": ref_from_cache,
     }
 
     # ------------------------------------------------------------------ optional FID
@@ -396,31 +557,54 @@ def main():
         )
         print(f"  shape: {fid_feats_gen.shape}")
 
-        print("Extracting InceptionV3 features (reference frames)...")
-        fid_feats_ref = extract_fid_features(
-            ref_tensors, inception, args.device,
-        )
-        print(f"  shape: {fid_feats_ref.shape}")
+        if use_gt_cache and "ref_fid_sum" in cache:
+            fid_gen_sum = fid_feats_gen.sum(axis=0)
+            fid_gen_cov = fid_feats_gen.T @ fid_feats_gen
+            fid_gen_frames = fid_feats_gen.shape[0]
+            fid_score = compute_frechet_from_sufficient_stats(
+                fid_gen_sum, fid_gen_cov, fid_gen_frames,
+                cache["ref_fid_sum"].astype(np.float64),
+                cache["ref_fid_cov"].astype(np.float64),
+                int(cache["ref_fid_count"]),
+            )
+        elif not use_gt_cache:
+            print("Extracting InceptionV3 features (reference frames)...")
+            fid_feats_ref = extract_fid_features(
+                ref_tensors, inception, args.device,
+            )
+            print(f"  shape: {fid_feats_ref.shape}")
+            fid_score = compute_frechet_distance(fid_feats_gen, fid_feats_ref)
+        else:
+            fid_score = None
+            print("WARNING: --compute-fid with --gt-cache but cache lacks FID stats",
+                  file=sys.stderr)
 
-        fid_score = compute_frechet_distance(fid_feats_gen, fid_feats_ref)
-        print(f"FID: {fid_score:.4f}")
-        result["fid"] = round(fid_score, 6)
-        result["fid_feature_extractor"] = "inception_v3_imagenet"
-        result["fid_feature_dim"] = _FID_FEATURE_DIM
-        result["fid_num_frames_gen"] = fid_feats_gen.shape[0]
-        result["fid_num_frames_ref"] = fid_feats_ref.shape[0]
+        if fid_score is not None:
+            print(f"FID: {fid_score:.4f}")
+            result["fid"] = round(fid_score, 6)
+            result["fid_feature_extractor"] = "inception_v3_imagenet"
+            result["fid_feature_dim"] = _FID_FEATURE_DIM
+            result["fid_num_frames_gen"] = fid_feats_gen.shape[0]
+            if use_gt_cache and "ref_fid_count" in cache:
+                result["fid_num_frames_ref"] = int(cache["ref_fid_count"])
+            elif not use_gt_cache:
+                result["fid_num_frames_ref"] = fid_feats_ref.shape[0]
 
     # ------------------------------------------------------------------ self-check
     if args.self_check:
-        print("\nSelf-consistency check (ref vs ref)...")
-        fvd_self = compute_frechet_distance(feats_ref, feats_ref)
-        print(f"  FVD(ref, ref) = {fvd_self:.6f}  (expected ~0)")
-        result["self_check_fvd"] = round(fvd_self, 6)
-        if fvd_self > 1.0:
-            print(
-                f"WARNING: Self-check FVD = {fvd_self:.4f} is unexpectedly large.",
-                file=sys.stderr,
-            )
+        if use_gt_cache:
+            print("\nSelf-consistency check skipped with --gt-cache "
+                  "(ref distribution is fixed).", file=sys.stderr)
+        else:
+            print("\nSelf-consistency check (ref vs ref)...")
+            fvd_self = compute_frechet_distance(feats_ref, feats_ref)
+            print(f"  FVD(ref, ref) = {fvd_self:.6f}  (expected ~0)")
+            result["self_check_fvd"] = round(fvd_self, 6)
+            if fvd_self > 1.0:
+                print(
+                    f"WARNING: Self-check FVD = {fvd_self:.4f} is unexpectedly large.",
+                    file=sys.stderr,
+                )
 
     # ------------------------------------------------------------------ wrap up
     elapsed = time.time() - t0
