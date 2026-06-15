@@ -184,62 +184,16 @@ PROGRESS_EVERY: int = 25
 # Canonical video-id extraction (mirrors analyze_per_video_tta_gain.py /
 # extract_video_features_for_tta.py / compute_diffusion_ood_score.py).
 # ---------------------------------------------------------------------------
-_CANONICAL_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*_\d+)")
-
-
-def _canonical_video_id(s: Optional[str]) -> str:
-    if not s:
-        return ""
-    stem = Path(str(s)).stem
-    m = _CANONICAL_PREFIX_RE.match(stem)
-    return m.group(1) if m else stem
-
-
-def _parse_caption_list(raw: str) -> List[str]:
-    import ast
-    raw = (raw or "").strip()
-    if not raw:
-        return []
-    if raw.startswith("[") and raw.endswith("]"):
-        try:
-            obj = ast.literal_eval(raw)
-        except (ValueError, SyntaxError):
-            return [raw]
-        if isinstance(obj, (list, tuple)):
-            out = [str(x).strip() for x in obj if str(x).strip()]
-            return out or [raw]
-    return [raw]
-
-
-def _join_captions(captions: List[str]) -> str:
-    if not captions:
-        return ""
-    return ". ".join(c.rstrip(".") for c in captions)
+from scripts.caption_utils import (
+    canonical_video_id as _canonical_video_id,
+    load_resolved_captions_csv,
+    resolve_caption_for_clip,
+)
 
 
 def _load_captions_csv(path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
-    if not path.exists():
-        print(
-            f"[warn] captions CSV not found at {path}; "
-            "rows will use empty (uncond-equivalent) captions",
-            file=sys.stderr,
-        )
-        return out
-    with path.open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fname = (
-                row.get("filename") or row.get("video_path")
-                or row.get("path") or row.get("video")
-            )
-            if not fname:
-                continue
-            vid = _canonical_video_id(fname)
-            if not vid:
-                continue
-            out[vid] = row.get("caption") or row.get("text") or ""
-    return out
+    """Return {canonical_video_id -> resolved caption string}."""
+    return load_resolved_captions_csv(path, canonical_id=_canonical_video_id)
 
 
 def _list_video_paths(videos_dir: Path) -> List[Path]:
@@ -557,8 +511,7 @@ def _compute_one_video(
 
     del pixel_frames
 
-    captions_list = _parse_caption_list(caption_raw)
-    caption_text = _join_captions(captions_list)
+    caption_text = resolve_caption_for_clip(caption_raw)
     with torch.inference_mode():
         cap_embeds, cap_mask = encode_prompt(
             tokenizer, text_encoder, caption_text,

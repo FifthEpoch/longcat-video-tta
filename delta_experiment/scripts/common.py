@@ -30,6 +30,8 @@ _LONGCAT_DIR = _REPO_ROOT / "LongCat-Video"
 sys.path.insert(0, str(_LONGCAT_DIR))
 sys.path.insert(0, str(_REPO_ROOT))
 
+from scripts.caption_utils import resolve_caption_for_clip, resolve_caption_from_row
+
 from transformers import AutoTokenizer, UMT5EncoderModel
 from longcat_video.modules.scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
@@ -938,36 +940,14 @@ def _ssim_single(pred: torch.Tensor, target: torch.Tensor) -> float:
 # Dataset helpers
 # ============================================================================
 
-def _normalize_caption(raw: Any) -> str:
-    """Normalize metadata captions to a clean string.
+def _normalize_caption(raw: Any, *, segment_index: Optional[int] = None) -> str:
+    """Normalize metadata captions to a single segment-aligned string.
 
-    Handles:
-    - plain strings
-    - list/tuple values (pick first non-empty)
-    - list-like strings such as "['cap1', 'cap2']"
+    Delegates to ``scripts.caption_utils.resolve_caption_for_clip`` so TTA,
+    CLIP gate, and Phase-0 feature scripts share the same selection logic.
+    When ``segment_index`` is omitted, the first non-empty list entry is used.
     """
-    if raw is None:
-        return ""
-    if isinstance(raw, (list, tuple)):
-        for item in raw:
-            s = str(item).strip()
-            if s:
-                return s
-        return ""
-    s = str(raw).strip()
-    if not s:
-        return ""
-    if s.startswith("[") and s.endswith("]"):
-        try:
-            parsed = ast.literal_eval(s)
-            if isinstance(parsed, (list, tuple)):
-                for item in parsed:
-                    t = str(item).strip()
-                    if t:
-                        return t
-        except (ValueError, SyntaxError):
-            pass
-    return s
+    return resolve_caption_for_clip(raw, segment_index=segment_index)
 
 def load_ucf101_video_list(
     data_dir: str,
@@ -999,7 +979,7 @@ def load_ucf101_video_list(
                     vp = data_dir / fname
                 if not vp.exists():
                     continue
-                caption = _normalize_caption(row.get("caption", row.get("text", "")))
+                caption = resolve_caption_from_row(row)
                 class_name = row.get("category", row.get("class_name", "unknown"))
                 video_entries.append({
                     "video_path": str(vp),
@@ -1128,7 +1108,7 @@ def load_panda70m_video_list(
                 if vp.exists():
                     video_entries.append({
                         "video_path": str(vp),
-                        "caption": _normalize_caption(row.get("caption", row.get("text", ""))),
+                        "caption": resolve_caption_from_row(row),
                         "class_name": "panda70m",
                     })
     else:

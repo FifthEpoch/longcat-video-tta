@@ -57,6 +57,11 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.caption_utils import load_resolved_captions_csv
+
 
 # ---------------------------------------------------------------------------
 # Canonical video-id extraction (mirrors plot_dynamicness_correlation.py)
@@ -194,25 +199,8 @@ def load_dynamicness(path: Path, flow_key: str = "mean_flow") -> Dict[str, float
 
 
 def load_captions(path: Path) -> Dict[str, str]:
-    """Return {canonical_video_id -> caption}. Tolerant of missing files."""
-    if not path.exists():
-        print(f"[warn] captions CSV not found at {path}; caption fields will be empty",
-              file=sys.stderr)
-        return {}
-    out: Dict[str, str] = {}
-    with path.open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fname = (row.get("filename") or row.get("video_path")
-                     or row.get("path") or row.get("video"))
-            if not fname:
-                continue
-            vid = _canonical_video_id(fname)
-            if not vid:
-                continue
-            cap = row.get("caption") or row.get("text") or ""
-            out[vid] = cap
-    return out
+    """Return {canonical_video_id -> resolved caption}. Tolerant of missing files."""
+    return load_resolved_captions_csv(path, canonical_id=_canonical_video_id)
 
 
 # ---------------------------------------------------------------------------

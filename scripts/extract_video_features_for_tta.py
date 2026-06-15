@@ -132,7 +132,6 @@ CLI mirrors ``scripts/analyze_per_video_tta_gain.py`` conventions:
 from __future__ import annotations
 
 import argparse
-import ast
 import csv
 import math
 import re
@@ -142,6 +141,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.caption_utils import (
+    canonical_video_id as _canonical_video_id,
+    load_resolved_captions_csv,
+    resolve_caption_for_clip,
+)
 
 # Lazy / guarded imports so the script can still print --help on machines
 # that do not have torch installed.  All heavy imports happen inside main()
@@ -203,51 +211,7 @@ TIER3_COLUMNS: Tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Canonical video-id extraction (mirrors analyze_per_video_tta_gain.py)
 # ---------------------------------------------------------------------------
-_CANONICAL_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*_\d+)")
-
-
-def _canonical_video_id(s: Optional[str]) -> str:
-    if not s:
-        return ""
-    stem = Path(str(s)).stem
-    m = _CANONICAL_PREFIX_RE.match(stem)
-    return m.group(1) if m else stem
-
-
-# ---------------------------------------------------------------------------
-# Caption parsing (Panda metadata.csv stores a stringified Python list)
-# ---------------------------------------------------------------------------
-def parse_caption(raw: str) -> List[str]:
-    """Return the list of caption strings encoded in `raw`.
-
-    Panda's metadata.csv stores captions as a Python literal list, e.g.
-    ``"['cap1', 'cap2', 'cap3']"``.  UCF-style entries are bare strings.
-    Always returns a non-empty list when raw is non-empty.
-    """
-    raw = (raw or "").strip()
-    if not raw:
-        return []
-    if raw.startswith("[") and raw.endswith("]"):
-        try:
-            obj = ast.literal_eval(raw)
-        except (ValueError, SyntaxError):
-            return [raw]
-        if isinstance(obj, (list, tuple)):
-            out = [str(x).strip() for x in obj if str(x).strip()]
-            return out or [raw]
-    return [raw]
-
-
-def caption_for_clip(captions: List[str]) -> str:
-    """Single canonical text used for the CLIP text encoding (joined)."""
-    if not captions:
-        return ""
-    # Join with ". " so a multi-caption clip's text embedding is the mean
-    # *content* across captions (matches what the diffusion model's text
-    # encoder receives when caption is the raw stringified list at
-    # generation time, but in a way CLIP's 77-token tokenizer can handle).
-    joined = ". ".join(c.rstrip(".") for c in captions)
-    return joined
+# Provided by scripts.caption_utils.canonical_video_id (imported above).
 
 
 # ---------------------------------------------------------------------------
@@ -645,31 +609,11 @@ class _DINOScorer:
 
 
 # ---------------------------------------------------------------------------
-# Caption CSV loader (mirrors analyze_per_video_tta_gain.py.load_captions)
+# Caption CSV loader — segment-aligned single string per video
 # ---------------------------------------------------------------------------
 def load_captions_csv(path: Path) -> Dict[str, str]:
-    """Return {canonical_video_id -> raw caption string}.  Tolerant of
-    Panda's metadata.csv schema (filename, caption) and the simpler UCF-101
-    one (filename, text)."""
-    out: Dict[str, str] = {}
-    if not path.exists():
-        print(f"[warn] captions CSV not found at {path}; rows will use empty "
-              "captions and CLIP text features will be NaN",
-              file=sys.stderr)
-        return out
-    with path.open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fname = (row.get("filename") or row.get("video_path")
-                     or row.get("path") or row.get("video"))
-            if not fname:
-                continue
-            vid = _canonical_video_id(fname)
-            if not vid:
-                continue
-            cap = row.get("caption") or row.get("text") or ""
-            out[vid] = cap
-    return out
+    """Return {canonical_video_id -> resolved caption string}."""
+    return load_resolved_captions_csv(path, canonical_id=_canonical_video_id)
 
 
 # ---------------------------------------------------------------------------
@@ -804,8 +748,7 @@ def extract_one_video(
 ) -> dict:
     vs, ve = visible_range
     n_visible = ve - vs
-    captions = parse_caption(caption_raw)
-    caption_text = caption_for_clip(captions)
+    caption_text = resolve_caption_for_clip(caption_raw)
 
     # ---- decode TTA-visible frames once ------------------------------------
     visible_frames = decode_window(
