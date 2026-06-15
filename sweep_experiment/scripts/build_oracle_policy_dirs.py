@@ -28,6 +28,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -43,13 +44,137 @@ _METHOD_DIRS = {
     "LORA_R8_TTA": "LORA_R8_TTA",
 }
 
-_SUFFIXES = (
-    "_delta_a.mp4",
-    "_lora.mp4",
-    "_full.mp4",
-    "_tinylora.mp4",
-    ".mp4",
-)
+
+def _numeric_id(video_name: str) -> Optional[int]:
+    """``panda_0867`` -> 867 (matches post-rename ``867_*_<method>.mp4``)."""
+    m = re.search(r"(\d+)$", video_name)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+def _load_chunk_summary_order(summary: dict) -> Dict[str, int]:
+    """Return {video_name: results-array index} from a chunk summary.json."""
+    out: Dict[str, int] = {}
+    pv = summary.get("per_video_results") or summary.get("results") or []
+    for i, r in enumerate(pv):
+        v = r.get("video_name") or r.get("video_id")
+        if v:
+            out[v] = i
+    return out
+
+
+def find_mp4(
+    videos_dir: Path,
+    video_name: str,
+    idx_by_name: Dict[str, int],
+) -> Optional[Path]:
+    """Locate generated mp4 for ``video_name`` (handles post-rename outputs).
+
+    Mirrors ``scripts/build_cover_image_filmstrips.py`` — NOTTA/AdaSteer
+    runs rename outputs to ``<idx>_<caption-slug>_..._<method>.mp4`` while
+    LoRA keeps ``<video_name>_lora.mp4``.
+    """
+    if not videos_dir.is_dir():
+        return None
+    direct = videos_dir / f"{video_name}.mp4"
+    if direct.exists():
+        return direct
+    pre = sorted(videos_dir.glob(f"{video_name}*.mp4"))
+    if pre:
+        return pre[0]
+    nid = _numeric_id(video_name)
+    if nid is not None:
+        num_glob = sorted(videos_dir.glob(f"{nid}_*.mp4"))
+        if num_glob:
+            return num_glob[0]
+    idx = idx_by_name.get(video_name)
+    if idx is not None:
+        post = sorted(videos_dir.glob(f"{idx}_*.mp4"))
+        if post:
+            return post[0]
+    sub = list(videos_dir.glob(f"*{video_name}*.mp4"))
+    if len(sub) == 1:
+        return sub[0]
+    return None
+
+
+def _is_under_dir(path: Path, parent: Optional[Path]) -> bool:
+    if parent is None:
+        return False
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def index_method_videos(
+    series_root: Path,
+    method: str,
+    *,
+    ref_dir: Optional[Path] = None,
+) -> Dict[str, Path]:
+    """Map canonical ``panda_XXXX`` -> absolute path to saved generated mp4."""
+    run_dir = series_root / method
+    if not run_dir.is_dir():
+        raise FileNotFoundError(f"Method dir not found: {run_dir}")
+
+    ref_resolved = ref_dir.resolve() if ref_dir else None
+    datasets_root = (_REPO_ROOT / "datasets").resolve()
+    out: Dict[str, Path] = {}
+
+    chunk_dirs = sorted(run_dir.glob("chunk_*/"))
+    if not chunk_dirs:
+        chunk_dirs = [run_dir]
+
+    for chunk_dir in chunk_dirs:
+        videos_dir = chunk_dir / "videos"
+        summary_path = chunk_dir / "summary.json"
+        if not summary_path.exists() and chunk_dir == run_dir:
+            summary_path = run_dir / "merged_summary.json"
+        if not summary_path.exists():
+            continue
+
+        with summary_path.open(encoding="utf-8") as f:
+            summary = json.load(f)
+        idx_by_name = _load_chunk_summary_order(summary)
+
+        for rec in summary.get("results", []):
+            if not rec.get("success", False):
+                continue
+            vname = rec.get("video_name", "")
+            vid = canonical_video_id(vname)
+            if not vid:
+                continue
+
+            candidates: List[Path] = []
+            mp4 = find_mp4(videos_dir, vname, idx_by_name)
+            if mp4 is not None:
+                candidates.append(mp4.resolve())
+
+            op = rec.get("output_path")
+            if op and videos_dir.is_dir():
+                p = Path(op).resolve()
+                if p.exists() and p.suffix.lower() == ".mp4" and _is_under_dir(p, videos_dir):
+                    candidates.append(p)
+
+            chosen: Optional[Path] = None
+            for p in candidates:
+                if _is_under_dir(p, ref_resolved):
+                    continue
+                if _is_under_dir(p, datasets_root):
+                    continue
+                chosen = p
+                break
+
+            if chosen is not None:
+                out[vid] = chosen
+
+    return out
 
 
 def _load_gains(path: Path) -> List[dict]:
@@ -64,48 +189,6 @@ def _float_or_none(val) -> Optional[float]:
         return float(val)
     except (TypeError, ValueError):
         return None
-
-
-def index_method_videos(series_root: Path, method: str) -> Dict[str, Path]:
-    """Map canonical ``panda_XXXX`` -> absolute path to saved generated mp4."""
-    run_dir = series_root / method
-    if not run_dir.is_dir():
-        raise FileNotFoundError(f"Method dir not found: {run_dir}")
-
-    out: Dict[str, Path] = {}
-    for chunk_dir in sorted(run_dir.glob("chunk_*/")):
-        videos_dir = chunk_dir / "videos"
-        summary_path = chunk_dir / "summary.json"
-        if summary_path.exists():
-            with summary_path.open(encoding="utf-8") as f:
-                summary = json.load(f)
-            for rec in summary.get("results", []):
-                if not rec.get("success", False):
-                    continue
-                vname = rec.get("video_name", "")
-                vid = canonical_video_id(vname)
-                op = rec.get("output_path")
-                if vid and op:
-                    p = Path(op)
-                    if p.exists():
-                        out[vid] = p.resolve()
-                        continue
-                if not vid or not videos_dir.is_dir():
-                    continue
-                for suf in _SUFFIXES:
-                    cand = videos_dir / f"{vname}{suf}"
-                    if cand.exists():
-                        out[vid] = cand.resolve()
-                        break
-
-        if not videos_dir.is_dir():
-            continue
-        for mp4 in videos_dir.glob("*.mp4"):
-            vid = canonical_video_id(mp4.name)
-            if vid and vid not in out:
-                out[vid] = mp4.resolve()
-
-    return out
 
 
 def _pick_always(method: str) -> Callable[[dict], str]:
@@ -257,6 +340,10 @@ def main() -> int:
         help="Subset of policy names (default: all)",
     )
     ap.add_argument("--clean", action="store_true", help="Remove old symlinks first")
+    ap.add_argument(
+        "--min-linked", type=int, default=900,
+        help="Fail if any policy links fewer than this many videos (default 900)",
+    )
     args = ap.parse_args()
 
     if not args.gains_csv.exists():
@@ -268,15 +355,18 @@ def main() -> int:
         print("ERROR: empty gains CSV", file=sys.stderr)
         return 2
 
-    video_index: Dict[str, Dict[str, Path]] = {}
-    for method in _METHOD_DIRS:
-        video_index[method] = index_method_videos(args.series_root, method)
-        print(f"  indexed {method}: {len(video_index[method])} videos")
-
-    policy_names = args.policies or list(POLICY_FNS) + ["oracle_top50_ada_dpsnr"]
     ref_dir = args.ref_dir
     if ref_dir is None:
         ref_dir = Path("datasets/panda_1000_480p/videos")
+
+    video_index: Dict[str, Dict[str, Path]] = {}
+    for method in _METHOD_DIRS:
+        video_index[method] = index_method_videos(
+            args.series_root, method, ref_dir=ref_dir,
+        )
+        print(f"  indexed {method}: {len(video_index[method])} videos")
+
+    policy_names = args.policies or list(POLICY_FNS) + ["oracle_top50_ada_dpsnr"]
 
     exit_code = 0
     for pname in policy_names:
@@ -296,6 +386,12 @@ def main() -> int:
         if missing:
             exit_code = 1
             print(f"  MISSING {len(missing)} (first 10): {missing[:10]}", file=sys.stderr)
+        if linked < args.min_linked:
+            exit_code = 1
+            print(
+                f"  ERROR: {pname} linked {linked} < --min-linked={args.min_linked}",
+                file=sys.stderr,
+            )
 
     return exit_code
 

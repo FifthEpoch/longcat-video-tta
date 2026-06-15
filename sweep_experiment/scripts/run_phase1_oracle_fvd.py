@@ -31,6 +31,30 @@ DEFAULT_POLICIES = [
     "oracle_top50_ada_dpsnr",
 ]
 
+MIN_LINKED_DEFAULT = 900
+
+
+def _clear_stale_fvd_outputs(output_root: Path, policies: list) -> None:
+    """Remove prior fvd.json so a failed run cannot be mistaken for success."""
+    for policy in policies:
+        fvd_json = output_root / policy / "fvd.json"
+        if fvd_json.exists():
+            fvd_json.unlink()
+    summary_path = output_root / "fvd_summary.json"
+    if summary_path.exists():
+        summary_path.unlink()
+
+
+def _read_linked_count(output_root: Path, policy: str) -> int:
+    manifest_path = output_root / policy / "manifest.json"
+    if not manifest_path.exists():
+        return 0
+    try:
+        blob = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return 0
+    return int(blob.get("linked_videos") or 0)
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phase-1 oracle FVD batch eval")
@@ -63,11 +87,16 @@ def main() -> int:
     ap.add_argument("--skip-build", action="store_true")
     ap.add_argument("--force", action="store_true", help="Pass --force to eval_fvd")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument(
+        "--min-linked", type=int, default=MIN_LINKED_DEFAULT,
+        help="Skip FVD eval for policies with fewer symlinked videos",
+    )
     args = ap.parse_args()
 
     policies = args.policies or DEFAULT_POLICIES
 
     if not args.skip_build:
+        _clear_stale_fvd_outputs(args.output_root, policies)
         build_cmd = [
             sys.executable,
             str(_REPO_ROOT / "sweep_experiment/scripts/build_oracle_policy_dirs.py"),
@@ -75,13 +104,18 @@ def main() -> int:
             "--series-root", str(args.series_root),
             "--output-root", str(args.output_root),
             "--clean",
+            "--min-linked", str(args.min_linked),
             "--policies", *policies,
         ]
         print("Building policy dirs...")
         print(" ", " ".join(build_cmd))
         rc = subprocess.call(build_cmd, cwd=str(_REPO_ROOT))
         if rc != 0:
-            print("ERROR: build_oracle_policy_dirs failed", file=sys.stderr)
+            print(
+                "ERROR: build_oracle_policy_dirs failed — "
+                "FVD eval aborted (stale fvd.json cleared).",
+                file=sys.stderr,
+            )
             return rc
 
     if not args.gt_cache.exists():
@@ -92,11 +126,22 @@ def main() -> int:
 
     eval_script = _REPO_ROOT / "sweep_experiment/scripts/eval_fvd.py"
     summary = {}
+    exit_code = 0
     for policy in policies:
         gen_dir = args.output_root / policy / "videos"
         out_json = args.output_root / policy / "fvd.json"
+        linked = _read_linked_count(args.output_root, policy)
+        if linked < args.min_linked:
+            print(
+                f"SKIP {policy}: only {linked} symlinks "
+                f"(need >= {args.min_linked}); not writing fvd.json",
+                file=sys.stderr,
+            )
+            exit_code = 1
+            continue
         if not gen_dir.is_dir() or not any(gen_dir.glob("*.mp4")):
             print(f"SKIP {policy}: no videos in {gen_dir}", file=sys.stderr)
+            exit_code = 1
             continue
 
         cmd = [
@@ -129,7 +174,7 @@ def main() -> int:
     for k, v in summary.items():
         print(f"  {k}: {v}")
     print(f"\nWrote {summary_path}")
-    return 0
+    return exit_code if exit_code else 0
 
 
 if __name__ == "__main__":
