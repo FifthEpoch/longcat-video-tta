@@ -3,6 +3,7 @@
 
 Reads ``per_video_gains.csv`` from analyze_per_video_tta_gain.py and reports:
   - Oracle (best PSNR) uplift vs always-NOTTA / ADA / LoRA
+  - 2-way oracle (NOTTA vs AdaSteer only; deployable upper bound without LoRA)
   - Head-to-head win magnitudes when LoRA vs AdaSteer wins on ΔPSNR
   - Oracle winner breakdowns (NOTTA / ADA / LoRA)
 
@@ -75,6 +76,14 @@ def oracle_winner(row: dict) -> str:
         BASELINE: _f(row, f"{BASELINE}_psnr"),
         ADA: _f(row, f"{ADA}_psnr"),
         LORA: _f(row, f"{LORA}_psnr"),
+    }
+    return max(psnrs, key=lambda k: psnrs[k])
+
+
+def oracle_2way_winner(row: dict) -> str:
+    psnrs = {
+        BASELINE: _f(row, f"{BASELINE}_psnr"),
+        ADA: _f(row, f"{ADA}_psnr"),
     }
     return max(psnrs, key=lambda k: psnrs[k])
 
@@ -153,6 +162,74 @@ def build_report(rows: List[dict]) -> str:
         "",
         f"{sum(1 for g in oracle_gain if g > 0)} / {n} videos ({100*sum(1 for g in oracle_gain if g > 0)/n:.1f}%) "
         "have oracle gain > 0.",
+        "",
+    ]
+
+    oracle2_psnr: List[float] = []
+    oracle2_gain: List[float] = []
+    winners2: Dict[str, int] = {BASELINE: 0, ADA: 0}
+    for r in rows:
+        w2 = oracle_2way_winner(r)
+        winners2[w2] += 1
+        p2 = {
+            BASELINE: _f(r, f"{BASELINE}_psnr"),
+            ADA: _f(r, f"{ADA}_psnr"),
+        }[w2]
+        oracle2_psnr.append(p2)
+        oracle2_gain.append(p2 - _f(r, f"{BASELINE}_psnr"))
+
+    lines += [
+        "## 2-way oracle (NOTTA vs AdaSteer only)",
+        "",
+        "Per video, pick max(PSNR) between NOTTA and AdaSteer; LoRA excluded. "
+        "This is the realistic deployable upper bound when LoRA is not in the routing set.",
+        "",
+        "| Policy | Mean PSNR | Δ vs always-NOTTA | Δ vs always-ADA |",
+        "|---|---:|---:|---:|",
+        f"| Always NOTTA | {mean_psnr(notta_psnr):.3f} dB | 0.000 dB | "
+        f"{mean_psnr(notta_psnr) - mean_psnr(ada_psnr):+.3f} dB |",
+        f"| Always AdaSteer | {mean_psnr(ada_psnr):.3f} dB | "
+        f"{mean_psnr(ada_psnr) - mean_psnr(notta_psnr):+.3f} dB | 0.000 dB |",
+        f"| **2-way oracle (NOTTA / ADA)** | **{mean_psnr(oracle2_psnr):.3f} dB** | "
+        f"**{mean_psnr(oracle2_psnr) - mean_psnr(notta_psnr):+.3f} dB** | "
+        f"**{mean_psnr(oracle2_psnr) - mean_psnr(ada_psnr):+.3f} dB** |",
+        f"| 3-way oracle (NOTTA / ADA / LoRA) | {mean_psnr(oracle_psnr):.3f} dB | "
+        f"{mean_psnr(oracle_psnr) - mean_psnr(notta_psnr):+.3f} dB | "
+        f"{mean_psnr(oracle_psnr) - mean_psnr(ada_psnr):+.3f} dB |",
+        f"| Skip AdaSteer if ΔPSNR ≤ 0 | {mean_psnr(skip_ada):.3f} dB | "
+        f"{mean_psnr(skip_ada) - mean_psnr(notta_psnr):+.3f} dB | "
+        f"{mean_psnr(skip_ada) - mean_psnr(ada_psnr):+.3f} dB |",
+        "",
+        f"**2-way picks:** NOTTA {winners2[BASELINE]} ({100*winners2[BASELINE]/n:.1f}%) · "
+        f"AdaSteer {winners2[ADA]} ({100*winners2[ADA]/n:.1f}%)",
+        "",
+        "| Metric | N | Mean | Median | p25 | p75 |",
+        "|---|---:|---:|---:|---:|---:|",
+        _fmt_stats("2-way oracle ΔPSNR vs NOTTA", oracle2_gain),
+        "",
+    ]
+
+    ada2_wins = [r for r in rows if oracle_2way_winner(r) == ADA]
+    notta2_wins = [r for r in rows if oracle_2way_winner(r) == BASELINE]
+    lines += [
+        "### When AdaSteer wins 2-way oracle",
+        "",
+        "| Metric | N | Mean | Median | p25 | p75 |",
+        "|---|---:|---:|---:|---:|---:|",
+        _fmt_stats(
+            "Margin: Ada PSNR − NOTTA PSNR",
+            [_f(r, f"{ADA}_psnr") - _f(r, f"{BASELINE}_psnr") for r in ada2_wins],
+        ),
+        _fmt_stats("Ada ΔPSNR vs NOTTA", [_f(r, f"{ADA}_dpsnr") for r in ada2_wins]),
+        "",
+        "### When NOTTA wins 2-way oracle",
+        "",
+        "| Metric | N | Mean | Median | p25 | p75 |",
+        "|---|---:|---:|---:|---:|---:|",
+        _fmt_stats(
+            "Margin: NOTTA PSNR − Ada PSNR",
+            [_f(r, f"{BASELINE}_psnr") - _f(r, f"{ADA}_psnr") for r in notta2_wins],
+        ),
         "",
     ]
 

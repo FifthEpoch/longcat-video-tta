@@ -57,3 +57,7 @@ comparison_methods/slurm_log/
 # Documentation-only artifacts not needed on cluster (added 2026-06-12)
 sweep_experiment/reports/HYPOTHESES_*.md
 sweep_experiment/reports/PRESENTATION_*.md
+
+# Generated per-video analysis reports (re-run scripts locally / on cluster)
+sweep_experiment/reports/per_video_analysis/**/routing_win_magnitudes.md
+sweep_experiment/reports/per_video_analysis/**/oracle_winner_analysis/
