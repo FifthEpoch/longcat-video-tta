@@ -99,6 +99,25 @@ def ffprobe_info(path: Path) -> Tuple[int, int, int, int]:
     return size, nb_frames, width, height
 
 
+def _ensure_uint8_hwc_stack(arr: np.ndarray) -> np.ndarray:
+    """Coerce decoded frames to contiguous uint8 (T, H, W, 3) for PNG encode."""
+    if hasattr(arr, "detach") and hasattr(arr, "cpu") and hasattr(arr, "numpy"):
+        arr = arr.detach().cpu().numpy()
+    if isinstance(arr, (list, tuple)):
+        arr = np.stack([np.asarray(x) for x in arr], axis=0)
+    arr = np.asarray(arr)
+    if arr.ndim == 4 and arr.shape[1] == 3 and arr.shape[-1] != 3:
+        arr = np.transpose(arr, (0, 2, 3, 1))
+    if arr.dtype != np.uint8:
+        if np.issubdtype(arr.dtype, np.floating):
+            finite_max = float(np.nanmax(arr)) if arr.size else 0.0
+            if finite_max <= 1.5:
+                arr = arr * 255.0
+            arr = np.clip(arr, 0.0, 255.0)
+        arr = arr.astype(np.uint8, copy=False)
+    return np.ascontiguousarray(arr)
+
+
 def decode_window_rgb(path: Path, start: int, n_frames: int) -> np.ndarray:
     import av
 
@@ -112,7 +131,8 @@ def decode_window_rgb(path: Path, start: int, n_frames: int) -> np.ndarray:
                 continue
             if len(frames) >= n_frames:
                 break
-            frames.append(frame.to_ndarray(format="rgb24"))
+            img = np.asarray(frame.to_ndarray(format="rgb24"))
+            frames.append(np.ascontiguousarray(img.astype(np.uint8, copy=False)))
             decoded += 1
     finally:
         container.close()
@@ -120,20 +140,21 @@ def decode_window_rgb(path: Path, start: int, n_frames: int) -> np.ndarray:
         raise ValueError(f"No frames decoded from {path}")
     while len(frames) < n_frames:
         frames.append(frames[-1].copy())
-    return np.stack(frames[:n_frames], axis=0)
+    return _ensure_uint8_hwc_stack(np.stack(frames[:n_frames], axis=0))
 
 
 def png_bpp_mean(frames_rgb: np.ndarray) -> float:
-    import cv2
+    from io import BytesIO
 
+    from PIL import Image
+
+    frames_rgb = _ensure_uint8_hwc_stack(frames_rgb)
+    h, w = frames_rgb.shape[1:3]
     bpps: List[float] = []
     for t in range(frames_rgb.shape[0]):
-        bgr = cv2.cvtColor(frames_rgb[t], cv2.COLOR_RGB2BGR)
-        ok, buf = cv2.imencode(".png", bgr)
-        if not ok:
-            continue
-        h, w = frames_rgb.shape[1:3]
-        bpps.append(8.0 * len(buf) / max(h * w, 1))
+        buf = BytesIO()
+        Image.fromarray(frames_rgb[t]).save(buf, format="PNG")
+        bpps.append(8.0 * len(buf.getvalue()) / max(h * w, 1))
     return float(np.mean(bpps)) if bpps else float("nan")
 
 

@@ -193,8 +193,7 @@ def main() -> int:
                 height=480,
                 width=832,
                 start_frame=tta_start,
-                device=args.device,
-            )
+            ).to(args.device, torch.bfloat16)
             l1, lp, has_lpips = compute_rec_errors(
                 vae, pixel, args.device, lpips_helper,
             )
