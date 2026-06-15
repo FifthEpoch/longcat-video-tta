@@ -31,6 +31,11 @@ sys.path.insert(0, str(_LONGCAT_DIR))
 sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.caption_utils import resolve_caption_for_clip, resolve_caption_from_row
+from scripts.frame_window import (
+    estimate_clip_candidate_frames,
+    sample_clip_frame_offsets,
+    tta_visible_range,
+)
 
 from transformers import AutoTokenizer, UMT5EncoderModel
 from longcat_video.modules.scheduling_flow_match_euler_discrete import (
@@ -1693,12 +1698,9 @@ def _estimate_clip_candidate_frames(
     sampling_mode: str,
     late_fraction: float,
 ) -> int:
-    window_len = max(1, int(tta_total_frames))
-    mode = (sampling_mode or "full_window").lower()
-    if mode == "late_only":
-        frac = min(max(float(late_fraction), 1e-6), 1.0)
-        return max(1, int(round(window_len * frac)))
-    return window_len
+    return estimate_clip_candidate_frames(
+        tta_total_frames, sampling_mode, late_fraction,
+    )
 
 
 def validate_tta_feature_budget(args, context: str = "") -> Dict[str, Any]:
@@ -1921,26 +1923,9 @@ def _sample_clip_frame_offsets(
     late_fraction: float = 0.4,
 ) -> List[int]:
     """Pick frame offsets inside a TTA window for CLIP scoring."""
-    if window_len <= 0:
-        return []
-
-    if sampling_mode == "late_only":
-        frac = min(max(float(late_fraction), 1e-6), 1.0)
-        late_len = max(1, int(round(window_len * frac)))
-        candidate_start = max(0, window_len - late_len)
-        candidates = list(range(candidate_start, window_len))
-    else:
-        candidates = list(range(window_len))
-
-    if not candidates:
-        return []
-
-    k = max(1, min(int(sample_frames), len(candidates)))
-    if k == 1:
-        return [candidates[-1]]
-
-    pos = np.linspace(0, len(candidates) - 1, num=k, dtype=int)
-    return [candidates[int(i)] for i in pos]
+    return sample_clip_frame_offsets(
+        window_len, sample_frames, sampling_mode, late_fraction,
+    )
 
 
 def _decode_video_window_for_clip(
@@ -2013,8 +1998,12 @@ def evaluate_clip_gate(
         "clip_gate_log_only": bool(log_only),
         "clip_gate_fail_open": bool(fail_open),
         "clip_alignment_score": None,
-        "clip_gate_window_start_frame": max(0, int(gen_start_frame - tta_total_frames)),
-        "clip_gate_window_end_frame": int(gen_start_frame),
+        "clip_gate_window_start_frame": tta_visible_range(
+            gen_start_frame, tta_total_frames,
+        )[0],
+        "clip_gate_window_end_frame": tta_visible_range(
+            gen_start_frame, tta_total_frames,
+        )[1],
         "clip_gate_sampled_frames": [],
         "clip_gate_decision": "run_tta",
         "clip_gate_reason": "gate_disabled",

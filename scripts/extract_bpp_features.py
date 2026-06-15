@@ -30,12 +30,13 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-TTA_TOTAL_FRAMES: int = 48
-GEN_START_FRAME: int = 48
-AUTO_TTA_VISIBLE_RANGE: Tuple[int, int] = (
-    max(0, GEN_START_FRAME - TTA_TOTAL_FRAMES),
-    GEN_START_FRAME,
+from scripts.frame_window import (
+    PANDA_1000V_STANDARD,
+    parse_frame_range_arg,
 )
+
+_cfg = PANDA_1000V_STANDARD
+AUTO_TTA_VISIBLE_RANGE = _cfg.tta_visible_range()
 
 _CANONICAL_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*_\d+)")
 
@@ -46,13 +47,6 @@ def _canonical_video_id(s: Optional[str]) -> str:
     stem = Path(str(s)).stem
     m = _CANONICAL_PREFIX_RE.match(stem)
     return m.group(1) if m else stem
-
-
-def _parse_frame_range_arg(arg: str, default: Tuple[int, int]) -> Tuple[int, int]:
-    if not arg or arg.lower() == "auto":
-        return default
-    a, b = arg.split(":", 1)
-    return int(a), int(b)
 
 
 def list_video_paths(videos_dir: Path) -> List[Path]:
@@ -167,7 +161,7 @@ def main() -> int:
     ap.add_argument("--resume", action="store_true")
     args = ap.parse_args()
 
-    visible = _parse_frame_range_arg(args.tta_visible_frames, AUTO_TTA_VISIBLE_RANGE)
+    visible = parse_frame_range_arg(args.tta_visible_frames, AUTO_TTA_VISIBLE_RANGE)
     n_visible = visible[1] - visible[0]
     fieldnames = [
         "video_id", "n_frames_used", "tta_visible_range",
