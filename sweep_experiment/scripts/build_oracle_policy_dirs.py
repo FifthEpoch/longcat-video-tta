@@ -80,6 +80,11 @@ def find_mp4(
     """
     if not videos_dir.is_dir():
         return None
+    # Prefer ``<video_name>_lora.mp4`` before bare ``<video_name>.mp4`` so a
+    # GT copy in the chunk dir cannot shadow the LoRA generation.
+    lora = videos_dir / f"{video_name}_lora.mp4"
+    if lora.exists():
+        return lora
     direct = videos_dir / f"{video_name}.mp4"
     if direct.exists():
         return direct

@@ -232,6 +232,8 @@ def main() -> int:
             sys.executable, str(eval_script),
             "--gen-dir", str(gen_dir),
             "--gt-cache", str(args.gt_cache),
+            "--num-cond-frames", str(DEFAULT_NUM_COND_FRAMES),
+            "--num-gen-frames", str(DEFAULT_NUM_GEN_FRAMES),
             "--min-videos", "256",
             "--output", str(out_json),
             "--device", args.device,

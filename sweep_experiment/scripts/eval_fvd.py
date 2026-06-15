@@ -104,10 +104,28 @@ def load_video_as_tensor(
     video_path: str,
     num_frames: int = 16,
     size: int = 224,
+    *,
+    num_cond_frames: int = 0,
+    num_gen_frames: Optional[int] = None,
 ) -> Optional[torch.Tensor]:
-    """Load video as [1, T, C, H, W] float32 tensor in [0, 1]."""
+    """Load video as [1, T, C, H, W] float32 tensor in [0, 1].
+
+    When *num_gen_frames* is set, decodes ``num_cond_frames + num_gen_frames``
+    from the clip start and returns only the generated tail
+    ``[num_cond_frames : num_cond_frames + num_gen_frames]``, matching
+    ``OnlineFVDFIDAccumulator.update`` in ``delta_experiment/scripts/common.py``.
+    """
     import av
     from torchvision.transforms import functional as TF
+
+    if num_gen_frames is not None:
+        load_count = num_cond_frames + num_gen_frames
+        slice_start = num_cond_frames
+        slice_end = num_cond_frames + num_gen_frames
+    else:
+        load_count = num_frames
+        slice_start = 0
+        slice_end = num_frames
 
     try:
         container = av.open(video_path)
@@ -118,7 +136,7 @@ def load_video_as_tensor(
     frames: list = []
     try:
         for frame in container.decode(video=0):
-            if len(frames) >= num_frames:
+            if len(frames) >= load_count:
                 break
             frames.append(frame.to_image())
     except Exception as exc:
@@ -130,11 +148,15 @@ def load_video_as_tensor(
     if len(frames) == 0:
         return None
 
-    while len(frames) < num_frames:
+    while len(frames) < load_count:
         frames.append(frames[-1])
 
+    selected = frames[slice_start:slice_end]
+    if not selected:
+        return None
+
     tensors = []
-    for img in frames[:num_frames]:
+    for img in selected:
         img = TF.resize(img, size, interpolation=TF.InterpolationMode.BILINEAR)
         img = TF.center_crop(img, size)
         tensors.append(TF.to_tensor(img))  # [C, H, W] in [0, 1]
@@ -357,7 +379,17 @@ def main():
     )
     parser.add_argument(
         "--num-frames", type=int, default=16,
-        help="Frames per clip (default: 16)",
+        help="Frames per clip when --num-gen-frames is unset (default: 16)",
+    )
+    parser.add_argument(
+        "--num-cond-frames", type=int, default=0,
+        help="Conditioning prefix to skip before scoring (default: 0). "
+        "Matches online FVD when paired with --num-gen-frames.",
+    )
+    parser.add_argument(
+        "--num-gen-frames", type=int, default=None,
+        help="Score only generated tail frames "
+        "[cond:cond+gen] per common.py online FVD (default: use --num-frames).",
     )
     parser.add_argument(
         "--batch-size", type=int, default=4,
@@ -440,8 +472,16 @@ def main():
     else:
         load_targets = [gp for gp, _ in pairs]
 
+    scored_frames = (
+        args.num_gen_frames if args.num_gen_frames is not None else args.num_frames
+    )
     for vp in load_targets:
-        t = load_video_as_tensor(str(vp), args.num_frames)
+        t = load_video_as_tensor(
+            str(vp),
+            args.num_frames,
+            num_cond_frames=args.num_cond_frames,
+            num_gen_frames=args.num_gen_frames,
+        )
         if t is not None:
             gen_tensors.append(t)
             gen_paths_valid.append(vp)
@@ -454,7 +494,12 @@ def main():
             rp = ref_by_gen.get(gp)
             if rp is None:
                 continue
-            t = load_video_as_tensor(str(rp), args.num_frames)
+            t = load_video_as_tensor(
+                str(rp),
+                args.num_frames,
+                num_cond_frames=args.num_cond_frames,
+                num_gen_frames=args.num_gen_frames,
+            )
             if t is not None:
                 ref_tensors.append(t)
 
@@ -533,7 +578,9 @@ def main():
         "num_gen_videos": len(gen_tensors),
         "num_ref_videos": ref_count if use_gt_cache else len(ref_tensors),
         "num_valid_pairs": n_valid,
-        "num_frames_per_clip": args.num_frames,
+        "num_frames_per_clip": scored_frames,
+        "num_cond_frames": args.num_cond_frames,
+        "num_gen_frames": args.num_gen_frames,
         "feature_extractor": "i3d_kinetics400_torchscript",
         "feature_dim": _I3D_FEATURE_DIM,
         "normalization": "[-1, 1]",
