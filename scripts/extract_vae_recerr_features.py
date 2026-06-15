@@ -84,7 +84,7 @@ class _LPIPSHelper:
     def mean_distance(self, orig_01: "torch.Tensor", recon_01: "torch.Tensor") -> float:
         """orig/recon: [1, 3, T, H, W] in [0, 1]."""
         torch = self.torch
-        t = orig_01.shape[2]
+        t = min(orig_01.shape[2], recon_01.shape[2])
         vals: List[float] = []
         with torch.inference_mode():
             for i in range(t):
@@ -110,6 +110,10 @@ def compute_rec_errors(
     latents = encode_video(vae, pixel_frames, normalize=True)
     recon = decode_latents(vae, latents, denorm=True)
     orig_01 = (pixel_frames + 1.0) / 2.0
+    # Wan VAE round-trip shortens T (48 px -> 12 lat -> 45 px at scale 4).
+    t_cmp = min(orig_01.shape[2], recon.shape[2])
+    orig_01 = orig_01[:, :, :t_cmp]
+    recon = recon[:, :, :t_cmp]
     rec_err_l1 = float((recon - orig_01).abs().mean().item())
 
     if lpips_helper is not None:

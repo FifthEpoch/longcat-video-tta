@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=01:00:00
+#SBATCH --time=03:00:00
 #SBATCH --mem=16G
 #SBATCH --account=torch_pr_36_mren
 #SBATCH --output=sweep_experiment/logs/extract_bpp_%j.out
