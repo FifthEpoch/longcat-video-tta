@@ -36,6 +36,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
 from scripts.frame_window import (
     PANDA_1000V_STANDARD,
     parse_frame_range_arg,

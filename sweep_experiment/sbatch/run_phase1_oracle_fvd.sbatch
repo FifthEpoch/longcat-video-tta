@@ -37,6 +37,8 @@ module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
 CONDA_ENV="${SCRATCH_BASE}/conda-envs/longcat"
 conda activate "$CONDA_ENV"
+unset PYTHONHOME
+unset PYTHONPATH
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
 
