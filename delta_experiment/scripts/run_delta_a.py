@@ -1166,9 +1166,10 @@ def main():
                         if step_i == 0:
                             output_path = os.path.join(videos_dir, f"{eval_name}_delta_a.mp4")
                             if not args.no_save_videos:
+                                # Save raw pixels (no cond/gen borders) so disk
+                                # FVD via eval_fvd matches online I3D features.
                                 save_video_from_numpy(
                                     gen_frames, output_path, fps=24,
-                                    num_cond_frames=args.num_cond_frames,
                                 )
                                 result["output_path"] = output_path
 

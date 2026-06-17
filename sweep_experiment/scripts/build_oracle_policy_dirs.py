@@ -67,6 +67,14 @@ def _load_chunk_summary_order(summary: dict) -> Dict[str, int]:
     return out
 
 
+_METHOD_SUFFIXES = (
+    "_lora.mp4",
+    "_full.mp4",
+    "_delta_a.mp4",
+    "_tinylora.mp4",
+)
+
+
 def find_mp4(
     videos_dir: Path,
     video_name: str,
@@ -74,33 +82,43 @@ def find_mp4(
 ) -> Optional[Path]:
     """Locate generated mp4 for ``video_name`` (handles post-rename outputs).
 
-    Mirrors ``scripts/build_cover_image_filmstrips.py`` — NOTTA/AdaSteer
-    runs rename outputs to ``<idx>_<caption-slug>_..._<method>.mp4`` while
-    LoRA keeps ``<video_name>_lora.mp4``.
+    Chunk ``videos/`` dirs often contain bare ``panda_XXXX.mp4`` GT source
+    copies alongside generated outputs.  Always prefer method-specific
+    suffixes (``_full.mp4``, ``_delta_a.mp4``, ``_lora.mp4``) and post-rename
+    ``<idx>_*.mp4`` files before the bare GT name — otherwise offline FVD
+    scores the wrong temporal region and inflates ~60 pts vs headline.
     """
     if not videos_dir.is_dir():
         return None
-    # Prefer ``<video_name>_lora.mp4`` before bare ``<video_name>.mp4`` so a
-    # GT copy in the chunk dir cannot shadow the LoRA generation.
-    lora = videos_dir / f"{video_name}_lora.mp4"
-    if lora.exists():
-        return lora
-    direct = videos_dir / f"{video_name}.mp4"
-    if direct.exists():
-        return direct
-    pre = sorted(videos_dir.glob(f"{video_name}*.mp4"))
-    if pre:
-        return pre[0]
+
+    for suffix in _METHOD_SUFFIXES:
+        p = videos_dir / f"{video_name}{suffix}"
+        if p.exists():
+            return p
+
     nid = _numeric_id(video_name)
     if nid is not None:
         num_glob = sorted(videos_dir.glob(f"{nid}_*.mp4"))
         if num_glob:
             return num_glob[0]
+
     idx = idx_by_name.get(video_name)
     if idx is not None:
         post = sorted(videos_dir.glob(f"{idx}_*.mp4"))
         if post:
             return post[0]
+
+    pre = sorted(
+        p for p in videos_dir.glob(f"{video_name}*.mp4")
+        if p.name != f"{video_name}.mp4"
+    )
+    if pre:
+        return pre[0]
+
+    direct = videos_dir / f"{video_name}.mp4"
+    if direct.exists():
+        return direct
+
     sub = list(videos_dir.glob(f"*{video_name}*.mp4"))
     if len(sub) == 1:
         return sub[0]

@@ -86,11 +86,24 @@ fi
 module purge
 module load anaconda3/2025.06
 source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
+
+if [ ! -d "${ENV_PATH}" ]; then
+    echo "ERROR: Conda environment not found at ${ENV_PATH}" >&2
+    exit 1
+fi
+
 conda activate "${ENV_PATH}"
 unset PYTHONHOME
 unset PYTHONPATH
+export LD_LIBRARY_PATH="${ENV_PATH}/lib:${LD_LIBRARY_PATH:-}"
 export PATH="${ENV_PATH}/bin:${PATH}"
 PYTHON="${ENV_PATH}/bin/python"
+
+if ! "${PYTHON}" -c "import cv2; import torch" 2>/dev/null; then
+    echo "ERROR: cv2/torch import failed in ${ENV_PATH}." >&2
+    echo "  conda activate ${ENV_PATH} && python -c \"import cv2, torch\"" >&2
+    exit 1
+fi
 
 cd "${PROJECT_ROOT}"
 
