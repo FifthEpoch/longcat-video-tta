@@ -54,6 +54,8 @@ _FID_FEATURE_DIM = 2048
 _MIN_I3D_FRAMES = 9
 _DEFAULT_MIN_VIDEOS = 256
 _COV_EPS = 1e-6
+# Matches ``annotate_video_frames`` in delta_experiment/scripts/common.py.
+_ANNOTATION_BORDER_PX = 4
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +102,76 @@ def _load_inception_v3(device: str) -> torch.nn.Module:
 # ---------------------------------------------------------------------------
 # Video loading
 # ---------------------------------------------------------------------------
+def _edge_channel_dominant(
+    rgb: np.ndarray,
+    channel: int,
+    *,
+    margin: int = 40,
+) -> float:
+    """Fraction of edge samples where *channel* exceeds the other two by *margin*."""
+    if rgb.size == 0:
+        return 0.0
+    r, g, b = rgb[..., 0].astype(np.int16), rgb[..., 1].astype(np.int16), rgb[..., 2].astype(np.int16)
+    if channel == 0:
+        ok = (r > g + margin) & (r > b + margin)
+    elif channel == 1:
+        ok = (g > r + margin) & (g > b + margin)
+    else:
+        ok = (b > r + margin) & (b > g + margin)
+    return float(ok.mean())
+
+
+def _has_annotation_border(img) -> bool:
+    """Heuristic for cond/gen border labels from ``save_video_from_numpy``."""
+    arr = np.asarray(img)
+    if arr.ndim != 3 or arr.shape[0] < 8 or arr.shape[1] < 8:
+        return False
+    h, w = arr.shape[:2]
+    px = _ANNOTATION_BORDER_PX
+    # Borders are drawn on rows/cols [0, px); sample the middle of the band.
+    mid = max(0, px // 2)
+    strips = [
+        arr[mid, px : w - px],
+        arr[h - mid - 1, px : w - px],
+        arr[px : h - px, mid],
+        arr[px : h - px, w - mid - 1],
+    ]
+    for strip in strips:
+        green = _edge_channel_dominant(strip, 1)
+        red = _edge_channel_dominant(strip, 0)
+        if green >= 0.35 or red >= 0.35:
+            return True
+    return False
+
+
+def _strip_annotation_border(img, border_px: int = _ANNOTATION_BORDER_PX):
+    """Crop visualization borders so I3D sees raw pixels."""
+    from PIL import Image
+
+    arr = np.asarray(img)
+    h, w = arr.shape[:2]
+    if h <= 2 * border_px or w <= 2 * border_px:
+        return img
+    return Image.fromarray(arr[border_px : h - border_px, border_px : w - border_px])
+
+
+def infer_scoring_window(
+    decoded_frames: int,
+    default_cond: int,
+    default_gen: int,
+) -> Tuple[int, int]:
+    """Pick (num_cond, num_gen) from on-disk frame count.
+
+    Full ``run_delta_a`` / ``run_lora_tta`` saves contain cond+gen (typically
+    28–29 frames).  Legacy gen-only exports contain ``default_gen`` frames.
+    """
+    if decoded_frames >= default_cond + default_gen:
+        return default_cond, default_gen
+    if decoded_frames >= default_gen:
+        return 0, default_gen
+    return 0, max(1, decoded_frames)
+
+
 def load_video_as_tensor(
     video_path: str,
     num_frames: int = 16,
@@ -107,23 +179,31 @@ def load_video_as_tensor(
     *,
     num_cond_frames: int = 0,
     num_gen_frames: Optional[int] = None,
+    auto_scoring: bool = False,
+    strip_annotation_borders: bool = True,
 ) -> Optional[torch.Tensor]:
     """Load video as [1, T, C, H, W] float32 tensor in [0, 1].
 
-    When *num_gen_frames* is set, decodes ``num_cond_frames + num_gen_frames``
-    from the clip start and returns only the generated tail
-    ``[num_cond_frames : num_cond_frames + num_gen_frames]``, matching
-    ``OnlineFVDFIDAccumulator.update`` in ``delta_experiment/scripts/common.py``.
+    When *num_gen_frames* is set, decodes enough frames from the clip start
+    and returns only the generated tail, matching
+    ``OnlineFrechetAccumulator.update`` in ``delta_experiment/scripts/common.py``.
+
+    With *auto_scoring*, per-clip ``num_cond_frames`` is inferred from the
+    decoded frame count (gen-only vs cond+gen on disk).  When
+    *strip_annotation_borders* is set, green/red cond-gen labels from older
+    ``run_delta_a`` saves are cropped before I3D resize.
     """
     import av
     from torchvision.transforms import functional as TF
 
     if num_gen_frames is not None:
-        load_count = num_cond_frames + num_gen_frames
+        decode_target = num_cond_frames + num_gen_frames
+        if auto_scoring:
+            decode_target = max(decode_target, num_gen_frames)
         slice_start = num_cond_frames
         slice_end = num_cond_frames + num_gen_frames
     else:
-        load_count = num_frames
+        decode_target = num_frames
         slice_start = 0
         slice_end = num_frames
 
@@ -136,9 +216,9 @@ def load_video_as_tensor(
     frames: list = []
     try:
         for frame in container.decode(video=0):
-            if len(frames) >= load_count:
-                break
             frames.append(frame.to_image())
+            if len(frames) >= decode_target:
+                break
     except Exception as exc:
         print(f"  SKIP (decode failed): {video_path} -- {exc}", file=sys.stderr)
         return None
@@ -148,7 +228,15 @@ def load_video_as_tensor(
     if len(frames) == 0:
         return None
 
-    while len(frames) < load_count:
+    if auto_scoring and num_gen_frames is not None:
+        num_cond_frames, num_gen_frames = infer_scoring_window(
+            len(frames), num_cond_frames, num_gen_frames,
+        )
+        slice_start = num_cond_frames
+        slice_end = num_cond_frames + num_gen_frames
+        decode_target = slice_end
+
+    while len(frames) < slice_end:
         frames.append(frames[-1])
 
     selected = frames[slice_start:slice_end]
@@ -157,6 +245,8 @@ def load_video_as_tensor(
 
     tensors = []
     for img in selected:
+        if strip_annotation_borders and _has_annotation_border(img):
+            img = _strip_annotation_border(img)
         img = TF.resize(img, size, interpolation=TF.InterpolationMode.BILINEAR)
         img = TF.center_crop(img, size)
         tensors.append(TF.to_tensor(img))  # [C, H, W] in [0, 1]
@@ -392,6 +482,17 @@ def main():
         "[cond:cond+gen] per common.py online FVD (default: use --num-frames).",
     )
     parser.add_argument(
+        "--auto-scoring", action=argparse.BooleanOptionalAction, default=True,
+        help="Infer per-clip num_cond from decoded frame count (gen-only vs "
+        "cond+gen). Default: on when --num-gen-frames is set.",
+    )
+    parser.add_argument(
+        "--strip-annotation-borders", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Crop green/red cond-gen visualization borders from older "
+        "run_delta_a saves before I3D (default: on).",
+    )
+    parser.add_argument(
         "--batch-size", type=int, default=4,
         help="Batch size for I3D feature extraction (default: 4)",
     )
@@ -427,6 +528,9 @@ def main():
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
+
+    if args.num_gen_frames is None:
+        args.auto_scoring = False
 
     if args.gt_cache is None and not args.ref_dir:
         print("ERROR: --ref-dir is required unless --gt-cache is provided.",
@@ -481,6 +585,8 @@ def main():
             args.num_frames,
             num_cond_frames=args.num_cond_frames,
             num_gen_frames=args.num_gen_frames,
+            auto_scoring=args.auto_scoring,
+            strip_annotation_borders=args.strip_annotation_borders,
         )
         if t is not None:
             gen_tensors.append(t)
@@ -499,6 +605,8 @@ def main():
                 args.num_frames,
                 num_cond_frames=args.num_cond_frames,
                 num_gen_frames=args.num_gen_frames,
+                auto_scoring=args.auto_scoring,
+                strip_annotation_borders=args.strip_annotation_borders,
             )
             if t is not None:
                 ref_tensors.append(t)
@@ -581,6 +689,8 @@ def main():
         "num_frames_per_clip": scored_frames,
         "num_cond_frames": args.num_cond_frames,
         "num_gen_frames": args.num_gen_frames,
+        "auto_scoring": args.auto_scoring,
+        "strip_annotation_borders": args.strip_annotation_borders,
         "feature_extractor": "i3d_kinetics400_torchscript",
         "feature_dim": _I3D_FEATURE_DIM,
         "normalization": "[-1, 1]",

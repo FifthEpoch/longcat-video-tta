@@ -4,6 +4,10 @@
 Uses ``eval_fvd.py`` with the precomputed GT I3D cache so scores match the
 headline ``panda_1000v_standard`` online-FVD protocol (~154–158 for NOTTA).
 
+``eval_fvd`` auto-infers per-clip cond/gen layout from frame count and strips
+green/red visualization borders from legacy ``run_delta_a`` mp4s so disk FVD
+matches in-memory online I3D without re-inference.
+
 Usage:
     python sweep_experiment/scripts/run_phase1_oracle_fvd.py \\
         --gt-cache gt_caches/panda_1000_longcat.npz
