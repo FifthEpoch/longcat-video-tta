@@ -70,6 +70,8 @@ def _load_chunk_summary_order(summary: dict) -> Dict[str, int]:
 _METHOD_SUFFIXES = (
     "_lora.mp4",
     "_full.mp4",
+    "_no-TTA.mp4",
+    "_adasteer.mp4",
     "_delta_a.mp4",
     "_tinylora.mp4",
 )
@@ -115,13 +117,8 @@ def find_mp4(
     if pre:
         return pre[0]
 
-    direct = videos_dir / f"{video_name}.mp4"
-    if direct.exists():
-        return direct
-
-    sub = list(videos_dir.glob(f"*{video_name}*.mp4"))
-    if len(sub) == 1:
-        return sub[0]
+    # Never fall back to bare ``panda_XXXX.mp4`` in chunk dirs — those are
+    # almost always GT source copies and inflate offline FVD ~60 pts.
     return None
 
 
