@@ -40,7 +40,14 @@ conda activate "$CONDA_ENV"
 unset PYTHONHOME
 unset PYTHONPATH
 export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
+export PATH="${CONDA_ENV}/bin:${PATH}"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
+PYTHON="${CONDA_ENV}/bin/python"
+
+if ! "${PYTHON}" -c "import torch" 2>/dev/null; then
+  echo "ERROR: torch not importable in ${CONDA_ENV}" >&2
+  exit 1
+fi
 
 cd "$PROJECT_ROOT"
 git pull origin main
@@ -49,7 +56,7 @@ mkdir -p sweep_experiment/slurm_log "$(dirname "$GT_CACHE")"
 
 if [[ ! -f "$GT_CACHE" ]]; then
   echo "GT cache missing at $GT_CACHE — precomputing (one-time, ~30-60 min)..."
-  python sweep_experiment/scripts/precompute_gt_features.py \
+  "${PYTHON}" sweep_experiment/scripts/precompute_gt_features.py \
     --data-dir "$DATA_DIR" \
     --output "$GT_CACHE" \
     --mode longcat \
@@ -61,7 +68,7 @@ if [[ ! -f "$GT_CACHE" ]]; then
 fi
 
 if [[ "${SKIP_FVD:-0}" == "1" ]]; then
-  python sweep_experiment/scripts/build_oracle_policy_dirs.py \
+  "${PYTHON}" sweep_experiment/scripts/build_oracle_policy_dirs.py \
     --gains-csv "$GAINS_CSV" \
     --series-root "$SERIES_ROOT" \
     --output-root "$OUTPUT_ROOT" \
@@ -75,7 +82,7 @@ if [[ "${SKIP_BUILD:-0}" == "1" ]]; then
   EXTRA_FLAGS+=(--skip-build)
 fi
 
-python sweep_experiment/scripts/run_phase1_oracle_fvd.py \
+"${PYTHON}" sweep_experiment/scripts/run_phase1_oracle_fvd.py \
   --gains-csv "$GAINS_CSV" \
   --series-root "$SERIES_ROOT" \
   --output-root "$OUTPUT_ROOT" \
