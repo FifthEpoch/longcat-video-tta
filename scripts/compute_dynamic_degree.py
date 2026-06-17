@@ -44,6 +44,9 @@ Run:
         --videos-dir /scratch/$USER/longcat-video-tta/datasets/panda_1000_480p \
         --output-json datasets/panda_1000_480p/dynamic_degree.json \
         --tta-visible-frames auto
+
+``--videos-dir`` may be the dataset root (mp4s under ``videos/``) or the
+``videos/`` folder itself; discovery matches ``extract_flow_shape_features.py``.
 """
 from __future__ import annotations
 
@@ -67,6 +70,21 @@ from scripts.frame_window import (
 
 _cfg = PANDA_1000V_STANDARD
 AUTO_TTA_VISIBLE_RANGE = _cfg.tta_visible_range()
+
+
+# ---------------------------------------------------------------------------
+# Video discovery (matches extract_flow_shape_features.list_video_paths)
+# ---------------------------------------------------------------------------
+def list_video_paths(videos_dir: Path) -> List[Path]:
+    candidates: List[Path] = []
+    subdir = videos_dir / "videos"
+    if subdir.is_dir():
+        for ext in ("*.mp4", "*.avi"):
+            candidates.extend(subdir.glob(ext))
+    if not candidates:
+        for ext in ("*.mp4", "*.avi"):
+            candidates.extend(videos_dir.rglob(ext))
+    return sorted(candidates)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +218,7 @@ def _build_estimator(prefer: str = "raft", device: str = "cuda"):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--videos-dir", required=True, type=Path,
-                    help="Directory containing *.mp4 evaluation videos")
+                    help="Dataset root or videos/ folder (prefers <dir>/videos/)")
     ap.add_argument("--output-json", required=True, type=Path,
                     help="Destination JSON path")
     ap.add_argument(
@@ -217,7 +235,6 @@ def main() -> int:
                     help="Resize HxW before flow (divisible by 8). Default 256x320.")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--method", default="raft", choices=["raft", "farneback"])
-    ap.add_argument("--glob", default="*.mp4")
     ap.add_argument("--limit", type=int, default=None,
                     help="Optional: cap number of videos (for smoke testing).")
     args = ap.parse_args()
@@ -232,12 +249,11 @@ def main() -> int:
     else:
         n_decode = n_visible
 
-    videos = sorted(args.videos_dir.glob(args.glob))
+    videos = list_video_paths(args.videos_dir)
     if args.limit:
         videos = videos[: args.limit]
     if not videos:
-        print(f"[error] no videos matched {args.videos_dir}/{args.glob}",
-              file=sys.stderr)
+        print(f"[error] no videos under {args.videos_dir}", file=sys.stderr)
         return 2
 
     print(f"Found {len(videos)} videos in {args.videos_dir}")

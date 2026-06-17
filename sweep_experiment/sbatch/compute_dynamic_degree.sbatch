@@ -15,8 +15,9 @@
 # scripts/analyze_per_video_tta_gain.py and plot_dynamicness_correlation.py.
 #
 # Required env (pass via --export=ALL):
-#   VIDEOS_DIR  : eval video directory (e.g. datasets/panda_1000_480p)
-#   OUTPUT_JSON : destination JSON path (typically VIDEOS_DIR/dynamic_degree.json)
+#   VIDEOS_DIR  : dataset root (e.g. datasets/panda_1000_480p) or its videos/
+#                 subfolder; script prefers <VIDEOS_DIR>/videos/*.mp4, else rglob
+#   OUTPUT_JSON : destination JSON path (typically <dataset_root>/dynamic_degree.json)
 #
 # Optional env:
 #   TTA_VISIBLE_FRAMES : default auto (0:48 for panda_1000v_standard TTA window)
@@ -25,7 +26,7 @@
 #   TARGET_SIZE        : HxW (default 256x320, both divisible by 8 as RAFT requires)
 #   METHOD             : raft (default) or farneback
 #
-# Submit (Panda standard horizon):
+# Submit (Panda standard horizon; VIDEOS_DIR may be dataset root or .../videos):
 #   sbatch --account=torch_pr_36_mren \
 #       --export=ALL,\
 # VIDEOS_DIR=/scratch/${USER}/longcat-video-tta/datasets/panda_1000_480p,\
