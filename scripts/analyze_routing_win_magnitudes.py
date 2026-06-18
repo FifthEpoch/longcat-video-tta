@@ -3,7 +3,6 @@
 
 Reads ``per_video_gains.csv`` from analyze_per_video_tta_gain.py and reports:
   - Oracle (best PSNR) uplift vs always-NOTTA / ADA / LoRA
-  - 2-way oracle (NOTTA vs AdaSteer only; deployable upper bound without LoRA)
   - Head-to-head win magnitudes when LoRA vs AdaSteer wins on ΔPSNR
   - Oracle winner breakdowns (NOTTA / ADA / LoRA)
 
@@ -56,6 +55,34 @@ def _stats(arr: Sequence[float]) -> Tuple[int, float, float, float, float]:
     )
 
 
+def bootstrap_mean_ci(
+    values: Sequence[float],
+    n_boot: int = 5000,
+    seed: int = 42,
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[bool]]:
+    """Per-video bootstrap CI for the mean.
+
+    Returns (mean, ci_lo, ci_hi, ci_excludes_zero).
+    """
+    a = np.asarray([x for x in values if not np.isnan(x)], dtype=float)
+    if a.size == 0:
+        return None, None, None, None
+    mean = float(a.mean())
+    if a.size < 2:
+        return mean, None, None, None
+    rng = np.random.default_rng(seed)
+    boot_means = []
+    n = a.size
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        boot_means.append(float(a[idx].mean()))
+    boot_arr = np.asarray(boot_means, dtype=np.float64)
+    ci_lo = float(np.percentile(boot_arr, 2.5))
+    ci_hi = float(np.percentile(boot_arr, 97.5))
+    ci_excludes_zero = bool((ci_lo > 0.0) or (ci_hi < 0.0))
+    return mean, ci_lo, ci_hi, ci_excludes_zero
+
+
 def _fmt_stats(label: str, arr: Sequence[float]) -> str:
     n, mean, med, p25, p75 = _stats(arr)
     if n == 0:
@@ -80,15 +107,8 @@ def oracle_winner(row: dict) -> str:
     return max(psnrs, key=lambda k: psnrs[k])
 
 
-def oracle_2way_winner(row: dict) -> str:
-    psnrs = {
-        BASELINE: _f(row, f"{BASELINE}_psnr"),
-        ADA: _f(row, f"{ADA}_psnr"),
-    }
-    return max(psnrs, key=lambda k: psnrs[k])
-
-
-def build_report(rows: List[dict]) -> str:
+def build_report(rows: List[dict], bootstrap: bool = False,
+                 n_boot: int = 5000, bootstrap_seed: int = 42) -> str:
     n = len(rows)
     lines: List[str] = [
         "# Routing win magnitudes",
@@ -135,6 +155,7 @@ def build_report(rows: List[dict]) -> str:
         for r in rows
     ]
 
+    oracle_uplift = mean_psnr(oracle_psnr) - mean_psnr(notta_psnr)
     lines += [
         "## Oracle routing uplift",
         "",
@@ -146,12 +167,28 @@ def build_report(rows: List[dict]) -> str:
         f"| Always LoRA | {mean_psnr(lora_psnr):.3f} dB | "
         f"{mean_psnr(lora_psnr) - mean_psnr(notta_psnr):+.3f} dB |",
         f"| **Oracle (best PSNR)** | **{mean_psnr(oracle_psnr):.3f} dB** | "
-        f"**{mean_psnr(oracle_psnr) - mean_psnr(notta_psnr):+.3f} dB** |",
+        f"**{oracle_uplift:+.3f} dB** |",
         f"| Skip AdaSteer if ΔPSNR ≤ 0 | {mean_psnr(skip_ada):.3f} dB | "
         f"{mean_psnr(skip_ada) - mean_psnr(notta_psnr):+.3f} dB |",
         f"| Skip both TTA if ΔPSNR ≤ 0 | {mean_psnr(skip_both):.3f} dB | "
         f"{mean_psnr(skip_both) - mean_psnr(notta_psnr):+.3f} dB |",
         "",
+    ]
+    if bootstrap:
+        _m, ci_lo, ci_hi, excl_zero = bootstrap_mean_ci(
+            oracle_gain, n_boot=n_boot, seed=bootstrap_seed,
+        )
+        if ci_lo is not None and ci_hi is not None:
+            sig = "yes" if excl_zero else "no"
+            lines += [
+                f"**Bootstrap oracle uplift** (per-video, B={n_boot}, "
+                f"seed={bootstrap_seed}): "
+                f"mean Δ={oracle_uplift:+.3f} dB, "
+                f"95% CI [{ci_lo:+.3f}, {ci_hi:+.3f}] dB, "
+                f"CI excludes 0: {sig}.",
+                "",
+            ]
+    lines += [
         f"**Oracle picks:** NOTTA {winners[BASELINE]} ({100*winners[BASELINE]/n:.1f}%) · "
         f"AdaSteer {winners[ADA]} ({100*winners[ADA]/n:.1f}%) · "
         f"LoRA {winners[LORA]} ({100*winners[LORA]/n:.1f}%)",
@@ -162,74 +199,6 @@ def build_report(rows: List[dict]) -> str:
         "",
         f"{sum(1 for g in oracle_gain if g > 0)} / {n} videos ({100*sum(1 for g in oracle_gain if g > 0)/n:.1f}%) "
         "have oracle gain > 0.",
-        "",
-    ]
-
-    oracle2_psnr: List[float] = []
-    oracle2_gain: List[float] = []
-    winners2: Dict[str, int] = {BASELINE: 0, ADA: 0}
-    for r in rows:
-        w2 = oracle_2way_winner(r)
-        winners2[w2] += 1
-        p2 = {
-            BASELINE: _f(r, f"{BASELINE}_psnr"),
-            ADA: _f(r, f"{ADA}_psnr"),
-        }[w2]
-        oracle2_psnr.append(p2)
-        oracle2_gain.append(p2 - _f(r, f"{BASELINE}_psnr"))
-
-    lines += [
-        "## 2-way oracle (NOTTA vs AdaSteer only)",
-        "",
-        "Per video, pick max(PSNR) between NOTTA and AdaSteer; LoRA excluded. "
-        "This is the realistic deployable upper bound when LoRA is not in the routing set.",
-        "",
-        "| Policy | Mean PSNR | Δ vs always-NOTTA | Δ vs always-ADA |",
-        "|---|---:|---:|---:|",
-        f"| Always NOTTA | {mean_psnr(notta_psnr):.3f} dB | 0.000 dB | "
-        f"{mean_psnr(notta_psnr) - mean_psnr(ada_psnr):+.3f} dB |",
-        f"| Always AdaSteer | {mean_psnr(ada_psnr):.3f} dB | "
-        f"{mean_psnr(ada_psnr) - mean_psnr(notta_psnr):+.3f} dB | 0.000 dB |",
-        f"| **2-way oracle (NOTTA / ADA)** | **{mean_psnr(oracle2_psnr):.3f} dB** | "
-        f"**{mean_psnr(oracle2_psnr) - mean_psnr(notta_psnr):+.3f} dB** | "
-        f"**{mean_psnr(oracle2_psnr) - mean_psnr(ada_psnr):+.3f} dB** |",
-        f"| 3-way oracle (NOTTA / ADA / LoRA) | {mean_psnr(oracle_psnr):.3f} dB | "
-        f"{mean_psnr(oracle_psnr) - mean_psnr(notta_psnr):+.3f} dB | "
-        f"{mean_psnr(oracle_psnr) - mean_psnr(ada_psnr):+.3f} dB |",
-        f"| Skip AdaSteer if ΔPSNR ≤ 0 | {mean_psnr(skip_ada):.3f} dB | "
-        f"{mean_psnr(skip_ada) - mean_psnr(notta_psnr):+.3f} dB | "
-        f"{mean_psnr(skip_ada) - mean_psnr(ada_psnr):+.3f} dB |",
-        "",
-        f"**2-way picks:** NOTTA {winners2[BASELINE]} ({100*winners2[BASELINE]/n:.1f}%) · "
-        f"AdaSteer {winners2[ADA]} ({100*winners2[ADA]/n:.1f}%)",
-        "",
-        "| Metric | N | Mean | Median | p25 | p75 |",
-        "|---|---:|---:|---:|---:|---:|",
-        _fmt_stats("2-way oracle ΔPSNR vs NOTTA", oracle2_gain),
-        "",
-    ]
-
-    ada2_wins = [r for r in rows if oracle_2way_winner(r) == ADA]
-    notta2_wins = [r for r in rows if oracle_2way_winner(r) == BASELINE]
-    lines += [
-        "### When AdaSteer wins 2-way oracle",
-        "",
-        "| Metric | N | Mean | Median | p25 | p75 |",
-        "|---|---:|---:|---:|---:|---:|",
-        _fmt_stats(
-            "Margin: Ada PSNR − NOTTA PSNR",
-            [_f(r, f"{ADA}_psnr") - _f(r, f"{BASELINE}_psnr") for r in ada2_wins],
-        ),
-        _fmt_stats("Ada ΔPSNR vs NOTTA", [_f(r, f"{ADA}_dpsnr") for r in ada2_wins]),
-        "",
-        "### When NOTTA wins 2-way oracle",
-        "",
-        "| Metric | N | Mean | Median | p25 | p75 |",
-        "|---|---:|---:|---:|---:|---:|",
-        _fmt_stats(
-            "Margin: NOTTA PSNR − Ada PSNR",
-            [_f(r, f"{BASELINE}_psnr") - _f(r, f"{ADA}_psnr") for r in notta2_wins],
-        ),
         "",
     ]
 
@@ -318,6 +287,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Routing win magnitude stats for slides")
     ap.add_argument("--gains-csv", type=Path, default=DEFAULT_GAINS)
     ap.add_argument("--output", type=Path, default=None)
+    ap.add_argument("--bootstrap", action="store_true",
+                    help="Add per-video bootstrap 95%% CI for oracle mean uplift.")
+    ap.add_argument("--n-boot", type=int, default=5000)
+    ap.add_argument("--bootstrap-seed", type=int, default=42)
     args = ap.parse_args()
 
     if not args.gains_csv.exists():
@@ -325,7 +298,12 @@ def main() -> int:
         return 2
 
     rows = load_rows(args.gains_csv)
-    report = build_report(rows)
+    report = build_report(
+        rows,
+        bootstrap=args.bootstrap,
+        n_boot=args.n_boot,
+        bootstrap_seed=args.bootstrap_seed,
+    )
     print(report)
 
     if args.output:

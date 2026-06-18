@@ -44,8 +44,12 @@ FLOW_CSV="${FLOW_CSV:-}"
 BPP_CSV="${BPP_CSV:-}"
 FFT_CSV="${FFT_CSV:-}"
 VAE_RECERR_CSV="${VAE_RECERR_CSV:-}"
+MOTION_CSV="${MOTION_CSV:-}"
 LOSS_VAR_CSV="${LOSS_VAR_CSV:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/criteria_correlation}"
+BOOTSTRAP="${BOOTSTRAP:-0}"
+N_BOOT="${N_BOOT:-5000}"
+BOOTSTRAP_SEED="${BOOTSTRAP_SEED:-42}"
 
 # ============================================================================
 # Banner
@@ -70,8 +74,10 @@ echo "  FLOW_CSV      : ${FLOW_CSV:-<not provided>}"
 echo "  BPP_CSV       : ${BPP_CSV:-<not provided>}"
 echo "  FFT_CSV       : ${FFT_CSV:-<not provided>}"
 echo "  VAE_RECERR_CSV: ${VAE_RECERR_CSV:-<not provided>}"
+echo "  MOTION_CSV    : ${MOTION_CSV:-<not provided>}"
 echo "  LOSS_VAR_CSV  : ${LOSS_VAR_CSV:-<not provided>}"
 echo "  OUTPUT_DIR    : ${OUTPUT_DIR}"
+echo "  BOOTSTRAP     : ${BOOTSTRAP} (B=${N_BOOT}, seed=${BOOTSTRAP_SEED})"
 echo "=============================================================================="
 
 # ============================================================================
@@ -129,7 +135,7 @@ if [ -n "${TIER3_CSV}" ] && [ ! -f "${TIER3_CSV}" ]; then
     echo "ERROR: TIER3_CSV is set but file not found: ${TIER3_CSV}" >&2
     exit 1
 fi
-for _opt_var in FLOW_CSV BPP_CSV FFT_CSV VAE_RECERR_CSV LOSS_VAR_CSV; do
+for _opt_var in FLOW_CSV BPP_CSV FFT_CSV VAE_RECERR_CSV MOTION_CSV LOSS_VAR_CSV; do
     _val="${!_opt_var:-}"
     if [ -n "${_val}" ] && [ ! -f "${_val}" ]; then
         echo "ERROR: ${_opt_var} is set but file not found: ${_val}" >&2
@@ -164,9 +170,17 @@ VAE_FLAG=""
 if [ -n "${VAE_RECERR_CSV}" ]; then
     VAE_FLAG="--vae-recerr-csv ${VAE_RECERR_CSV}"
 fi
+MOTION_FLAG=""
+if [ -n "${MOTION_CSV}" ]; then
+    MOTION_FLAG="--motion-csv ${MOTION_CSV}"
+fi
 LOSSVAR_FLAG=""
 if [ -n "${LOSS_VAR_CSV}" ]; then
     LOSSVAR_FLAG="--loss-var-csv ${LOSS_VAR_CSV}"
+fi
+BOOT_FLAG=""
+if [ "${BOOTSTRAP}" = "1" ]; then
+    BOOT_FLAG="--bootstrap --n-boot ${N_BOOT} --bootstrap-seed ${BOOTSTRAP_SEED}"
 fi
 
 echo "Starting correlation analysis..."
@@ -180,7 +194,9 @@ echo "Starting correlation analysis..."
     ${BPP_FLAG} \
     ${FFT_FLAG} \
     ${VAE_FLAG} \
+    ${MOTION_FLAG} \
     ${LOSSVAR_FLAG} \
+    ${BOOT_FLAG} \
     --output-dir "${OUTPUT_DIR}"
 
 echo ""

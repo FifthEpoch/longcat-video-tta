@@ -54,6 +54,7 @@ import argparse
 import csv
 import math
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -87,6 +88,9 @@ TIER1_FEATURES: Tuple[str, ...] = (
     # H-T1-1 VAE round-trip (extract_vae_recerr_features.py)
     "rec_err_l1",
     "rec_err_lpips",
+    # Motion battery (extract_latent_motion_features.py; dino from video_features)
+    "latent_temporal_l2_mean",
+    "pixel_mse_temporal_mean",
 )
 TIER3_FEATURES: Tuple[str, ...] = (
     "dino_tta_vs_genregion_sim",
@@ -179,6 +183,10 @@ FEATURE_INTERPRETATIONS: Dict[str, str] = {
         "H-T1-1: LongCat-VAE round-trip L1 recon error on visible frames",
     "rec_err_lpips":
         "H-T1-1: LongCat-VAE round-trip LPIPS (or MSE fallback) recon error",
+    "latent_temporal_l2_mean":
+        "Motion: mean L2 norm of consecutive VAE-latent diffs on TTA-visible window",
+    "pixel_mse_temporal_mean":
+        "Motion: mean MSE between consecutive pixel frames on TTA-visible window",
     "loss_var_caption":
         "H-T2-5: variance of caption-conditioned diffusion loss across timesteps",
     "loss_var_uncond":
@@ -226,6 +234,18 @@ FEATURE_INTERPRETATIONS: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Stats helpers (no scipy, matches analyze_per_video_tta_gain.py)
 # ---------------------------------------------------------------------------
+@dataclass
+class CorrEntry:
+    rho: Optional[float]
+    n: int
+    ci_lo: Optional[float] = None
+    ci_hi: Optional[float] = None
+    ci_excludes_zero: Optional[bool] = None
+    abs_rho_ci_hi: Optional[float] = None
+
+
+def _empty_corr() -> CorrEntry:
+    return CorrEntry(rho=None, n=0)
 def _pearson_r(xs: np.ndarray, ys: np.ndarray) -> Optional[float]:
     mask = ~(np.isnan(xs) | np.isnan(ys))
     if mask.sum() < 3:
@@ -257,6 +277,48 @@ def spearman_rho(xs: np.ndarray, ys: np.ndarray) -> Optional[float]:
     if mask.sum() < 3:
         return None
     return _pearson_r(_ranks(xs[mask]), _ranks(ys[mask]))
+
+
+def bootstrap_spearman_ci(
+    xs: np.ndarray,
+    ys: np.ndarray,
+    n_boot: int = 5000,
+    seed: int = 42,
+) -> Tuple[Optional[float], Optional[float], Optional[bool], Optional[float]]:
+    """Per-video bootstrap CI for Spearman ρ.
+
+    Resamples video indices with replacement ``n_boot`` times, recomputes
+    Spearman ρ on each resample, and returns the 2.5/97.5 percentile band.
+
+    Returns
+    -------
+    ci_lo, ci_hi, ci_excludes_zero, abs_rho_ci_hi
+        ``ci_excludes_zero`` is True when the entire CI lies on one side of 0.
+        ``abs_rho_ci_hi`` is the 97.5th percentile of |ρ| across bootstrap draws.
+    """
+    mask = ~(np.isnan(xs) | np.isnan(ys))
+    if mask.sum() < 3:
+        return None, None, None, None
+    x = xs[mask].astype(np.float64)
+    y = ys[mask].astype(np.float64)
+    n = x.size
+
+    rng = np.random.default_rng(seed)
+    boot_rhos: List[float] = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        rho = spearman_rho(x[idx], y[idx])
+        if rho is not None and not np.isnan(rho):
+            boot_rhos.append(float(rho))
+    if len(boot_rhos) < max(100, n_boot // 50):
+        return None, None, None, None
+
+    boot_arr = np.asarray(boot_rhos, dtype=np.float64)
+    ci_lo = float(np.percentile(boot_arr, 2.5))
+    ci_hi = float(np.percentile(boot_arr, 97.5))
+    ci_excludes_zero = bool((ci_lo > 0.0) or (ci_hi < 0.0))
+    abs_rho_ci_hi = float(np.percentile(np.abs(boot_arr), 97.5))
+    return ci_lo, ci_hi, ci_excludes_zero, abs_rho_ci_hi
 
 
 def quantile_bin(values: np.ndarray, n_bins: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -415,6 +477,13 @@ def load_fft_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
 
 def load_vae_recerr_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
     rows, cols, _ = load_aux_csv(path, ["rec_err_l1", "rec_err_lpips"], tier="T1")
+    return rows, cols
+
+
+def load_motion_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    rows, cols, _ = load_aux_csv(
+        path, ["latent_temporal_l2_mean", "pixel_mse_temporal_mean"], tier="T1",
+    )
     return rows, cols
 
 
@@ -665,20 +734,27 @@ def write_correlation_table(
     md_path: Path, csv_path: Path,
     methods: List[str], features: List[str],
     tier_by_feature: Dict[str, str],
-    rho_table: Dict[Tuple[str, str], Tuple[Optional[float], int]],
+    rho_table: Dict[Tuple[str, str], CorrEntry],
+    bootstrap_enabled: bool = False,
 ):
     """Write both the markdown table (with highlights) and the raw CSV."""
     # ----- markdown -----
     lines: List[str] = []
     lines.append("# Spearman ρ between ΔPSNR and per-video features")
     lines.append("")
+    boot_note = (
+        "  Bootstrap 95% CIs (per-video resampling, B=5000 default) shown as "
+        "[ci_lo, ci_hi] when `--bootstrap` is enabled."
+        if bootstrap_enabled else ""
+    )
     lines.append("Cells are Spearman ρ (sample size N in parentheses).  "
                  "Bold = |ρ| ≥ 0.2 ; bold+italic = |ρ| ≥ 0.3.  Tier `OOD` "
                  "columns come from the diffusion-OOD-score CSV (per-video "
                  "flow-matching MSE against the LongCat-Video base model); "
                  "tier `T3P` columns come from the Tier-3 probe CSV "
                  "(per-video LoRA-r8 grad-norm + single-step loss drop); "
-                 "`T1` / `T3` columns come from the feature-extractor CSV.")
+                 "`T1` / `T3` columns come from the feature-extractor CSV."
+                 + boot_note)
     lines.append("")
     header = "| feature | tier | " + " | ".join(f"`{m}`" for m in methods) + " |"
     sep = "|---|---|" + "|".join(["---:"] * len(methods)) + "|"
@@ -688,11 +764,16 @@ def write_correlation_table(
         tier = tier_by_feature.get(fname, "?")
         cells: List[str] = []
         for m in methods:
-            rho, n = rho_table.get((m, fname), (None, 0))
-            if rho is None:
-                cells.append(f"n/a (N={n})")
+            entry = rho_table.get((m, fname), _empty_corr())
+            if entry.rho is None:
+                cells.append(f"n/a (N={entry.n})")
+            elif bootstrap_enabled and entry.ci_lo is not None and entry.ci_hi is not None:
+                cells.append(
+                    f"{_fmt_rho(entry.rho)} (N={entry.n}; "
+                    f"[{entry.ci_lo:+.3f}, {entry.ci_hi:+.3f}])"
+                )
             else:
-                cells.append(f"{_fmt_rho(rho)} (N={n})")
+                cells.append(f"{_fmt_rho(entry.rho)} (N={entry.n})")
         lines.append(f"| `{fname}` | {tier} | " + " | ".join(cells) + " |")
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -704,14 +785,30 @@ def write_correlation_table(
         header_cols = ["feature", "tier"]
         for m in methods:
             header_cols.extend([f"{m}_rho", f"{m}_n"])
+            if bootstrap_enabled:
+                header_cols.extend([
+                    f"{m}_ci_lo", f"{m}_ci_hi",
+                    f"{m}_ci_excludes_zero", f"{m}_abs_rho_ci_hi",
+                ])
         writer.writerow(header_cols)
         for fname in features:
             tier = tier_by_feature.get(fname, "?")
             row = [fname, tier]
             for m in methods:
-                rho, n = rho_table.get((m, fname), (None, 0))
-                row.append("" if rho is None else f"{rho:.6f}")
-                row.append(str(n))
+                entry = rho_table.get((m, fname), _empty_corr())
+                row.append("" if entry.rho is None else f"{entry.rho:.6f}")
+                row.append(str(entry.n))
+                if bootstrap_enabled:
+                    row.append("" if entry.ci_lo is None else f"{entry.ci_lo:.6f}")
+                    row.append("" if entry.ci_hi is None else f"{entry.ci_hi:.6f}")
+                    row.append(
+                        "" if entry.ci_excludes_zero is None
+                        else str(int(entry.ci_excludes_zero))
+                    )
+                    row.append(
+                        "" if entry.abs_rho_ci_hi is None
+                        else f"{entry.abs_rho_ci_hi:.6f}"
+                    )
             writer.writerow(row)
 
 
@@ -719,7 +816,7 @@ def write_top_features_per_method(
     md_path: Path, methods: List[str],
     features: List[str],
     tier_by_feature: Dict[str, str],
-    rho_table: Dict[Tuple[str, str], Tuple[Optional[float], int]],
+    rho_table: Dict[Tuple[str, str], CorrEntry],
     top_k: int = 3,
     online_tiers: Tuple[str, ...] = ("T1", "OOD", "T3P"),
 ):
@@ -743,10 +840,10 @@ def write_top_features_per_method(
     for m in methods:
         scored: List[Tuple[str, float, int]] = []
         for fname in online_features:
-            rho, n = rho_table.get((m, fname), (None, 0))
-            if rho is None:
+            entry = rho_table.get((m, fname), _empty_corr())
+            if entry.rho is None:
                 continue
-            scored.append((fname, rho, n))
+            scored.append((fname, entry.rho, entry.n))
         scored.sort(key=lambda t: abs(t[1]), reverse=True)
         lines.append(f"## `{m}`")
         lines.append("")
@@ -859,7 +956,7 @@ def write_summary(
     methods: List[str],
     features: List[str],
     tier_by_feature: Dict[str, str],
-    rho_table: Dict[Tuple[str, str], Tuple[Optional[float], int]],
+    rho_table: Dict[Tuple[str, str], CorrEntry],
     n_videos: int,
     strongest_feature: Optional[str],
     strongest_mean_abs_rho: float,
@@ -882,10 +979,19 @@ def write_summary(
         lines.append(f"- FFT CSV: `{args.fft_csv}`")
     if getattr(args, "vae_recerr_csv", None):
         lines.append(f"- VAE-recerr CSV: `{args.vae_recerr_csv}`")
+    if getattr(args, "motion_csv", None):
+        lines.append(f"- Motion CSV: `{args.motion_csv}`")
     if getattr(args, "loss_var_csv", None):
         lines.append(f"- Loss-var CSV: `{args.loss_var_csv}`")
     lines.append(f"- Methods analysed (non-baseline): {', '.join('`' + m + '`' for m in methods)}")
     lines.append(f"- Joined videos (intersection of gains ∩ all feature sources): **{n_videos}**")
+    if getattr(args, "bootstrap", False):
+        lines.append(
+            f"- **Bootstrap enabled**: per-video resampling, "
+            f"B={getattr(args, 'n_boot', 5000)}, "
+            f"seed={getattr(args, 'bootstrap_seed', 42)} "
+            f"(95% CIs in `correlation_table.csv`)"
+        )
     lines.append("")
 
     # Per-feature mean |ρ| ranking, broken out by tier so OOD-derived columns
@@ -911,11 +1017,11 @@ def write_summary(
         vals: List[float] = []
         cleared = 0
         for m in methods:
-            rho, _n = rho_table.get((m, fname), (None, 0))
-            if rho is None or np.isnan(rho):
+            entry = rho_table.get((m, fname), _empty_corr())
+            if entry.rho is None or np.isnan(entry.rho):
                 continue
-            vals.append(abs(rho))
-            if abs(rho) >= 0.2:
+            vals.append(abs(entry.rho))
+            if abs(entry.rho) >= 0.2:
                 cleared += 1
         if not vals:
             continue
@@ -975,17 +1081,26 @@ def write_summary(
             lines.append("| method | ρ | N | verdict |")
             lines.append("|---|---:|---:|---|")
             for m in methods:
-                rho, n = rho_table.get((m, focal), (None, 0))
+                entry = rho_table.get((m, focal), _empty_corr())
+                rho, n = entry.rho, entry.n
                 if rho is None or (isinstance(rho, float) and math.isnan(rho)):
                     verdict = "n/a"
+                elif getattr(args, "bootstrap", False) and entry.ci_excludes_zero:
+                    if rho > 0:
+                        verdict = "supports hypothesis (CI excludes 0, ρ>0)"
+                    else:
+                        verdict = "refutes hypothesis (CI excludes 0, ρ<0)"
                 elif rho > 0.2:
                     verdict = "supports hypothesis (|ρ| ≥ 0.2 positive)"
                 elif rho < -0.2:
                     verdict = "refutes hypothesis (|ρ| ≥ 0.2 negative)"
                 else:
                     verdict = "no signal at |ρ| ≥ 0.2"
+                ci_suffix = ""
+                if getattr(args, "bootstrap", False) and entry.ci_lo is not None and entry.ci_hi is not None:
+                    ci_suffix = f" [{entry.ci_lo:+.3f}, {entry.ci_hi:+.3f}]"
                 lines.append(
-                    f"| `{m}` | {_fmt_rho(rho)} | {n} | {verdict} |"
+                    f"| `{m}` | {_fmt_rho(rho)}{ci_suffix} | {n} | {verdict} |"
                 )
     lines.append("")
 
@@ -1107,9 +1222,18 @@ def _parse_args() -> argparse.Namespace:
                     help="OPTIONAL fft_features.csv (H-T1-3).")
     ap.add_argument("--vae-recerr-csv", type=Path, default=None,
                     help="OPTIONAL vae_recerr_features.csv (H-T1-1).")
+    ap.add_argument("--motion-csv", type=Path, default=None,
+                    help="OPTIONAL latent_motion_features.csv "
+                         "(latent_temporal_l2_mean, pixel_mse_temporal_mean).")
     ap.add_argument("--loss-var-csv", type=Path, default=None,
                     help="OPTIONAL loss_var_features.csv (H-T2-5 derived).")
     ap.add_argument("--output-dir", type=Path, required=True)
+    ap.add_argument("--bootstrap", action="store_true",
+                    help="Compute per-video bootstrap 95%% CIs for Spearman ρ.")
+    ap.add_argument("--n-boot", type=int, default=5000,
+                    help="Bootstrap resamples when --bootstrap is set.")
+    ap.add_argument("--bootstrap-seed", type=int, default=42,
+                    help="RNG seed for bootstrap resampling.")
     ap.add_argument("--top-k", type=int, default=10,
                     help="Top-K winners / losers cohort size for the strongest feature.")
     ap.add_argument("--methods", nargs="*", default=None,
@@ -1136,7 +1260,9 @@ def main() -> int:
     print(f"BPP CSV      : {args.bpp_csv if args.bpp_csv else '(not provided)'}")
     print(f"FFT CSV      : {args.fft_csv if args.fft_csv else '(not provided)'}")
     print(f"VAE-rec CSV  : {args.vae_recerr_csv if args.vae_recerr_csv else '(not provided)'}")
+    print(f"Motion CSV   : {args.motion_csv if args.motion_csv else '(not provided)'}")
     print(f"Loss-var CSV : {args.loss_var_csv if args.loss_var_csv else '(not provided)'}")
+    print(f"Bootstrap    : {'yes (B=' + str(args.n_boot) + ', seed=' + str(args.bootstrap_seed) + ')' if args.bootstrap else 'no'}")
     print(f"Output dir   : {args.output_dir}")
     print("=" * 70)
 
@@ -1192,6 +1318,7 @@ def main() -> int:
     _add_aux_source(args.bpp_csv, load_bpp_csv, "bpp", "T1")
     _add_aux_source(args.fft_csv, load_fft_csv, "fft", "T1")
     _add_aux_source(args.vae_recerr_csv, load_vae_recerr_csv, "vae_recerr", "T1")
+    _add_aux_source(args.motion_csv, load_motion_csv, "motion", "T1")
     _add_aux_source(args.loss_var_csv, load_loss_var_csv, "loss_var", "OOD")
 
     if args.ood_csv is not None:
@@ -1238,7 +1365,7 @@ def main() -> int:
           f"(rows with all-NaN ΔPSNR across selected methods: {n_missing_gain})")
 
     # ---- correlation table -----------------------------------------------
-    rho_table: Dict[Tuple[str, str], Tuple[Optional[float], int]] = {}
+    rho_table: Dict[Tuple[str, str], CorrEntry] = {}
     for fname in ordered_features:
         fv = feature_by_name[fname]
         for m in methods:
@@ -1246,12 +1373,24 @@ def main() -> int:
             rho = spearman_rho(fv, d)
             mask = ~(np.isnan(fv) | np.isnan(d))
             n = int(mask.sum())
-            rho_table[(m, fname)] = (rho, n)
+            ci_lo = ci_hi = abs_rho_ci_hi = None
+            ci_excludes_zero = None
+            if args.bootstrap and n >= 3:
+                ci_lo, ci_hi, ci_excludes_zero, abs_rho_ci_hi = bootstrap_spearman_ci(
+                    fv, d, n_boot=args.n_boot, seed=args.bootstrap_seed,
+                )
+            rho_table[(m, fname)] = CorrEntry(
+                rho=rho, n=n,
+                ci_lo=ci_lo, ci_hi=ci_hi,
+                ci_excludes_zero=ci_excludes_zero,
+                abs_rho_ci_hi=abs_rho_ci_hi,
+            )
 
     write_correlation_table(
         args.output_dir / "correlation_table.md",
         args.output_dir / "correlation_table.csv",
         methods, ordered_features, tier_by_feature, rho_table,
+        bootstrap_enabled=args.bootstrap,
     )
     write_top_features_per_method(
         args.output_dir / "top_features_per_method.md",
@@ -1281,10 +1420,10 @@ def main() -> int:
     feature_mean_abs_rho: List[Tuple[str, float]] = []
     for fname in online_features:
         rhos = [
-            abs(rho_table[(m, fname)][0])
+            abs(rho_table[(m, fname)].rho)
             for m in methods
-            if rho_table[(m, fname)][0] is not None
-            and not np.isnan(rho_table[(m, fname)][0])
+            if rho_table[(m, fname)].rho is not None
+            and not np.isnan(rho_table[(m, fname)].rho)
         ]
         if rhos:
             feature_mean_abs_rho.append((fname, float(np.mean(rhos))))

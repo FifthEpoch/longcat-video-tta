@@ -63,6 +63,7 @@ FLOW_SBATCH="${FLOW_SBATCH:-scripts/sbatch/run_extract_flow_shape_features.sbatc
 BPP_SBATCH="${BPP_SBATCH:-scripts/sbatch/run_extract_bpp_features.sbatch}"
 FFT_SBATCH="${FFT_SBATCH:-scripts/sbatch/run_extract_fft_features.sbatch}"
 VAE_RECERR_SBATCH="${VAE_RECERR_SBATCH:-scripts/sbatch/run_extract_vae_recerr_features.sbatch}"
+MOTION_SBATCH="${MOTION_SBATCH:-scripts/sbatch/run_extract_latent_motion_features.sbatch}"
 LOSS_VAR_SBATCH="${LOSS_VAR_SBATCH:-scripts/sbatch/run_derive_loss_variance.sbatch}"
 CORR_SBATCH="${CORR_SBATCH:-scripts/sbatch/run_correlate_tta_gain.sbatch}"
 
@@ -111,12 +112,17 @@ SKIP_FLOW="${SKIP_FLOW:-0}"
 SKIP_BPP="${SKIP_BPP:-0}"
 SKIP_FFT="${SKIP_FFT:-0}"
 SKIP_VAE_RECERR="${SKIP_VAE_RECERR:-0}"
+SKIP_MOTION="${SKIP_MOTION:-0}"
 SKIP_LOSS_VAR="${SKIP_LOSS_VAR:-0}"
 FLOW_OUTPUT_CSV="${FLOW_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/flow_shape_features.csv}"
 BPP_OUTPUT_CSV="${BPP_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/bpp_features.csv}"
 FFT_OUTPUT_CSV="${FFT_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/fft_features.csv}"
 VAE_RECERR_OUTPUT_CSV="${VAE_RECERR_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/vae_recerr_features.csv}"
+MOTION_OUTPUT_CSV="${MOTION_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/latent_motion_features.csv}"
 LOSS_VAR_OUTPUT_CSV="${LOSS_VAR_OUTPUT_CSV:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/loss_var_features.csv}"
+BOOTSTRAP="${BOOTSTRAP:-0}"
+N_BOOT="${N_BOOT:-5000}"
+BOOTSTRAP_SEED="${BOOTSTRAP_SEED:-42}"
 
 # ============================================================================
 # Stage 2 (correlation) defaults — passed through to run_correlate_tta_gain.sbatch
@@ -134,6 +140,7 @@ FLOW_CSV="${FLOW_CSV:-${FLOW_OUTPUT_CSV}}"
 BPP_CSV="${BPP_CSV:-${BPP_OUTPUT_CSV}}"
 FFT_CSV="${FFT_CSV:-${FFT_OUTPUT_CSV}}"
 VAE_RECERR_CSV="${VAE_RECERR_CSV:-${VAE_RECERR_OUTPUT_CSV}}"
+MOTION_CSV="${MOTION_CSV:-${MOTION_OUTPUT_CSV}}"
 LOSS_VAR_CSV="${LOSS_VAR_CSV:-${LOSS_VAR_OUTPUT_CSV}}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/reports/per_video_analysis/2026-06-09/criteria_correlation}"
 
@@ -323,6 +330,17 @@ if [ "${SKIP_VAE_RECERR}" != "1" ]; then
 fi
 
 # ============================================================================
+# Stage 1i: latent + pixel temporal motion (GPU, parallel)
+# ============================================================================
+MOTION_JID=""
+if [ "${SKIP_MOTION}" != "1" ]; then
+    MOTION_JID=$(sbatch --parsable \
+        --export="ALL,CHECKPOINT_DIR=${CHECKPOINT_DIR},VIDEOS_DIR=${VIDEOS_DIR},OUTPUT_CSV=${MOTION_OUTPUT_CSV},TTA_VISIBLE_FRAMES=${TTA_VISIBLE_FRAMES},DEVICE=${DEVICE},RESUME=${RESUME}" \
+        "${MOTION_SBATCH}")
+    echo "Submitted latent-motion extraction: ${MOTION_JID}"
+fi
+
+# ============================================================================
 # Stage 1h: H-T2-5 loss variance (CPU, depends on OOD when OOD runs)
 # ============================================================================
 LOSS_VAR_JID=""
@@ -374,6 +392,10 @@ if [ -n "${VAE_RECERR_JID}" ]; then
     DEP_JIDS="${DEP_JIDS}:${VAE_RECERR_JID}"
     DEP_DESC="${DEP_DESC} + ${VAE_RECERR_JID}"
 fi
+if [ -n "${MOTION_JID}" ]; then
+    DEP_JIDS="${DEP_JIDS}:${MOTION_JID}"
+    DEP_DESC="${DEP_DESC} + ${MOTION_JID}"
+fi
 if [ -n "${LOSS_VAR_JID}" ]; then
     DEP_JIDS="${DEP_JIDS}:${LOSS_VAR_JID}"
     DEP_DESC="${DEP_DESC} + ${LOSS_VAR_JID}"
@@ -392,10 +414,12 @@ EFFECTIVE_FFT_CSV="${FFT_CSV}"
 [ "${SKIP_FFT}" = "1" ] && EFFECTIVE_FFT_CSV=""
 EFFECTIVE_VAE_RECERR_CSV="${VAE_RECERR_CSV}"
 [ "${SKIP_VAE_RECERR}" = "1" ] && EFFECTIVE_VAE_RECERR_CSV=""
+EFFECTIVE_MOTION_CSV="${MOTION_CSV}"
+[ "${SKIP_MOTION}" = "1" ] && EFFECTIVE_MOTION_CSV=""
 EFFECTIVE_LOSS_VAR_CSV="${LOSS_VAR_CSV}"
 [ "${SKIP_LOSS_VAR}" = "1" ] && EFFECTIVE_LOSS_VAR_CSV=""
 
-CORR_EXPORT="ALL,GAINS_CSV=${GAINS_CSV},FEATURES_CSV=${FEATURES_CSV},OOD_CSV=${EFFECTIVE_OOD_CSV},TIER3_CSV=${EFFECTIVE_TIER3_CSV},FLOW_CSV=${EFFECTIVE_FLOW_CSV},BPP_CSV=${EFFECTIVE_BPP_CSV},FFT_CSV=${EFFECTIVE_FFT_CSV},VAE_RECERR_CSV=${EFFECTIVE_VAE_RECERR_CSV},LOSS_VAR_CSV=${EFFECTIVE_LOSS_VAR_CSV},OUTPUT_DIR=${OUTPUT_DIR}"
+CORR_EXPORT="ALL,GAINS_CSV=${GAINS_CSV},FEATURES_CSV=${FEATURES_CSV},OOD_CSV=${EFFECTIVE_OOD_CSV},TIER3_CSV=${EFFECTIVE_TIER3_CSV},FLOW_CSV=${EFFECTIVE_FLOW_CSV},BPP_CSV=${EFFECTIVE_BPP_CSV},FFT_CSV=${EFFECTIVE_FFT_CSV},VAE_RECERR_CSV=${EFFECTIVE_VAE_RECERR_CSV},MOTION_CSV=${EFFECTIVE_MOTION_CSV},LOSS_VAR_CSV=${EFFECTIVE_LOSS_VAR_CSV},OUTPUT_DIR=${OUTPUT_DIR},BOOTSTRAP=${BOOTSTRAP},N_BOOT=${N_BOOT},BOOTSTRAP_SEED=${BOOTSTRAP_SEED}"
 
 CORR_JID=$(sbatch --parsable \
     --dependency="${DEP_SPEC}" \
@@ -412,6 +436,7 @@ N_SUBMITTED=1
 [ -n "${BPP_JID}" ]   && N_SUBMITTED=$((N_SUBMITTED + 1))
 [ -n "${FFT_JID}" ]   && N_SUBMITTED=$((N_SUBMITTED + 1))
 [ -n "${VAE_RECERR_JID}" ] && N_SUBMITTED=$((N_SUBMITTED + 1))
+[ -n "${MOTION_JID}" ] && N_SUBMITTED=$((N_SUBMITTED + 1))
 [ -n "${LOSS_VAR_JID}" ] && N_SUBMITTED=$((N_SUBMITTED + 1))
 N_SUBMITTED=$((N_SUBMITTED + 1))  # +correlation
 echo "Submitted ${N_SUBMITTED} jobs."
@@ -426,6 +451,7 @@ SQ_LIST="${EXTRACT_JID}"
 [ -n "${BPP_JID}" ]   && SQ_LIST="${SQ_LIST},${BPP_JID}"
 [ -n "${FFT_JID}" ]   && SQ_LIST="${SQ_LIST},${FFT_JID}"
 [ -n "${VAE_RECERR_JID}" ] && SQ_LIST="${SQ_LIST},${VAE_RECERR_JID}"
+[ -n "${MOTION_JID}" ] && SQ_LIST="${SQ_LIST},${MOTION_JID}"
 [ -n "${LOSS_VAR_JID}" ] && SQ_LIST="${SQ_LIST},${LOSS_VAR_JID}"
 SQ_LIST="${SQ_LIST},${CORR_JID}"
 
@@ -436,6 +462,7 @@ GREP_RE="extract_video_features"
 [ -n "${BPP_JID}" ]   && GREP_RE="${GREP_RE}|extract_bpp"
 [ -n "${FFT_JID}" ]   && GREP_RE="${GREP_RE}|extract_fft"
 [ -n "${VAE_RECERR_JID}" ] && GREP_RE="${GREP_RE}|extract_vae_recerr"
+[ -n "${MOTION_JID}" ] && GREP_RE="${GREP_RE}|extract_latent_motion"
 [ -n "${LOSS_VAR_JID}" ] && GREP_RE="${GREP_RE}|derive_loss_var"
 GREP_RE="${GREP_RE}|correlate_tta_gain"
 
