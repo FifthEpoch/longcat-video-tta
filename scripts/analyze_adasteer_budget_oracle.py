@@ -1,0 +1,492 @@
+#!/usr/bin/env python3
+"""Analyze AdaSteer step×LR budget grid as a per-video oracle (H9).
+
+After the ``panda_1000v_adasteer_budget`` (or pilot) sweep completes and
+chunks are merged, this script loads per-video PSNR from every grid config,
+computes:
+
+  * Oracle-best PSNR uplift vs fixed headline AdaSteer (S10/LR5e-3)
+  * Oracle-best PSNR uplift vs always-NOTTA (delta_steps=0), when present
+  * OOD-quintile stratification of oracle winners and mean PSNR
+  * Quintile-adaptive policy: per OOD quintile, pick the grid config with
+    highest mean PSNR in that quintile (deployable upper bound)
+  * Bootstrap 95% CI for population mean oracle uplift (per-video resampling)
+
+Usage:
+    python scripts/analyze_adasteer_budget_oracle.py \\
+        --series-root sweep_experiment/results/panda_ood_budget_pilot \\
+        --ood-csv sweep_experiment/reports/per_video_analysis/2026-06-09/diffusion_ood_scores.csv \\
+        --output sweep_experiment/reports/per_video_analysis/2026-06-09/adasteer_budget_oracle.md
+
+    python scripts/analyze_adasteer_budget_oracle.py --bootstrap
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+import numpy as np
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.caption_utils import canonical_video_id
+
+DEFAULT_SERIES = _REPO_ROOT / "sweep_experiment/results/panda_ood_budget_pilot"
+DEFAULT_OOD = (
+    _REPO_ROOT
+    / "sweep_experiment/reports/per_video_analysis/2026-06-09/diffusion_ood_scores.csv"
+)
+
+OOD_COL = "mean_diffusion_loss_caption"
+FIXED_ADA_RUN_ID = "S10_LR5e3"
+NOTTA_RUN_ID = "NOTTA"
+
+_RUN_ID_RE = re.compile(r"^S(\d+)_LR(.+)$")
+
+
+def bootstrap_mean_ci(
+    values: Sequence[float],
+    n_boot: int = 5000,
+    seed: int = 42,
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[bool]]:
+    """Per-video bootstrap CI for the mean."""
+    a = np.asarray([x for x in values if not np.isnan(x)], dtype=float)
+    if a.size == 0:
+        return None, None, None, None
+    mean = float(a.mean())
+    if a.size < 2:
+        return mean, None, None, None
+    rng = np.random.default_rng(seed)
+    boot_means = []
+    n = a.size
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        boot_means.append(float(a[idx].mean()))
+    boot_arr = np.asarray(boot_means, dtype=np.float64)
+    ci_lo = float(np.percentile(boot_arr, 2.5))
+    ci_hi = float(np.percentile(boot_arr, 97.5))
+    ci_excludes_zero = bool((ci_lo > 0.0) or (ci_hi < 0.0))
+    return mean, ci_lo, ci_hi, ci_excludes_zero
+
+
+def _stats(arr: Sequence[float]) -> Tuple[int, float, float, float, float]:
+    a = np.asarray([x for x in arr if not np.isnan(x)], dtype=float)
+    if a.size == 0:
+        return 0, float("nan"), float("nan"), float("nan"), float("nan")
+    return (
+        int(a.size),
+        float(np.mean(a)),
+        float(np.median(a)),
+        float(np.percentile(a, 25)),
+        float(np.percentile(a, 75)),
+    )
+
+
+def _fmt_stats(label: str, arr: Sequence[float]) -> str:
+    n, mean, med, p25, p75 = _stats(arr)
+    if n == 0:
+        return f"| {label} | 0 | — | — | — | — |"
+    return (
+        f"| {label} | {n} | {mean:.3f} dB | {med:.3f} dB | "
+        f"{p25:.3f} dB | {p75:.3f} dB |"
+    )
+
+
+def load_ood_quintiles(path: Path, n_bins: int = 5) -> Dict[str, int]:
+    """Return {video_id: quintile 1..n_bins} from OOD CSV."""
+    rows: List[Tuple[str, float]] = []
+    with path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            vid = canonical_video_id(row.get("video_id", ""))
+            v = row.get(OOD_COL, "")
+            if not vid or v in ("", None):
+                continue
+            try:
+                ood = float(v)
+            except ValueError:
+                continue
+            if np.isnan(ood):
+                continue
+            rows.append((vid, ood))
+    if not rows:
+        return {}
+    vals = np.asarray([x[1] for x in rows], dtype=float)
+    edges = np.quantile(vals, np.linspace(0.0, 1.0, n_bins + 1))
+    edges = np.unique(edges)
+    out: Dict[str, int] = {}
+    for vid, ood in rows:
+        idx = int(np.digitize([ood], edges[1:-1], right=False)[0])
+        idx = min(max(idx, 0), max(len(edges) - 2, 0))
+        out[vid] = idx + 1
+    return out
+
+
+def _summary_path(run_dir: Path) -> Optional[Path]:
+    merged = run_dir / "merged_summary.json"
+    if merged.exists():
+        return merged
+    chunks = sorted(run_dir.glob("chunk_*/summary.json"))
+    if len(chunks) == 1:
+        return chunks[0]
+    return None
+
+
+def load_run_psnr(run_dir: Path) -> Dict[str, float]:
+    sp = _summary_path(run_dir)
+    if sp is None:
+        return {}
+    with sp.open(encoding="utf-8") as f:
+        summary = json.load(f)
+    pv = summary.get("per_video_results") or summary.get("results") or []
+    out: Dict[str, float] = {}
+    for r in pv:
+        if not r.get("success"):
+            continue
+        name = r.get("video_name") or r.get("video_id") or r.get("video", "")
+        vid = canonical_video_id(name)
+        psnr = r.get("psnr")
+        if not vid or psnr is None:
+            continue
+        out[vid] = float(psnr)
+    return out
+
+
+def discover_runs(series_root: Path) -> Dict[str, Path]:
+    runs: Dict[str, Path] = {}
+    if not series_root.is_dir():
+        return runs
+    for child in sorted(series_root.iterdir()):
+        if not child.is_dir():
+            continue
+        psnrs = load_run_psnr(child)
+        if psnrs:
+            runs[child.name] = child
+    return runs
+
+
+def parse_run_hparams(run_id: str) -> Tuple[Optional[int], Optional[float]]:
+    if run_id == NOTTA_RUN_ID:
+        return 0, None
+    m = _RUN_ID_RE.match(run_id)
+    if not m:
+        return None, None
+    steps = int(m.group(1))
+    lr_str = m.group(2).lower().replace("e", "e")
+    lr_map = {
+        "1e3": 1e-3,
+        "2p5e3": 2.5e-3,
+        "2.5e3": 2.5e-3,
+        "5e3": 5e-3,
+        "7p5e3": 7.5e-3,
+        "7.5e3": 7.5e-3,
+        "1e2": 1e-2,
+    }
+    lr = lr_map.get(lr_str)
+    if lr is None:
+        try:
+            lr = float(lr_str.replace("p", "."))
+        except ValueError:
+            lr = None
+    return steps, lr
+
+
+def build_video_table(
+    runs: Dict[str, Path],
+) -> Tuple[List[str], Dict[str, Dict[str, float]]]:
+    """Return (run_ids, {video_id: {run_id: psnr}})."""
+    psnr_by_run: Dict[str, Dict[str, float]] = {}
+    for run_id, run_dir in runs.items():
+        psnr_by_run[run_id] = load_run_psnr(run_dir)
+    all_vids = sorted(set().union(*[set(d.keys()) for d in psnr_by_run.values()]))
+    table: Dict[str, Dict[str, float]] = {vid: {} for vid in all_vids}
+    for run_id, d in psnr_by_run.items():
+        for vid, psnr in d.items():
+            table[vid][run_id] = psnr
+    run_ids = sorted(r for r in psnr_by_run if r != NOTTA_RUN_ID)
+    if NOTTA_RUN_ID in psnr_by_run:
+        run_ids = [NOTTA_RUN_ID] + run_ids
+    return run_ids, table
+
+
+def oracle_winner(row: Dict[str, float], candidates: Iterable[str]) -> Optional[str]:
+    best: Optional[str] = None
+    best_psnr = float("-inf")
+    for rid in candidates:
+        p = row.get(rid)
+        if p is None or np.isnan(p):
+            continue
+        if p > best_psnr:
+            best_psnr = p
+            best = rid
+    return best
+
+
+def build_report(
+    *,
+    series_root: Path,
+    run_ids: List[str],
+    table: Dict[str, Dict[str, float]],
+    ood_quintile: Dict[str, int],
+    fixed_run: str,
+    bootstrap: bool,
+    n_boot: int,
+    bootstrap_seed: int,
+) -> str:
+    grid_runs = [r for r in run_ids if r not in (NOTTA_RUN_ID,)]
+    vids = sorted(table.keys())
+    n = len(vids)
+
+    lines: List[str] = [
+        "# AdaSteer budget-grid oracle analysis (H9)",
+        "",
+        f"**Series:** `{series_root}`",
+        f"**N = {n}** videos with PSNR across ≥1 grid config.",
+        f"**Fixed headline AdaSteer:** `{fixed_run}` (S10/LR=5e-3).",
+        "",
+    ]
+
+    if fixed_run not in run_ids:
+        lines.append(
+            f"> Warning: fixed run `{fixed_run}` not found in series; "
+            "fixed-policy comparisons skipped."
+        )
+        lines.append("")
+
+    notta_psnr: List[float] = []
+    fixed_psnr: List[float] = []
+    oracle_psnr: List[float] = []
+    oracle_gain_vs_fixed: List[float] = []
+    oracle_gain_vs_notta: List[float] = []
+    winners: Dict[str, int] = {}
+
+    for vid in vids:
+        row = table[vid]
+        w = oracle_winner(row, grid_runs)
+        if w is None:
+            continue
+        winners[w] = winners.get(w, 0) + 1
+        p_oracle = row[w]
+        oracle_psnr.append(p_oracle)
+        if fixed_run in row:
+            fixed_psnr.append(row[fixed_run])
+            oracle_gain_vs_fixed.append(p_oracle - row[fixed_run])
+        if NOTTA_RUN_ID in row:
+            notta_psnr.append(row[NOTTA_RUN_ID])
+            oracle_gain_vs_notta.append(p_oracle - row[NOTTA_RUN_ID])
+
+    def mean_psnr(arr: List[float]) -> float:
+        a = np.asarray(arr, dtype=float)
+        return float(np.mean(a)) if a.size else float("nan")
+
+    lines += [
+        "## Population routing uplift",
+        "",
+        "| Policy | Mean PSNR | Δ vs always-NOTTA | Δ vs fixed AdaSteer |",
+        "|---|---:|---:|---:|",
+    ]
+    if notta_psnr:
+        lines.append(
+            f"| Always NOTTA | {mean_psnr(notta_psnr):.3f} dB | 0.000 dB | — |"
+        )
+    if fixed_psnr:
+        delta_n = (
+            mean_psnr(fixed_psnr) - mean_psnr(notta_psnr)
+            if notta_psnr
+            else float("nan")
+        )
+        lines.append(
+            f"| Fixed AdaSteer (`{fixed_run}`) | {mean_psnr(fixed_psnr):.3f} dB | "
+            f"{delta_n:+.3f} dB | 0.000 dB |"
+        )
+    if oracle_psnr:
+        d_n = (
+            mean_psnr(oracle_psnr) - mean_psnr(notta_psnr)
+            if notta_psnr
+            else float("nan")
+        )
+        d_f = (
+            mean_psnr(oracle_gain_vs_fixed) + mean_psnr(fixed_psnr) - mean_psnr(fixed_psnr)
+            if fixed_psnr
+            else float("nan")
+        )
+        d_f = mean_psnr(oracle_gain_vs_fixed) if oracle_gain_vs_fixed else float("nan")
+        lines.append(
+            f"| **Oracle (best grid PSNR)** | **{mean_psnr(oracle_psnr):.3f} dB** | "
+            f"**{d_n:+.3f} dB** | **{d_f:+.3f} dB** |"
+        )
+    lines.append("")
+
+    if bootstrap and oracle_gain_vs_fixed:
+        uplift = mean_psnr(oracle_gain_vs_fixed)
+        _m, ci_lo, ci_hi, excl = bootstrap_mean_ci(
+            oracle_gain_vs_fixed, n_boot=n_boot, seed=bootstrap_seed,
+        )
+        if ci_lo is not None:
+            sig = "yes" if excl else "no"
+            lines += [
+                f"**Bootstrap oracle uplift vs fixed AdaSteer** "
+                f"(per-video, B={n_boot}, seed={bootstrap_seed}): "
+                f"mean Δ={uplift:+.3f} dB, 95% CI [{ci_lo:+.3f}, {ci_hi:+.3f}] dB, "
+                f"CI excludes 0: {sig}.",
+                "",
+            ]
+
+    if winners:
+        top = sorted(winners.items(), key=lambda x: -x[1])[:8]
+        parts = [f"`{k}` {v} ({100 * v / n:.1f}%)" for k, v in top]
+        lines += ["**Oracle config picks (top):** " + " · ".join(parts), ""]
+
+    lines += [
+        "| Metric | N | Mean | Median | p25 | p75 |",
+        "|---|---:|---:|---:|---:|---:|",
+        _fmt_stats("Oracle ΔPSNR vs fixed AdaSteer", oracle_gain_vs_fixed),
+        _fmt_stats("Oracle ΔPSNR vs NOTTA", oracle_gain_vs_notta),
+        "",
+    ]
+
+    # OOD quintile stratification
+    if ood_quintile:
+        lines += [
+            "## OOD quintile stratification",
+            "",
+            f"OOD column: `{OOD_COL}` (low=Q1, high=Q5).",
+            "",
+        ]
+        q_rows: Dict[int, List[str]] = {}
+        for vid in vids:
+            q = ood_quintile.get(vid)
+            if q is not None:
+                q_rows.setdefault(q, []).append(vid)
+
+        lines += [
+            "### Mean PSNR by OOD quintile and config",
+            "",
+            "| quintile | N | fixed AdaSteer | oracle-best | best grid run |",
+            "|---|---:|---:|---:|---|",
+        ]
+        quintile_best_run: Dict[int, str] = {}
+        for q in sorted(q_rows.keys()):
+            vids_q = q_rows[q]
+            fixed_vals = [
+                table[v][fixed_run]
+                for v in vids_q
+                if fixed_run in table[v]
+            ]
+            oracle_vals = []
+            best_counts: Dict[str, int] = {}
+            for v in vids_q:
+                w = oracle_winner(table[v], grid_runs)
+                if w and w in table[v]:
+                    oracle_vals.append(table[v][w])
+                    best_counts[w] = best_counts.get(w, 0) + 1
+            best_run = max(best_counts, key=best_counts.get) if best_counts else "—"
+            quintile_best_run[q] = best_run
+            lines.append(
+                f"| Q{q} | {len(vids_q)} | "
+                f"{np.mean(fixed_vals):.3f} dB | "
+                f"{np.mean(oracle_vals):.3f} dB | `{best_run}` |"
+            )
+        lines.append("")
+
+        # H9 pattern check: high OOD → more steps / lower LR?
+        lines += [
+            "### H9 pattern check (high OOD → more steps, lower LR?)",
+            "",
+            "| quintile | modal oracle run | steps | LR |",
+            "|---|---|---:|---:|",
+        ]
+        for q in sorted(quintile_best_run.keys()):
+            rid = quintile_best_run[q]
+            steps, lr = parse_run_hparams(rid)
+            lr_s = f"{lr:.0e}" if lr is not None else "—"
+            steps_s = str(steps) if steps is not None else "—"
+            lines.append(f"| Q{q} | `{rid}` | {steps_s} | {lr_s} |")
+        lines.append("")
+
+        # Quintile-adaptive deployable policy
+        adaptive_psnr: List[float] = []
+        for vid in vids:
+            q = ood_quintile.get(vid)
+            if q is None:
+                continue
+            rid = quintile_best_run.get(q)
+            if rid and rid in table[vid]:
+                adaptive_psnr.append(table[vid][rid])
+        if adaptive_psnr and fixed_psnr:
+            adapt_mean = mean_psnr(adaptive_psnr)
+            fixed_mean = mean_psnr(fixed_psnr)
+            lines += [
+                "### Quintile-adaptive policy (pick modal-best run per OOD quintile)",
+                "",
+                f"- Mean PSNR: **{adapt_mean:.3f} dB** vs fixed AdaSteer "
+                f"{fixed_mean:.3f} dB (**{adapt_mean - fixed_mean:+.3f} dB**).",
+                "",
+            ]
+
+    lines += [
+        "## Interpretation notes",
+        "",
+        "- Positive oracle uplift vs fixed S10/LR5e-3 means per-video budget "
+        "routing has headroom even if population fixed-budget TTA ≈ 0.",
+        "- H9 predicts high-OOD quintiles favour *more* steps and *lower* LR; "
+        "check the pattern table above (opposite sign would extend the H5 falsification).",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="AdaSteer budget-grid oracle analysis (H9)")
+    ap.add_argument("--series-root", type=Path, default=DEFAULT_SERIES)
+    ap.add_argument("--ood-csv", type=Path, default=DEFAULT_OOD)
+    ap.add_argument("--fixed-run-id", type=str, default=FIXED_ADA_RUN_ID)
+    ap.add_argument("--output", type=Path, default=None)
+    ap.add_argument("--bootstrap", action="store_true")
+    ap.add_argument("--n-boot", type=int, default=5000)
+    ap.add_argument("--bootstrap-seed", type=int, default=42)
+    args = ap.parse_args()
+
+    if not args.series_root.is_dir():
+        print(f"[error] series root not found: {args.series_root}", file=sys.stderr)
+        return 2
+
+    runs = discover_runs(args.series_root)
+    if not runs:
+        print(f"[error] no runs with PSNR found under {args.series_root}", file=sys.stderr)
+        return 2
+
+    run_ids, table = build_video_table(runs)
+    ood_q: Dict[str, int] = {}
+    if args.ood_csv.exists():
+        ood_q = load_ood_quintiles(args.ood_csv)
+    else:
+        print(f"[warn] OOD CSV not found: {args.ood_csv}", file=sys.stderr)
+
+    report = build_report(
+        series_root=args.series_root,
+        run_ids=run_ids,
+        table=table,
+        ood_quintile=ood_q,
+        fixed_run=args.fixed_run_id,
+        bootstrap=args.bootstrap,
+        n_boot=args.n_boot,
+        bootstrap_seed=args.bootstrap_seed,
+    )
+    print(report)
+
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(report, encoding="utf-8")
+        print(f"\nWrote {args.output}", file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

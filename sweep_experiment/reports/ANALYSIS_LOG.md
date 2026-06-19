@@ -17,6 +17,39 @@ Body...
 
 ---
 
+## 2026-06-19 — H9 AdaSteer budget-grid pilot + analysis scaffolding
+**Tags:** methodology, H9, in-flight
+**Refs:**
+- `scripts/sample_ood_quintile_videos.py` — OOD-quintile pilot list + symlink dataset
+- `scripts/analyze_adasteer_budget_oracle.py` — per-video oracle over step×LR grid
+- `sweep_experiment/configs/panda_1000v_adasteer_budget_grid.yaml` — full 20-config grid
+- `sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh` — 12-config × 200-video pilot
+- `sweep_experiment/sbatch/submit_adasteer_budget_1000v_chunked.sh` — optional full 1000v run
+
+H9 (OOD-adaptive TTA budget) was the only open gating hypothesis after H1–H8
+completed. Implemented the approved pilot scope: **12 configs** (LR 1e-3, 5e-3,
+1e-2 × steps 2, 5, 10, 20) on **200 videos** (40 per OOD quintile), with the
+**full 20-config** grid (adds LR 2.5e-3, 7.5e-3) documented for optional 1000v
+follow-up. Fixed headline comparator: `S10_LR5e3` (same as `panda_1000v_standard/ADA`).
+
+Cluster fire (after `git pull`):
+```bash
+python scripts/sample_ood_quintile_videos.py \
+    --ood-csv sweep_experiment/reports/per_video_analysis/2026-06-09/diffusion_ood_scores.csv \
+    --source-dataset datasets/panda_1000_480p \
+    --output-json sweep_experiment/lists/panda_ood_budget_pilot_videos.json \
+    --create-dataset datasets/panda_ood_budget_pilot_480p
+
+bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
+```
+
+Post-merge analysis uses bootstrap CIs (same pattern as
+`analyze_routing_win_magnitudes.py`). Check whether high-OOD quintiles prefer
+more steps + lower LR (H9 prediction) vs the H5 falsification (higher OOD →
+less ΔPSNR at fixed budget).
+
+---
+
 ## 2026-06-14 — Gating Phase-0 Tier-1 extractors implemented (H-T1-1..4, H-T2-2/5)
 **Tags:** methodology, gating-experiment, implementation
 **Refs:**

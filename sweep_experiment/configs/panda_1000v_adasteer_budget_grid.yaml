@@ -1,0 +1,126 @@
+# Panda-70M 1000v AdaSteer step × LR budget grid (H9: OOD-adaptive budget)
+#
+# Goal: measure per-video oracle headroom from choosing (delta_steps, delta_lr)
+# per clip, and test whether high-OOD quintiles prefer more steps + lower LR.
+#
+# Eval set : datasets/panda_1000_480p (1000 clips; pilot uses
+#            datasets/panda_ood_budget_pilot_480p — 200 clips, 40/OOD quintile)
+# Baseline : headline AdaSteer = S10_LR5e3 (delta_steps=10, delta_lr=5e-3)
+#
+# Full grid (20 configs): 5 LRs × 4 step counts
+#   LRs   : 1e-3, 2.5e-3, 5e-3, 7.5e-3, 1e-2
+#   steps : 2, 5, 10, 20
+#
+# Pilot subset (12 configs): drop the middle LRs 2.5e-3 and 7.5e-3
+#   LRs   : 1e-3, 5e-3, 1e-2
+#   steps : 2, 5, 10, 20
+#
+# Pilot run IDs (12):
+#   S2_LR1e3  S2_LR5e3  S2_LR1e2
+#   S5_LR1e3  S5_LR5e3  S5_LR1e2
+#   S10_LR1e3 S10_LR5e3 S10_LR1e2
+#   S20_LR1e3 S20_LR5e3 S20_LR1e2
+#
+# Submit pilot (after creating pilot dataset — see submit_adasteer_budget_pilot.sh):
+#   bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
+#
+# Submit full 1000v chunked grid (optional, ~200 jobs = 20 configs × 10 chunks):
+#   bash sweep_experiment/sbatch/submit_adasteer_budget_1000v_chunked.sh
+#
+# After merge:
+#   python scripts/analyze_adasteer_budget_oracle.py --bootstrap \\
+#       --series-root sweep_experiment/results/panda_1000v_adasteer_budget \\
+#       --output sweep_experiment/reports/per_video_analysis/$(date +%Y-%m-%d)/adasteer_budget_oracle.md
+
+method: delta_a
+series: panda
+series_name: panda_1000v_adasteer_budget
+description: "Panda-70M 1000v AdaSteer step×LR budget grid for H9 OOD-adaptive budget test"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: false
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  # --- step=2 (full grid) ---
+  - run_id: S2_LR1e3
+    delta_steps: 2
+    delta_lr: 1.0e-3
+  - run_id: S2_LR2p5e3
+    delta_steps: 2
+    delta_lr: 2.5e-3
+  - run_id: S2_LR5e3
+    delta_steps: 2
+    delta_lr: 5.0e-3
+  - run_id: S2_LR7p5e3
+    delta_steps: 2
+    delta_lr: 7.5e-3
+  - run_id: S2_LR1e2
+    delta_steps: 2
+    delta_lr: 1.0e-2
+
+  # --- step=5 ---
+  - run_id: S5_LR1e3
+    delta_steps: 5
+    delta_lr: 1.0e-3
+  - run_id: S5_LR2p5e3
+    delta_steps: 5
+    delta_lr: 2.5e-3
+  - run_id: S5_LR5e3
+    delta_steps: 5
+    delta_lr: 5.0e-3
+  - run_id: S5_LR7p5e3
+    delta_steps: 5
+    delta_lr: 7.5e-3
+  - run_id: S5_LR1e2
+    delta_steps: 5
+    delta_lr: 1.0e-2
+
+  # --- step=10 (headline step count) ---
+  - run_id: S10_LR1e3
+    delta_steps: 10
+    delta_lr: 1.0e-3
+  - run_id: S10_LR2p5e3
+    delta_steps: 10
+    delta_lr: 2.5e-3
+  - run_id: S10_LR5e3
+    delta_steps: 10
+    delta_lr: 5.0e-3
+  - run_id: S10_LR7p5e3
+    delta_steps: 10
+    delta_lr: 7.5e-3
+  - run_id: S10_LR1e2
+    delta_steps: 10
+    delta_lr: 1.0e-2
+
+  # --- step=20 ---
+  - run_id: S20_LR1e3
+    delta_steps: 20
+    delta_lr: 1.0e-3
+  - run_id: S20_LR2p5e3
+    delta_steps: 20
+    delta_lr: 2.5e-3
+  - run_id: S20_LR5e3
+    delta_steps: 20
+    delta_lr: 5.0e-3
+  - run_id: S20_LR7p5e3
+    delta_steps: 20
+    delta_lr: 7.5e-3
+  - run_id: S20_LR1e2
+    delta_steps: 20
+    delta_lr: 1.0e-2
