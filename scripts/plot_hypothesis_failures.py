@@ -80,6 +80,59 @@ H9_CONFIG_PSNR = {
 }
 
 
+def _finite_values(values: Sequence[object]) -> np.ndarray:
+    out: List[float] = []
+    for v in values:
+        if v is None:
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(f):
+            out.append(f)
+    return np.asarray(out, dtype=float)
+
+
+def _metric_lim(
+    values: Sequence[object],
+    *,
+    pad_frac: float = 0.12,
+    min_pad: float = 0.05,
+) -> Tuple[float, float]:
+    arr = _finite_values(values)
+    if arr.size == 0:
+        return 0.0, 1.0
+    lo, hi = float(arr.min()), float(arr.max())
+    span = hi - lo
+    pad = max(min_pad, span * pad_frac) if span > 1e-9 else min_pad
+    return lo - pad, hi + pad
+
+
+def _add_baseline_hline(ax: plt.Axes, value: float, *, label: str = "NOTTA baseline") -> None:
+    ax.axhline(
+        float(value),
+        color="#888888",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.9,
+        zorder=0,
+        label=label,
+    )
+
+
+def _add_baseline_vline(ax: plt.Axes, value: float, *, label: str = "Fixed AdaSteer baseline") -> None:
+    ax.axvline(
+        float(value),
+        color="#888888",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.9,
+        zorder=0,
+        label=label,
+    )
+
+
 def _save(fig: plt.Figure, out_dir: Path, name: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / name
@@ -222,7 +275,10 @@ def plot_h4_noprompt(out_dir: Path, gains_csv: Path) -> Optional[Path]:
             color=["#4C72B0", "#8DA0CB", "#DD8452", "#F5A673"],
             edgecolor="#333",
         )
-        ax.axhline(0, color="#333", linewidth=0.8)
+        _add_baseline_hline(ax, 0.0, label="NOTTA baseline (Δ=0)")
+        vals = [0.008, 0.002, -0.076, -0.065]
+        ylo, yhi = _metric_lim(vals, min_pad=0.02)
+        ax.set_ylim(ylo, yhi)
         ax.set_ylabel("Mean ΔPSNR vs NOTTA (dB)")
         ax.set_title("H4 — Caption ablation (fallback numbers)", fontweight="bold")
         fig.text(0.02, 0.02, "Verdict: INCONCLUSIVE", fontsize=9, color="#CCB974")
@@ -253,7 +309,9 @@ def plot_h4_noprompt(out_dir: Path, gains_csv: Path) -> Optional[Path]:
             vals.append(float(np.mean(stats[key])))
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.bar(labels, vals, color=["#4C72B0", "#8DA0CB", "#DD8452", "#F5A673"][: len(vals)], edgecolor="#333")
-    ax.axhline(0, color="#333", linewidth=0.8)
+    _add_baseline_hline(ax, 0.0, label="NOTTA baseline (Δ=0)")
+    ylo, yhi = _metric_lim(vals, min_pad=0.02)
+    ax.set_ylim(ylo, yhi)
     ax.set_ylabel("Mean ΔPSNR vs NOTTA (dB)")
     ax.set_title("H4 — No-caption TTA (mixed, tiny effects)", fontweight="bold")
     fig.text(0.02, 0.02, "Verdict: INCONCLUSIVE", fontsize=9, color="#CCB974")
@@ -272,7 +330,14 @@ def plot_h9_budget(
         # Fallback schematic
         fig, ax = plt.subplots(figsize=(7, 4))
         configs = list(H9_CONFIG_PSNR.keys())
-        ax.bar(configs, [H9_CONFIG_PSNR[c] for c in configs], color="#8172B3", edgecolor="#333")
+        config_vals = [H9_CONFIG_PSNR[c] for c in configs]
+        ax.bar(configs, config_vals, color="#8172B3", edgecolor="#333")
+        fixed_psnr = H9_CONFIG_PSNR.get(FIXED_ADA_RUN_ID)
+        if fixed_psnr is not None:
+            _add_baseline_hline(ax, fixed_psnr, label=f"Fixed AdaSteer ({FIXED_ADA_RUN_ID})")
+        ylo, yhi = _metric_lim(config_vals + ([fixed_psnr] if fixed_psnr is not None else []), min_pad=0.05)
+        ax.set_ylim(ylo, yhi)
+        ax.legend(fontsize=8, loc="lower right")
         ax.set_ylabel("Mean PSNR (dB)")
         ax.set_title("H9 — Population best ≠ high-OOD rule (pilot fallback)", fontweight="bold")
         fig.text(0.02, 0.02, "Verdict: FAIL — S2_LR1e2 wins population PSNR", fontsize=9, color="#C44E52")
@@ -289,11 +354,22 @@ def plot_h9_budget(
         for rid, d in psnr_by_run.items()
     }
     top = sorted(pop_means.items(), key=lambda x: -x[1])[:6]
+    top_vals = [t[1] for t in top]
+    fixed_psnr = pop_means.get(FIXED_ADA_RUN_ID)
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.barh([t[0] for t in top], [t[1] for t in top], color="#8172B3", edgecolor="#333")
+    ax.barh([t[0] for t in top], top_vals, color="#8172B3", edgecolor="#333")
+    if fixed_psnr is not None:
+        _add_baseline_vline(ax, fixed_psnr, label=f"Fixed AdaSteer ({FIXED_ADA_RUN_ID})")
+    ref_vals = list(top_vals)
+    if fixed_psnr is not None:
+        ref_vals.append(fixed_psnr)
+    xlo, xhi = _metric_lim(ref_vals, pad_frac=0.08, min_pad=0.03)
+    ax.set_xlim(xlo, xhi)
     ax.set_xlabel("Mean PSNR (dB)")
     ax.set_title("H9 — Top grid configs by population PSNR (pilot)", fontweight="bold")
     ax.invert_yaxis()
+    if fixed_psnr is not None:
+        ax.legend(fontsize=8, loc="lower right")
     paths.append(_save(fig, out_dir, "H9_population_best_config.png"))
 
     if not ood_q:
@@ -349,6 +425,16 @@ def plot_h9_budget(
         ["#4C72B0", "#55A868", "#C44E52"],
     ):
         ax.plot(qs, vals, "o-", label=label, linewidth=2, color=c)
+    fixed_vals = series.get("Fixed AdaSteer", [])
+    fixed_mean = float(np.nanmean(fixed_vals)) if fixed_vals else float("nan")
+    if np.isfinite(fixed_mean):
+        _add_baseline_hline(ax, fixed_mean, label=f"Mean fixed ({FIXED_ADA_RUN_ID})")
+    all_vals = [v for vals in series.values() for v in vals if np.isfinite(v)]
+    if np.isfinite(fixed_mean):
+        all_vals.append(fixed_mean)
+    if all_vals:
+        ylo, yhi = _metric_lim(all_vals, pad_frac=0.08, min_pad=0.15)
+        ax.set_ylim(ylo, yhi)
     ax.set_xticks(qs)
     ax.set_xlabel("OOD quintile")
     ax.set_ylabel("Mean PSNR (dB)")

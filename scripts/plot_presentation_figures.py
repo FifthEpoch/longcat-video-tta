@@ -137,6 +137,79 @@ H9_QUINTILE_POLICIES = {
     "Q5": {"fixed": 15.308, "oracle": 16.404, "modal": "S10_LR1e2"},
 }
 
+H9_FIXED_BASELINE_RUN = FIXED_ADA_RUN_ID  # S10_LR5e3 — pilot fixed AdaSteer config
+
+
+def _finite_values(values: Iterable[object]) -> np.ndarray:
+    out: List[float] = []
+    for v in values:
+        if v is None:
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(f):
+            out.append(f)
+    return np.asarray(out, dtype=float)
+
+
+def _metric_lim(
+    values: Iterable[object],
+    *,
+    pad_frac: float = 0.12,
+    min_pad: float = 0.05,
+) -> Tuple[float, float]:
+    """Tight y/x limits around data (not from zero) so small metric gaps are visible."""
+    arr = _finite_values(values)
+    if arr.size == 0:
+        return 0.0, 1.0
+    lo, hi = float(arr.min()), float(arr.max())
+    span = hi - lo
+    pad = max(min_pad, span * pad_frac) if span > 1e-9 else min_pad
+    return lo - pad, hi + pad
+
+
+def _add_baseline_hline(
+    ax: plt.Axes,
+    value: float,
+    *,
+    label: str = "NOTTA baseline",
+) -> None:
+    ax.axhline(
+        float(value),
+        color="#888888",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.9,
+        zorder=0,
+        label=label,
+    )
+
+
+def _add_baseline_vline(
+    ax: plt.Axes,
+    value: float,
+    *,
+    label: str = "Fixed AdaSteer baseline",
+) -> None:
+    ax.axvline(
+        float(value),
+        color="#888888",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.9,
+        zorder=0,
+        label=label,
+    )
+
+
+def _h9_fixed_baseline_psnr(configs: List[Dict[str, object]]) -> Optional[float]:
+    for c in configs:
+        if c.get("run_id") == H9_FIXED_BASELINE_RUN:
+            return float(c["psnr"])
+    return None
+
 
 def _save(fig: plt.Figure, out_dir: Path, name: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -350,17 +423,22 @@ def plot_oracle_method(
         uplift = stats["oracle_3way"]["uplift"]
         ci = stats["oracle_3way"].get("ci")
 
+    notta_psnr = float(stats["NOTTA"]["psnr"])
     fig, ax = plt.subplots(figsize=(7, 4.5))
     bars = ax.bar(labels, psnr_vals, color=colors, edgecolor="#333")
+    _add_baseline_hline(ax, notta_psnr, label="NOTTA baseline")
+    ylo, yhi = _metric_lim(psnr_vals)
+    ax.set_ylim(ylo, yhi)
     ax.set_ylabel("Mean PSNR (dB)")
     title = f"Method oracle — {'NOTTA vs AdaSteer' if two_way else 'NOTTA / AdaSteer / LoRA'}"
     ax.set_title(title, fontweight="bold")
     ci_txt = ""
     if ci and ci[0] is not None:
         ci_txt = f"  |  Bootstrap Δ vs NOTTA: {uplift:+.3f} dB [{ci[0]:+.3f}, {ci[1]:+.3f}]"
-    ax.text(0.5, -0.15, f"Oracle uplift vs NOTTA: {uplift:+.3f} dB{ci_txt}", transform=ax.transAxes, ha="center", fontsize=9)
+    ax.text(0.5, -0.18, f"Oracle uplift vs NOTTA: {uplift:+.3f} dB{ci_txt}", transform=ax.transAxes, ha="center", fontsize=9)
     for bar, v in zip(bars, psnr_vals):
-        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.02, f"{v:.3f}", ha="center", fontsize=9)
+        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.01, f"{v:.3f}", ha="center", fontsize=9, va="bottom")
+    fig.subplots_adjust(bottom=0.22)
     paths.append(_save(fig, out_dir, f"oracle_method_{tag}_psnr.png"))
 
     if not two_way and fvd_data:
@@ -371,15 +449,20 @@ def plot_oracle_method(
             fvd_data.get("always_lora", ORACLE_METHOD["LORA"]["fvd"]),
             fvd_data.get("oracle_best_psnr", ORACLE_METHOD["oracle_3way"]["fvd"]),
         ]
+        notta_fvd = float(fvd_vals[0])
         fig, ax = plt.subplots(figsize=(7, 4.5))
         ax.bar(fvd_labels, fvd_vals, color=["#999999", "#4C72B0", "#DD8452", "#55A868"], edgecolor="#333")
+        _add_baseline_hline(ax, notta_fvd, label="NOTTA baseline")
+        ylo, yhi = _metric_lim(fvd_vals)
+        ax.set_ylim(ylo, yhi)
         ax.set_ylabel("FVD ↓ better")
         ax.set_title("Method oracle FVD (job 11061632, 14 cond + 14 gen frames)", fontweight="bold")
         ax.text(
-            0.5, -0.12,
+            0.5, -0.18,
             f"Oracle FVD {fvd_vals[3]:.1f} vs NOTTA {fvd_vals[0]:.1f} (Δ {fvd_vals[3]-fvd_vals[0]:+.1f})",
             transform=ax.transAxes, ha="center", fontsize=9,
         )
+        fig.subplots_adjust(bottom=0.22)
         paths.append(_save(fig, out_dir, "oracle_method_3way_fvd.png"))
 
     return paths
@@ -392,26 +475,49 @@ def plot_h9_config_psnr(out_dir: Path, configs: List[Dict[str, object]]) -> Path
     labels = [str(c["run_id"]) for c in order] + ["ORACLE"]
     vals = [float(c["psnr"]) for c in order] + [float(oracle["psnr"])]
     colors = ["#8172B3"] * len(order) + ["#55A868"]
+    fixed_psnr = _h9_fixed_baseline_psnr(configs)
 
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.barh(labels, vals, color=colors, edgecolor="#333")
+    if fixed_psnr is not None:
+        _add_baseline_vline(
+            ax,
+            fixed_psnr,
+            label=f"Fixed AdaSteer ({H9_FIXED_BASELINE_RUN})",
+        )
+    ax.axvline(float(oracle["psnr"]), color="#55A868", linestyle=":", alpha=0.5, label="Per-video oracle")
+    ref_vals = list(vals)
+    if fixed_psnr is not None:
+        ref_vals.append(fixed_psnr)
+    xlo, xhi = _metric_lim(ref_vals, pad_frac=0.08, min_pad=0.03)
+    ax.set_xlim(xlo, xhi)
     ax.set_xlabel("Mean PSNR (dB)")
     ax.set_title("H9 — 12-config budget grid + per-video oracle (N=200 pilot)", fontweight="bold")
     ax.invert_yaxis()
-    ax.axvline(float(oracle["psnr"]), color="#55A868", linestyle=":", alpha=0.5)
+    ax.legend(fontsize=8, loc="lower right")
+    fig.tight_layout()
     return _save(fig, out_dir, "h9_config_psnr_bar.png")
 
 
 def plot_h9_pick_frequency(out_dir: Path, picks: List[Tuple[str, int, float]]) -> Path:
     labels = [p[0] for p in picks]
     pcts = [p[2] for p in picks]
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(8, 5))
     ax.bar(labels, pcts, color="#8172B3", edgecolor="#333")
     ax.set_ylabel("Oracle pick frequency (%)")
     ax.set_xlabel("Grid config (per-video best PSNR)")
     ax.set_title("H9 — Oracle budget picks are sparse (no dominant config)", fontweight="bold")
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-    ax.text(0.5, -0.28, "Top: S20_LR1e2 5.4%, S10_LR1e2 4.2% — remainder spread (~80%+ other configs)", transform=ax.transAxes, ha="center", fontsize=8)
+    ax.text(
+        0.5,
+        -0.42,
+        "Top: S20_LR1e2 5.4%, S10_LR1e2 4.2% — remainder spread (~80%+ other configs)",
+        transform=ax.transAxes,
+        ha="center",
+        fontsize=8,
+        color="#666",
+    )
+    fig.subplots_adjust(bottom=0.32)
     return _save(fig, out_dir, "h9_oracle_pick_frequency.png")
 
 
@@ -421,27 +527,80 @@ def plot_h9_quintile_policies(out_dir: Path, quintiles: Dict[str, Dict[str, obje
     oracle = [float(quintiles[q]["oracle"]) for q in qs]
     x = np.arange(len(qs))
     w = 0.35
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.bar(x - w / 2, fixed, w, label="Fixed S10_LR5e3", color="#4C72B0", edgecolor="#333")
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(x - w / 2, fixed, w, label=f"Fixed AdaSteer ({H9_FIXED_BASELINE_RUN})", color="#4C72B0", edgecolor="#333")
     ax.bar(x + w / 2, oracle, w, label="Oracle-best", color="#55A868", edgecolor="#333")
+    fixed_mean = float(np.mean(fixed))
+    _add_baseline_hline(
+        ax,
+        fixed_mean,
+        label=f"Mean fixed ({H9_FIXED_BASELINE_RUN})",
+    )
+    ylo, yhi = _metric_lim(fixed + oracle + [fixed_mean], pad_frac=0.08, min_pad=0.15)
+    ax.set_ylim(ylo, yhi)
     ax.set_xticks(x)
-    ax.set_xticklabels([f"{q}\n(modal: {quintiles[q]['modal']})" for q in qs])
+    ax.set_xticklabels(
+        [f"{q}\n{quintiles[q]['modal']}" for q in qs],
+        rotation=35,
+        ha="right",
+        fontsize=8,
+    )
     ax.set_ylabel("Mean PSNR (dB)")
     ax.set_title("H9 — OOD quintile: fixed vs oracle (Q5 rescue +1.10 dB)", fontweight="bold")
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8, loc="upper right")
+    fig.subplots_adjust(bottom=0.22)
     return _save(fig, out_dir, "h9_ood_quintile_policies.png")
 
 
 def plot_h9_psnr_fvd_tradeoff(out_dir: Path, configs: List[Dict[str, object]]) -> Path:
     grid = [c for c in configs if c["run_id"] != "ORACLE" and c.get("fvd") is not None]
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fvds = [float(c["fvd"]) for c in grid]
+    psnrs = [float(c["psnr"]) for c in grid]
+    fixed = next((c for c in grid if c["run_id"] == H9_FIXED_BASELINE_RUN), None)
+
+    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+    ax.scatter(fvds, psnrs, s=80, color="#8172B3", edgecolor="#333", label="Grid configs", zorder=3)
     for c in grid:
-        ax.scatter(c["fvd"], c["psnr"], s=80, color="#8172B3", edgecolor="#333")
-        ax.annotate(str(c["run_id"]), (c["fvd"], c["psnr"]), fontsize=7, xytext=(4, 4), textcoords="offset points")
+        ax.annotate(
+            str(c["run_id"]),
+            (float(c["fvd"]), float(c["psnr"])),
+            fontsize=7,
+            xytext=(4, 4),
+            textcoords="offset points",
+        )
+    if fixed is not None:
+        fx, fy = float(fixed["fvd"]), float(fixed["psnr"])
+        ax.scatter(
+            [fx],
+            [fy],
+            s=140,
+            marker="*",
+            color="#888888",
+            edgecolor="#333",
+            linewidth=0.8,
+            label=f"Fixed AdaSteer ({H9_FIXED_BASELINE_RUN})",
+            zorder=4,
+        )
+        _add_baseline_hline(ax, fy, label=f"Fixed PSNR ({H9_FIXED_BASELINE_RUN})")
+        _add_baseline_vline(ax, fx, label=f"Fixed FVD ({H9_FIXED_BASELINE_RUN})")
+    xlo, xhi = _metric_lim(fvds, pad_frac=0.08, min_pad=2.0)
+    ylo, yhi = _metric_lim(psnrs, pad_frac=0.08, min_pad=0.03)
+    ax.set_xlim(xlo, xhi)
+    ax.set_ylim(ylo, yhi)
     ax.set_xlabel("FVD ↓ better")
     ax.set_ylabel("PSNR (dB) ↑ better")
     ax.set_title("H9 — PSNR vs FVD tradeoff (12 pilot configs)", fontweight="bold")
-    ax.text(0.02, 0.02, "Best PSNR (S2_LR1e2) = worst FVD; best FVD ≈ S10_LR1e3", fontsize=9, color="#666")
+    ax.text(
+        0.02,
+        0.02,
+        "Best PSNR (S2_LR1e2) = worst FVD; best FVD ≈ S10_LR1e3",
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#666",
+        va="bottom",
+    )
+    ax.legend(fontsize=8, loc="upper right")
+    fig.tight_layout()
     return _save(fig, out_dir, "h9_psnr_fvd_scatter.png")
 
 
