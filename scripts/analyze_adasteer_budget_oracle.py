@@ -36,6 +36,7 @@ import numpy as np
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
+from scripts.analyze_per_video_tta_gain import load_per_video_metrics  # noqa: E402
 from scripts.caption_utils import canonical_video_id
 
 DEFAULT_SERIES = _REPO_ROOT / "sweep_experiment/results/panda_ood_budget_pilot"
@@ -128,33 +129,41 @@ def load_ood_quintiles(path: Path, n_bins: int = 5) -> Dict[str, int]:
     return out
 
 
-def _summary_path(run_dir: Path) -> Optional[Path]:
-    merged = run_dir / "merged_summary.json"
-    if merged.exists():
-        return merged
-    chunks = sorted(run_dir.glob("chunk_*/summary.json"))
-    if len(chunks) == 1:
-        return chunks[0]
-    return None
+def _has_per_video_summaries(run_dir: Path) -> bool:
+    """True when chunk or flat summaries exist (merged alone is aggregate-only)."""
+    if any(run_dir.glob("chunk_*/summary.json")):
+        return True
+    if any(run_dir.glob("chunk_*/results.json")):
+        return True
+    for flat_name in ("summary.json", "merged_summary.json"):
+        flat = run_dir / flat_name
+        if not flat.exists():
+            continue
+        try:
+            with flat.open(encoding="utf-8") as f:
+                blob = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(blob, dict):
+            for key in ("results", "per_video_results", "per_video"):
+                v = blob.get(key)
+                if isinstance(v, list) and v:
+                    return True
+    return False
 
 
 def load_run_psnr(run_dir: Path) -> Dict[str, float]:
-    sp = _summary_path(run_dir)
-    if sp is None:
-        return {}
-    with sp.open(encoding="utf-8") as f:
-        summary = json.load(f)
-    pv = summary.get("per_video_results") or summary.get("results") or []
+    """Load per-video PSNR from chunk summaries (preferred) or flat summary files.
+
+    ``merge_chunks.py`` writes ``merged_summary.json`` with population means only
+    (no ``per_video_results``). Chunked pilots therefore must read
+    ``chunk_*/summary.json`` — same order as ``analyze_retrieval_per_video``.
+    """
     out: Dict[str, float] = {}
-    for r in pv:
-        if not r.get("success"):
-            continue
-        name = r.get("video_name") or r.get("video_id") or r.get("video", "")
-        vid = canonical_video_id(name)
-        psnr = r.get("psnr")
-        if not vid or psnr is None:
-            continue
-        out[vid] = float(psnr)
+    for vid, metrics in load_per_video_metrics(run_dir).items():
+        psnr = metrics.get("psnr")
+        if psnr is not None:
+            out[vid] = float(psnr)
     return out
 
 
@@ -174,6 +183,8 @@ def discover_runs(series_root: Path) -> Dict[str, Path]:
         return runs
     for child in sorted(series_root.iterdir()):
         if not child.is_dir():
+            continue
+        if not _has_per_video_summaries(child):
             continue
         psnrs = load_run_psnr(child)
         if psnrs:
