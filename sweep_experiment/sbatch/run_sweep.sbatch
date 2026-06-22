@@ -124,6 +124,8 @@ RETRIEVAL_POOL_DIR="${RETRIEVAL_POOL_DIR:-}"
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
 TTA_GRAD_ACCUM="${TTA_GRAD_ACCUM:-1}"
+INITIAL_DELTA_DIR="${INITIAL_DELTA_DIR:-}"
+SAVE_DELTA_DIR="${SAVE_DELTA_DIR:-}"
 ANCHOR_REG_WEIGHT="${ANCHOR_REG_WEIGHT:-0.0}"
 ANCHOR_REG_SIGMAS="${ANCHOR_REG_SIGMAS:-0.25,0.5,0.75}"
 ANCHOR_REG_NOISE_DRAWS="${ANCHOR_REG_NOISE_DRAWS:-1}"
@@ -561,6 +563,14 @@ case "${METHOD}" in
         POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
     fi
 
+    DELTA_RESUME_FLAGS=""
+    if [ -n "${INITIAL_DELTA_DIR}" ]; then
+        DELTA_RESUME_FLAGS="${DELTA_RESUME_FLAGS} --initial-delta-dir ${INITIAL_DELTA_DIR}"
+    fi
+    if [ -n "${SAVE_DELTA_DIR}" ]; then
+        DELTA_RESUME_FLAGS="${DELTA_RESUME_FLAGS} --save-delta-dir ${SAVE_DELTA_DIR}"
+    fi
+
     "$PYTHON" delta_experiment/scripts/run_delta_a.py \
         --checkpoint-dir "${CHECKPOINT_DIR}" \
         --data-dir "${DATA_DIR}" \
@@ -580,6 +590,7 @@ case "${METHOD}" in
         --anchor-reg-sigmas "${ANCHOR_REG_SIGMAS}" \
         --anchor-reg-noise-draws "${ANCHOR_REG_NOISE_DRAWS}" \
         ${POOL_FLAGS} \
+        ${DELTA_RESUME_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \
         --num-frames "${NUM_FRAMES}" \
         --gen-start-frame "${GEN_START_FRAME}" \

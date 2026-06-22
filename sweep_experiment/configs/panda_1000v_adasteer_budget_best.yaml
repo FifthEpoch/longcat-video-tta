@@ -1,0 +1,53 @@
+# Panda 1000v AdaSteer budget — best configs only (incremental S10→S20)
+#
+# Efficient workflow (one 20-step-equivalent budget per video, not 30):
+#   1. TTA train 10 steps @ LR=1e-2  → generate (S10_LR1e2)
+#   2. Continue 10 steps from saved delta → generate (S20_LR1e2)
+#
+# Eval set: datasets/panda_1000_480p (N≈999 after excluding corrupt panda_0473)
+# Results:  sweep_experiment/results/panda_ood_budget_1000v/
+#
+# Submit:
+#   bash sweep_experiment/sbatch/submit_adasteer_budget_1000v_best_incremental.sh
+#
+# Merge + analyze:
+#   python sweep_experiment/scripts/merge_chunks.py \
+#       --results-dir sweep_experiment/results/panda_ood_budget_1000v --recursive
+#   python scripts/analyze_adasteer_budget_oracle.py --bootstrap \
+#       --series-root sweep_experiment/results/panda_ood_budget_1000v \
+#       --fixed-run-id S10_LR1e2 \
+#       --output sweep_experiment/reports/per_video_analysis/$(date +%Y-%m-%d)/adasteer_budget_1000v_best.md
+
+method: delta_a
+series: panda
+series_name: panda_ood_budget_1000v
+description: "Panda 1000v best AdaSteer budget configs with incremental S10→S20 training"
+
+fixed:
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: false
+  es_disable: true
+  no_save_videos: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+
+sweep:
+  - run_id: S10_LR1e2
+    delta_steps: 10
+    delta_lr: 1.0e-2
+    save_delta_dir: true   # logical flag — sbatch sets SAVE_DELTA_DIR path
+  - run_id: S20_LR1e2
+    delta_steps: 10        # +10 after S10 checkpoint (20 total)
+    delta_lr: 1.0e-2
+    initial_delta_dir: true  # loads from sibling S10 chunk delta_ckpt/

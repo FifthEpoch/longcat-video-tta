@@ -554,6 +554,17 @@ def main():
                         help="Number of videos to process from start-video-idx (0 = all remaining)")
     parser.add_argument("--delta-steps", type=int, default=20)
     parser.add_argument("--delta-lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--initial-delta-dir", type=str, default=None,
+        help="Directory of per-video .pt delta tensors (from --save-delta-dir) "
+             "to continue TTA without re-training from scratch. Loads "
+             "<video_name>.pt before the optimizer loop.",
+    )
+    parser.add_argument(
+        "--save-delta-dir", type=str, default=None,
+        help="After TTA, save wrapper.delta to <dir>/<video_name>.pt before "
+             "generation. Used for incremental S10→S20 workflows.",
+    )
     parser.add_argument("--num-cond-frames", type=int, default=2)
     parser.add_argument("--num-frames", type=int, default=16)
     parser.add_argument("--gen-start-frame", type=int, default=32,
@@ -919,6 +930,29 @@ def main():
                 # ── Create fresh delta ──
                 wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
 
+                if args.initial_delta_dir:
+                    init_path = os.path.join(
+                        args.initial_delta_dir, f"{eval_name}.pt",
+                    )
+                    if os.path.isfile(init_path):
+                        load_kw = {"map_location": args.device}
+                        try:
+                            init_delta = torch.load(
+                                init_path, weights_only=True, **load_kw,
+                            )
+                        except TypeError:
+                            init_delta = torch.load(init_path, **load_kw)
+                        wrapper.delta.data.copy_(init_delta.to(wrapper.delta.dtype))
+                        print(
+                            f"  Loaded initial delta from {init_path} "
+                            f"(norm={wrapper.delta.detach().norm().item():.4f})"
+                        )
+                    else:
+                        print(
+                            f"  [WARN] initial delta missing: {init_path} "
+                            "(training from scratch for this video)"
+                        )
+
                 # Offload VAE + text encoder to CPU during training
                 vae.to("cpu")
                 text_encoder.to("cpu")
@@ -1038,6 +1072,13 @@ def main():
                 timing["train_total"] = train_time
                 print(f"  Train time: {train_time:.1f}s, "
                       f"Delta norm: {opt_result['delta_norm']:.4f}")
+
+                if args.save_delta_dir:
+                    os.makedirs(args.save_delta_dir, exist_ok=True)
+                    delta_out = os.path.join(args.save_delta_dir, f"{eval_name}.pt")
+                    torch.save(wrapper.delta.detach().cpu(), delta_out)
+                    print(f"  Saved delta checkpoint: {delta_out}")
+
                 print(f"  Timing breakdown: "
                       f"load={timing['load_frames']:.1f}s, "
                       f"encode={timing['encode_latents']:.1f}s, "
