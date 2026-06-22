@@ -11,6 +11,10 @@ computes:
   * Quintile-adaptive policy: per OOD quintile, pick the grid config with
     highest mean PSNR in that quintile (deployable upper bound)
   * Bootstrap 95% CI for population mean oracle uplift (per-video resampling)
+  * Full population metrics table (PSNR/SSIM/LPIPS/FVD/FID) for every grid config
+  * Oracle row: per-video argmax-PSNR routing for PSNR/SSIM/LPIPS; FVD/FID from
+    ``--oracle-fvd-json`` when a budget-oracle FVD eval has been run (see
+    ``sweep_experiment/scripts/run_budget_oracle_fvd.py``)
 
 Usage:
     python scripts/analyze_adasteer_budget_oracle.py --bootstrap \\
@@ -48,6 +52,16 @@ DEFAULT_OOD = (
 OOD_COL = "mean_diffusion_loss_caption"
 FIXED_ADA_RUN_ID = "S10_LR5e3"
 NOTTA_RUN_ID = "NOTTA"
+
+# 12-config pilot subset (LR 1e-3, 5e-3, 1e-2 × steps 2, 5, 10, 20).
+PILOT_GRID_RUN_ORDER: Tuple[str, ...] = (
+    "S2_LR1e3", "S2_LR5e3", "S2_LR1e2",
+    "S5_LR1e3", "S5_LR5e3", "S5_LR1e2",
+    "S10_LR1e3", "S10_LR5e3", "S10_LR1e2",
+    "S20_LR1e3", "S20_LR5e3", "S20_LR1e2",
+)
+
+METRIC_KEYS: Tuple[str, ...] = ("psnr", "ssim", "lpips", "fvd", "fid")
 
 _RUN_ID_RE = re.compile(r"^S(\d+)_LR(.+)$")
 
@@ -153,18 +167,167 @@ def _has_per_video_summaries(run_dir: Path) -> bool:
 
 
 def load_run_psnr(run_dir: Path) -> Dict[str, float]:
-    """Load per-video PSNR from chunk summaries (preferred) or flat summary files.
-
-    ``merge_chunks.py`` writes ``merged_summary.json`` with population means only
-    (no ``per_video_results``). Chunked pilots therefore must read
-    ``chunk_*/summary.json`` — same order as ``analyze_retrieval_per_video``.
-    """
+    """Load per-video PSNR from chunk summaries (preferred) or flat summary files."""
     out: Dict[str, float] = {}
     for vid, metrics in load_per_video_metrics(run_dir).items():
         psnr = metrics.get("psnr")
         if psnr is not None:
             out[vid] = float(psnr)
     return out
+
+
+def load_run_all_metrics(run_dir: Path) -> Dict[str, Dict[str, float]]:
+    """Load per-video PSNR/SSIM/LPIPS from chunk summaries."""
+    out: Dict[str, Dict[str, float]] = {}
+    for vid, metrics in load_per_video_metrics(run_dir).items():
+        row: Dict[str, float] = {}
+        for k in ("psnr", "ssim", "lpips"):
+            v = metrics.get(k)
+            if v is not None and not np.isnan(v):
+                row[k] = float(v)
+        if row:
+            out[vid] = row
+    return out
+
+
+def load_merged_summary(run_dir: Path) -> Dict[str, object]:
+    """Population metrics from ``merged_summary.json`` (post merge_chunks)."""
+    path = run_dir / "merged_summary.json"
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _fmt_metric(val: object, *, decimals: int = 3, pct: bool = False) -> str:
+    if val is None:
+        return "—"
+    try:
+        x = float(val)
+    except (TypeError, ValueError):
+        return "—"
+    if np.isnan(x):
+        return "—"
+    if pct:
+        return f"{x * 100:.2f}%"
+    if decimals == 0:
+        return f"{x:.0f}"
+    return f"{x:.{decimals}f}"
+
+
+def _sorted_grid_run_ids(run_ids: Sequence[str]) -> List[str]:
+    order = {rid: i for i, rid in enumerate(PILOT_GRID_RUN_ORDER)}
+    grid = [r for r in run_ids if r not in (NOTTA_RUN_ID,) and _RUN_ID_RE.match(r)]
+    return sorted(grid, key=lambda r: (order.get(r, 999), r))
+
+
+def compute_oracle_metric_means(
+    metrics_by_run: Dict[str, Dict[str, Dict[str, float]]],
+    grid_runs: Sequence[str],
+    vids: Sequence[str],
+    *,
+    winner_metric: str = "psnr",
+) -> Dict[str, Optional[float]]:
+    """Per-video oracle pick by ``winner_metric``, then mean PSNR/SSIM/LPIPS."""
+    out: Dict[str, List[float]] = {k: [] for k in ("psnr", "ssim", "lpips")}
+    for vid in vids:
+        pick_row: Dict[str, float] = {}
+        for rid in grid_runs:
+            m = metrics_by_run.get(rid, {}).get(vid, {})
+            v = m.get(winner_metric)
+            if v is not None and not np.isnan(v):
+                pick_row[rid] = float(v)
+        w = oracle_winner(pick_row, grid_runs)
+        if w is None:
+            continue
+        m = metrics_by_run.get(w, {}).get(vid, {})
+        for k in out:
+            v = m.get(k)
+            if v is not None and not np.isnan(v):
+                out[k].append(float(v))
+    return {
+        k: (float(np.mean(vals)) if vals else None)
+        for k, vals in out.items()
+    }
+
+
+def build_config_metrics_table(
+    runs: Dict[str, Path],
+    grid_runs: Sequence[str],
+    *,
+    oracle_means: Optional[Dict[str, Optional[float]]] = None,
+    oracle_fvd_blob: Optional[dict] = None,
+) -> Tuple[List[str], List[List[str]]]:
+    """Return (header, rows) for markdown/CSV export."""
+    header = [
+        "run_id", "steps", "lr", "N",
+        "PSNR (dB)", "SSIM", "LPIPS", "FVD", "FID",
+    ]
+    rows: List[List[str]] = []
+    for run_id in _sorted_grid_run_ids(list(grid_runs)):
+        run_dir = runs.get(run_id)
+        if run_dir is None:
+            continue
+        merged = load_merged_summary(run_dir)
+        steps, lr = parse_run_hparams(run_id)
+        lr_s = f"{lr:.0e}" if lr is not None else "—"
+        n = merged.get("num_successful") or merged.get("num_videos") or "—"
+        rows.append([
+            run_id,
+            str(steps) if steps is not None else "—",
+            lr_s,
+            str(n),
+            _fmt_metric(merged.get("psnr")),
+            _fmt_metric(merged.get("ssim"), decimals=4),
+            _fmt_metric(merged.get("lpips"), decimals=4),
+            _fmt_metric(merged.get("fvd"), decimals=1),
+            _fmt_metric(merged.get("fid"), decimals=1),
+        ])
+
+    if oracle_means is not None:
+        fvd = fid = None
+        if oracle_fvd_blob:
+            fvd = oracle_fvd_blob.get("fvd")
+            fid = oracle_fvd_blob.get("fid")
+        rows.append([
+            "ORACLE (best PSNR/video)",
+            "—", "—", "—",
+            _fmt_metric(oracle_means.get("psnr")),
+            _fmt_metric(oracle_means.get("ssim"), decimals=4),
+            _fmt_metric(oracle_means.get("lpips"), decimals=4),
+            _fmt_metric(fvd, decimals=1),
+            _fmt_metric(fid, decimals=1),
+        ])
+    return header, rows
+
+
+def format_metrics_table_md(
+    header: Sequence[str],
+    rows: Sequence[Sequence[str]],
+    *,
+    title: str = "Full grid population metrics",
+) -> List[str]:
+    lines = [
+        f"## {title}",
+        "",
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * len(header)) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(str(c) for c in row) + " |")
+    lines.append("")
+    return lines
+
+
+def write_metrics_csv(path: Path, header: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        w.writerows(rows)
 
 
 def _infer_baseline_series_root(series_root: Path) -> Path:
@@ -256,11 +419,15 @@ def build_report(
     baseline_run_id: str,
     run_ids: List[str],
     table: Dict[str, Dict[str, float]],
+    metrics_by_run: Dict[str, Dict[str, Dict[str, float]]],
     ood_quintile: Dict[str, int],
     fixed_run: str,
     bootstrap: bool,
     n_boot: int,
     bootstrap_seed: int,
+    metrics_header: List[str],
+    metrics_rows: List[List[str]],
+    oracle_fvd_blob: Optional[dict],
 ) -> str:
     grid_runs = [r for r in run_ids if r not in (NOTTA_RUN_ID,)]
     vids = sorted(table.keys())
@@ -311,6 +478,35 @@ def build_report(
     def mean_psnr(arr: List[float]) -> float:
         a = np.asarray(arr, dtype=float)
         return float(np.mean(a)) if a.size else float("nan")
+
+    lines += ["", ""]
+
+    lines += format_metrics_table_md(
+        metrics_header,
+        metrics_rows,
+        title="Full grid population metrics (merged summaries)",
+    )
+    if oracle_fvd_blob is None:
+        lines += [
+            "> **Oracle FVD/FID:** Global FVD does not decompose per-video from "
+            "``merged_summary.json`` alone. Run budget-oracle FVD eval on cluster "
+            "(requires saved mp4s — re-run with ``NO_SAVE_VIDEOS=0`` or use the "
+            "1000v best-config jobs):",
+            "> ```bash",
+            "> python sweep_experiment/scripts/run_budget_oracle_fvd.py \\",
+            f">     --series-root {series_root} \\",
+            ">     --gt-cache gt_caches/panda_1000_longcat.npz",
+            "> ```",
+            "",
+        ]
+    else:
+        lines += [
+            f"> Oracle FVD/FID from ``{oracle_fvd_blob.get('_source', 'fvd.json')}``: "
+            f"FVD={_fmt_metric(oracle_fvd_blob.get('fvd'), decimals=1)}, "
+            f"FID={_fmt_metric(oracle_fvd_blob.get('fid'), decimals=1)} "
+            f"(N={oracle_fvd_blob.get('num_valid_pairs', '—')} videos).",
+            "",
+        ]
 
     lines += [
         "## Population routing uplift",
@@ -490,6 +686,18 @@ def main() -> int:
     ap.add_argument("--ood-csv", type=Path, default=DEFAULT_OOD)
     ap.add_argument("--fixed-run-id", type=str, default=FIXED_ADA_RUN_ID)
     ap.add_argument("--output", type=Path, default=None)
+    ap.add_argument(
+        "--metrics-csv",
+        type=Path,
+        default=None,
+        help="Optional CSV path for full grid metrics table (default: alongside --output)",
+    )
+    ap.add_argument(
+        "--oracle-fvd-json",
+        type=Path,
+        default=None,
+        help="Optional fvd.json from run_budget_oracle_fvd.py for oracle FVD/FID row",
+    )
     ap.add_argument("--bootstrap", action="store_true")
     ap.add_argument("--n-boot", type=int, default=5000)
     ap.add_argument("--bootstrap-seed", type=int, default=42)
@@ -532,6 +740,40 @@ def main() -> int:
             )
 
     run_ids, table = build_video_table(runs)
+    grid_runs = [r for r in run_ids if r not in (NOTTA_RUN_ID,)]
+    vids = sorted(table.keys())
+
+    metrics_by_run: Dict[str, Dict[str, Dict[str, float]]] = {}
+    for run_id in grid_runs:
+        if run_id in runs:
+            metrics_by_run[run_id] = load_run_all_metrics(runs[run_id])
+
+    oracle_means = compute_oracle_metric_means(metrics_by_run, grid_runs, vids)
+
+    oracle_fvd_blob: Optional[dict] = None
+    oracle_fvd_path = args.oracle_fvd_json
+    if oracle_fvd_path is None:
+        default_fvd = (
+            _REPO_ROOT
+            / "sweep_experiment/reports/budget_oracle_fvd/oracle_best_psnr/fvd.json"
+        )
+        if default_fvd.exists():
+            oracle_fvd_path = default_fvd
+    if oracle_fvd_path and oracle_fvd_path.exists():
+        try:
+            with oracle_fvd_path.open(encoding="utf-8") as f:
+                oracle_fvd_blob = json.load(f)
+            oracle_fvd_blob["_source"] = str(oracle_fvd_path)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[warn] could not read oracle FVD json: {exc}", file=sys.stderr)
+
+    metrics_header, metrics_rows = build_config_metrics_table(
+        runs,
+        grid_runs,
+        oracle_means=oracle_means,
+        oracle_fvd_blob=oracle_fvd_blob,
+    )
+
     ood_q: Dict[str, int] = {}
     if args.ood_csv.exists():
         ood_q = load_ood_quintiles(args.ood_csv)
@@ -546,11 +788,15 @@ def main() -> int:
         baseline_run_id=args.baseline_run_id,
         run_ids=run_ids,
         table=table,
+        metrics_by_run=metrics_by_run,
         ood_quintile=ood_q,
         fixed_run=args.fixed_run_id,
         bootstrap=args.bootstrap,
         n_boot=args.n_boot,
         bootstrap_seed=args.bootstrap_seed,
+        metrics_header=metrics_header,
+        metrics_rows=metrics_rows,
+        oracle_fvd_blob=oracle_fvd_blob,
     )
     print(report)
 
@@ -558,6 +804,12 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(report, encoding="utf-8")
         print(f"\nWrote {args.output}", file=sys.stderr)
+        csv_path = args.metrics_csv or args.output.with_suffix(".csv")
+        write_metrics_csv(csv_path, metrics_header, metrics_rows)
+        print(f"Wrote {csv_path}", file=sys.stderr)
+    elif args.metrics_csv:
+        write_metrics_csv(args.metrics_csv, metrics_header, metrics_rows)
+        print(f"Wrote {args.metrics_csv}", file=sys.stderr)
 
     return 0
 
