@@ -13,10 +13,11 @@ computes:
   * Bootstrap 95% CI for population mean oracle uplift (per-video resampling)
 
 Usage:
-    python scripts/analyze_adasteer_budget_oracle.py \\
+    python scripts/analyze_adasteer_budget_oracle.py --bootstrap \\
         --series-root sweep_experiment/results/panda_ood_budget_pilot \\
+        --baseline-series-root sweep_experiment/results/panda_1000v_standard \\
         --ood-csv sweep_experiment/reports/per_video_analysis/2026-06-09/diffusion_ood_scores.csv \\
-        --output sweep_experiment/reports/per_video_analysis/2026-06-09/adasteer_budget_oracle.md
+        --output sweep_experiment/reports/per_video_analysis/2026-06-20/adasteer_budget_oracle_pilot.md
 
     python scripts/analyze_adasteer_budget_oracle.py --bootstrap
 """
@@ -157,6 +158,16 @@ def load_run_psnr(run_dir: Path) -> Dict[str, float]:
     return out
 
 
+def _infer_baseline_series_root(series_root: Path) -> Path:
+    """Guess standard sweep root for NOTTA baseline (matches retrieval analyzer)."""
+    name = series_root.name.lower()
+    if "ucf" in name:
+        return _REPO_ROOT / "sweep_experiment/results/ucf101_932v_standard"
+    if "panda" in name:
+        return _REPO_ROOT / "sweep_experiment/results/panda_1000v_standard"
+    return _REPO_ROOT / "sweep_experiment/results/panda_1000v_standard"
+
+
 def discover_runs(series_root: Path) -> Dict[str, Path]:
     runs: Dict[str, Path] = {}
     if not series_root.is_dir():
@@ -230,6 +241,8 @@ def oracle_winner(row: Dict[str, float], candidates: Iterable[str]) -> Optional[
 def build_report(
     *,
     series_root: Path,
+    baseline_series_root: Optional[Path],
+    baseline_run_id: str,
     run_ids: List[str],
     table: Dict[str, Dict[str, float]],
     ood_quintile: Dict[str, int],
@@ -248,8 +261,12 @@ def build_report(
         f"**Series:** `{series_root}`",
         f"**N = {n}** videos with PSNR across ≥1 grid config.",
         f"**Fixed headline AdaSteer:** `{fixed_run}` (S10/LR=5e-3).",
-        "",
     ]
+    if baseline_series_root is not None:
+        lines.append(
+            f"**NOTTA baseline:** `{baseline_run_id}` from `{baseline_series_root}`."
+        )
+    lines += ["", ""]
 
     if fixed_run not in run_ids:
         lines.append(
@@ -444,6 +461,21 @@ def build_report(
 def main() -> int:
     ap = argparse.ArgumentParser(description="AdaSteer budget-grid oracle analysis (H9)")
     ap.add_argument("--series-root", type=Path, default=DEFAULT_SERIES)
+    ap.add_argument(
+        "--baseline-series-root",
+        type=Path,
+        default=None,
+        help=(
+            "Standard sweep root containing NOTTA (default: inferred from "
+            "--series-root name, e.g. panda_1000v_standard for panda pilots)."
+        ),
+    )
+    ap.add_argument(
+        "--baseline-run-id",
+        type=str,
+        default=NOTTA_RUN_ID,
+        help="Baseline method subdir under --baseline-series-root (default: NOTTA).",
+    )
     ap.add_argument("--ood-csv", type=Path, default=DEFAULT_OOD)
     ap.add_argument("--fixed-run-id", type=str, default=FIXED_ADA_RUN_ID)
     ap.add_argument("--output", type=Path, default=None)
@@ -461,6 +493,33 @@ def main() -> int:
         print(f"[error] no runs with PSNR found under {args.series_root}", file=sys.stderr)
         return 2
 
+    baseline_series_root = args.baseline_series_root
+    if baseline_series_root is None:
+        baseline_series_root = _infer_baseline_series_root(args.series_root)
+
+    if args.baseline_run_id not in runs:
+        baseline_dir = baseline_series_root / args.baseline_run_id
+        if baseline_dir.is_dir():
+            baseline_psnr = load_run_psnr(baseline_dir)
+            if baseline_psnr:
+                runs[args.baseline_run_id] = baseline_dir
+                print(
+                    f"[info] loaded {len(baseline_psnr)} NOTTA PSNR rows from "
+                    f"{baseline_dir}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"[warn] baseline dir has no PSNR: {baseline_dir}",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                f"[warn] baseline dir missing: {baseline_dir} "
+                "(NOTTA comparisons skipped)",
+                file=sys.stderr,
+            )
+
     run_ids, table = build_video_table(runs)
     ood_q: Dict[str, int] = {}
     if args.ood_csv.exists():
@@ -470,6 +529,10 @@ def main() -> int:
 
     report = build_report(
         series_root=args.series_root,
+        baseline_series_root=baseline_series_root
+        if args.baseline_run_id in run_ids
+        else None,
+        baseline_run_id=args.baseline_run_id,
         run_ids=run_ids,
         table=table,
         ood_quintile=ood_q,
