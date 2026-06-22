@@ -1,13 +1,18 @@
-# Panda 1000v AdaSteer budget — best configs only (incremental S10→S20)
+# Panda 1000v AdaSteer budget — best configs only
 #
-# Efficient workflow (one 20-step-equivalent budget per video, not 30):
+# S2_LR1e2 (pilot PSNR winner): standalone 2-step runs
+#   bash sweep_experiment/sbatch/submit_adasteer_budget_1000v_best_s2.sh
+#
+# S10_LR1e2 → S20_LR1e2 (incremental, saves ~33% compute vs independent):
 #   1. TTA train 10 steps @ LR=1e-2  → generate (S10_LR1e2)
 #   2. Continue 10 steps from saved delta → generate (S20_LR1e2)
+#   bash sweep_experiment/sbatch/submit_adasteer_budget_1000v_best_incremental.sh
 #
 # Eval set: datasets/panda_1000_480p (N≈999 after excluding corrupt panda_0473)
 # Results:  sweep_experiment/results/panda_ood_budget_1000v/
 #
 # Submit:
+#   bash sweep_experiment/sbatch/submit_adasteer_budget_1000v_best_s2.sh
 #   bash sweep_experiment/sbatch/submit_adasteer_budget_1000v_best_incremental.sh
 #
 # Merge + analyze:
@@ -21,7 +26,7 @@
 method: delta_a
 series: panda
 series_name: panda_ood_budget_1000v
-description: "Panda 1000v best AdaSteer budget configs with incremental S10→S20 training"
+description: "Panda 1000v best AdaSteer budget configs: S2 standalone + incremental S10→S20"
 
 fixed:
   num_cond_frames: 14
@@ -43,6 +48,9 @@ fixed:
   feature_frame_guard_mode: warn
 
 sweep:
+  - run_id: S2_LR1e2
+    delta_steps: 2
+    delta_lr: 1.0e-2
   - run_id: S10_LR1e2
     delta_steps: 10
     delta_lr: 1.0e-2
