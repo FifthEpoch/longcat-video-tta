@@ -216,7 +216,6 @@ def plot_gate_h5_quintile(
     ax.set_ylabel("Mean ΔPSNR vs NOTTA (dB) — AdaSteer")
     ax.set_title("Gate 1 — Model-perceived difficulty (H5)\nHigher OOD → LESS TTA benefit", fontweight="bold")
     ax.text(0.5, -0.20, subtitle, transform=ax.transAxes, ha="center", fontsize=8, color="#666")
-    fig.text(0.02, 0.02, "Verdict: FAIL / Falsified", fontsize=10, color="#C44E52", fontweight="bold")
     return _save(fig, out_dir, "gate_h5_ood_quintile_dpsnr.png")
 
 
@@ -228,7 +227,6 @@ def plot_multi_rho_bars(
     corr: Dict[Tuple[str, str], float],
     *,
     predicted_sign: str = "+",
-    verdict: str = "FAIL (|ρ| < 0.2 on both methods)",
 ) -> Path:
     n = len(features)
     fig, axes = plt.subplots(1, n, figsize=(3.2 * n, 4.2), sharey=True)
@@ -253,7 +251,8 @@ def plot_multi_rho_bars(
             )
     axes[0].set_ylabel("Spearman ρ(ΔPSNR, feature)")
     fig.suptitle(title, fontsize=12, fontweight="bold", y=1.02)
-    fig.text(0.5, -0.02, f"Predicted: {predicted_sign}  |  {verdict}", ha="center", fontsize=9, color="#C44E52")
+    if predicted_sign:
+        fig.text(0.5, -0.02, f"Predicted: {predicted_sign}", ha="center", fontsize=9, color="#666")
     fig.tight_layout()
     return _save(fig, out_dir, fname)
 
@@ -400,7 +399,6 @@ def plot_h9_config_psnr(out_dir: Path, configs: List[Dict[str, object]]) -> Path
     ax.set_title("H9 — 12-config budget grid + per-video oracle (N=200 pilot)", fontweight="bold")
     ax.invert_yaxis()
     ax.axvline(float(oracle["psnr"]), color="#55A868", linestyle=":", alpha=0.5)
-    fig.text(0.02, 0.02, "Population PSNR winner: S2_LR1e2 (18.126) — opposite of H9 rule", fontsize=9, color="#C44E52")
     return _save(fig, out_dir, "h9_config_psnr_bar.png")
 
 
@@ -431,7 +429,6 @@ def plot_h9_quintile_policies(out_dir: Path, quintiles: Dict[str, Dict[str, obje
     ax.set_ylabel("Mean PSNR (dB)")
     ax.set_title("H9 — OOD quintile: fixed vs oracle (Q5 rescue +1.10 dB)", fontweight="bold")
     ax.legend(fontsize=9)
-    fig.text(0.02, 0.02, "Modal oracle: high LR (1e-2), not low — refutes H9 directional rule", fontsize=9, color="#C44E52")
     return _save(fig, out_dir, "h9_ood_quintile_policies.png")
 
 
@@ -488,22 +485,22 @@ def main() -> int:
         out, "gate_h5_ood_rho_bars.png",
         "Gate 1 — Diffusion OOD ρ(ΔPSNR) wrong sign (H5)",
         [("mean_diffusion_loss_uncond", "Diffusion loss (uncond)", H5_RHO)],
-        corr, predicted_sign="+ (high loss → more gain)", verdict="FAIL / Falsified",
+        corr, predicted_sign="+ (high loss → more gain)",
     ))
     written.append(plot_multi_rho_bars(
         out, "gate_h6_loss_norm_rho_bars.png",
         "Gate 2 — Loss-norm / steep-surface probes (H6)",
-        H6_FEATURES, corr, predicted_sign="+", verdict="FAIL — |ρ| < 0.2, wrong sign on grad norm",
+        H6_FEATURES, corr, predicted_sign="+",
     ))
     written.append(plot_multi_rho_bars(
         out, "gate_motion_complexity_rho_bars.png",
         "Gate 3 — Visual/temporal complexity (H1 motion + H7)",
-        MOTION_FEATURES, corr, predicted_sign="+ (unclear)", verdict="FAIL — sign flip ADA vs LoRA",
+        MOTION_FEATURES, corr, predicted_sign="+ (unclear)",
     ))
     written.append(plot_multi_rho_bars(
         out, "gate_h8_vae_recerr_rho_bars.png",
         "Gate 4 — VAE reconstruction observability (H8)",
-        H8_FEATURES, corr, predicted_sign="+ (high rec err caps gain?)", verdict="FAIL — split across methods",
+        H8_FEATURES, corr, predicted_sign="+ (high rec err caps gain?)",
     ))
 
     # Oracle slides
