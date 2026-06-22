@@ -189,15 +189,17 @@
 ## H9 — OOD-adaptive TTA budget (steps + learning rate)
 
 **Predicted:** High OOD → more TTA steps + lower LR; low OOD → fewer steps + higher LR.  
-**Verdict:** **Pilot complete — population pattern does not support H9; quintile oracle pending**
+**Verdict:** **Fail** — directional rule refuted at population and quintile level; large per-video oracle headroom exists but is not captured by OOD→budget gating
+
+> **Eval scope:** **N = 200** OOD-stratified pilot (40 videos per quintile, 12-config step×LR grid). NOTTA comparator from `panda_1000v_standard` for the same 200 videos (full eval set is N = 999). Report header “N videos with PSNR across ≥1 grid config” refers to the pilot subset intersected with baseline join — quintile tables are **40 per quintile × 5 = 200 total**, not 999.
 
 | Experiment | Status | Result |
 |---|---|---|
 | OOD-stratified step/LR pilot (12 configs × 200v) | **Done** | Merge complete (12/12 configs, 200 videos each) |
-| Population best PSNR | Done | **`S2_LR1e2` 18.126 dB** (2 steps, LR 1e-2) — fewer steps + higher LR than fixed S10/LR5e-3 |
-| Population best FVD | Done | **`S10_LR1e3` 316.5**; worst **`S2_LR1e2` 335.6** (PSNR winner) |
-| OOD-quintile oracle / adaptive policy | **Pending** | Re-run `analyze_adasteer_budget_oracle.py` after `--baseline-series-root` fix |
-| Population baseline (fixed budget, 10 steps) | Done | ADA +0.008 dB, LoRA −0.076 dB (1000v standard) |
+| Population best PSNR (pilot merge) | Done | **`S2_LR1e2` 18.126 dB** (2 steps, LR 1e-2) — fewer steps + higher LR than fixed S10/LR5e-3 |
+| Population best FVD (pilot merge) | Done | **`S10_LR1e3` 316.5**; worst **`S2_LR1e2` 335.6** (PSNR winner) |
+| Per-video budget oracle (cluster, bootstrap) | **Done** | Oracle **+0.850 dB** vs fixed S10/LR5e-3 [+0.599, +1.153]; quintile-adaptive policy **+0.071 dB** only |
+| Full 999v budget grid | Optional | Not required to adjudicate H9 direction |
 
 **Pilot population highlights (merged summaries, N=200):**
 
@@ -210,18 +212,37 @@
 | S5_LR5e3 | — | 316.7 |
 | S20_LR1e3 | — | 318.6 |
 
-- At **population** level the PSNR winner is **2 steps / LR 1e-2** — the opposite of the H9 directional prediction (more steps + lower LR for high OOD). Best FVD favours **10 steps / LR 1e-3** (closer to “more steps, lower LR” but still not quintile-specific).
-- **Q5 rescue:** cannot confirm from population aggregates alone; need quintile-stratified oracle table (fixed S10/LR5e-3 vs oracle-best per quintile). Cluster command after `git pull`:
+**Per-video budget oracle (200v pilot; fixed comparator `S10_LR5e3`):**
 
-```bash
-python scripts/analyze_adasteer_budget_oracle.py --bootstrap \
-  --series-root sweep_experiment/results/panda_ood_budget_pilot \
-  --baseline-series-root sweep_experiment/results/panda_1000v_standard \
-  --ood-csv sweep_experiment/reports/per_video_analysis/2026-06-09/diffusion_ood_scores.csv \
-  --output sweep_experiment/reports/per_video_analysis/2026-06-20/adasteer_budget_oracle_pilot.md
-```
+| Policy | Mean PSNR | Δ vs NOTTA | Δ vs fixed AdaSteer |
+|---|---:|---:|---:|
+| Always NOTTA | 17.797 dB | 0.000 dB | — |
+| Fixed AdaSteer (`S10_LR5e3`) | **17.929 dB** | **+0.132 dB** | 0.000 dB |
+| **Oracle (best grid PSNR per video)** | **18.779 dB** | **+0.981 dB** | **+0.850 dB** |
+| Quintile-adaptive (modal-best run per OOD quintile) | 18.001 dB | +0.204 dB | **+0.071 dB** |
 
-- Slide 10’s OOD→more-benefit gating rule was tested as H5 and **falsified**; H9 is specifically the **adaptive budget** experiment.
+**Bootstrap oracle uplift vs fixed AdaSteer** (per-video, B=5000): mean Δ = **+0.850 dB**, 95% CI **[+0.599, +1.153] dB**, CI excludes 0: **yes**.
+
+| Metric | Mean | Median |
+|---|---:|---:|
+| Oracle ΔPSNR vs fixed AdaSteer | +0.850 dB | **+0.197 dB** |
+| Oracle ΔPSNR vs NOTTA | +0.981 dB | **+0.628 dB** |
+
+**Oracle config picks (sparse — no single budget dominates):** top winners **`S20_LR1e2`** 5.4%, **`S10_LR1e2`** 4.2%; remaining mass spread across grid — most videos’ best config is idiosyncratic, not a shared population optimum.
+
+**OOD quintile stratification (N = 40 per quintile, 200 total):**
+
+| Quintile | Fixed AdaSteer | Oracle-best | Δ within quintile | Modal oracle run | steps | LR |
+|---|---:|---:|---:|---|---:|---:|
+| Q5 (high OOD) | **15.308 dB** | **16.404 dB** | **+1.096 dB** | **`S10_LR1e2`** | **10** | **1e-2** |
+
+- Full Q1–Q5 table in cluster report `adasteer_budget_oracle_pilot.md`; modal oracle runs vary by quintile with **no monotonic steps↓/LR↑ trend** supporting H9.
+
+- **Q5 rescue confirmed:** +1.096 dB within-quintile (fixed → oracle) — high-OOD videos benefit most from per-video budget routing, but **not** via the predicted “more steps + lower LR” rule. Q5 modal oracle is **10 steps / LR 1e-2** (more steps, **higher** LR — opposite of H9).
+- At **population** level the PSNR winner remains **2 steps / LR 1e-2** — also opposite of H9. Best FVD favours **10 steps / LR 1e-3** (partial overlap on steps, not quintile-specific).
+- **Deployable OOD policy fails:** quintile-adaptive (pick modal-best run per quintile) yields only **+0.071 dB** over fixed S10/LR5e-3 — captures ~8% of oracle headroom. Simple OOD→budget rule is not a viable deployable gate.
+- **Oracle headroom is real and large:** +0.850 dB mean vs fixed (+0.599–1.153 bootstrap CI) is substantial for TTA literature (cf. method-vs-NOTTA oracle routing +0.226 dB in Slide 4) — budget routing is a bigger lever than method routing, but requires per-video selection we cannot yet predict offline.
+- Slide 10’s OOD→more-benefit gating rule was tested as H5 and **falsified**; H9 tests whether OOD can pick **budget** — answer is **no** for directional prediction; **yes** for oracle upper bound only.
 
 ---
 
@@ -267,6 +288,6 @@ Per-video routing is worth pursuing even though population TTA ≈ 0.
 | H6 | Loss norm → larger ΔPSNR | **Fail** |
 | H7 | Visual/temporal complexity | **Fail** |
 | H8 | VAE rec error caps gain | **Fail** |
-| H9 | OOD-adaptive steps/LR | **Pilot done — population fails H9 direction; quintile oracle pending** |
+| H9 | OOD-adaptive steps/LR | **Fail** — direction refuted; oracle +0.850 dB vs fixed; quintile policy +0.071 dB |
 
-**Bottom line:** Phase 0 gating is **complete for H1–H8** (full-battery bootstrap job **11135260**). **No feature clears |ρ| ≥ 0.2 on both ADA and LoRA**; strongest signal is `latent_norm_mean` (mean |ρ| ≈ **0.151**). OOD is the one “interesting” result and it **refutes** the original prediction (bootstrap CIs exclude 0, wrong sign). Per-video oracle PSNR routing shows **+0.226 dB** headroom with bootstrap CI **[+0.186, +0.271]**, and oracle FVD drops to **149.57** vs **155.94** always-NOTTA — but we still lack a deployable offline gate. **H9 pilot** (200v × 12-config grid) is merged; population PSNR peaks at **S2_LR1e2** (opposite of H9 direction); quintile oracle report still needed to adjudicate Q5 rescue.
+**Bottom line:** Phase 0 gating is **complete for H1–H9**. **No feature clears |ρ| ≥ 0.2 on both ADA and LoRA**; strongest signal is `latent_norm_mean` (mean |ρ| ≈ **0.151**). OOD **refutes** the original benefit prediction (H5) and the adaptive-budget rule (H9): population PSNR peaks at **S2_LR1e2**, Q5 modal oracle is **S10_LR1e2** (more steps, **higher** LR). Per-video **method** oracle routing shows **+0.226 dB** headroom (Slide 4); per-video **budget** oracle on the 200v pilot shows **+0.850 dB** vs fixed S10/LR5e-3 — much larger, but quintile-adaptive policy captures only **+0.071 dB**. Next lever: learned per-video budget router, not hand-crafted OOD→steps/LR.
