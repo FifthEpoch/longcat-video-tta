@@ -30,12 +30,18 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+try:
+    from scipy import stats as scipy_stats
+except ImportError:
+    scipy_stats = None  # type: ignore[assignment]
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
@@ -52,6 +58,14 @@ DEFAULT_OOD = (
 OOD_COL = "mean_diffusion_loss_caption"
 FIXED_ADA_RUN_ID = "S10_LR5e3"
 NOTTA_RUN_ID = "NOTTA"
+HEADLINE_PSNR_RUN_ID = "S2_LR1e2"
+
+# H9 pilot headline pairwise PSNR comparisons (per-video paired diffs).
+DEFAULT_PAIRWISE_COMPARISONS: Tuple[Tuple[str, str], ...] = (
+    (HEADLINE_PSNR_RUN_ID, FIXED_ADA_RUN_ID),
+    (HEADLINE_PSNR_RUN_ID, NOTTA_RUN_ID),
+    (FIXED_ADA_RUN_ID, NOTTA_RUN_ID),
+)
 
 # 12-config pilot subset (LR 1e-3, 5e-3, 1e-2 × steps 2, 5, 10, 20).
 PILOT_GRID_RUN_ORDER: Tuple[str, ...] = (
@@ -64,6 +78,224 @@ PILOT_GRID_RUN_ORDER: Tuple[str, ...] = (
 METRIC_KEYS: Tuple[str, ...] = ("psnr", "ssim", "lpips", "fvd", "fid")
 
 _RUN_ID_RE = re.compile(r"^S(\d+)_LR(.+)$")
+
+
+def paired_bootstrap_mean_diff(
+    a: Sequence[float],
+    b: Sequence[float],
+    n_boot: int = 5000,
+    seed: int = 42,
+) -> Tuple[Optional[float], Optional[float], Optional[float], int, Optional[bool]]:
+    """Bootstrap CI for mean(a - b) on paired finite entries."""
+    aa = np.asarray(a, dtype=float)
+    bb = np.asarray(b, dtype=float)
+    mask = ~(np.isnan(aa) | np.isnan(bb))
+    d = aa[mask] - bb[mask]
+    n = int(d.size)
+    if n == 0:
+        return None, None, None, 0, None
+    mean = float(d.mean())
+    if n < 2:
+        return mean, None, None, n, None
+    rng = np.random.default_rng(seed)
+    boot = [float(d[rng.integers(0, n, size=n)].mean()) for _ in range(n_boot)]
+    boot_arr = np.asarray(boot, dtype=np.float64)
+    ci_lo = float(np.percentile(boot_arr, 2.5))
+    ci_hi = float(np.percentile(boot_arr, 97.5))
+    excludes_zero = bool((ci_lo > 0.0) or (ci_hi < 0.0))
+    return mean, ci_lo, ci_hi, n, excludes_zero
+
+
+def _log_beta(a: float, b: float) -> float:
+    return math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+
+
+def _betainc(a: float, b: float, x: float) -> float:
+    """Regularized incomplete beta I_x(a, b) via continued fraction (stdlib)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    ln_beta = _log_beta(a, b)
+    front = math.exp(a * math.log(x) + b * math.log1p(-x) - ln_beta) / a
+    f = 1.0
+    c = 1.0
+    d = 1.0 - (a + b) * x / (a + 1.0)
+    if abs(d) < 1e-30:
+        d = 1e-30
+    d = 1.0 / d
+    f *= d
+    for m in range(1, 200):
+        m2 = 2 * m
+        num = m * (b - m) * x / ((a + m2 - 1.0) * (a + m2))
+        d = 1.0 + num * d
+        if abs(d) < 1e-30:
+            d = 1e-30
+        d = 1.0 / d
+        c = 1.0 + num / c
+        if abs(c) < 1e-30:
+            c = 1e-30
+        f *= c * d
+        num = -(a + m) * (a + b + m) * x / ((a + m2) * (a + m2 + 1.0))
+        d = 1.0 + num * d
+        if abs(d) < 1e-30:
+            d = 1e-30
+        d = 1.0 / d
+        c = 1.0 + num / c
+        if abs(c) < 1e-30:
+            c = 1e-30
+        delta = c * d
+        f *= delta
+        if abs(delta - 1.0) < 1e-10:
+            break
+    return front * (f - 1.0)
+
+
+def _student_t_cdf(t: float, df: int) -> float:
+    x = df / (df + t * t)
+    ib = _betainc(df / 2.0, 0.5, x)
+    if t >= 0.0:
+        return 1.0 - 0.5 * ib
+    return 0.5 * ib
+
+
+def paired_ttest_pvalue(diffs: Sequence[float]) -> Optional[float]:
+    """Two-sided paired t-test H0: mean(diff) = 0 (ttest_1samp on diffs)."""
+    a = np.asarray([x for x in diffs if not np.isnan(x)], dtype=float)
+    n = int(a.size)
+    if n < 2:
+        return None
+    if scipy_stats is not None:
+        res = scipy_stats.ttest_1samp(a, 0.0, alternative="two-sided")
+        return float(res.pvalue)
+    mean = float(a.mean())
+    std = float(a.std(ddof=1))
+    if std == 0.0:
+        return 0.0 if mean != 0.0 else 1.0
+    t_stat = mean / (std / math.sqrt(n))
+    return 2.0 * (1.0 - _student_t_cdf(abs(t_stat), n - 1))
+
+
+def wilcoxon_pvalue(diffs: Sequence[float]) -> Optional[float]:
+    """Two-sided Wilcoxon signed-rank on diffs (requires scipy)."""
+    if scipy_stats is None:
+        return None
+    a = np.asarray([x for x in diffs if not np.isnan(x)], dtype=float)
+    if a.size < 2:
+        return None
+    if np.allclose(a, 0.0):
+        return 1.0
+    try:
+        res = scipy_stats.wilcoxon(a, alternative="two-sided", zero_method="wilcox")
+    except ValueError:
+        return None
+    return float(res.pvalue)
+
+
+def _fmt_pvalue(p: Optional[float]) -> str:
+    if p is None or (isinstance(p, float) and np.isnan(p)):
+        return "—"
+    if p < 0.0001:
+        return f"{p:.2e}"
+    return f"{p:.4f}"
+
+
+def _fmt_sig(p: Optional[float], alpha: float = 0.05) -> str:
+    if p is None or (isinstance(p, float) and np.isnan(p)):
+        return "—"
+    return "yes" if p < alpha else "no"
+
+
+def compute_pairwise_comparison(
+    table: Dict[str, Dict[str, float]],
+    run_a: str,
+    run_b: str,
+    *,
+    n_boot: int = 5000,
+    seed: int = 42,
+) -> Dict[str, object]:
+    """Paired PSNR comparison run_a − run_b with bootstrap CI and p-values."""
+    psnr_a: List[float] = []
+    psnr_b: List[float] = []
+    diffs: List[float] = []
+    for _vid, row in sorted(table.items()):
+        pa = row.get(run_a)
+        pb = row.get(run_b)
+        if pa is None or pb is None or np.isnan(pa) or np.isnan(pb):
+            continue
+        psnr_a.append(float(pa))
+        psnr_b.append(float(pb))
+        diffs.append(float(pa) - float(pb))
+    n = len(diffs)
+    mean_d, ci_lo, ci_hi, _n_booted, excl = paired_bootstrap_mean_diff(
+        psnr_a, psnr_b, n_boot=n_boot, seed=seed,
+    )
+    t_p = paired_ttest_pvalue(diffs)
+    w_p = wilcoxon_pvalue(diffs)
+    return {
+        "run_a": run_a,
+        "run_b": run_b,
+        "label": f"`{run_a}` − `{run_b}`",
+        "n": n,
+        "mean_delta": mean_d,
+        "ci_lo": ci_lo,
+        "ci_hi": ci_hi,
+        "ci_excludes_zero": excl,
+        "t_pvalue": t_p,
+        "wilcoxon_pvalue": w_p,
+        "t_sig_005": _fmt_sig(t_p),
+    }
+
+
+def format_pairwise_psnr_tests_md(
+    comparisons: Sequence[Dict[str, object]],
+    *,
+    n_boot: int = 5000,
+    seed: int = 42,
+    scipy_available: bool = scipy_stats is not None,
+) -> List[str]:
+    """Markdown table for headline pairwise PSNR tests (H9 pilot)."""
+    wilcoxon_hdr = "Wilcoxon p" if scipy_available else "Wilcoxon p (scipy N/A)"
+    lines = [
+        "## Pairwise PSNR comparisons (H9 pilot)",
+        "",
+        "Per-video paired ΔPSNR (config A − config B). Bootstrap resamples videos "
+        f"(B={n_boot}, seed={seed}). Paired *t*-test: `scipy.stats.ttest_1samp` on "
+        "per-video diffs (two-sided H₀: mean Δ = 0).",
+        "",
+        f"| Comparison | N | Mean Δ (dB) | Bootstrap 95% CI | CI excludes 0? | "
+        f"Paired *t*-test p | p < 0.05? | {wilcoxon_hdr} |",
+        "|---|---:|---:|---|---:|---:|---:|---:|",
+    ]
+    for row in comparisons:
+        mean_d = row.get("mean_delta")
+        ci_lo = row.get("ci_lo")
+        ci_hi = row.get("ci_hi")
+        excl = row.get("ci_excludes_zero")
+        mean_s = f"{float(mean_d):+.3f}" if mean_d is not None else "—"
+        if ci_lo is not None and ci_hi is not None:
+            ci_s = f"[{float(ci_lo):+.3f}, {float(ci_hi):+.3f}]"
+        else:
+            ci_s = "—"
+        excl_s = "yes" if excl else ("no" if excl is not None else "—")
+        t_p = row.get("t_pvalue")
+        w_p = row.get("wilcoxon_pvalue")
+        w_s = _fmt_pvalue(w_p if isinstance(w_p, float) or w_p is None else None)
+        if not scipy_available:
+            w_s = "—"
+        lines.append(
+            f"| {row['label']} | {row['n']} | {mean_s} | {ci_s} | {excl_s} | "
+            f"{_fmt_pvalue(t_p if isinstance(t_p, float) or t_p is None else None)} | "
+            f"{row.get('t_sig_005', '—')} | {w_s} |"
+        )
+    if not scipy_available:
+        lines += [
+            "",
+            "> Wilcoxon signed-rank test requires `scipy` (install on cluster: "
+            "`pip install scipy` or use conda env with scipy).",
+        ]
+    lines.append("")
+    return lines
 
 
 def bootstrap_mean_ci(
@@ -489,6 +721,8 @@ def build_report(
     bootstrap: bool,
     n_boot: int,
     bootstrap_seed: int,
+    pairwise_tests: bool,
+    pairwise_comparisons: Sequence[Tuple[str, str]],
     metrics_header: List[str],
     metrics_rows: List[List[str]],
     oracle_fvd_blob: Optional[dict],
@@ -622,6 +856,28 @@ def build_report(
             f"**{d_n:+.3f} dB** | **{d_f:+.3f} dB** |"
         )
     lines.append("")
+
+    if pairwise_tests:
+        pw_rows: List[Dict[str, object]] = []
+        for run_a, run_b in pairwise_comparisons:
+            if run_a not in run_ids or run_b not in run_ids:
+                print(
+                    f"[warn] pairwise skip: missing run(s) `{run_a}` or `{run_b}`",
+                    file=sys.stderr,
+                )
+                continue
+            pw_rows.append(
+                compute_pairwise_comparison(
+                    table, run_a, run_b, n_boot=n_boot, seed=bootstrap_seed,
+                )
+            )
+        if pw_rows:
+            lines += format_pairwise_psnr_tests_md(
+                pw_rows,
+                n_boot=n_boot,
+                seed=bootstrap_seed,
+                scipy_available=scipy_stats is not None,
+            )
 
     bootstrap_ci: Optional[Tuple[float, float]] = None
     if bootstrap and oracle_gain_vs_fixed:
@@ -798,6 +1054,14 @@ def main() -> int:
         help="Optional fvd.json from run_budget_oracle_fvd.py for oracle FVD/FID row",
     )
     ap.add_argument("--bootstrap", action="store_true")
+    ap.add_argument(
+        "--pairwise-tests",
+        action="store_true",
+        help=(
+            "Emit paired PSNR comparison table (S2_LR1e2 vs S10_LR5e3, vs NOTTA, "
+            "S10_LR5e3 vs NOTTA) with bootstrap 95%% CI and paired t-test p-values."
+        ),
+    )
     ap.add_argument("--n-boot", type=int, default=5000)
     ap.add_argument("--bootstrap-seed", type=int, default=42)
     args = ap.parse_args()
@@ -890,9 +1154,11 @@ def main() -> int:
         metrics_by_run=metrics_by_run,
         ood_quintile=ood_q,
         fixed_run=args.fixed_run_id,
-        bootstrap=args.bootstrap,
+        bootstrap=args.bootstrap or args.pairwise_tests,
         n_boot=args.n_boot,
         bootstrap_seed=args.bootstrap_seed,
+        pairwise_tests=args.pairwise_tests,
+        pairwise_comparisons=DEFAULT_PAIRWISE_COMPARISONS,
         metrics_header=metrics_header,
         metrics_rows=metrics_rows,
         oracle_fvd_blob=oracle_fvd_blob,
