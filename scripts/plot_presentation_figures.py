@@ -119,14 +119,14 @@ H9_CONFIG_TABLE: List[Dict[str, object]] = [
 ]
 
 H9_ORACLE_PICKS: List[Tuple[str, int, float]] = [
-    ("S20_LR1e2", 54, 5.4),
-    ("S10_LR1e2", 42, 4.2),
-    ("S2_LR5e3", 13, 1.3),
-    ("S20_LR1e3", 13, 1.3),
-    ("S20_LR5e3", 12, 1.2),
-    ("S2_LR1e3", 12, 1.2),
-    ("S5_LR1e2", 11, 1.1),
-    ("S5_LR1e3", 9, 0.9),
+    ("S20_LR1e2", 54, 27.0),
+    ("S10_LR1e2", 42, 21.0),
+    ("S2_LR5e3", 13, 6.5),
+    ("S20_LR1e3", 13, 6.5),
+    ("S20_LR5e3", 12, 6.0),
+    ("S2_LR1e3", 12, 6.0),
+    ("S5_LR1e2", 11, 5.5),
+    ("S5_LR1e3", 9, 4.5),
 ]
 
 H9_QUINTILE_POLICIES = {
@@ -511,7 +511,7 @@ def plot_h9_pick_frequency(out_dir: Path, picks: List[Tuple[str, int, float]]) -
     ax.text(
         0.5,
         -0.42,
-        "Top: S20_LR1e2 5.4%, S10_LR1e2 4.2% — remainder spread (~80%+ other configs)",
+        "Top: S20_LR1e2 27.0%, S10_LR1e2 21.0% — still no single config >30%; remainder spread",
         transform=ax.transAxes,
         ha="center",
         fontsize=8,
@@ -618,7 +618,7 @@ def try_live_h9_from_series(series_root: Path, ood_csv: Path) -> Optional[Tuple[
         w = oracle_winner(row, grid_runs)
         if w:
             winners[w] = winners.get(w, 0) + 1
-    n = len(all_vids) or 200
+    n = sum(winners.values()) or len(all_vids) or 200
     picks = sorted(winners.items(), key=lambda x: -x[1])[:8]
     pick_rows = [(k, v, 100.0 * v / n) for k, v in picks]
     return pick_rows, grid_runs, psnr_by_run

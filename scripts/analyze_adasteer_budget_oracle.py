@@ -304,6 +304,70 @@ def build_config_metrics_table(
     return header, rows
 
 
+def format_oracle_pick_table_md(
+    winners: Dict[str, int],
+    gains_by_winner: Dict[str, List[float]],
+    *,
+    grid_run_order: Sequence[str] = PILOT_GRID_RUN_ORDER,
+    fixed_run: str = FIXED_ADA_RUN_ID,
+    overall_gain_vs_fixed: Optional[float] = None,
+    bootstrap_ci: Optional[Tuple[float, float]] = None,
+) -> Tuple[List[str], List[List[str]]]:
+    """Return (markdown lines, CSV rows) for Table 2 oracle pick frequency."""
+    n_oracle = sum(winners.values())
+    header = ["Config", "Oracle picks", "Freq", f"Mean ΔPSNR vs `{fixed_run}`"]
+    csv_header = ["run_id", "oracle_picks", "freq_pct", "mean_delta_psnr_vs_fixed_db"]
+    rows: List[List[str]] = []
+    md_lines: List[str] = [
+        "## Table 2 — Oracle pick frequency + routing uplift",
+        "",
+        f"Denominator: **N = {n_oracle}** pilot videos with a grid oracle winner "
+        f"(not the NOTTA union size when `--baseline-series-root` is used).",
+        "",
+        f"*Mean ΔPSNR when picked = winner PSNR − fixed `{fixed_run}` PSNR "
+        "on videos where that config wins.*",
+        "",
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * len(header)) + " |",
+    ]
+    for run_id in grid_run_order:
+        cnt = winners.get(run_id, 0)
+        freq = 100.0 * cnt / n_oracle if n_oracle else 0.0
+        gains = gains_by_winner.get(run_id, [])
+        if gains:
+            mean_gain = float(np.mean(gains))
+            gain_s = f"{mean_gain:+.3f} dB"
+        else:
+            mean_gain = None
+            gain_s = "—"
+        md_lines.append(
+            f"| `{run_id}` | {cnt} | {freq:.1f}% | {gain_s} |"
+        )
+        rows.append([
+            run_id,
+            str(cnt),
+            f"{freq:.2f}",
+            "" if mean_gain is None else f"{mean_gain:.6f}",
+        ])
+
+    if overall_gain_vs_fixed is not None:
+        uplift_s = f"{overall_gain_vs_fixed:+.3f} dB"
+        if bootstrap_ci is not None:
+            uplift_s += f" [{bootstrap_ci[0]:+.3f}, {bootstrap_ci[1]:+.3f}]"
+        md_lines.append(
+            f"| **Overall oracle vs fixed `{fixed_run}`** | **{n_oracle}** | "
+            f"**100.0%** | **{uplift_s}** |"
+        )
+        rows.append([
+            f"ORACLE_vs_{fixed_run}",
+            str(n_oracle),
+            "100.00",
+            f"{overall_gain_vs_fixed:.6f}",
+        ])
+    md_lines.append("")
+    return md_lines, [csv_header] + rows
+
+
 def format_metrics_table_md(
     header: Sequence[str],
     rows: Sequence[Sequence[str]],
@@ -428,22 +492,24 @@ def build_report(
     metrics_header: List[str],
     metrics_rows: List[List[str]],
     oracle_fvd_blob: Optional[dict],
-) -> str:
+) -> Tuple[str, List[List[str]]]:
     grid_runs = [r for r in run_ids if r not in (NOTTA_RUN_ID,)]
     vids = sorted(table.keys())
-    n = len(vids)
+    n_union = len(vids)
 
     lines: List[str] = [
         "# AdaSteer budget-grid oracle analysis (H9)",
         "",
         f"**Series:** `{series_root}`",
-        f"**N = {n}** videos with PSNR across ≥1 grid config.",
         f"**Fixed headline AdaSteer:** `{fixed_run}` (S10/LR=5e-3).",
     ]
     if baseline_series_root is not None:
         lines.append(
-            f"**NOTTA baseline:** `{baseline_run_id}` from `{baseline_series_root}`."
+            f"**NOTTA baseline:** `{baseline_run_id}` from `{baseline_series_root}` "
+            f"(union N = {n_union} when joined)."
         )
+    else:
+        lines.append(f"**Union N = {n_union}** videos with PSNR across ≥1 run.")
     lines += ["", ""]
 
     if fixed_run not in run_ids:
@@ -459,6 +525,7 @@ def build_report(
     oracle_gain_vs_fixed: List[float] = []
     oracle_gain_vs_notta: List[float] = []
     winners: Dict[str, int] = {}
+    gains_by_winner: Dict[str, List[float]] = {}
 
     for vid in vids:
         row = table[vid]
@@ -470,10 +537,20 @@ def build_report(
         oracle_psnr.append(p_oracle)
         if fixed_run in row:
             fixed_psnr.append(row[fixed_run])
-            oracle_gain_vs_fixed.append(p_oracle - row[fixed_run])
+            gain_vs_fixed = p_oracle - row[fixed_run]
+            oracle_gain_vs_fixed.append(gain_vs_fixed)
+            gains_by_winner.setdefault(w, []).append(gain_vs_fixed)
         if NOTTA_RUN_ID in row:
             notta_psnr.append(row[NOTTA_RUN_ID])
             oracle_gain_vs_notta.append(p_oracle - row[NOTTA_RUN_ID])
+
+    n_oracle = sum(winners.values())
+    if n_oracle:
+        lines.insert(
+            4,
+            f"**Pilot grid oracle N = {n_oracle}** videos with per-video PSNR across "
+            "the budget grid (denominator for pick frequencies).",
+        )
 
     def mean_psnr(arr: List[float]) -> float:
         a = np.asarray(arr, dtype=float)
@@ -546,12 +623,14 @@ def build_report(
         )
     lines.append("")
 
+    bootstrap_ci: Optional[Tuple[float, float]] = None
     if bootstrap and oracle_gain_vs_fixed:
         uplift = mean_psnr(oracle_gain_vs_fixed)
         _m, ci_lo, ci_hi, excl = bootstrap_mean_ci(
             oracle_gain_vs_fixed, n_boot=n_boot, seed=bootstrap_seed,
         )
         if ci_lo is not None:
+            bootstrap_ci = (ci_lo, ci_hi)
             sig = "yes" if excl else "no"
             lines += [
                 f"**Bootstrap oracle uplift vs fixed AdaSteer** "
@@ -561,10 +640,24 @@ def build_report(
                 "",
             ]
 
-    if winners:
+    oracle_pick_rows: List[List[str]] = []
+
+    if winners and n_oracle:
         top = sorted(winners.items(), key=lambda x: -x[1])[:8]
-        parts = [f"`{k}` {v} ({100 * v / n:.1f}%)" for k, v in top]
+        parts = [
+            f"`{k}` {v} ({100 * v / n_oracle:.1f}%)" for k, v in top
+        ]
         lines += ["**Oracle config picks (top):** " + " · ".join(parts), ""]
+        table2_md, oracle_pick_rows = format_oracle_pick_table_md(
+            winners,
+            gains_by_winner,
+            fixed_run=fixed_run,
+            overall_gain_vs_fixed=(
+                mean_psnr(oracle_gain_vs_fixed) if oracle_gain_vs_fixed else None
+            ),
+            bootstrap_ci=bootstrap_ci,
+        )
+        lines += table2_md
 
     lines += [
         "| Metric | N | Mean | Median | p25 | p75 |",
@@ -662,7 +755,7 @@ def build_report(
         "check the pattern table above (opposite sign would extend the H5 falsification).",
         "",
     ]
-    return "\n".join(lines)
+    return "\n".join(lines), oracle_pick_rows
 
 
 def main() -> int:
@@ -691,6 +784,12 @@ def main() -> int:
         type=Path,
         default=None,
         help="Optional CSV path for full grid metrics table (default: alongside --output)",
+    )
+    ap.add_argument(
+        "--oracle-picks-csv",
+        type=Path,
+        default=None,
+        help="Optional CSV for Table 2 oracle pick frequency (default: *_picks.csv)",
     )
     ap.add_argument(
         "--oracle-fvd-json",
@@ -780,7 +879,7 @@ def main() -> int:
     else:
         print(f"[warn] OOD CSV not found: {args.ood_csv}", file=sys.stderr)
 
-    report = build_report(
+    report, oracle_pick_rows = build_report(
         series_root=args.series_root,
         baseline_series_root=baseline_series_root
         if args.baseline_run_id in run_ids
@@ -807,9 +906,20 @@ def main() -> int:
         csv_path = args.metrics_csv or args.output.with_suffix(".csv")
         write_metrics_csv(csv_path, metrics_header, metrics_rows)
         print(f"Wrote {csv_path}", file=sys.stderr)
+        if oracle_pick_rows:
+            picks_path = args.oracle_picks_csv or args.output.with_name(
+                args.output.stem + "_picks.csv"
+            )
+            write_metrics_csv(picks_path, oracle_pick_rows[0], oracle_pick_rows[1:])
+            print(f"Wrote {picks_path}", file=sys.stderr)
     elif args.metrics_csv:
         write_metrics_csv(args.metrics_csv, metrics_header, metrics_rows)
         print(f"Wrote {args.metrics_csv}", file=sys.stderr)
+        if oracle_pick_rows and args.oracle_picks_csv:
+            write_metrics_csv(
+                args.oracle_picks_csv, oracle_pick_rows[0], oracle_pick_rows[1:],
+            )
+            print(f"Wrote {args.oracle_picks_csv}", file=sys.stderr)
 
     return 0
 
