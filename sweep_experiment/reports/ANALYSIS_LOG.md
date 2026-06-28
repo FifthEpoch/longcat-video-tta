@@ -359,3 +359,25 @@ decay 0.01, max grad norm 10) as the LoRA TTA baseline after the
 `lora_rank_sweep/` discovery. Best PSNR vs the rank-1/rank-2/rank-4
 variants. The previous rank-1 lr=2e-4 variant was DROPPED for catastrophic
 collapse at 20 steps.
+
+---
+
+## 2026-06-27 — Per-video VBench++ cross-metric agreement script
+**Tags:** methodology, in-flight
+**Refs:**
+- `scripts/analyze_per_video_vbench_agreement.py`
+- `scripts/run_panda_vbench_agreement.sh`
+- Output target: `sweep_experiment/reports/per_video_analysis/YYYY-MM-DD/vbench_agreement/`
+
+After Panda 1000v retrieval VBench backfill completed (K5/K10 × SIM/RAND),
+population means still show ≈0 ΔPSNR and mixed VBench shifts (Aes/Dyn↑,
+IQ↓). Next diagnostic: **per-video** win/tie/loss on all 7 VBench++ dims
+and **cross-metric agreement** with ΔPSNR / ΔSSIM / ΔLPIPS (FVD remains
+population-only).
+
+Run on cluster:
+```bash
+bash scripts/run_panda_vbench_agreement.sh
+```
+Then paste key tables from `vbench_agreement_summary.md` here once generated.
+
