@@ -36,6 +36,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -48,6 +49,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 from scripts.analyze_per_video_tta_gain import (  # noqa: E402
     _canonical_video_id,
     _coerce_float,
+    _records_from_blob,
     load_per_video_metrics,
     pearson_r,
     spearman_rho,
@@ -78,6 +80,160 @@ BACKFILL_DIMS = [
     "imaging_quality",
     "temporal_flickering",
 ]
+
+
+def _numeric_suffix(vid: str) -> Optional[int]:
+    m = re.search(r"(\d+)\s*$", vid)
+    return int(m.group(1)) if m else None
+
+
+def _chunk_anchor_ids(chunk_dir: Path) -> List[str]:
+    """Ordered canonical video ids from chunk summary (same keys as PSNR loader)."""
+    summary_path = chunk_dir / "summary.json"
+    if not summary_path.exists():
+        return []
+    try:
+        blob = json.loads(summary_path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {summary_path}: {exc}", file=sys.stderr)
+        return []
+    ids: List[str] = []
+    for r in _records_from_blob(blob):
+        raw = (
+            r.get("video_name")
+            or r.get("video_id")
+            or r.get("video")
+            or r.get("video_path")
+            or r.get("path")
+        )
+        vid = _canonical_video_id(raw if raw is not None else "")
+        if vid:
+            ids.append(vid)
+    return ids
+
+
+def _parse_eval_results_entries(eval_path: Path) -> List[Tuple[str, float]]:
+    """Return ordered (path_or_prompt, score) pairs from one eval_results.json."""
+    if not eval_path.exists():
+        return []
+    try:
+        parsed = json.loads(eval_path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {eval_path}: {exc}", file=sys.stderr)
+        return []
+
+    entries: List[Tuple[str, float]] = []
+    if not isinstance(parsed, dict):
+        return entries
+
+    for _key, body in parsed.items():
+        if not isinstance(body, list) or len(body) < 2:
+            continue
+        inner = body[1]
+        if isinstance(inner, list):
+            for rec in inner:
+                if not isinstance(rec, dict):
+                    continue
+                vp = (
+                    rec.get("video_path")
+                    or rec.get("video")
+                    or rec.get("path")
+                    or rec.get("prompt_en")
+                    or ""
+                )
+                score = rec.get("video_results")
+                if score is None:
+                    score = rec.get("score") or rec.get("video_score")
+                val = _coerce_float(score)
+                if val is not None:
+                    entries.append((str(vp), val))
+        elif isinstance(inner, dict):
+            for path, score in inner.items():
+                val = _coerce_float(score)
+                if val is not None:
+                    entries.append((str(path), val))
+    return entries
+
+
+def _parse_full_info_entries(full_info_path: Path) -> List[Tuple[str, float]]:
+    if not full_info_path.exists():
+        return []
+    try:
+        parsed = json.loads(full_info_path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {full_info_path}: {exc}", file=sys.stderr)
+        return []
+    entries: List[Tuple[str, float]] = []
+    if not isinstance(parsed, list):
+        return entries
+    for rec in parsed:
+        if not isinstance(rec, dict):
+            continue
+        score = (
+            rec.get("video_results")
+            or rec.get("score")
+            or rec.get("video_score")
+            or rec.get("dynamic_degree_score")
+        )
+        vp = (
+            rec.get("video_path")
+            or (rec.get("video_list") or [None])[0]
+            or rec.get("prompt_en")
+            or rec.get("video")
+            or ""
+        )
+        val = _coerce_float(score)
+        if val is not None:
+            entries.append((str(vp), val))
+    return entries
+
+
+def _entries_to_raw_dict(entries: List[Tuple[str, float]]) -> Dict[str, float]:
+    raw: Dict[str, float] = {}
+    for vp, score in entries:
+        vid = _canonical_video_id(vp)
+        if vid:
+            raw[vid] = score
+    return raw
+
+
+def _align_dim_scores_to_anchors(
+    anchor_ids: List[str],
+    entries: List[Tuple[str, float]],
+) -> Dict[str, float]:
+    """Map one VBench dim onto summary.json anchor ids within a chunk."""
+    if not anchor_ids:
+        return _entries_to_raw_dict(entries)
+
+    raw = _entries_to_raw_dict(entries)
+    if not raw and not entries:
+        return {}
+
+    direct = sum(1 for a in anchor_ids if a in raw)
+    if direct >= max(1, int(0.5 * len(anchor_ids))):
+        return {a: raw[a] for a in anchor_ids if a in raw}
+
+    # Numeric suffix join (handles panda_0010 vs panda_0010_delta_a mismatches).
+    by_suffix: Dict[int, float] = {}
+    for k, v in raw.items():
+        suf = _numeric_suffix(k)
+        if suf is not None:
+            by_suffix[suf] = v
+
+    out: Dict[str, float] = {}
+    for i, vid in enumerate(anchor_ids):
+        score = raw.get(vid)
+        if score is None:
+            suf = _numeric_suffix(vid)
+            if suf is not None:
+                score = by_suffix.get(suf)
+        if score is None and len(entries) == len(anchor_ids):
+            score = entries[i][1]
+        if score is None and len(raw) == len(anchor_ids):
+            score = list(raw.values())[i]
+        if score is not None:
+            out[vid] = score
+    return out
 
 
 def _parse_eval_results_file(eval_path: Path) -> Dict[str, float]:
@@ -205,7 +361,12 @@ def _parse_vbench_per_video(parsed: dict, dim: str) -> Dict[str, float]:
 
 
 def load_per_video_vbench(method_dir: Path) -> Dict[str, Dict[str, float]]:
-    """Return {video_id -> {dim -> score}} merged across chunks."""
+    """Return {video_id -> {dim -> score}} merged across chunks.
+
+    VBench dims are joined on ``summary.json`` anchor ids per chunk so that
+    original dims (prompt_en keys) and backfill dims (video_path keys) land
+    on the same canonical id as PSNR/SSIM/LPIPS.
+    """
     merged: Dict[str, Dict[str, float]] = {}
     chunk_dirs = sorted(method_dir.glob("chunk_*"))
     if not chunk_dirs:
@@ -213,18 +374,28 @@ def load_per_video_vbench(method_dir: Path) -> Dict[str, Dict[str, float]]:
         if vb_root.is_dir():
             chunk_dirs = [method_dir]
     for chunk_dir in chunk_dirs:
+        anchor_ids = _chunk_anchor_ids(chunk_dir)
         vb_dir = chunk_dir / "vbench_results"
         if not vb_dir.is_dir():
             continue
         for dim in VBENCH_DIMS:
             eval_p = vb_dir / f"vbench_{dim}_eval_results.json"
             full_p = vb_dir / f"vbench_{dim}_full_info.json"
-            scores = _parse_eval_results_file(eval_p)
-            if not scores:
-                scores = _parse_full_info_file(full_p)
-            for vid, score in scores.items():
+            entries = _parse_eval_results_entries(eval_p)
+            if not entries:
+                entries = _parse_full_info_entries(full_p)
+            aligned = _align_dim_scores_to_anchors(anchor_ids, entries)
+            if not aligned and entries:
+                aligned = _entries_to_raw_dict(entries)
+            for vid, score in aligned.items():
                 merged.setdefault(vid, {})[dim] = score
     return merged
+
+
+def count_videos_with_all_dims(
+    vb: Dict[str, Dict[str, float]], dims: Sequence[str],
+) -> int:
+    return sum(1 for dmap in vb.values() if all(d in dmap for d in dims))
 
 
 def vbench_dim_counts(vb: Dict[str, Dict[str, float]]) -> Dict[str, int]:
