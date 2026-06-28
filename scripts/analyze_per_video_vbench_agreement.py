@@ -261,34 +261,49 @@ def select_active_dims(
 
 def print_diagnose(
     baseline_name: str,
-    baseline_dir: Path,
     methods: List[Tuple[str, Path]],
     baseline_pv: Dict,
     baseline_vb: Dict,
     method_pv: Dict,
     method_vb: Dict,
+    active_dims: List[str],
 ) -> None:
     print("\n=== Per-video coverage diagnose ===")
     dirs = [(baseline_name, baseline_pv, baseline_vb)] + [
         (n, method_pv[n], method_vb[n]) for n, _ in methods
     ]
+
+    def _complete_vbench(vb: Dict[str, Dict[str, float]]) -> set:
+        return {vid for vid, dims in vb.items() if all(d in dims for d in active_dims)}
+
+    def _complete_psnr(pv: Dict[str, Dict[str, Optional[float]]]) -> set:
+        return {vid for vid, m in pv.items() if m.get("psnr") is not None}
+
     for label, pv, vb in dirs:
         psnr_n = sum(1 for m in pv.values() if m.get("psnr") is not None)
         counts = vbench_dim_counts(vb)
-        print(f"\n{label} ({psnr_n} PSNR videos):")
+        full_vb = _complete_vbench(vb)
+        overlap = _complete_psnr(pv) & full_vb
+        print(f"\n{label} ({psnr_n} PSNR videos, {len(vb)} vbench keys):")
         for d in VBENCH_DIMS:
-            print(f"  {d:25s} {counts[d]:4d} per-video scores")
+            mark = " *" if d in active_dims else ""
+            print(f"  {d:25s} {counts[d]:4d} per-video scores{mark}")
+        print(f"  videos with all active dims ({len(active_dims)}): {len(full_vb)}")
+        print(f"  PSNR ∩ full VBench: {len(overlap)}")
         if vb:
-            sample = next(iter(vb))
-            print(f"  sample vbench id: {sample!r}")
+            print(f"  sample vbench id: {next(iter(vb))!r}")
         if pv:
-            sample_p = next(iter(pv))
-            print(f"  sample psnr id:   {sample_p!r}")
-    print("\nHint: original 3 VBench dims often store aggregate-only scores.")
-    print("Re-backfill with --force if a dim shows 0 per-video counts:")
-    print("  python scripts/run_vbench_backfill.py --method-dir <DIR> \\")
-    print("    --dimensions subject_consistency background_consistency aesthetic_quality \\")
-    print("    --force")
+            print(f"  sample psnr id:   {next(iter(pv))!r}")
+
+    common = _complete_psnr(baseline_pv) & _complete_vbench(baseline_vb)
+    for name, _ in methods:
+        common &= _complete_psnr(method_pv[name]) & _complete_vbench(method_vb[name])
+    print(f"\nGlobal intersection (all {len(dirs)} dirs): **{len(common)}** videos")
+    print(f"Active VBench dims: {', '.join(active_dims)}")
+    if len(common) == 0:
+        print("\n[warn] intersection is empty — check PSNR vs VBench id alignment above.")
+    else:
+        print("\nReady to run without --diagnose.")
     print()
 
 
@@ -698,23 +713,25 @@ def main() -> int:
     method_vb = {n: load_per_video_vbench(p) for n, p in methods}
 
     all_vb = {baseline_name: baseline_vb, **method_vb}
-    if args.diagnose:
-        print_diagnose(
-            baseline_name, baseline_dir, methods,
-            baseline_pv, baseline_vb, method_pv, method_vb,
-        )
-        return 0
-
     active_dims = select_active_dims(
         all_vb,
         require_dims=args.require_dims,
         min_videos=args.min_vbench_videos,
     )
+    if args.diagnose:
+        print_diagnose(
+            baseline_name, methods,
+            baseline_pv, baseline_vb, method_pv, method_vb,
+            active_dims,
+        )
+        return 0
+
     if not active_dims:
         print("[error] no VBench dims with per-video scores found", file=sys.stderr)
         print_diagnose(
-            baseline_name, baseline_dir, methods,
+            baseline_name, methods,
             baseline_pv, baseline_vb, method_pv, method_vb,
+            active_dims or list(VBENCH_DIMS),
         )
         return 2
 
@@ -734,8 +751,9 @@ def main() -> int:
             file=sys.stderr,
         )
         print_diagnose(
-            baseline_name, baseline_dir, methods,
+            baseline_name, methods,
             baseline_pv, baseline_vb, method_pv, method_vb,
+            active_dims,
         )
         return 2
 
