@@ -3,6 +3,10 @@
 # Execute on the cluster login node from repo root:
 #
 #   bash scripts/run_panda_vbench_agreement.sh
+
+# Or diagnose coverage only:
+# python3 scripts/analyze_per_video_vbench_agreement.py --diagnose \
+#   --baseline-dir "$BASELINE" --method-dirs "${METHODS[@]}" --output-dir /tmp/x
 #
 set -euo pipefail
 

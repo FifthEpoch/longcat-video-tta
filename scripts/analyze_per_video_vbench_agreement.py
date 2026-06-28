@@ -72,8 +72,99 @@ METRIC_SPECS: List[Tuple[str, bool, float]] = [
 ]
 
 
+BACKFILL_DIMS = [
+    "motion_smoothness",
+    "dynamic_degree",
+    "imaging_quality",
+    "temporal_flickering",
+]
+
+
+def _parse_eval_results_file(eval_path: Path) -> Dict[str, float]:
+    """Parse per-video scores from ``vbench_<dim>_eval_results.json``.
+
+    Mirrors ``validate_dynamicness_metric._try_load_eval_results`` but merges
+    every dimension key present in the file (robust to dim-name quirks).
+    """
+    if not eval_path.exists():
+        return {}
+    try:
+        parsed = json.loads(eval_path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {eval_path}: {exc}", file=sys.stderr)
+        return {}
+
+    out: Dict[str, float] = {}
+    if not isinstance(parsed, dict):
+        return out
+
+    for _key, body in parsed.items():
+        if not isinstance(body, list) or len(body) < 2:
+            continue
+        inner = body[1]
+        if isinstance(inner, list):
+            for rec in inner:
+                if not isinstance(rec, dict):
+                    continue
+                vp = (
+                    rec.get("video_path")
+                    or rec.get("video")
+                    or rec.get("path")
+                    or rec.get("prompt_en")
+                )
+                score = rec.get("video_results")
+                if score is None:
+                    score = rec.get("score") or rec.get("video_score")
+                vid = _canonical_video_id(vp if vp else "")
+                val = _coerce_float(score)
+                if vid and val is not None:
+                    out[vid] = val
+        elif isinstance(inner, dict):
+            for path, score in inner.items():
+                vid = _canonical_video_id(str(path))
+                val = _coerce_float(score)
+                if vid and val is not None:
+                    out[vid] = val
+    return out
+
+
+def _parse_full_info_file(full_info_path: Path) -> Dict[str, float]:
+    """Fallback: some VBench versions store per-video scores in full_info.json."""
+    if not full_info_path.exists():
+        return {}
+    try:
+        parsed = json.loads(full_info_path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] {full_info_path}: {exc}", file=sys.stderr)
+        return {}
+
+    out: Dict[str, float] = {}
+    if not isinstance(parsed, list):
+        return out
+    for rec in parsed:
+        if not isinstance(rec, dict):
+            continue
+        score = (
+            rec.get("video_results")
+            or rec.get("score")
+            or rec.get("video_score")
+            or rec.get("dynamic_degree_score")
+        )
+        vp = (
+            rec.get("video_path")
+            or (rec.get("video_list") or [None])[0]
+            or rec.get("prompt_en")
+            or rec.get("video")
+        )
+        vid = _canonical_video_id(vp if vp else "")
+        val = _coerce_float(score)
+        if vid and val is not None:
+            out[vid] = val
+    return out
+
+
 def _parse_vbench_per_video(parsed: dict, dim: str) -> Dict[str, float]:
-    """Return {canonical_video_id -> score} from one eval_results.json."""
+    """Return {canonical_video_id -> score} from one eval_results.json blob."""
     body = parsed.get(dim)
     if body is None and len(parsed) == 1:
         body = next(iter(parsed.values()))
@@ -93,7 +184,12 @@ def _parse_vbench_per_video(parsed: dict, dim: str) -> Dict[str, float]:
         for item in per_video:
             if not isinstance(item, dict):
                 continue
-            path = item.get("video_path") or item.get("video") or item.get("path")
+            path = (
+                item.get("video_path")
+                or item.get("video")
+                or item.get("path")
+                or item.get("prompt_en")
+            )
             score = item.get("video_results", item.get("video_score", item.get("score")))
             vid = _canonical_video_id(path if path else "")
             val = _coerce_float(score)
@@ -119,21 +215,81 @@ def load_per_video_vbench(method_dir: Path) -> Dict[str, Dict[str, float]]:
     for chunk_dir in chunk_dirs:
         vb_dir = chunk_dir / "vbench_results"
         if not vb_dir.is_dir():
-            vb_dir = chunk_dir if (chunk_dir / "vbench_results").is_dir() else None
-        if vb_dir is None or not vb_dir.is_dir():
             continue
         for dim in VBENCH_DIMS:
-            rf = vb_dir / f"vbench_{dim}_eval_results.json"
-            if not rf.exists():
-                continue
-            try:
-                parsed = json.loads(rf.read_text())
-            except Exception as exc:  # noqa: BLE001
-                print(f"[warn] {rf}: {exc}", file=sys.stderr)
-                continue
-            for vid, score in _parse_vbench_per_video(parsed, dim).items():
+            eval_p = vb_dir / f"vbench_{dim}_eval_results.json"
+            full_p = vb_dir / f"vbench_{dim}_full_info.json"
+            scores = _parse_eval_results_file(eval_p)
+            if not scores:
+                scores = _parse_full_info_file(full_p)
+            for vid, score in scores.items():
                 merged.setdefault(vid, {})[dim] = score
     return merged
+
+
+def vbench_dim_counts(vb: Dict[str, Dict[str, float]]) -> Dict[str, int]:
+    counts = {d: 0 for d in VBENCH_DIMS}
+    for dims in vb.values():
+        for d in dims:
+            if d in counts:
+                counts[d] += 1
+    return counts
+
+
+def select_active_dims(
+    all_vb: Dict[str, Dict[str, Dict[str, float]]],
+    *,
+    require_dims: Optional[List[str]] = None,
+    min_videos: int = 50,
+) -> List[str]:
+    """Dims with per-video scores in every method dir (>= min_videos each)."""
+    if require_dims:
+        return list(require_dims)
+    active = set(VBENCH_DIMS)
+    for vb in all_vb.values():
+        counts = vbench_dim_counts(vb)
+        active &= {d for d in VBENCH_DIMS if counts[d] >= min_videos}
+    if active:
+        return sorted(active)
+    # Fall back to backfill dims (usually have per-video lists).
+    active = set(BACKFILL_DIMS)
+    for vb in all_vb.values():
+        counts = vbench_dim_counts(vb)
+        active &= {d for d in BACKFILL_DIMS if counts[d] >= min_videos}
+    return sorted(active)
+
+
+def print_diagnose(
+    baseline_name: str,
+    baseline_dir: Path,
+    methods: List[Tuple[str, Path]],
+    baseline_pv: Dict,
+    baseline_vb: Dict,
+    method_pv: Dict,
+    method_vb: Dict,
+) -> None:
+    print("\n=== Per-video coverage diagnose ===")
+    dirs = [(baseline_name, baseline_pv, baseline_vb)] + [
+        (n, method_pv[n], method_vb[n]) for n, _ in methods
+    ]
+    for label, pv, vb in dirs:
+        psnr_n = sum(1 for m in pv.values() if m.get("psnr") is not None)
+        counts = vbench_dim_counts(vb)
+        print(f"\n{label} ({psnr_n} PSNR videos):")
+        for d in VBENCH_DIMS:
+            print(f"  {d:25s} {counts[d]:4d} per-video scores")
+        if vb:
+            sample = next(iter(vb))
+            print(f"  sample vbench id: {sample!r}")
+        if pv:
+            sample_p = next(iter(pv))
+            print(f"  sample psnr id:   {sample_p!r}")
+    print("\nHint: original 3 VBench dims often store aggregate-only scores.")
+    print("Re-backfill with --force if a dim shows 0 per-video counts:")
+    print("  python scripts/run_vbench_backfill.py --method-dir <DIR> \\")
+    print("    --dimensions subject_consistency background_consistency aesthetic_quality \\")
+    print("    --force")
+    print()
 
 
 def _method_label(method_dir: Path) -> str:
@@ -220,15 +376,23 @@ def build_wide_table(
     baseline_pv: Dict[str, Dict[str, Optional[float]]],
     baseline_vb: Dict[str, Dict[str, float]],
     methods: List[Tuple[str, Path]],
+    active_dims: List[str],
     method_pv: Optional[Dict[str, Dict[str, Dict[str, Optional[float]]]]] = None,
     method_vb: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
 ) -> Tuple[List[dict], List[str]]:
     method_names = [m for m, _ in methods]
+    basic = ("psnr", "ssim", "lpips")
     fieldnames = ["video_id"]
-    for spec, _, _ in METRIC_SPECS:
+    for spec in basic:
         fieldnames.append(f"{baseline_name}_{spec}")
     for name in method_names:
-        for spec, _, _ in METRIC_SPECS:
+        for spec in basic:
+            fieldnames.append(f"{name}_{spec}")
+            fieldnames.append(f"{name}_d{spec}")
+    for spec in active_dims:
+        fieldnames.append(f"{baseline_name}_{spec}")
+    for name in method_names:
+        for spec in active_dims:
             fieldnames.append(f"{name}_{spec}")
             fieldnames.append(f"{name}_d{spec}")
 
@@ -242,23 +406,22 @@ def build_wide_table(
         row: dict = {"video_id": vid}
         base_m = baseline_pv.get(vid, {})
         base_v = baseline_vb.get(vid, {})
-        for spec, _, _ in METRIC_SPECS:
-            if spec in VBENCH_DIMS:
-                row[f"{baseline_name}_{spec}"] = base_v.get(spec)
-            else:
-                row[f"{baseline_name}_{spec}"] = base_m.get(spec)
+        for spec in basic:
+            row[f"{baseline_name}_{spec}"] = base_m.get(spec)
+        for spec in active_dims:
+            row[f"{baseline_name}_{spec}"] = base_v.get(spec)
         for name in method_names:
             mpv = method_pv[name].get(vid, {})
             mvb = method_vb[name].get(vid, {})
-            for spec, hib, _ in METRIC_SPECS:
-                if spec in VBENCH_DIMS:
-                    raw = mvb.get(spec)
-                    base_raw = base_v.get(spec)
-                else:
-                    raw = mpv.get(spec)
-                    base_raw = base_m.get(spec)
+            for spec in basic:
+                raw = mpv.get(spec)
+                d = _delta(raw, base_m.get(spec))
                 row[f"{name}_{spec}"] = raw
-                d = _delta(raw, base_raw)
+                row[f"{name}_d{spec}"] = d if not math.isnan(d) else None
+            for spec in active_dims:
+                raw = mvb.get(spec)
+                d = _delta(raw, base_v.get(spec))
+                row[f"{name}_{spec}"] = raw
                 row[f"{name}_d{spec}"] = d if not math.isnan(d) else None
         rows.append(row)
     return rows, fieldnames
@@ -290,6 +453,7 @@ def write_summary_md(
     rows: List[dict],
     psnr_thresholds: Sequence[float],
     vbench_threshold: float,
+    active_dims: List[str],
 ) -> None:
     lines: List[str] = []
     n = len(rows)
@@ -298,6 +462,7 @@ def write_summary_md(
     lines.append(f"- Baseline: `{baseline_name}`")
     lines.append(f"- Methods: {', '.join(f'`{m}`' for m in method_names)}")
     lines.append(f"- Common videos (intersection): **{n}**")
+    lines.append(f"- VBench dims analyzed: {', '.join(f'`{d}`' for d in active_dims)}")
     lines.append(f"- PSNR win/tie/loss thresholds (dB): {', '.join(str(t) for t in psnr_thresholds)}")
     lines.append(f"- VBench / SSIM / LPIPS tie threshold: **{vbench_threshold}**")
     lines.append("")
@@ -327,7 +492,7 @@ def write_summary_md(
     lines.append("| method | dim | win | tie | loss | win% | loss% |")
     lines.append("|---|---|---:|---:|---:|---:|---:|")
     for name in method_names:
-        for dim in VBENCH_DIMS:
+        for dim in active_dims:
             deltas = np.array([_row_delta(r, f"{name}_d{dim}") for r in rows], dtype=float)
             w, t, l, _m = _win_loss_tie_counts(deltas, vbench_threshold, True)
             denom = max(w + t + l, 1)
@@ -357,12 +522,12 @@ def write_summary_md(
 
     lines.append("## Spearman ρ(ΔPSNR, ΔVBench dim) per method")
     lines.append("")
-    lines.append("| method | " + " | ".join(VBENCH_DIMS) + " |")
-    lines.append("|---|" + "|".join(["---:"] * len(VBENCH_DIMS)) + "|")
+    lines.append("| method | " + " | ".join(active_dims) + " |")
+    lines.append("|---|" + "|".join(["---:"] * len(active_dims)) + "|")
     for name in method_names:
         dpsnr = np.array([_row_delta(r, f"{name}_dpsnr") for r in rows], dtype=float)
         cells = []
-        for dim in VBENCH_DIMS:
+        for dim in active_dims:
             dv = np.array([_row_delta(r, f"{name}_d{dim}") for r in rows], dtype=float)
             rho = spearman_rho(dpsnr, dv)
             cells.append(f"{rho:+.3f}" if rho is not None else "n/a")
@@ -384,10 +549,12 @@ def write_summary_md(
         psnr_out = [_classify(float(d), ref_thr, True) for d in dpsnr]
         lines.append("| metric | N | exact agree | sign agree | win∩win | loss∩loss |")
         lines.append("|---|---:|---:|---:|---:|---:|")
-        for spec, hib, thr in METRIC_SPECS:
-            if spec == "psnr":
-                continue
-            t = thr if spec not in VBENCH_DIMS else vbench_threshold
+        cross_metrics: List[Tuple[str, bool, float]] = [
+            ("ssim", True, vbench_threshold),
+            ("lpips", False, vbench_threshold),
+        ] + [(d, True, vbench_threshold) for d in active_dims]
+        for spec, hib, thr in cross_metrics:
+            t = thr
             deltas = np.array([_row_delta(r, f"{name}_d{spec}") for r in rows], dtype=float)
             outcomes = [_classify(float(d), t, hib) for d in deltas]
             ag = _outcome_agreement(psnr_out, outcomes)
@@ -399,7 +566,7 @@ def write_summary_md(
 
     lines.append("## VBench total Δ vs ΔPSNR")
     lines.append("")
-    lines.append("VBench total ≈ mean of 7 dims (same convention as AdaState appendix).")
+    lines.append("VBench total ≈ mean of analyzed VBench dims.")
     lines.append("")
     lines.append("| method | mean Δ total | ρ(ΔPSNR, Δtotal) | win% on Δtotal |")
     lines.append("|---|---:|---:|---:|")
@@ -407,7 +574,7 @@ def write_summary_md(
         dpsnr = np.array([_row_delta(r, f"{name}_dpsnr") for r in rows], dtype=float)
         dtot = []
         for r in rows:
-            vals = [r.get(f"{name}_d{d}") for d in VBENCH_DIMS]
+            vals = [r.get(f"{name}_d{d}") for d in active_dims]
             floats = [_coerce_float(v) for v in vals]
             if any(v is None for v in floats):
                 dtot.append(float("nan"))
@@ -491,6 +658,18 @@ def _parse_args() -> argparse.Namespace:
         help="Win/tie/loss threshold for ΔVBench dims (0–1 scale).",
     )
     ap.add_argument("--no-plots", action="store_true")
+    ap.add_argument(
+        "--diagnose", action="store_true",
+        help="Print per-method PSNR/VBench coverage and exit (no analysis).",
+    )
+    ap.add_argument(
+        "--require-dims", nargs="+", default=None,
+        help="Require these VBench dims (default: auto-detect from data).",
+    )
+    ap.add_argument(
+        "--min-vbench-videos", type=int, default=50,
+        help="Min per-video count per dim to include in auto-detect.",
+    )
     return ap.parse_args()
 
 
@@ -515,28 +694,57 @@ def main() -> int:
 
     baseline_pv = load_per_video_metrics(baseline_dir)
     baseline_vb = load_per_video_vbench(baseline_dir)
+    method_pv = {n: load_per_video_metrics(p) for n, p in methods}
+    method_vb = {n: load_per_video_vbench(p) for n, p in methods}
+
+    all_vb = {baseline_name: baseline_vb, **method_vb}
+    if args.diagnose:
+        print_diagnose(
+            baseline_name, baseline_dir, methods,
+            baseline_pv, baseline_vb, method_pv, method_vb,
+        )
+        return 0
+
+    active_dims = select_active_dims(
+        all_vb,
+        require_dims=args.require_dims,
+        min_videos=args.min_vbench_videos,
+    )
+    if not active_dims:
+        print("[error] no VBench dims with per-video scores found", file=sys.stderr)
+        print_diagnose(
+            baseline_name, baseline_dir, methods,
+            baseline_pv, baseline_vb, method_pv, method_vb,
+        )
+        return 2
 
     def _complete_vbench(vb: Dict[str, Dict[str, float]]) -> set:
-        return {vid for vid, dims in vb.items() if all(d in dims for d in VBENCH_DIMS)}
+        return {vid for vid, dims in vb.items() if all(d in dims for d in active_dims)}
 
     def _complete_psnr(pv: Dict[str, Dict[str, Optional[float]]]) -> set:
         return {vid for vid, m in pv.items() if m.get("psnr") is not None}
 
     common = _complete_psnr(baseline_pv) & _complete_vbench(baseline_vb)
-    method_pv = {n: load_per_video_metrics(p) for n, p in methods}
-    method_vb = {n: load_per_video_vbench(p) for n, p in methods}
     for name, _ in methods:
         common &= _complete_psnr(method_pv[name]) & _complete_vbench(method_vb[name])
 
     if not common:
-        print("[error] empty video intersection (need PSNR + all 7 VBench dims)", file=sys.stderr)
+        print(
+            f"[error] empty video intersection (need PSNR + VBench dims: {active_dims})",
+            file=sys.stderr,
+        )
+        print_diagnose(
+            baseline_name, baseline_dir, methods,
+            baseline_pv, baseline_vb, method_pv, method_vb,
+        )
         return 2
 
     video_ids = sorted(common)
-    print(f"Common videos with PSNR + full VBench: {len(video_ids)}")
+    print(f"Common videos: {len(video_ids)}  |  VBench dims: {', '.join(active_dims)}")
 
     rows, fieldnames = build_wide_table(
         video_ids, baseline_name, baseline_pv, baseline_vb, methods,
+        active_dims,
         method_pv=method_pv, method_vb=method_vb,
     )
     out_dir = args.output_dir
@@ -549,13 +757,14 @@ def main() -> int:
         rows,
         args.psnr_thresholds,
         args.vbench_threshold,
+        active_dims,
     )
     if not args.no_plots:
         plot_scatter_grid(
             out_dir / "delta_psnr_vs_vbench_scatter.png",
             [n for n, _ in methods],
             rows,
-            VBENCH_DIMS,
+            active_dims,
         )
 
     print(f"Wrote {out_dir / 'per_video_vbench_gains.csv'}")
