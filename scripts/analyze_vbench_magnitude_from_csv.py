@@ -30,7 +30,14 @@ from scripts.summarize_vbench_population_per_video import (  # noqa: E402
     _magnitude_stats,
 )
 
-_DELTA_COL = re.compile(r"^(.+)_d(psnr|ssim|lpips|.+)$")
+# Delta columns: ``{METHOD}_d{metric}`` where metric is psnr/ssim/lpips or a
+# full VBench dim name (e.g. ``ADA_daesthetic_quality``).  Do NOT use a
+# generic ``_d(.+)`` regex — raw score columns like ``ADA_dynamic_degree``
+# would be misparsed as method ``ADA_dynamic``.
+_DELTA_METRICS = ("psnr", "ssim", "lpips") + tuple(VBENCH_DIMS)
+_DELTA_COL = re.compile(
+    r"^(.+)_d(" + "|".join(re.escape(m) for m in _DELTA_METRICS) + r")$"
+)
 
 
 def _load_csv(path: Path) -> Tuple[List[dict], List[str]]:
