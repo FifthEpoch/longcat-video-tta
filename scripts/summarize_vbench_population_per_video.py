@@ -39,12 +39,14 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.analyze_per_video_vbench_agreement import (  # noqa: E402
     VBENCH_DIMS,
+    _classify,
     _coerce_float,
     _delta,
     _win_loss_tie_counts,
     load_per_video_vbench,
     select_active_dims,
 )
+from scripts.analyze_per_video_tta_gain import load_per_video_metrics  # noqa: E402
 
 DIM_SHORT = {
     "subject_consistency": "Subj",
@@ -98,6 +100,75 @@ def _parse_method_arg(s: str) -> Tuple[str, Path, str]:
     mid, path = parts[0], Path(parts[1])
     label = parts[2] if len(parts) == 3 else mid
     return mid, path, label
+
+
+def _collect_deltas(
+    baseline: Dict[str, Dict[str, float]],
+    method: Dict[str, Dict[str, float]],
+    video_ids: Sequence[str],
+    key: str,
+) -> np.ndarray:
+    vals = []
+    for vid in video_ids:
+        d = _delta((method.get(vid) or {}).get(key), (baseline.get(vid) or {}).get(key))
+        if not math.isnan(d):
+            vals.append(d)
+    return np.array(vals, dtype=float)
+
+
+def _magnitude_stats(
+    deltas: np.ndarray,
+    threshold: float,
+    *,
+    higher_is_better: bool = True,
+) -> dict:
+    """Stats among win / tie / loss buckets (same rules as agreement script)."""
+    if deltas.size == 0:
+        return {"n": 0}
+
+    wins = []
+    losses = []
+    ties = []
+    for d in deltas:
+        c = _classify(float(d), threshold, higher_is_better)
+        if c == "win":
+            wins.append(float(d))
+        elif c == "loss":
+            losses.append(float(d))
+        else:
+            ties.append(float(d))
+
+    win_a = np.array(wins, dtype=float)
+    loss_a = np.array(losses, dtype=float)
+    tie_a = np.array(ties, dtype=float)
+
+    def _pct(a: np.ndarray, q: float) -> float:
+        return float(np.percentile(a, q)) if a.size else float("nan")
+
+    mean_win = float(win_a.mean()) if win_a.size else float("nan")
+    mean_loss = float(loss_a.mean()) if loss_a.size else float("nan")
+    abs_win = float(np.mean(np.abs(win_a))) if win_a.size else float("nan")
+    abs_loss = float(np.mean(np.abs(loss_a))) if loss_a.size else float("nan")
+
+    return {
+        "n": int(deltas.size),
+        "n_win": int(win_a.size),
+        "n_tie": int(tie_a.size),
+        "n_loss": int(loss_a.size),
+        "mean_all": float(deltas.mean()),
+        "std_all": float(deltas.std(ddof=1)) if deltas.size > 1 else 0.0,
+        "mean_win": mean_win,
+        "median_win": _pct(win_a, 50),
+        "p90_win": _pct(win_a, 90),
+        "max_win": float(win_a.max()) if win_a.size else float("nan"),
+        "mean_loss": mean_loss,
+        "median_loss": _pct(loss_a, 50),
+        "p10_loss": _pct(loss_a, 10),
+        "min_loss": float(loss_a.min()) if loss_a.size else float("nan"),
+        "mean_abs_win": abs_win,
+        "mean_abs_loss": abs_loss,
+        "cancel_ratio": (abs_win / abs_loss) if win_a.size and loss_a.size and abs_loss > 0 else float("nan"),
+    }
 
 
 def _per_video_stats(
@@ -305,7 +376,117 @@ def build_report(
     lines.append("4. **K5 vs K10, SIM vs RAND** — nearly identical per-video (same table row patterns).")
     lines.append("")
 
+    # --- Magnitude analysis ---
+    lines.extend(_build_magnitude_sections(
+        methods, baseline_id, base_pvb, pvb, video_ids, active_dims, vbench_threshold,
+    ))
+
     return "\n".join(lines)
+
+
+def _build_magnitude_sections(
+    methods: List[Tuple[str, Path, str]],
+    baseline_id: str,
+    base_pvb: Dict[str, Dict[str, float]],
+    pvb: Dict[str, Dict[str, Dict[str, float]]],
+    video_ids: Sequence[str],
+    active_dims: Sequence[str],
+    vbench_threshold: float,
+) -> List[str]:
+    lines: List[str] = []
+    baseline_path = next(p for mid, p, _ in methods if mid == baseline_id)
+    base_pm = load_per_video_metrics(baseline_path)
+
+    lines.append("## F. Win/loss **magnitude** vs NOTTA")
+    lines.append("")
+    lines.append(
+        "Among videos classified **win** or **loss** (same ± thresholds as section C), "
+        "how large are the per-video Δ? **cancel_ratio** = mean|Δ| on wins ÷ mean|Δ| on losses "
+        "(≈1 with balanced counts ⇒ net mean ≈ 0)."
+    )
+    lines.append("")
+
+    metric_specs: List[Tuple[str, str, float, bool, Dict[str, Dict[str, float]]]] = [
+        ("psnr", "PSNR (dB)", 0.1, True, {}),
+        ("psnr_strict", "PSNR (dB) @0.5", 0.5, True, {}),
+    ]
+    for d in active_dims:
+        metric_specs.append((d, DIM_SHORT[d], vbench_threshold, True, {}))
+
+    for spec_idx, (key, _label, _thr, _hib, _) in enumerate(metric_specs):
+        for mid, path, _label in methods:
+            if mid == baseline_id:
+                continue
+            if key.startswith("psnr"):
+                mpm = load_per_video_metrics(path)
+                deltas = _collect_deltas(base_pm, mpm, video_ids, "psnr")
+            else:
+                deltas = _collect_deltas(base_pvb, pvb[mid], video_ids, key)
+            thr = 0.5 if key == "psnr_strict" else (0.1 if key == "psnr" else vbench_threshold)
+            metric_specs[spec_idx][4][mid] = _magnitude_stats(deltas, thr, higher_is_better=True)
+
+    for key, mlabel, thr, _hib, bucket in metric_specs:
+        if key == "psnr_strict":
+            continue
+        lines.append(f"### {mlabel} (threshold ±{thr})")
+        lines.append("")
+        lines.append(
+            "| Method | n_win | mean Δ win | med win | p90 win | "
+            "n_loss | mean Δ loss | med loss | p10 loss | cancel_ratio |"
+        )
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        nd = 2 if key == "psnr" else 3
+        for mid, _path, label in methods:
+            if mid == baseline_id:
+                continue
+            st = bucket.get(mid)
+            if not st or st.get("n", 0) == 0:
+                continue
+            lines.append(
+                f"| {label} | {st['n_win']} | {_fmt_delta(st['mean_win'], nd)} "
+                f"| {_fmt_delta(st['median_win'], nd)} | {_fmt_delta(st['p90_win'], nd)} | "
+                f"{st['n_loss']} | {_fmt_delta(st['mean_loss'], nd)} | {_fmt_delta(st['median_loss'], nd)} "
+                f"| {_fmt_delta(st['p10_loss'], nd)} | {_fmt(st['cancel_ratio'], 2)} |"
+            )
+        lines.append("")
+
+    lines.append("*PSNR @±0.5 dB: too few win/loss for stable magnitudes (see §A win counts).*")
+    lines.append("")
+
+    lines.append("## G. VBench magnitude — compact (mean |Δ| on wins vs losses)")
+    lines.append("")
+    lines.append("| Dim | Method | mean Δ win | mean Δ loss | |win|/|loss| | net mean Δ |")
+    lines.append("|---|---|---:|---:|---:|---:|")
+    id_set = {mid for mid, _, _ in methods}
+    compare_mids = [
+        ("ADA", "AdaSteer"),
+        ("LORA", "LoRA-R8"),
+        ("K5_SIM", "K5 SIM"),
+        ("K5_RAND", "K5 RAND"),
+        ("K10_SIM", "K10 SIM"),
+        ("K10_RAND", "K10 RAND"),
+    ]
+    for d in active_dims:
+        for mid, label in compare_mids:
+            if mid not in id_set or mid == baseline_id:
+                continue
+            deltas = _collect_deltas(base_pvb, pvb[mid], video_ids, d)
+            st = _magnitude_stats(deltas, vbench_threshold, higher_is_better=True)
+            lines.append(
+                f"| {DIM_SHORT[d]} | {label} | {_fmt_delta(st['mean_win'])} "
+                f"| {_fmt_delta(st['mean_loss'])} | {_fmt(st['cancel_ratio'], 2)} "
+                f"| {_fmt_delta(st['mean_all'])} |"
+            )
+    lines.append("")
+    lines.append("## H. Magnitude reading guide")
+    lines.append("")
+    lines.append("- **Large |win| and |loss| with cancel_ratio ≈ 1** → symmetric spread, net mean ≈ 0 (AdaSteer on flat dims).")
+    lines.append("- **mean Δ win ≫ |mean Δ loss|** with many wins → coherent uplift (Aes under retrieval).")
+    lines.append("- **|mean Δ loss| ≫ mean Δ win** with many losses → coherent degradation (IQ under retrieval).")
+    lines.append("- Compare **p90 win** vs **p10 loss** for tail risk: occasional large degradations.")
+    lines.append("")
+
+    return lines
 
 
 def main() -> int:

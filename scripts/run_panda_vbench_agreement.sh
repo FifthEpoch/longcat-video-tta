@@ -30,6 +30,11 @@ python3 scripts/analyze_per_video_vbench_agreement.py \
   --method-dirs "${METHODS[@]}" \
   --output-dir "$OUT"
 
+python3 scripts/analyze_vbench_magnitude_from_csv.py \
+  "$OUT/per_video_vbench_gains.csv" \
+  --output "$OUT/vbench_magnitude_summary.md"
+
 echo ""
-echo "Done. Summary: $OUT/vbench_agreement_summary.md"
-echo "CSV:        $OUT/per_video_vbench_gains.csv"
+echo "Done. Summary:   $OUT/vbench_agreement_summary.md"
+echo "Magnitude:      $OUT/vbench_magnitude_summary.md"
+echo "CSV:            $OUT/per_video_vbench_gains.csv"
