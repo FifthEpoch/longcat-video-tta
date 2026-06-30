@@ -10,6 +10,11 @@ Usage:
         --series-root sweep_experiment/results/panda_ood_budget_pilot \\
         --gt-cache gt_caches/panda_1000_longcat.npz
 
+    # Full 1000v best-config series (S2, S10_LR1e2, S20_LR1e2):
+    python sweep_experiment/scripts/run_budget_oracle_fvd.py \\
+        --series-root sweep_experiment/results/panda_ood_budget_1000v \\
+        --gt-cache gt_caches/panda_1000_longcat.npz
+
     # Re-eval only (policy dir already built):
     python sweep_experiment/scripts/run_budget_oracle_fvd.py --skip-build
 """

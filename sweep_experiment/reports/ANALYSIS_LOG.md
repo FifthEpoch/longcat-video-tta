@@ -381,3 +381,41 @@ bash scripts/run_panda_vbench_agreement.sh
 ```
 Then paste key tables from `vbench_agreement_summary.md` here once generated.
 
+---
+
+## 2026-06-28 — Oracle VBench++ suite + metric cache audit
+**Tags:** methodology, oracle, efficiency
+**Refs:**
+- `scripts/per_video_metric_store.py` — shared wide-table loader + fingerprint cache
+- `scripts/analyze_oracle_vbench.py` — method + budget config oracle on VBench++
+- `scripts/plot_cross_metric_correlations.py` — OOD/ΔPSNR/ΔVBench heatmaps + method-level ΔFVD plot
+- `scripts/run_oracle_analysis_suite.sh` — single entry point (reuses cache)
+
+**Budget-oracle FVD status:** NOT computed. Pilot + 1000v budget runs used
+``NO_SAVE_VIDEOS=1`` → ``run_budget_oracle_fvd`` job 11457714 failed (0 symlinks).
+PSNR oracle uplift confirmed (~+0.85 dB pilot mean, ~+1.1 dB Q5 within-quintile);
+**FVD ceiling for config-sliding oracle is unknown** until mp4s saved and
+``run_budget_oracle_fvd.py`` succeeds.
+
+**Method-oracle FVD (done):** job 11061632 → oracle_best_psnr FVD **149.57** vs
+NOTTA **155.94** (−6.37).
+
+**Cache / duplicate-work audit:**
+| Pattern | Fix |
+|---|---|
+| Multiple scripts re-read ``per_video_vbench_gains.csv`` + OOD | ``load_or_build_wide_table()`` writes ``metric_cache/wide_metrics.csv`` |
+| ``load_per_video_vbench`` per method in loops | Agreement script already loads once; budget VBench oracle loads per grid run only when ``--budget-series-root`` set |
+| ``correlate_*`` + ``magnitude`` + ``oracle`` in one session | ``run_oracle_analysis_suite.sh`` shares ``--cache-dir`` |
+| Budget FVD + method FVD | Separate symlink dirs; do not re-run ``eval_fvd`` if ``fvd.json`` exists (use ``--skip-build``) |
+| VBench chunk join | Fixed in ``c5b6354`` (anchor-id alignment); all downstream scripts assume that CSV |
+
+Run on cluster:
+```bash
+git pull
+bash scripts/run_oracle_analysis_suite.sh
+# Budget FVD ceiling (requires NO_SAVE_VIDEOS=0 re-run):
+python3 sweep_experiment/scripts/run_budget_oracle_fvd.py \
+  --series-root sweep_experiment/results/panda_ood_budget_pilot \
+  --gt-cache gt_caches/panda_1000_longcat.npz
+```
+
