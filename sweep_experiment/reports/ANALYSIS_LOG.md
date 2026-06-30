@@ -419,3 +419,37 @@ python3 sweep_experiment/scripts/run_budget_oracle_fvd.py \
   --gt-cache gt_caches/panda_1000_longcat.npz
 ```
 
+---
+
+## 2026-06-30 — Pre-experiment oracle + VBench++ suite COMPLETE (budget FVD pending)
+**Tags:** finding, oracle, VBench++, negative-result, in-flight
+**Refs:**
+- Cluster tag: `sweep_experiment/reports/per_video_analysis/2026-06-30/`
+- Snapshot: `sweep_experiment/reports/local_archive/2026-06-30/SNAPSHOT.md` (**gitignored**, laptop only)
+- Interpretation: [`experiment_outputs/2026-06-30.md`](experiment_outputs/2026-06-30.md)
+- Dump script: `scripts/dump_analysis_reports.sh`
+- Mp4 re-run jobs: **12082901–12082926** (`NO_SAVE_VIDEOS=0` budget pilot)
+
+**Completed on cluster (N=999):**
+| Deliverable | Key result |
+|---|---|
+| Method PSNR oracle | **18.287 dB** (+0.35 vs always-ADA) |
+| VBench-total oracle (upper bound) | **0.776** mean total |
+| Method FVD oracle | **149.57** vs NOTTA ~155.9 |
+| Budget PSNR oracle (12-config grid) | **18.779 dB**, SSIM 0.6497, LPIPS 0.3281 |
+| OOD → ΔAes (LoRA/retrieval) | ρ **−0.27 to −0.30** → supports **skip-gate**, not H5 |
+| LoRA/retrieval Aes magnitude | ~93% win @ +0.05; cancel_ratio 2.0–2.5 |
+| ΔPSNR vs ΔVBench | ρ ≈ 0.02–0.06 → **no predictive link** |
+
+**Still open:** Budget-oracle **FVD** (mp4 jobs running; manifest still 0 symlinks).
+Budget per-video VBench oracle **blocked** by `COMPUTE_VBENCH=0` on grid runs.
+
+**Script fixes applied on cluster (not yet on GitHub main):**
+- `analyze_oracle_vbench.py`: add `load_per_video_vbench` import
+- `plot_cross_metric_correlations.py`: remove stray `arrays = ...` line in `correlation_matrix`
+
+**Standard handoff command:**
+```bash
+bash scripts/dump_analysis_reports.sh 2026-06-30
+```
+

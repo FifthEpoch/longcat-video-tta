@@ -22,6 +22,10 @@
 #
 # Subset of configs:
 #   ONLY_RUNS="S10_LR5e3 S10_LR1e3" bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
+#
+# Oracle FVD mp4 re-run (metrics already exist; save videos only):
+#   python sweep_experiment/scripts/plan_budget_oracle_fvd_rerun.py
+#   ONLY_RUNS="<from planner>" NO_SAVE_VIDEOS=0 bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
 # ============================================================================
 set -euo pipefail
 
@@ -120,7 +124,7 @@ for spec in "${PILOT_RUNS[@]}"; do
             --account="${ACCOUNT}" \
             --job-name="${job_name}" \
             --time="${TIME_BUDGET}" \
-            --export="ALL,METHOD=delta_a,RUN_ID=${run_id},SERIES_NAME=${SERIES_NAME},DATA_DIR=${DATA_DIR},OUTPUT_DIR=${out_dir},MAX_VIDEOS=${MAX_VIDEOS},START_VIDEO_IDX=${start},CHUNK_SIZE=${CHUNK_SIZE},DELTA_STEPS=${delta_steps},DELTA_LR=${delta_lr},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},TTA_TOTAL_FRAMES=${TTA_TOTAL_FRAMES},TTA_CONTEXT_FRAMES=${TTA_CONTEXT_FRAMES},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},GUIDANCE_SCALE=${GUIDANCE_SCALE},RESOLUTION=480p,SEED=42,ES_DISABLE=1,COMPUTE_FVD=1,COMPUTE_FID=1,COMPUTE_VBENCH=0,NO_SAVE_VIDEOS=1,CAPTION_GUARD_MODE=warn,FEATURE_FRAME_GUARD_MODE=warn" \
+            --export="ALL,METHOD=delta_a,RUN_ID=${run_id},SERIES_NAME=${SERIES_NAME},DATA_DIR=${DATA_DIR},OUTPUT_DIR=${out_dir},MAX_VIDEOS=${MAX_VIDEOS},START_VIDEO_IDX=${start},CHUNK_SIZE=${CHUNK_SIZE},DELTA_STEPS=${delta_steps},DELTA_LR=${delta_lr},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},TTA_TOTAL_FRAMES=${TTA_TOTAL_FRAMES},TTA_CONTEXT_FRAMES=${TTA_CONTEXT_FRAMES},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},GUIDANCE_SCALE=${GUIDANCE_SCALE},RESOLUTION=480p,SEED=42,ES_DISABLE=1,COMPUTE_FVD=1,COMPUTE_FID=1,COMPUTE_VBENCH=0,NO_SAVE_VIDEOS=${NO_SAVE_VIDEOS:-1},CAPTION_GUARD_MODE=warn,FEATURE_FRAME_GUARD_MODE=warn" \
             "${SWEEP_SBATCH}"
         count=$((count + 1))
     done

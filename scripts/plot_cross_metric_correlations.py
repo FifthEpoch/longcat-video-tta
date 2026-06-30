@@ -94,7 +94,6 @@ def correlation_matrix(
     labels = [lbl for _, lbl in col_specs]
     n = len(col_specs)
     mat = np.full((n, n), np.nan)
-    arrays = [wide_rows[vid].get(k, float("nan")) for k, _ in col_specs]
     vecs = [
         np.array([wide_rows[vid].get(k, float("nan")) for vid in video_ids], dtype=float)
         for k, _ in col_specs

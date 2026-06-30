@@ -46,7 +46,10 @@ from scripts.analyze_adasteer_budget_oracle import (  # noqa: E402
     oracle_winner,
     parse_run_hparams,
 )
-from scripts.analyze_per_video_vbench_agreement import VBENCH_DIMS  # noqa: E402
+from scripts.analyze_per_video_vbench_agreement import (  # noqa: E402
+    VBENCH_DIMS,
+    load_per_video_vbench,
+)
 from scripts.per_video_metric_store import (  # noqa: E402
     load_gains_csv,
     load_or_build_wide_table,
