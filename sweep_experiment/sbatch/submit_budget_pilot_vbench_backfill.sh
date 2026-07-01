@@ -9,7 +9,9 @@
 #   bash sweep_experiment/sbatch/submit_budget_pilot_vbench_backfill.sh
 #
 # After jobs finish:
-#   bash scripts/run_budget_pilot_vbench_oracle.sh
+#   bash scripts/run_budget_vbench_sliding_analysis.sh
+# Or submit backfill + analysis together:
+#   bash sweep_experiment/sbatch/submit_budget_vbench_sliding_analysis.sh
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-/scratch/${USER}/longcat-video-tta}"
