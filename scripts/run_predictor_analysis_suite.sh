@@ -52,18 +52,15 @@ if [[ ! -f "$FEATURES_CSV" ]]; then
   exit 1
 fi
 
-_aux_flags() {
-  [[ -f "$OOD_CSV" ]] && echo --ood-csv "$OOD_CSV"
-  [[ -f "$TIER3_CSV" ]] && echo --tier3-csv "$TIER3_CSV"
-  [[ -f "$FLOW_CSV" ]] && echo --flow-csv "$FLOW_CSV"
-  [[ -f "$BPP_CSV" ]] && echo --bpp-csv "$BPP_CSV"
-  [[ -f "$FFT_CSV" ]] && echo --fft-csv "$FFT_CSV"
-  [[ -f "$VAE_RECERR_CSV" ]] && echo --vae-recerr-csv "$VAE_RECERR_CSV"
-  [[ -f "$MOTION_CSV" ]] && echo --motion-csv "$MOTION_CSV"
-  [[ -f "$LOSS_VAR_CSV" ]] && echo --loss-var-csv "$LOSS_VAR_CSV"
-}
-
-readarray -t AUX_FLAGS < <(_aux_flags || true)
+AUX_FLAGS=()
+[[ -f "$OOD_CSV" ]] && AUX_FLAGS+=(--ood-csv "$OOD_CSV")
+[[ -f "$TIER3_CSV" ]] && AUX_FLAGS+=(--tier3-csv "$TIER3_CSV")
+[[ -f "$FLOW_CSV" ]] && AUX_FLAGS+=(--flow-csv "$FLOW_CSV")
+[[ -f "$BPP_CSV" ]] && AUX_FLAGS+=(--bpp-csv "$BPP_CSV")
+[[ -f "$FFT_CSV" ]] && AUX_FLAGS+=(--fft-csv "$FFT_CSV")
+[[ -f "$VAE_RECERR_CSV" ]] && AUX_FLAGS+=(--vae-recerr-csv "$VAE_RECERR_CSV")
+[[ -f "$MOTION_CSV" ]] && AUX_FLAGS+=(--motion-csv "$MOTION_CSV")
+[[ -f "$LOSS_VAR_CSV" ]] && AUX_FLAGS+=(--loss-var-csv "$LOSS_VAR_CSV")
 
 echo "=== Step 1/3: NOTTA baseline → Δ outcomes ==="
 python3 scripts/analyze_baseline_outcome_predictors.py \
@@ -76,7 +73,7 @@ python3 scripts/analyze_feature_outcome_battery.py \
   --gains-csv "$VBENCH_CSV" \
   --features-csv "$FEATURES_CSV" \
   --output-dir "$OUT" \
-  "${AUX_FLAGS[@]:-}"
+  "${AUX_FLAGS[@]}"
 
 if [[ "$RUN_ROUTER" == "1" ]]; then
   echo ""
