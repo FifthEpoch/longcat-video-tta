@@ -41,7 +41,7 @@ METHODS_DEFAULT: Tuple[str, ...] = (
 GATE_METHODS: Tuple[str, ...] = ("ADA", "LORA_R8_TTA")
 
 BASIC_OUTCOMES: Tuple[str, ...] = ("psnr", "ssim", "lpips")
-VBENCH_OUTCOMES: Tuple[str, ...] = VBENCH_DIMS + ("vbench_total",)
+VBENCH_OUTCOMES: Tuple[str, ...] = tuple(VBENCH_DIMS) + ("vbench_total",)
 
 PASS_RHO = 0.2
 PASS_MIN_METHODS = 2
