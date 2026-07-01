@@ -23,9 +23,11 @@
 # Subset of configs:
 #   ONLY_RUNS="S10_LR5e3 S10_LR1e3" bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
 #
-# Oracle FVD mp4 re-run (metrics already exist; save videos only):
+# Oracle FVD mp4 re-run (metrics already exist; must regenerate mp4s):
 #   python sweep_experiment/scripts/plan_budget_oracle_fvd_rerun.py
-#   ONLY_RUNS="<from planner>" NO_SAVE_VIDEOS=0 bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
+#   ONLY_RUNS="<from planner>" NO_SAVE_VIDEOS=0 FORCE_MP4_RERUN=1 \\
+#       bash sweep_experiment/sbatch/submit_adasteer_budget_pilot.sh
+# FORCE_MP4_RERUN deletes checkpoint.json so jobs do not skip the video loop.
 # ============================================================================
 set -euo pipefail
 
@@ -54,6 +56,8 @@ GUIDANCE_SCALE="${GUIDANCE_SCALE:-4.0}"
 
 DRY_RUN="${DRY_RUN:-0}"
 ONLY_RUNS="${ONLY_RUNS:-}"
+FORCE_MP4_RERUN="${FORCE_MP4_RERUN:-0}"
+NO_SAVE_VIDEOS="${NO_SAVE_VIDEOS:-1}"
 
 # 12-config pilot subset (see panda_1000v_adasteer_budget_grid.yaml header).
 PILOT_RUNS=(
@@ -106,6 +110,8 @@ echo "  configs      : ${#PILOT_RUNS[@]} pilot runs"
 echo "  chunking     : ${NUM_CHUNKS} × ${CHUNK_SIZE} (max ${MAX_VIDEOS} videos)"
 echo "  dry run      : ${DRY_RUN}"
 echo "  only runs    : ${ONLY_RUNS:-<all>}"
+echo "  save videos  : NO_SAVE_VIDEOS=${NO_SAVE_VIDEOS}"
+echo "  force mp4    : FORCE_MP4_RERUN=${FORCE_MP4_RERUN}"
 echo "============================================================"
 echo ""
 
@@ -120,11 +126,18 @@ for spec in "${PILOT_RUNS[@]}"; do
         out_dir="${PROJECT_ROOT}/${RESULTS_SUBDIR}/${run_id}/chunk_${chunk}"
         job_name="adb_pilot_${run_id}_c${chunk}"
 
+        if [ "${FORCE_MP4_RERUN}" = "1" ] && [ "${NO_SAVE_VIDEOS}" = "0" ]; then
+            if [ -f "${out_dir}/checkpoint.json" ]; then
+                echo "  [FORCE_MP4_RERUN] removing ${out_dir}/checkpoint.json"
+                rm -f "${out_dir}/checkpoint.json" "${out_dir}/fvd_checkpoint.npz"
+            fi
+        fi
+
         _exec_or_dry sbatch \
             --account="${ACCOUNT}" \
             --job-name="${job_name}" \
             --time="${TIME_BUDGET}" \
-            --export="ALL,METHOD=delta_a,RUN_ID=${run_id},SERIES_NAME=${SERIES_NAME},DATA_DIR=${DATA_DIR},OUTPUT_DIR=${out_dir},MAX_VIDEOS=${MAX_VIDEOS},START_VIDEO_IDX=${start},CHUNK_SIZE=${CHUNK_SIZE},DELTA_STEPS=${delta_steps},DELTA_LR=${delta_lr},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},TTA_TOTAL_FRAMES=${TTA_TOTAL_FRAMES},TTA_CONTEXT_FRAMES=${TTA_CONTEXT_FRAMES},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},GUIDANCE_SCALE=${GUIDANCE_SCALE},RESOLUTION=480p,SEED=42,ES_DISABLE=1,COMPUTE_FVD=1,COMPUTE_FID=1,COMPUTE_VBENCH=0,NO_SAVE_VIDEOS=${NO_SAVE_VIDEOS:-1},CAPTION_GUARD_MODE=warn,FEATURE_FRAME_GUARD_MODE=warn" \
+            --export="ALL,METHOD=delta_a,RUN_ID=${run_id},SERIES_NAME=${SERIES_NAME},DATA_DIR=${DATA_DIR},OUTPUT_DIR=${out_dir},MAX_VIDEOS=${MAX_VIDEOS},START_VIDEO_IDX=${start},CHUNK_SIZE=${CHUNK_SIZE},DELTA_STEPS=${delta_steps},DELTA_LR=${delta_lr},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},TTA_TOTAL_FRAMES=${TTA_TOTAL_FRAMES},TTA_CONTEXT_FRAMES=${TTA_CONTEXT_FRAMES},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},GUIDANCE_SCALE=${GUIDANCE_SCALE},RESOLUTION=480p,SEED=42,ES_DISABLE=1,COMPUTE_FVD=1,COMPUTE_FID=1,COMPUTE_VBENCH=0,NO_SAVE_VIDEOS=${NO_SAVE_VIDEOS},CAPTION_GUARD_MODE=warn,FEATURE_FRAME_GUARD_MODE=warn" \
             "${SWEEP_SBATCH}"
         count=$((count + 1))
     done
