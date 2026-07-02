@@ -1,8 +1,28 @@
 # LongCat Video TTA — project tracker
 
-**Last updated:** 2026-07-02 (post matched pilot FVD baselines)  
+**Last updated:** 2026-07-06 (review submission batch)  
 **Cluster:** `/scratch/wc3013/longcat-video-tta` · account `torch_pr_36_mren`  
-**Primary objective (current):** VBench++ gains — deployable routers + oracle ceilings
+**Primary objective (current):** VBench++ gains — deployable routers + oracle ceilings  
+**PI review:** ~4 days — run `submit_review_experiments.sh`
+
+---
+
+## Review sprint (submit now)
+
+| Phase | Script | Jobs | Delivers for PI |
+|---|---|---:|---|
+| **A** LoRA R1 @ 999v | `submit_lora_r1_1000v_panda.sh` | 10 GPU | Fair rank=1 vs R8 **ΔVBench** (AdaState-style table) |
+| **B** Budget configs @ 999v + VBench | `submit_adasteer_budget_1000v_vbench_review.sh` | 30 GPU | Deployable fixed S10 vs VBench-oracle S2 at **full N** |
+| **C** Pilot features → router N=200 | `submit_pilot_router_features.sh` | GPU fan-out | Learned router on full 200v pilot |
+| **All** | `submit_review_experiments.sh` | A+B+C | One command |
+
+**After GPU jobs finish:** `bash scripts/run_review_analysis_when_ready.sh`
+
+```bash
+# Submit everything (dry-run first):
+DRY_RUN=1 bash sweep_experiment/sbatch/submit_review_experiments.sh
+bash sweep_experiment/sbatch/submit_review_experiments.sh
+```
 
 ---
 
@@ -41,11 +61,23 @@
 
 | Task | Priority | Notes |
 |---|---|---|
-| **LoRA rank=1 pilot** (mirror R8 recipe, 1000v or 200v) | **High** | Fair test of rank=1 under validated recipe; never submitted |
-| **Nonlinear VBench router** (GBM/small MLP) | Medium | If linear router holds (~45% VBench headroom) |
-| **1000v budget grid** full sweep | Medium | Only incremental `panda_ood_budget_1000v` (S2/S10/S20 @ LR=1e-2) exists |
-| Budget **VBench** oracle FVD | Low | PSNR-oracle FVD done; VBench-oracle FVD not run |
-| AdaState reproduction | Blocked | No public code; Self-Forcing port is major effort |
+| **LoRA rank=1 @ 999v** | **Submit Phase A** | Script ready; mirror R8 recipe |
+| **Budget 999v VBench configs** | **Submit Phase B** | S2_LR1e3, S10_LR5e3, S5_LR1e3 + inline VBench |
+| **Pilot router features N=200** | **Submit Phase C** | `submit_pilot_router_features.sh` |
+| **Nonlinear VBench router** (GBM/MLP) | Medium | After Phase C + linear retrain |
+| **Full 20-config 1000v budget grid** | Low (post-review) | 200 jobs — defer unless queue empty |
+| Budget **VBench** oracle FVD | Low | PSNR FVD done |
+| AdaState reproduction | Blocked | No public code |
+
+---
+
+## PI narrative draft (VBench++, AdaState-aware)
+
+1. **Deployable today:** fixed AdaSteer **~+0.13%** VBench vs NOTTA @ 999v — flat (unlike AdaState +3.4% @ 5s).
+2. **Oracle ceiling exists:** budget pilot VBench router **+3.5%** vs NOTTA (200v, 12 configs) — not deployable alone.
+3. **Deployable lever:** learned **step×LR router** captures **~45%** of VBench oracle (OOF, pilot).
+4. **Review experiments (Phase A–C):** test **LoRA R1**, **999v budget VBench configs**, **full-N router** — closes gap between pilot oracle and paper-grade N.
+5. **Do not mix:** FVD pilot ~370 vs headline ~155 (different subsets); PSNR oracle ≠ VBench oracle.
 
 ---
 
