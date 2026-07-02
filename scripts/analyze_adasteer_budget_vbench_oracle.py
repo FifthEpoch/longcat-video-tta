@@ -58,6 +58,38 @@ from scripts.summarize_vbench_population_per_video import DIM_SHORT  # noqa: E40
 ORACLE_TARGETS: Tuple[str, ...] = ("vbench_total",) + tuple(VBENCH_DIMS)
 
 
+def filter_vbench_grid_runs(
+    vb_by_run: Dict[str, Dict[str, Dict[str, float]]],
+    grid_runs: Sequence[str],
+    *,
+    min_videos: int,
+) -> Tuple[List[str], List[str]]:
+    """Drop configs with no usable per-video VBench (e.g. missing backfill)."""
+    included: List[str] = []
+    excluded: List[str] = []
+    for rid in grid_runs:
+        vb = vb_by_run.get(rid, {})
+        counts = vbench_dim_counts(vb)
+        if max(counts.values(), default=0) >= min_videos:
+            included.append(rid)
+        else:
+            excluded.append(rid)
+    return included, excluded
+
+
+def grid_runs_for_dim(
+    vb_by_run: Dict[str, Dict[str, Dict[str, float]]],
+    grid_runs: Sequence[str],
+    dim: str,
+    *,
+    min_videos: int,
+) -> List[str]:
+    return [
+        rid for rid in grid_runs
+        if vbench_dim_counts(vb_by_run.get(rid, {})).get(dim, 0) >= min_videos
+    ]
+
+
 def _fmt(x: Optional[float], nd: int = 3) -> str:
     if x is None or (isinstance(x, float) and math.isnan(x)):
         return "—"
@@ -265,16 +297,25 @@ def build_report(
     n_boot: int,
     seed: int,
     psnr_oracle_gain: Optional[float],
+    excluded_grid_runs: Sequence[str],
 ) -> str:
     lines = [
         "# AdaSteer budget-grid VBench++ oracle analysis",
         "",
         f"**Series:** `{series_root}`",
         f"**Fixed AdaSteer:** `{FIXED_ADA_RUN_ID}` (S10/LR=5e-3).",
+        f"**VBench grid configs:** {len(grid_runs)} of 12 "
+        f"({', '.join(f'`{r}`' for r in grid_runs)})",
         f"**Active VBench dims:** {', '.join(active_dims)} ({len(active_dims)}/{len(VBENCH_DIMS)})",
         f"**Union N:** {len(vids)} videos with PSNR; oracle denominators vary by VBench coverage.",
         "",
     ]
+    if excluded_grid_runs:
+        lines += [
+            f"**Excluded from VBench oracle (no backfill):** "
+            f"{', '.join(f'`{r}`' for r in excluded_grid_runs)}",
+            "",
+        ]
 
     lines += coverage_report(vb_by_run, grid_runs)
 
@@ -482,14 +523,35 @@ def main() -> int:
     vids = sorted(psnr_table.keys())
 
     vb_by_run = load_vbench_by_run(runs, run_ids)
+    grid_runs_all = list(grid_runs)
+    grid_runs, excluded_grid_runs = filter_vbench_grid_runs(
+        vb_by_run, grid_runs, min_videos=args.min_videos,
+    )
+    if excluded_grid_runs:
+        print(
+            f"[warn] excluding {len(excluded_grid_runs)} configs with no VBench: "
+            f"{', '.join(excluded_grid_runs)}",
+            file=sys.stderr,
+        )
+    if not grid_runs:
+        print(
+            "[error] no grid configs with per-video VBench — "
+            "run submit_budget_pilot_vbench_backfill.sh first",
+            file=sys.stderr,
+        )
+        for rid in grid_runs_all:
+            counts = vbench_dim_counts(vb_by_run.get(rid, {}))
+            print(f"  {rid}: {counts}", file=sys.stderr)
+        return 2
+
     active_dims = select_active_dims(
         {k: v for k, v in vb_by_run.items() if k in grid_runs},
         min_videos=args.min_videos,
     )
     if not active_dims:
         print(
-            "[error] no per-video VBench scores found on budget grid — "
-            "run submit_budget_pilot_vbench_backfill.sh first",
+            "[error] no VBench dims shared across included grid configs — "
+            "check partial backfills",
             file=sys.stderr,
         )
         for rid in grid_runs:
@@ -497,7 +559,7 @@ def main() -> int:
             print(f"  {rid}: {counts}", file=sys.stderr)
         return 2
 
-    total_table, dim_tables = build_score_table(vb_by_run, run_ids, vids, active_dims)
+    total_table, dim_tables = build_score_table(vb_by_run, grid_runs, vids, active_dims)
 
     notta_vb = vb_by_run.get(NOTTA_RUN_ID, {})
     notta_total_table: Dict[str, Dict[str, float]] = {}
@@ -519,9 +581,10 @@ def main() -> int:
         notta_table=notta_total_table,
     )
     for d in active_dims:
+        dim_runs = grid_runs_for_dim(vb_by_run, grid_runs, d, min_videos=args.min_videos)
         stats_by_target[d] = analyze_oracle(
             dim_tables[d],
-            grid_runs,
+            dim_runs,
             vids,
             fixed_run=args.fixed_run_id,
             notta_table=None,
@@ -537,7 +600,17 @@ def main() -> int:
             continue
         if target.startswith("_"):
             continue
-        quintile_by_target[target] = quintile_modal_winners(tbl, grid_runs, vids, ood_quintile)
+        if target == "vbench_total":
+            policy_runs = grid_runs
+        elif target in VBENCH_DIMS:
+            policy_runs = grid_runs_for_dim(
+                vb_by_run, grid_runs, target, min_videos=args.min_videos,
+            )
+        else:
+            policy_runs = grid_runs
+        quintile_by_target[target] = quintile_modal_winners(
+            tbl, policy_runs, vids, ood_quintile,
+        )
         adaptive_by_target[target] = quintile_adaptive_mean(tbl, vids, ood_quintile, quintile_by_target[target])
         fixed_vals = [
             tbl[vid][args.fixed_run_id]
@@ -574,6 +647,7 @@ def main() -> int:
         n_boot=args.n_boot,
         seed=args.bootstrap_seed,
         psnr_oracle_gain=psnr_oracle_gain,
+        excluded_grid_runs=excluded_grid_runs,
     )
 
     out = args.output
