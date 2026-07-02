@@ -98,7 +98,12 @@ fi
 
 echo ""
 echo "Next steps:"
-echo "  1. Wait for adb_pilot + vb_budget to finish"
-echo "  2. SUBMIT_MISSING=1 bash scripts/run_cluster_finish_pipeline.sh"
-echo "  3. RUN_ANALYSIS=1 DATE_TAG=${DATE_TAG} bash scripts/run_cluster_finish_pipeline.sh"
-echo "  4. SUBMIT_ANALYSIS=1 DATE_TAG=${DATE_TAG} bash scripts/run_cluster_finish_pipeline.sh  # Slurm"
+if [ ! -f "$REPO/sweep_experiment/reports/budget_oracle_fvd/oracle_best_psnr/fvd.json" ]; then
+  echo "  1. Wait for budget_oracle FVD (squeue -u $USER)"
+fi
+if [ ! -f "$BASE/vbench_headroom_router/vbench_headroom_router_summary.md" ]; then
+  echo "  2. RUN_ANALYSIS=1 DATE_TAG=${DATE_TAG} bash scripts/run_cluster_finish_pipeline.sh"
+else
+  echo "  Analysis + router done for DATE_TAG=${DATE_TAG}"
+  echo "  Re-run router only: DATE_TAG=${DATE_TAG} bash scripts/run_vbench_headroom_router.sh"
+fi

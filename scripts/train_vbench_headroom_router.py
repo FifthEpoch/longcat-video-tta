@@ -39,6 +39,10 @@ import numpy as np
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
+from scripts.analyze_adasteer_budget_oracle import (  # noqa: E402
+    build_video_table,
+    discover_runs as discover_budget_runs,
+)
 from scripts.analyze_adasteer_budget_vbench_oracle import (  # noqa: E402
     FIXED_ADA_RUN_ID,
     NOTTA_RUN_ID,
@@ -138,6 +142,31 @@ def load_budget_headroom_labels(
             headroom[i] = best - fixed_vb[i]
     n = int(np.sum(~np.isnan(headroom)))
     return headroom, fixed_vb, grid_runs, n
+
+
+def budget_pilot_video_ids(series_root: Path) -> List[str]:
+    runs = discover_budget_runs(series_root)
+    if not runs:
+        return []
+    _run_ids, psnr_table = build_video_table(runs)
+    return sorted(psnr_table.keys())
+
+
+def fill_notta_from_gains(
+    notta_vb: np.ndarray,
+    video_ids: Sequence[str],
+    gains: Optional[Dict[str, Dict[str, float]]],
+) -> np.ndarray:
+    if gains is None:
+        return notta_vb
+    out = notta_vb.copy()
+    for i, vid in enumerate(video_ids):
+        if not math.isnan(out[i]):
+            continue
+        val = abs_vbench_total_row(gains.get(vid, {}), "NOTTA")
+        if not math.isnan(val):
+            out[i] = val
+    return out
 
 
 def load_budget_score_matrix(
@@ -452,10 +481,12 @@ def run_task(
     for tau in (0.0, 0.01, 0.02, 0.05):
         if task == "method_gain":
             pol = eval_method_policy(oof_pred, y, notta_abs=notta_aux, tau=tau)
+            pol["policy_kind"] = "apply_skip_ada"
         else:
             pol = eval_budget_policy(
                 oof_pred, y, aux, notta_vb=notta_aux, tau=tau,
             )
+            pol["policy_kind"] = "headroom_detect_then_oracle_switch"
         policy_rows.append(pol)
 
     impute = {str(j): float(np.median(X[:, j])) for j in range(X.shape[1])}
@@ -650,6 +681,14 @@ def build_report(results: List[dict], *, feature_count: int) -> str:
             "",
             "### Deployable policy (OOF predictions, **VBench++ objective**)",
             "",
+        ]
+        if r["task"] == "budget_headroom":
+            lines += [
+                "> **Note:** this task scores *headroom detection* (if pred>τ, assume full "
+                "oracle uplift). Deployable routing is **`budget_config`** below.",
+                "",
+            ]
+        lines += [
             "| τ | Apply rate | Oracle headroom | Policy VBench / Δ | Captured | Δ vs NOTTA |",
             "|---:|---:|---:|---:|---:|---:|",
         ]
@@ -727,20 +766,26 @@ def main() -> int:
         print("[error] no features loaded", file=sys.stderr)
         return 2
 
-    video_ids: List[str] = sorted(features.keys())
+    feature_video_ids: List[str] = sorted(features.keys())
+    gains: Optional[Dict[str, Dict[str, float]]] = None
+    gains_vids: List[str] = []
     y_method = y_budget = aux_budget = notta_method = None
     Y_budget = notta_budget = None
     grid_runs: List[str] = []
+    method_video_ids: List[str] = []
+    budget_video_ids: List[str] = []
+
+    if args.gains_csv and args.gains_csv.is_file():
+        gains_vids, gains, _methods = load_vbench_gains(args.gains_csv)
 
     if "method_gain" in tasks:
-        if not args.gains_csv or not args.gains_csv.is_file():
+        if not gains:
             print("[error] --gains-csv required for method_gain", file=sys.stderr)
             return 2
-        _vids, gains, _methods = load_vbench_gains(args.gains_csv)
-        video_ids = intersect_videos(video_ids, _vids)
-        y_method = method_gain_labels(gains, video_ids, method=args.method)
+        method_video_ids = intersect_videos(feature_video_ids, gains_vids)
+        y_method = method_gain_labels(gains, method_video_ids, method=args.method)
         notta_method = np.array(
-            [abs_vbench_total_row(gains.get(vid, {}), "NOTTA") for vid in video_ids],
+            [abs_vbench_total_row(gains.get(vid, {}), "NOTTA") for vid in method_video_ids],
             dtype=float,
         )
 
@@ -749,30 +794,45 @@ def main() -> int:
         if not args.budget_series_root or not args.budget_series_root.is_dir():
             print("[error] --budget-series-root required for budget tasks", file=sys.stderr)
             return 2
-        Y_budget, aux_budget, notta_budget, grid_runs, n_b = load_budget_score_matrix(
-            args.budget_series_root, video_ids,
+        pilot_vids = budget_pilot_video_ids(args.budget_series_root)
+        budget_video_ids = intersect_videos(feature_video_ids, pilot_vids)
+        print(
+            f"[info] budget pilot videos: {len(pilot_vids)} total, "
+            f"{len(budget_video_ids)} with Phase-0 features",
+            file=sys.stderr,
         )
+        if pilot_vids and len(budget_video_ids) < len(pilot_vids):
+            print(
+                f"[warn] {len(pilot_vids) - len(budget_video_ids)} pilot videos lack "
+                "Phase-0 features — router N < oracle N",
+                file=sys.stderr,
+            )
+        Y_budget, aux_budget, notta_budget, grid_runs, n_b = load_budget_score_matrix(
+            args.budget_series_root, budget_video_ids,
+        )
+        notta_budget = fill_notta_from_gains(notta_budget, budget_video_ids, gains)
         y_budget = Y_budget.max(axis=1) - aux_budget
         print(f"[info] budget labels: {n_b} videos, grid={len(grid_runs)} configs", file=sys.stderr)
         if n_b < 30:
             print(
-                f"[warn] only {n_b} budget-labeled videos — "
-                "finish S5_LR1e2 VBench backfill for fuller grid",
+                f"[warn] only {n_b} budget-labeled videos — check VBench completeness",
                 file=sys.stderr,
             )
 
-    impute = compute_impute(video_ids, features, feature_names)
-    X = build_feature_matrix(video_ids, features, feature_names, impute=impute)
+    impute = compute_impute(feature_video_ids, features, feature_names)
+    X_all = build_feature_matrix(feature_video_ids, features, feature_names, impute=impute)
+    vid_index = {v: i for i, v in enumerate(feature_video_ids)}
 
     results: List[dict] = []
     for task in tasks:
         if task == "budget_config":
-            if Y_budget is None:
+            if Y_budget is None or not budget_video_ids:
                 continue
+            X = X_all[[vid_index[v] for v in budget_video_ids]]
             print("[train] budget_config ...", file=sys.stderr)
             try:
                 res = run_budget_config_task(
-                    video_ids=video_ids,
+                    video_ids=budget_video_ids,
                     X=X,
                     Y=Y_budget,
                     fixed_vb=aux_budget,
@@ -793,16 +853,24 @@ def main() -> int:
                 print(f"[skip] budget_config: {e}", file=sys.stderr)
             continue
 
-        y = y_method if task == "method_gain" else y_budget
-        aux = None if task == "method_gain" else aux_budget
-        notta_aux = notta_method if task == "method_gain" else notta_budget
-        if y is None:
+        if task == "method_gain":
+            y = y_method
+            aux = None
+            notta_aux = notta_method
+            task_vids = method_video_ids
+        else:
+            y = y_budget
+            aux = aux_budget
+            notta_aux = notta_budget
+            task_vids = budget_video_ids
+        if y is None or not task_vids:
             continue
+        X = X_all[[vid_index[v] for v in task_vids]]
         print(f"[train] {task} ...", file=sys.stderr)
         try:
             res = run_task(
                 task=task,
-                video_ids=video_ids,
+                video_ids=task_vids,
                 X=X,
                 y=y,
                 aux=aux,
