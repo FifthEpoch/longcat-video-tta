@@ -107,6 +107,9 @@ def main() -> int:
     ]
     if args.force:
         cmd.append("--force")
+    elif linked < 256:
+        # Pilot has ~200 videos; eval_fvd defaults to min 256 without --force.
+        cmd.append("--force")
 
     print("Running eval_fvd on budget oracle dir...")
     print(" ", " ".join(cmd))
