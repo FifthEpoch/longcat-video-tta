@@ -13,6 +13,7 @@ REPO="${REPO:-/scratch/${USER}/longcat-video-tta}"
 DATE_TAG="${DATE_TAG:-$(date +%Y-%m-%d)}"
 SUBMIT_MISSING="${SUBMIT_MISSING:-0}"
 RUN_ANALYSIS="${RUN_ANALYSIS:-0}"
+SUBMIT_ANALYSIS="${SUBMIT_ANALYSIS:-0}"
 ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 SERIES="${SERIES:-$REPO/sweep_experiment/results/panda_ood_budget_pilot}"
 TARGET_MP4="${TARGET_MP4:-2400}"
@@ -89,6 +90,10 @@ fi
 if [ "${RUN_ANALYSIS}" = "1" ]; then
   echo "========== CPU analysis chain =========="
   bash scripts/run_post_mp4_analysis_chain.sh
+elif [ "${SUBMIT_ANALYSIS}" = "1" ]; then
+  echo "========== Submit CPU analysis chain (Slurm) =========="
+  sbatch --account="${ACCOUNT}" --export=ALL,DATE_TAG="${DATE_TAG}" \
+    sweep_experiment/sbatch/run_post_mp4_analysis.sbatch
 fi
 
 echo ""
@@ -96,3 +101,4 @@ echo "Next steps:"
 echo "  1. Wait for adb_pilot + vb_budget to finish"
 echo "  2. SUBMIT_MISSING=1 bash scripts/run_cluster_finish_pipeline.sh"
 echo "  3. RUN_ANALYSIS=1 DATE_TAG=${DATE_TAG} bash scripts/run_cluster_finish_pipeline.sh"
+echo "  4. SUBMIT_ANALYSIS=1 DATE_TAG=${DATE_TAG} bash scripts/run_cluster_finish_pipeline.sh  # Slurm"

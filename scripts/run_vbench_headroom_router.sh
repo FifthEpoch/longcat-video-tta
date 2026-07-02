@@ -5,7 +5,7 @@ set -euo pipefail
 REPO="${REPO:-/scratch/${USER}/longcat-video-tta}"
 DATE_TAG="${DATE_TAG:-$(date +%Y-%m-%d)}"
 FEATURE_DATE="${FEATURE_DATE:-2026-06-09}"
-TASK="${TASK:-both}"
+TASK="${TASK:-all}"
 
 BASE="$REPO/sweep_experiment/reports/per_video_analysis/${DATE_TAG}"
 FEAT="$REPO/sweep_experiment/reports/per_video_analysis/${FEATURE_DATE}"
