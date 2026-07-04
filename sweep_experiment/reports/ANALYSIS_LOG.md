@@ -453,3 +453,32 @@ Budget per-video VBench oracle **blocked** by `COMPUTE_VBENCH=0` on grid runs.
 bash scripts/dump_analysis_reports.sh 2026-06-30
 ```
 
+---
+
+## 2026-07-05 — Budget routing experiment suite @ N=200 (13 methods)
+**Tags:** finding, negative-result, decision, H9, routing
+**Refs:**
+- `scripts/run_budget_routing_experiments.py`, commit `056edf8`
+- Results: `sweep_experiment/reports/per_video_analysis/2026-07-05/budget_routing_experiments/`
+- Table: `sweep_experiment/reports/paper_tables/2026-07-05_budget_routing_experiments_N200.md`
+
+After linear VBench-total router failed bootstrap CI (~9% captured, includes 0),
+ran 13 CPU routing experiments on existing 200v × 12-config pilot (no new videos).
+
+**Total-VBench objective (comparable rows):**
+- Best: **proxy_psnr_all 11.5%** captured (+0.016 vs fixed) — not deployable (needs all-config PSNR).
+- Best deployable-ish: **probe_simulated 9.8%**, **baseline_linear 9.0%** — within noise of quintile gate (~8%).
+- Nonlinear / pairwise / best-of-3 PSNR: **≤0% or negative** captured.
+- Oracle ceiling unchanged: **+0.1402** mean VBench total (~100% captured).
+
+**Per-dim routing:** `dim_imaging_quality` shows 98% captured on **IQ scale only**
+(bug/footgun: dim trainers evaluate on dim matrix, not VBench total — do not cite as total-VBench win).
+Other dims (Aes/Dyn/Subj) show 0% on their scales with negative policy gains.
+
+**Decisions:**
+1. **999v × 12 for total-VBench routing training: NO-GO** — no method separated from linear; CIs would remain overlapping.
+2. Paper narrative: **oracle real, deployable routing hard**; PSNR–VBench decoupling confirmed at routing layer too.
+3. Optional follow-up: re-score dim-router **picks** on VBench total (cheap offline); real probe-and-route needs inference not simulation.
+
+**Known artifact:** `routing_experiments_bootstrap.md` baseline 18.9% is stale OOF from first failed Slurm submit; trust summary **9.0%**.
+
