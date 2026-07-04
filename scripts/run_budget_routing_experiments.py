@@ -84,6 +84,20 @@ ALL_EXPERIMENTS = (
 )
 
 
+def _num(v: Optional[float], default: float = 0.0) -> float:
+    return default if v is None else float(v)
+
+
+def _policy_from_budget_task(res: dict) -> dict:
+    policy = dict(res["policy"])
+    policy["oof_oracle_match_rate"] = res.get("oof_oracle_match_rate")
+    return policy
+
+
+def _write_experiment_json(output_dir: Path, name: str, payload: dict) -> None:
+    (output_dir / f"{name}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def _submatrix(Y: np.ndarray, grid_runs: Sequence[str], picks: Sequence[str]) -> Tuple[np.ndarray, List[str]]:
     idx = [grid_runs.index(p) for p in picks if p in grid_runs]
     names = [grid_runs[i] for i in idx]
@@ -415,7 +429,7 @@ def run_experiment(
             seed=seed,
             n_folds=n_folds,
         )
-        policy = res["policy"]
+        policy = _policy_from_budget_task(res)
     elif name.startswith("dim_"):
         dim = name.replace("dim_", "")
         if dim == "vbench_total":
@@ -435,7 +449,7 @@ def run_experiment(
             seed=seed,
             n_folds=n_folds,
         )
-        policy = res["policy"]
+        policy = _policy_from_budget_task(res)
     elif name == "coarse_steps_lr":
         policy = run_coarse_steps_lr(X_base, Y, fixed_vb, grid, seed=seed, n_folds=n_folds)
     elif name == "probe_simulated":
@@ -451,7 +465,7 @@ def run_experiment(
             seed=seed,
             n_folds=n_folds,
         )
-        policy = res["policy"]
+        policy = _policy_from_budget_task(res)
     elif name == "proxy_psnr_all":
         policy = run_proxy_pick(Y, bundle["psnr"], fixed_vb, grid)
     elif name == "proxy_bestof3_psnr":
@@ -463,7 +477,9 @@ def run_experiment(
         )
     elif name == "pairwise_gbm_top4":
         if not _HAS_SKLEARN:
-            return {"experiment": name, "skipped": True, "reason": "sklearn not installed"}
+            skipped = {"experiment": name, "skipped": True, "reason": "sklearn not installed"}
+            _write_experiment_json(output_dir, name, skipped)
+            return skipped
         policy = run_pairwise_oof(
             X_base, Y, fixed_vb, grid, seed=seed, n_folds=n_folds, use_gbm=True,
         )
@@ -480,7 +496,7 @@ def run_experiment(
             seed=seed,
             n_folds=n_folds,
         )
-        policy = res["policy"]
+        policy = _policy_from_budget_task(res)
     elif name == "mlp_shallow":
         policy = run_mlp_shallow(X_base, Y, fixed_vb, grid, seed=seed, n_folds=n_folds)
     else:
@@ -503,7 +519,7 @@ def run_experiment(
     row["bootstrap_note"] = "point estimate; see aggregate script for pooled bootstrap"
 
     out_json = output_dir / f"{name}.json"
-    out_json.write_text(json.dumps({"policy": policy, "row": row}, indent=2), encoding="utf-8")
+    _write_experiment_json(output_dir, name, {"policy": policy, "row": row})
     return row
 
 
@@ -533,8 +549,8 @@ def write_summary(rows: List[dict], output_dir: Path) -> None:
             continue
         lines.append(
             f"| `{r['experiment']}` | {r.get('n_videos')} | "
-            f"{100 * r.get('match_rate', 0):.1f} | {r.get('captured_pct', 0):.1f} | "
-            f"{r.get('policy_gain', 0):+.4f} | {r.get('headroom', 0):.4f} |"
+            f"{100 * _num(r.get('match_rate')):.1f} | {_num(r.get('captured_pct')):.1f} | "
+            f"{_num(r.get('policy_gain')):+.4f} | {_num(r.get('headroom')):.4f} |"
         )
     lines += [
         "",
@@ -596,14 +612,17 @@ def main() -> int:
             rows.append(row)
             if not row.get("skipped"):
                 print(
-                    f"  captured={row.get('captured_pct', 0):.1f}%  match={100 * row.get('match_rate', 0):.1f}%",
+                    f"  captured={_num(row.get('captured_pct')):.1f}%  "
+                    f"match={100 * _num(row.get('match_rate')):.1f}%",
                     file=sys.stderr,
                 )
             else:
                 print(f"  skipped: {row.get('reason')}", file=sys.stderr)
         except Exception as e:
             print(f"  FAILED: {e}", file=sys.stderr)
-            rows.append({"experiment": name, "skipped": True, "reason": str(e)})
+            failed = {"experiment": name, "skipped": True, "reason": str(e)}
+            rows.append(failed)
+            _write_experiment_json(out, name, failed)
 
     if args.run_all:
         write_summary(rows, out)

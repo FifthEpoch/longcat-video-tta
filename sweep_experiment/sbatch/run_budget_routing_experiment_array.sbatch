@@ -13,8 +13,18 @@ FEATURE_DATE="${FEATURE_DATE:-2026-07-06}"
 
 cd "${PROJECT_ROOT}"
 
-IFS=',' read -ra EXPS <<< "${EXP_CSV}"
+EXP_LIST="${PROJECT_ROOT}/sweep_experiment/sbatch/.budget_routing_experiments.lst"
+if [ ! -f "${EXP_LIST}" ]; then
+  echo "Missing experiment list: ${EXP_LIST}" >&2
+  echo "Run sweep_experiment/sbatch/submit_budget_routing_experiments.sh first." >&2
+  exit 1
+fi
+mapfile -t EXPS < "${EXP_LIST}"
 IDX="${SLURM_ARRAY_TASK_ID:-0}"
+if [ "${IDX}" -ge "${#EXPS[@]}" ]; then
+  echo "Array index ${IDX} out of range (N=${#EXPS[@]})" >&2
+  exit 1
+fi
 EXP="${EXPS[$IDX]}"
 
 echo "Task ${IDX}: experiment=${EXP}"

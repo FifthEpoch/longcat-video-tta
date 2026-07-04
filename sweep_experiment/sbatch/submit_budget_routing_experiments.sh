@@ -31,9 +31,12 @@ EXPERIMENTS=(
 )
 
 N=${#EXPERIMENTS[@]}
-EXP_CSV=$(IFS=,; echo "${EXPERIMENTS[*]}")
+# Slurm --export splits on commas; write one experiment name per line instead.
+EXP_LIST="${PROJECT_ROOT}/sweep_experiment/sbatch/.budget_routing_experiments.lst"
+printf '%s\n' "${EXPERIMENTS[@]}" > "${EXP_LIST}"
 
 echo "Submitting ${N} parallel CPU jobs (one experiment each)..."
+echo "Experiment list: ${EXP_LIST}"
 
 JOB=$(sbatch --parsable \
   --account="${ACCOUNT}" \
@@ -42,7 +45,7 @@ JOB=$(sbatch --parsable \
   --cpus-per-task=4 \
   --mem=16G \
   --time=02:00:00 \
-  --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},DATE_TAG=${DATE_TAG},FEATURE_DATE=${FEATURE_DATE},EXP_CSV=${EXP_CSV}" \
+  --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},DATE_TAG=${DATE_TAG},FEATURE_DATE=${FEATURE_DATE}" \
   sweep_experiment/sbatch/run_budget_routing_experiment_array.sbatch)
 
 echo "Array job: ${JOB}  (tasks 0-$((N - 1)))"
