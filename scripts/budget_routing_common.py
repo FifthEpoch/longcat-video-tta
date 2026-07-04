@@ -1,0 +1,190 @@
+"""Shared loaders for budget-grid routing experiments (pilot N=200, no new videos)."""
+from __future__ import annotations
+
+import math
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
+
+from scripts.analyze_adasteer_budget_oracle import (
+    FIXED_ADA_RUN_ID,
+    NOTTA_RUN_ID,
+    PILOT_GRID_RUN_ORDER,
+    build_video_table,
+    discover_runs,
+    load_run_psnr,
+)
+from scripts.analyze_adasteer_budget_vbench_oracle import (
+    build_score_table,
+    filter_vbench_grid_runs,
+    load_vbench_by_run,
+    vbench_total_score,
+)
+from scripts.analyze_per_video_vbench_agreement import VBENCH_DIMS
+from scripts.analyze_per_video_tta_gain import load_per_video_metrics
+from scripts.predictor_analysis_common import join_feature_tables
+
+FIXED_BUDGET = FIXED_ADA_RUN_ID
+PROBE_RUNS = ("S2_LR5e3", "S10_LR1e3", "S10_LR5e3", "S20_LR1e3")
+BESTOF3_RUNS = ("S2_LR5e3", "S10_LR5e3", "S20_LR1e3")
+
+
+def _coerce(v) -> float:
+    if v is None or v == "":
+        return float("nan")
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def steps_bucket(run_id: str) -> str:
+    if run_id.startswith("S2_"):
+        return "S2"
+    if run_id.startswith("S5_"):
+        return "S5"
+    if run_id.startswith("S10_"):
+        return "S10"
+    if run_id.startswith("S20_"):
+        return "S20"
+    return "other"
+
+
+def load_metric_matrix(
+    runs: Dict[str, Path],
+    grid_runs: Sequence[str],
+    video_ids: Sequence[str],
+    metric: str,
+) -> np.ndarray:
+    """metric in psnr, ssim, lpips from chunk summary.json."""
+    k = len(grid_runs)
+    Y = np.full((len(video_ids), k), np.nan, dtype=float)
+    idx = {rid: j for j, rid in enumerate(grid_runs)}
+    for rid in grid_runs:
+        if rid not in runs:
+            continue
+        j = idx[rid]
+        per_vid = load_per_video_metrics(runs[rid])
+        for i, vid in enumerate(video_ids):
+            row = per_vid.get(vid, {})
+            v = row.get(metric)
+            if v is not None:
+                Y[i, j] = float(v)
+    return Y
+
+
+def load_pilot_bundle(
+    series_root: Path,
+    feature_date: Path,
+    *,
+    min_videos: int = 10,
+) -> dict:
+    """Load Y (total + per-dim), PSNR/SSIM, Phase-0 features for pilot grid."""
+    runs = discover_runs(series_root)
+    if FIXED_BUDGET not in runs:
+        raise FileNotFoundError(f"fixed run {FIXED_BUDGET} missing under {series_root}")
+
+    grid_all = [r for r in runs if r.startswith("S")]
+    order = {rid: i for i, rid in enumerate(PILOT_GRID_RUN_ORDER)}
+    grid_all = sorted(grid_all, key=lambda r: (order.get(r, 999), r))
+
+    _run_ids, psnr_table = build_video_table(runs)
+    video_ids = sorted(psnr_table.keys())
+
+    vb_by_run = load_vbench_by_run(runs, list(runs.keys()))
+    grid_runs, excluded = filter_vbench_grid_runs(
+        vb_by_run, grid_all, min_videos=min_videos,
+    )
+    active_dims = list(VBENCH_DIMS)
+    total_table, dim_tables = build_score_table(
+        vb_by_run, grid_runs, video_ids, active_dims,
+    )
+
+    k = len(grid_runs)
+    n = len(video_ids)
+    Y_total = np.full((n, k), np.nan, dtype=float)
+    Y_dim: Dict[str, np.ndarray] = {d: np.full((n, k), np.nan) for d in active_dims}
+    fixed_vb = np.full(n, np.nan, dtype=float)
+    run_idx = {rid: j for j, rid in enumerate(grid_runs)}
+
+    for i, vid in enumerate(video_ids):
+        row = total_table.get(vid, {})
+        if FIXED_BUDGET in row:
+            fixed_vb[i] = row[FIXED_BUDGET]
+        for rid, j in run_idx.items():
+            if rid in row:
+                Y_total[i, j] = row[rid]
+        for d in active_dims:
+            drow = dim_tables[d].get(vid, {})
+            for rid, j in run_idx.items():
+                if rid in drow:
+                    Y_dim[d][i, j] = drow[rid]
+
+    psnr = load_metric_matrix(runs, grid_runs, video_ids, "psnr")
+    ssim = load_metric_matrix(runs, grid_runs, video_ids, "ssim")
+
+    features, feat_names, _ = join_feature_tables(
+        features_csv=feature_date / "video_features.csv",
+        ood_csv=feature_date / "diffusion_ood_scores.csv",
+        tier3_csv=feature_date / "tier3_probe_features.csv",
+        flow_csv=feature_date / "flow_shape_features.csv",
+        bpp_csv=feature_date / "bpp_features.csv",
+        fft_csv=feature_date / "fft_features.csv",
+        vae_recerr_csv=feature_date / "vae_recerr_features.csv",
+        motion_csv=feature_date / "latent_motion_features.csv",
+        loss_var_csv=feature_date / "loss_variance_features.csv",
+    )
+
+    return {
+        "series_root": series_root,
+        "video_ids": video_ids,
+        "grid_runs": grid_runs,
+        "excluded_runs": excluded,
+        "Y_total": Y_total,
+        "Y_dim": Y_dim,
+        "fixed_vb": fixed_vb,
+        "psnr": psnr,
+        "ssim": ssim,
+        "features": features,
+        "feat_names": feat_names,
+        "run_idx": run_idx,
+        "fixed_run": FIXED_BUDGET,
+    }
+
+
+def labeled_mask(fixed_vb: np.ndarray, Y: np.ndarray) -> np.ndarray:
+    return ~np.isnan(fixed_vb) & ~np.all(np.isnan(Y), axis=1)
+
+
+def bootstrap_captured(
+    policy_vb: np.ndarray,
+    oracle_vb: np.ndarray,
+    fixed_vb: np.ndarray,
+    *,
+    n_boot: int = 5000,
+    seed: int = 42,
+) -> Tuple[float, float, float, float, float]:
+    """Return mean captured, lo, hi, delta_lo, delta_hi."""
+    d = policy_vb - fixed_vb
+    h = oracle_vb - fixed_vb
+    valid = np.isfinite(d) & np.isfinite(h) & (np.abs(h) > 1e-9)
+    d, h, fv, ov, pv = d[valid], h[valid], fixed_vb[valid], oracle_vb[valid], policy_vb[valid]
+    if len(d) == 0:
+        return float("nan"), float("nan"), float("nan"), float("nan"), float("nan")
+    cap = float(d.mean() / h.mean())
+    rng = np.random.default_rng(seed)
+    boot_d, boot_c = [], []
+    for _ in range(n_boot):
+        ix = rng.integers(0, len(d), len(d))
+        dm, hm = d[ix].mean(), h[ix].mean()
+        boot_d.append(dm)
+        boot_c.append(dm / hm if abs(hm) > 1e-9 else float("nan"))
+    boot_c = [x for x in boot_c if math.isfinite(x)]
+    return (
+        cap,
+        float(np.percentile(boot_d, 2.5)),
+        float(np.percentile(boot_d, 97.5)),
+        float(np.percentile(boot_c, 2.5)) if boot_c else float("nan"),
+        float(np.percentile(boot_c, 97.5)) if boot_c else float("nan"),
+    )
