@@ -109,8 +109,10 @@ def build_probe_features(
     video_ids: Sequence[str],
     base_X: np.ndarray,
     feat_names: List[str],
+    *,
+    probe_runs: Sequence[str] = PROBE_RUNS,
 ) -> Tuple[np.ndarray, List[str]]:
-    """Simulate probe-and-route: S2/S10/S20 PSNR+SSIM + deltas vs fixed."""
+    """Simulate probe-and-route: probe-config PSNR+SSIM + deltas vs fixed."""
     grid = bundle["grid_runs"]
     psnr = bundle["psnr"]
     ssim = bundle["ssim"]
@@ -118,7 +120,7 @@ def build_probe_features(
     cols: List[np.ndarray] = []
     names: List[str] = list(feat_names)
     out = base_X.copy()
-    for rid in PROBE_RUNS:
+    for rid in probe_runs:
         if rid not in grid:
             continue
         j = grid.index(rid)
