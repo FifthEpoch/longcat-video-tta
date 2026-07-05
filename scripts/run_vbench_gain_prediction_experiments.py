@@ -313,6 +313,19 @@ def run_exp8_abstain(
     )
 
 
+def _oof_picks_from_budget_csv(csv_path: Path, grid: Sequence[str]) -> Dict[str, int]:
+    """Map video_id → config index from budget_config OOF CSV."""
+    import csv as csv_mod
+
+    out: Dict[str, int] = {}
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        for row in csv_mod.DictReader(f):
+            rid = row.get("picked_run", "")
+            if rid and rid in grid:
+                out[row["video_id"]] = grid.index(rid)
+    return out
+
+
 def run_exp9_aestech(
     bundle: dict,
     X: np.ndarray,
@@ -327,6 +340,7 @@ def run_exp9_aestech(
     iq = bundle["Y_dim"]["imaging_quality"]
     Y_proxy = DOVER_AES_W * aes + DOVER_IQ_W * iq
     with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
         res = run_budget_config_task(
             video_ids=bundle["video_ids"],
             X=X,
@@ -334,34 +348,29 @@ def run_exp9_aestech(
             fixed_vb=fixed_vb,
             notta_vb=np.full(len(fixed_vb), np.nan),
             grid_runs=grid,
-            output_dir=Path(tmp),
+            output_dir=tmp_path,
             seed=seed,
             n_folds=n_folds,
         )
-    pol = _policy_from_budget_task(res)
-    # Evaluate same OOF picks on total VBench — approximate via in-sample picks from proxy
+        vid_to_pick = _oof_picks_from_budget_csv(
+            tmp_path / "budget_config_oof_predictions.csv", grid,
+        )
+    n_vids = len(bundle["video_ids"])
+    picks = np.full(n_vids, -1, dtype=int)
+    for i, vid in enumerate(bundle["video_ids"]):
+        if vid in vid_to_pick:
+            picks[i] = vid_to_pick[vid]
     mask = labeled_mask(fixed_vb, Y_total)
-    n = int(mask.sum())
-    X_m = X[mask]
-    Y_m = Y_total[mask]
-    fv = fixed_vb[mask]
-    X_s = (X_m - X_m.mean(0)) / np.where(X_m.std(0) < 1e-8, 1.0, X_m.std(0))
-    k = Y_proxy.shape[1]
-    pred = np.full((n, k), np.nan)
-    for j in range(k):
-        y = Y_proxy[mask, j]
-        m = np.isfinite(y)
-        if m.sum() < 10:
-            continue
-        w = ridge_fit(X_s[m], y[m], 0.1)
-        pred[:, j] = ridge_predict(X_s, w)
-    picks = np.nanargmax(pred, axis=1)
-    pol_total = _oof_policy_from_picks(picks, Y_m, fv, grid, np.ones(n, dtype=bool))
+    pol_total = _oof_policy_from_picks(picks, Y_total, fixed_vb, grid, mask)
+    pol_proxy = _policy_from_budget_task(res)
     return _row(
         "exp9_multitask_aestech",
         pol_total,
-        n=n,
-        extra={"proxy_note": "train 0.428·Aes+0.572·IQ; eval VBench total"},
+        n=int(mask.sum()),
+        extra={
+            "proxy_note": "train 0.428·Aes+0.572·IQ OOF; eval VBench total",
+            "captured_pct_proxy_oof": 100 * pol_proxy.get("fraction_oracle_captured", 0),
+        },
     )
 
 

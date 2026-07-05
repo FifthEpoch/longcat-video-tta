@@ -508,3 +508,28 @@ Exp2 ΔDyn router, Exp3 pairwise, Exp4 NR proxy best-of-3, Exp5 stub).
 3. **Dyn-only routing:** captures Dyn in-sample but **does not lift total VBench** — do not pivot paper to Dyn routing for population metrics.
 4. **Exp5 IQ-constrained TTA** remains separate track for LoRA/retrieval IQ frontier (not budget-grid routing).
 
+---
+
+## 2026-07-05 — Gain prediction exp6–12: exp7 best honest OOF (12.8%); exp9 inflated
+**Tags:** finding, negative-result, decision, routing
+**Refs:**
+- `scripts/run_vbench_gain_prediction_experiments.py` (commit 5a67a7a; exp9 OOF fix follow-up)
+- `sweep_experiment/reports/per_video_analysis/2026-07-05/vbench_gain_prediction_experiments/`
+- `sweep_experiment/reports/paper_tables/2026-07-05_vbench_gain_prediction_experiments.md`
+
+Seven CPU experiments on pilot N=200 (12 AdaSteer configs). Oracle headroom +0.140 unchanged.
+
+| Method | Captured % (total VBench) | Notes |
+|---|---:|---|
+| exp7 gain-probe ridge | **12.8** | Best **deployable** OOF; +0.7pp vs Exp1 3-way |
+| exp11 tier3+probe 3-way | 12.1 | Tie prior best |
+| exp10 DOVER proxy | 18.4 | **Upper bound** — GT Aes+IQ on S2/S10 probes |
+| exp9 multitask Aes+IQ | 45.1† | **Invalid** — in-sample eval bug (not OOF) |
+| exp6 kNN | 1.2 | Fail |
+| exp8 abstain | −0.8 | Fail |
+| exp12 trajectory | −0.2 | Fail |
+
+**Finding:** Multitask proxy target (0.428·Aes+0.572·IQ) looked like a breakthrough at 45% but used in-sample ridge picks for total-VBench eval. Correct pipeline: OOF ridge on proxy → eval picks on total (fix pushed; rerun needed).
+
+**Decision:** Still **NO-GO** on 999v×12 routing for total VBench (<25% bar). exp10 suggests probe+DOVER path may reach ~15–18% if frame-level proxy works — optional GPU follow-up, not scale-up.
+
