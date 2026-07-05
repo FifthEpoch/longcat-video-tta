@@ -533,3 +533,13 @@ Seven CPU experiments on pilot N=200 (12 AdaSteer configs). Oracle headroom +0.1
 
 **Decision:** Still **NO-GO** on 999v×12 routing for total VBench (<25% bar). exp10 suggests probe+DOVER path may reach ~15–18% if frame-level proxy works — optional GPU follow-up, not scale-up.
 
+---
+
+## 2026-07-05 — exp9 OOF corrected: 7.6% total (98% on-proxy only)
+**Tags:** finding, negative-result, routing
+**Refs:** exp9 rerun post commit `6f6a75a`
+
+Corrected exp9: **7.6%** total-VBench captured (17% match); **98%** on fused Aes+IQ proxy target. Proxy routing is excellent on-proxy but worse than exp7 (12.8%) on total. exp7 remains best deployable.
+
+**In flight:** Track B Panda 1000v retrieval; Track C DOVER probe routing (exp13).
+
