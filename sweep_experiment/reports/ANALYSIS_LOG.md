@@ -556,3 +556,11 @@ Cancel on cluster:
 squeue -u $USER -h -o '%i %j' | awk '/dover/ {print $1}' | xargs -r scancel
 ```
 
+---
+
+## 2026-07-05 — Panda 1000v retrieval complete: SIM≈RAND null @ 999v
+**Tags:** finding, negative-result, retrieval, paper-narrative
+**Refs:** `paper_tables/2026-07-05_panda_1000v_retrieval.md`, `results/panda_1000v_retrieval/`
+
+PSNR 17.87–17.90 (vs ADA 17.94); FVD 155–162 (vs ADA 153.4). SIM≈RAND (≤0.03 dB). Aes~0.442 (LoRA-like; confirm 7-dim). Retrieval not a headline win; 25K pool deprioritized.
+
