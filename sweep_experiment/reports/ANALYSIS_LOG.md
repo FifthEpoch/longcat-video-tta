@@ -482,3 +482,29 @@ Other dims (Aes/Dyn/Subj) show 0% on their scales with negative policy gains.
 
 **Known artifact:** `routing_experiments_bootstrap.md` baseline 18.9% is stale OOF from first failed Slurm submit; trust summary **9.0%**.
 
+---
+
+## 2026-07-05 — Recommended five-experiment program complete @ N=200
+**Tags:** finding, negative-result, decision, H9, routing
+**Refs:**
+- `scripts/run_recommended_five_experiments.py`, commit `418180d`
+- Results: `sweep_experiment/reports/per_video_analysis/2026-07-05/recommended_five_experiments/`
+
+Ran the post-linear-router **five-experiment plan** 1:1 (Exp1 probe-and-route simulation,
+Exp2 ΔDyn router, Exp3 pairwise, Exp4 NR proxy best-of-3, Exp5 stub).
+
+**Results vs success bars:**
+| Exp | Best result | Bar | Verdict |
+|---|---|---|---|
+| Exp1 probe | ridge 3-way **12.1%** total; commit **2.9%** total / **33%** Dyn | >25% total | **FAIL** total; Dyn commit partial |
+| Exp2 ΔDyn | in-sample total **4.9%**; OOF ΔDyn negative headroom | beat 9% linear | **FAIL** on total VBench |
+| Exp3 pairwise | −7.4% / −0.8% | — | **FAIL** |
+| Exp4 NR proxy | −3% to −5.1%, Kendall τ≈0 | rank oracle | **FAIL** |
+| Exp5 IQ-TTA | skipped | — | needs GPU + code |
+
+**Decisions:**
+1. **999v × 12 routing training: NO-GO** (confirmed across linear, nonlinear, probe, dyn, NR).
+2. **GPU probe-and-route (Exp1 real inference): LOW ROI** unless chasing ~12%→15% marginal; simulation already uses probe PSNR.
+3. **Dyn-only routing:** captures Dyn in-sample but **does not lift total VBench** — do not pivot paper to Dyn routing for population metrics.
+4. **Exp5 IQ-constrained TTA** remains separate track for LoRA/retrieval IQ frontier (not budget-grid routing).
+
