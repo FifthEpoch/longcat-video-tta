@@ -572,3 +572,13 @@ PSNR 17.87–17.90 (vs ADA 17.94); FVD 155–162 (vs ADA 153.4). SIM≈RAND (≤
 
 Full backfill: all 4 methods have 7 dims × 999v. VB total 0.778–0.780 (SIM≈RAND). vs ADA: Aes +0.046, IQ −0.034, Dyn +0.03 — same sign pattern as LORA_R8. PSNR/FVD still do not beat single-video ADA. **Retrieval chapter closed for paper.**
 
+---
+
+## 2026-07-06 — Wave-1 predictor screen: NO-GO GPU; deployable cap ~13%
+**Tags:** finding, negative-result, decision, routing, H9
+**Refs:** `paper_tables/2026-07-06_wave1_predictor_screen.md`, `per_video_analysis/2026-07-06/wave1_predictor_experiments/`, commit fixing decision logic
+
+Ran 7 CPU experiments on pilot N=200 before bed. **Best deployable:** exp16 kNN probe manifold **13.0%** captured (≈ exp7 ridge 12.8%). **Ceiling:** exp14_full **17.5%** using GT VBench Aes/IQ/Dyn on probe outputs — same non-deployable class as exp10 (18.4%). Probe-only PSNR+SSIM routing (exp14_deploy) **2.8%**. Tail-only gate: overall 1.0%, tail subset 24.1% @ 15% apply (below 30% GO bar). Per-dim fuse 5.8%. Feature screen (exp19): only flow×flickering pairs pass |ρ|≥0.2.
+
+**Decision:** **NO-GO** Wave-2 GPU tonight (VideoAlign / CFG-gap / 999v retrain). Auto `wave1_decision.json` falsely GO'd on ceiling exp — corrected in script to split deployable vs ceiling. Paper line unchanged: oracle headroom real (+0.14 mean); honest offline routing ~13%; GT-probe ceiling ~17–18%.
+

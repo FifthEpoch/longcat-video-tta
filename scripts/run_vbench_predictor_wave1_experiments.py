@@ -75,6 +75,8 @@ WAVE1_EXPERIMENTS = (
 WAVE2_CAPTURED_GO = 15.0
 TAIL_CAPTURED_GO = 30.0
 BASELINE_BEST = 12.8  # exp7
+# Uses GT VBench dims on probe outputs — ceiling only, not deployable at inference.
+CEILING_EXPERIMENTS = frozenset({"exp14_multi_verifier_full"})
 
 
 def _cap_pct(policy: dict) -> Optional[float]:
@@ -391,7 +393,7 @@ def run_exp18_logistic_3way(
         X_tr_s, X_te_s, _, _ = standardize_train_test(X_tr, X_te)
         yb = y_bin[train_idx]
         if yb.sum() >= 10 and 0 < yb.sum() < len(yb):
-            w = logistic_fit(X_tr_s, yb, 0.5)
+            w = logistic_fit(X_tr_s, yb, lam=0.5)
             p = logistic_predict_proba(X_te_s, w)
         else:
             p = np.full(len(test_idx), float(yb.mean()))
@@ -483,10 +485,16 @@ def write_summary(results: Dict[str, dict], out_dir: Path) -> None:
         if n != "exp19_feature_dim_correlation" and results.get(n, {}).get("captured_pct") is not None
     ]
     best_name, best_cap = None, -1.0
+    deploy_name, deploy_cap = None, -1.0
     for n in routing:
         cap = results[n].get("captured_pct")
-        if cap is not None and cap > best_cap:
-            best_cap, best_name = float(cap), n
+        if cap is None:
+            continue
+        cap = float(cap)
+        if cap > best_cap:
+            best_cap, best_name = cap, n
+        if n not in CEILING_EXPERIMENTS and cap > deploy_cap:
+            deploy_cap, deploy_name = cap, n
 
     lines = [
         "# Wave-1 VBench++ predictor screen @ N=200",
@@ -528,15 +536,30 @@ def write_summary(results: Dict[str, dict], out_dir: Path) -> None:
         "",
     ]
 
-    wave2_go = best_cap >= WAVE2_CAPTURED_GO
+    ceiling_r = results.get("exp14_multi_verifier_full", {})
+    ceiling_cap = ceiling_r.get("captured_pct")
     tail_r = results.get("exp15_tail_only_gate", {})
     tail_go = (tail_r.get("tail_captured_pct") or 0) >= TAIL_CAPTURED_GO
-    gpu_go = wave2_go or tail_go or (best_cap > BASELINE_BEST + 2)
+    deploy_go = deploy_cap >= WAVE2_CAPTURED_GO or deploy_cap > BASELINE_BEST + 2
+    gpu_go = deploy_go or tail_go
 
     lines += ["## Tonight's decision", ""]
+    if ceiling_cap is not None:
+        lines.append(
+            f"- **Ceiling** (`exp14_multi_verifier_full`, GT VBench on probes): **{ceiling_cap:.1f}%** "
+            f"(≈ exp10 upper bound; not deployable)"
+        )
+    if deploy_name:
+        dr = results[deploy_name]
+        lo = dr.get("captured_ci_lo_pct")
+        lines.append(
+            f"- **Best deployable** (`{deploy_name}`): **{deploy_cap:.1f}%**"
+            + (f" CI [{lo:.1f}, {dr.get('captured_ci_hi_pct', 0):.1f}]" if lo is not None else "")
+        )
+    lines.append("")
     if gpu_go:
         lines.append(
-            f"**GO Wave-2/GPU follow-up** — best `{best_name}` at **{best_cap:.1f}%**"
+            f"**GO Wave-2/GPU follow-up** — deployable `{deploy_name}` at **{deploy_cap:.1f}%**"
             + (f"; tail gate tail_cap={tail_r.get('tail_captured_pct', 0):.1f}%" if tail_go else "")
         )
         lines.append("")
@@ -546,7 +569,7 @@ def write_summary(results: Dict[str, dict], out_dir: Path) -> None:
         lines.append("```")
     else:
         lines.append(
-            f"**NO-GO heavy GPU tonight** — best `{best_name}` at **{best_cap:.1f}%** "
+            f"**NO-GO heavy GPU tonight** — best deployable `{deploy_name}` at **{deploy_cap:.1f}%** "
             f"(need >{WAVE2_CAPTURED_GO}% or tail >{TAIL_CAPTURED_GO}%). "
             "Paper line: oracle real; offline routing stays ~13%."
         )
@@ -556,7 +579,11 @@ def write_summary(results: Dict[str, dict], out_dir: Path) -> None:
     decision = {
         "best_experiment": best_name,
         "best_captured_pct": best_cap,
-        "wave2_go": wave2_go,
+        "best_deployable_experiment": deploy_name,
+        "best_deployable_captured_pct": deploy_cap,
+        "ceiling_experiment": "exp14_multi_verifier_full",
+        "ceiling_captured_pct": ceiling_cap,
+        "wave2_go": deploy_go,
         "tail_go": tail_go,
         "gpu_go": gpu_go,
     }
