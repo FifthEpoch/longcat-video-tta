@@ -1,46 +1,44 @@
 # Panda 1000v retrieval @ N=999 (2048-clip pool)
 
-**Date:** 2026-07-05  
+**Date:** 2026-07-05 (VBench 7-dim backfill confirmed same day)  
 **Series:** `panda_1000v_retrieval` — eval `panda_1000_480p`, pool `panda_2048_480p`  
 **Cluster:** `sweep_experiment/results/panda_1000v_retrieval/`  
-**Merge:** 10 chunks × 4 methods, 999 videos each
+**Merge:** 10 chunks × 4 methods, 999 videos each; 14 vbench files/chunk (7 dims × 2 formats)
 
-## Population metrics (from `merge_chunks.py`)
+## Population metrics
 
-| Method | K | Pool pick | PSNR↑ | SSIM↑ | LPIPS↓ | FVD↓ | FID↓ | Aes | BG | Subj |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| K5_RAND | 5 | sequential | 17.901 | 0.6511 | 0.3374 | **155.7** | 25.1 | 0.442 | 0.931 | 0.903 |
-| K5_SIM | 5 | similarity | 17.891 | 0.6514 | 0.3371 | 157.0 | 25.1 | 0.442 | 0.931 | 0.903 |
-| K10_RAND | 10 | sequential | 17.873 | 0.6508 | 0.3383 | 162.1 | 25.0 | 0.441 | 0.930 | 0.903 |
-| K10_SIM | 10 | similarity | 17.887 | 0.6508 | 0.3375 | 159.7 | 25.1 | 0.441 | 0.931 | 0.903 |
+| Method | K | Pick | PSNR↑ | SSIM↑ | LPIPS↓ | FVD↓ | Subj | BG | Aes | Motn | Dyn | IQ | Flick | **VB total** |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| K5_RAND | 5 | seq | 17.901 | 0.6511 | 0.3374 | **155.7** | 0.903 | 0.931 | 0.442 | 0.986 | 0.594 | 0.615 | 0.975 | **0.778** |
+| K5_SIM | 5 | sim | 17.891 | 0.6514 | 0.3371 | 157.0 | 0.903 | 0.931 | 0.442 | 0.986 | 0.601 | 0.615 | 0.975 | **0.779** |
+| K10_RAND | 10 | seq | 17.873 | 0.6508 | 0.3383 | 162.1 | 0.903 | 0.931 | 0.442 | 0.986 | 0.606 | 0.615 | 0.975 | **0.780** |
+| K10_SIM | 10 | sim | 17.887 | 0.6508 | 0.3375 | 159.7 | 0.903 | 0.931 | 0.441 | 0.986 | 0.611 | 0.615 | 0.975 | **0.780** |
 
-*VBench columns above are the 3 dims printed at merge time; run full backfill + `update_merged_with_vbench.py` per method for all 7 dims.*
+*VB total = unweighted mean of 7 VBench++ dims (same convention as headline tables).*
 
-## vs Panda 1000v standard baselines ([`2026-06-08_headline_1000v.md`](2026-06-08_headline_1000v.md))
+## vs Panda 1000v standard ([`2026-06-08_headline_1000v.md`](2026-06-08_headline_1000v.md))
 
-| Method | PSNR | FVD | Aes (7-dim table) |
-|---|---:|---:|---:|
-| NOTTA | 17.93 | 154.7 | 0.395 |
-| ADA (S10/LR5e-3) | **17.94** | **153.4** | 0.396 |
-| LORA_R8_TTA | 17.85 | 157.9 | **0.442** |
-| K5_RAND (retrieval) | 17.901 | 155.7 | 0.442† |
-| K10_SIM (retrieval) | 17.887 | 159.7 | 0.441† |
+| Method | PSNR | FVD | Aes | IQ | Dyn | **VB total** |
+|---|---:|---:|---:|---:|---:|---:|
+| NOTTA | 17.93 | 154.7 | 0.395 | 0.649 | 0.565 | 0.772 |
+| ADA (S10/LR5e-3) | **17.94** | **153.4** | 0.396 | 0.649 | 0.568 | 0.773 |
+| LORA_R8_TTA | 17.85 | 157.9 | **0.442** | **0.615** | **0.596** | **0.778** |
+| K5_RAND (retrieval) | 17.901 | 155.7 | **0.442** | **0.615** | 0.594 | **0.778** |
+| K10_SIM (retrieval) | 17.887 | 159.7 | 0.441 | **0.615** | 0.611 | **0.780** |
 
-†Partial merge print only; confirm with full VBench backfill.
+## Headline (confirmed 7-dim)
 
-## Headline
+1. **SIM ≈ RAND:** VB-total spread **0.778–0.780** (Δ=0.002); PSNR spread **≤0.03 dB**. Caption similarity does not beat sequential/random neighbours.
 
-1. **SIM ≈ RAND on Panda** (unlike UCF's class-block confound, this is a clean test): PSNR spread across all 4 configs is **≤0.03 dB**; FVD spread ≤6.4. Caption-similarity neighbours do not beat random/sequential neighbours at population level.
+2. **PSNR/FVD: no win vs ADA.** Retrieval PSNR **0.04–0.07 dB below** ADA; FVD **+2 to +9** worse (K10 most costly).
 
-2. **Retrieval batch-TTA ≈ single-video AdaSteer on PSNR/FVD**, not a win: all retrieval variants sit **0.04–0.07 dB below ADA** on PSNR; FVD **+2 to +9** vs ADA (K10 worst).
+3. **LoRA-like VBench tradeoff, not ADA-like:** all retrieval configs show **Aes↑ (+0.046)** and **IQ↓ (−0.034)** vs ADA, matching LORA_R8's aesthetic/quality shift. VB total ≈ LORA (0.778) not ADA (0.773) — but PSNR still tracks ADA more than LORA.
 
-3. **Aesthetic bump** (~0.442 vs ADA 0.396) mirrors LoRA's Aes↑ pattern — possible batch-adaptation side effect; needs full 7-dim VBench + per-video analysis before claiming tradeoff.
-
-4. **K10 > K cost, no quality gain:** longer batch training (10× vs 5× neighbours) does not improve PSNR; FVD degrades at K=10.
+4. **K10 adds compute, not quality:** higher Dyn (+0.01 vs K5) but worse FVD; no PSNR benefit.
 
 ## Decision
 
-**Retrieval is not a paper headline win** on Panda 1000v with 2048 pool — confirms UCF-style SIM≈RAND null at a meaningful scale. Narrative: batch retrieval augmentation does not beat fixed-budget AdaSteer on population metrics; optional per-video / Aes tradeoff follow-up only.
+**Retrieval is not a deployable headline method** on Panda 999v / 2048 pool. Population story: batch neighbour TTA replicates LoRA's **Aes↑ IQ↓** tradeoff without PSNR gains. **25K pool deprioritized.** Optional: per-video win/loss vs NOTTA for tail cases only.
 
 ## Reproduce
 

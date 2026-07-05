@@ -564,3 +564,11 @@ squeue -u $USER -h -o '%i %j' | awk '/dover/ {print $1}' | xargs -r scancel
 
 PSNR 17.87–17.90 (vs ADA 17.94); FVD 155–162 (vs ADA 153.4). SIM≈RAND (≤0.03 dB). Aes~0.442 (LoRA-like; confirm 7-dim). Retrieval not a headline win; 25K pool deprioritized.
 
+---
+
+## 2026-07-05 — Panda retrieval 7-dim VBench confirms LoRA-like tradeoff
+**Tags:** finding, retrieval, paper-narrative
+**Refs:** updated `paper_tables/2026-07-05_panda_1000v_retrieval.md`
+
+Full backfill: all 4 methods have 7 dims × 999v. VB total 0.778–0.780 (SIM≈RAND). vs ADA: Aes +0.046, IQ −0.034, Dyn +0.03 — same sign pattern as LORA_R8. PSNR/FVD still do not beat single-video ADA. **Retrieval chapter closed for paper.**
+
