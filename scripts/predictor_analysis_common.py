@@ -23,6 +23,7 @@ from scripts.correlate_tta_gain_with_features import (
     load_ood_csv,
     load_tier3_csv,
     load_vae_recerr_csv,
+    load_vae_latent_profile_csv,
     spearman_rho,
 )
 from scripts.per_video_metric_store import load_gains_csv as load_gains_float
@@ -120,6 +121,7 @@ def join_feature_tables(
     bpp_csv: Optional[Path] = None,
     fft_csv: Optional[Path] = None,
     vae_recerr_csv: Optional[Path] = None,
+    vae_latent_profile_csv: Optional[Path] = None,
     motion_csv: Optional[Path] = None,
     loss_var_csv: Optional[Path] = None,
 ) -> Tuple[Dict[str, Dict[str, float]], List[str], Dict[str, str]]:
@@ -152,6 +154,7 @@ def join_feature_tables(
         (bpp_csv, lambda p: load_bpp_csv(p)[0:2], "T1"),
         (fft_csv, lambda p: load_fft_csv(p)[0:2], "T1"),
         (vae_recerr_csv, lambda p: load_vae_recerr_csv(p)[0:2], "T1"),
+        (vae_latent_profile_csv, lambda p: load_vae_latent_profile_csv(p)[0:2], "VAE"),
         (motion_csv, lambda p: load_motion_csv(p)[0:2], "T1"),
         (loss_var_csv, lambda p: load_loss_var_csv(p)[0:2], "OOD"),
     ]

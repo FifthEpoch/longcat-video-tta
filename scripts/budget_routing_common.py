@@ -132,6 +132,7 @@ def load_pilot_bundle(
         bpp_csv=feature_date / "bpp_features.csv",
         fft_csv=feature_date / "fft_features.csv",
         vae_recerr_csv=feature_date / "vae_recerr_features.csv",
+        vae_latent_profile_csv=feature_date / "vae_latent_profile_features.csv",
         motion_csv=feature_date / "latent_motion_features.csv",
         loss_var_csv=feature_date / "loss_variance_features.csv",
     )

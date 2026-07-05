@@ -124,6 +124,7 @@ AUX_NON_FEATURE_COLUMNS: Tuple[str, ...] = (
     "gen_target_range", "input_size_h", "input_size_w", "flow_model",
     "file_size_bytes", "container_frame_count", "frame_h", "frame_w",
     "n_frame_pairs", "lpips_available", "n_timesteps",
+    "n_latent_frames", "n_context_latents", "tta_context_frames",
 )
 
 # Non-feature OOD columns: documentation / book-keeping that should NOT be
@@ -484,6 +485,12 @@ def load_motion_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
     rows, cols, _ = load_aux_csv(
         path, ["latent_temporal_l2_mean", "pixel_mse_temporal_mean"], tier="T1",
     )
+    return rows, cols
+
+
+def load_vae_latent_profile_csv(path: Path) -> Tuple[Dict[str, Dict[str, str]], List[str]]:
+    rows, cols, _ = load_aux_csv(path, tier="VAE")
+    cols = [c for c in cols if c.startswith("vae_")]
     return rows, cols
 
 
