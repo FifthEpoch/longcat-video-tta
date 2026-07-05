@@ -543,3 +543,16 @@ Corrected exp9: **7.6%** total-VBench captured (17% match); **98%** on fused Aes
 
 **In flight:** Track B Panda 1000v retrieval; Track C DOVER probe routing (exp13).
 
+---
+
+## 2026-07-05 — Track C (DOVER probe routing) cancelled by user
+**Tags:** decision, routing
+**Refs:** Slurm jobs submitted 2026-07-05 via `submit_tracks_b_and_c.sh`; cancelled same day.
+
+User decided DOVER-on-probe routing (exp13) is **not worth GPU time** given routing NO-GO at ~12.8% and exp10 upper bound only ~18%. Track B (Panda 1000v retrieval) left running.
+
+Cancel on cluster:
+```bash
+squeue -u $USER -h -o '%i %j' | awk '/dover/ {print $1}' | xargs -r scancel
+```
+
