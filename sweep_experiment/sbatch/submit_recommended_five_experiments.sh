@@ -38,6 +38,18 @@ JOB=$(sbatch --parsable \
   sweep_experiment/sbatch/run_recommended_five_array.sbatch)
 
 echo "Array job: ${JOB}"
+
+AGG=$(sbatch --parsable \
+  --account="${ACCOUNT}" \
+  --job-name=five_exp_agg \
+  --dependency=afterany:${JOB} \
+  --cpus-per-task=1 \
+  --mem=4G \
+  --time=00:10:00 \
+  --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},DATE_TAG=${DATE_TAG}" \
+  sweep_experiment/sbatch/run_recommended_five_aggregate.sbatch)
+
+echo "Aggregate job: ${AGG}"
 echo "Results: sweep_experiment/reports/per_video_analysis/${DATE_TAG}/recommended_five_experiments/"
 echo ""
 echo "Note: Exp5 (IQ-constrained TTA) needs a separate GPU implementation — see exp5_iq_constrained.json"

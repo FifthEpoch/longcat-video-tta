@@ -159,7 +159,7 @@ def run_exp1(bundle: dict, X_base: np.ndarray, feat_names: List[str], *, seed: i
     pol_commit_dyn = eval_config_pick_policy(
         picks_commit[valid], Y_dyn[valid], fixed_dyn[valid], grid,
     )
-    oracle_idx = np.nanargmax(Y[mask], axis=1)
+    oracle_idx = np.nanargmax(Y[valid], axis=1)
     pol_commit_total["oof_oracle_match_rate"] = float(
         np.mean(picks_commit[valid] == oracle_idx)
     )
@@ -325,7 +325,6 @@ def run_exp4(bundle: dict, series_root: Path) -> dict:
 
     mask = labeled_mask(fixed_vb, Y)
     n = int(mask.sum())
-    oracle_idx = np.nanargmax(Y[mask], axis=1)
 
     proxies = {
         "lpips_nr": -lpips,  # lower LPIPS is better
@@ -350,7 +349,8 @@ def run_exp4(bundle: dict, series_root: Path) -> dict:
 
         valid = mask & (picks >= 0)
         pol = eval_config_pick_policy(picks[valid], Y[valid], fixed_vb[valid], grid)
-        pol["oof_oracle_match_rate"] = float(np.mean(picks[valid] == oracle_idx))
+        oracle_valid = np.nanargmax(Y[valid], axis=1)
+        pol["oof_oracle_match_rate"] = float(np.mean(picks[valid] == oracle_valid))
         rows.append(_policy_row(
             f"exp4_{pname}",
             pol,
@@ -381,6 +381,16 @@ def run_exp5_stub() -> dict:
     }
 
 
+def load_results_from_dir(out_dir: Path) -> Dict[str, dict]:
+    """Load per-task JSON outputs (for post-array aggregation)."""
+    all_results: Dict[str, dict] = {}
+    for name in ALL_FIVE:
+        jp = out_dir / f"{name}.json"
+        if jp.is_file():
+            all_results[name] = json.loads(jp.read_text(encoding="utf-8"))
+    return all_results
+
+
 def write_summary(all_results: dict, out_dir: Path) -> None:
     lines = [
         "# Recommended five-experiment program @ N=200",
@@ -396,38 +406,54 @@ def write_summary(all_results: dict, out_dir: Path) -> None:
         lines.append(f"| {exp} | {metric} | {cap_s} | {note} |")
 
     e1 = all_results.get("exp1_probe_and_route", {})
-    if "commit_probe" in e1:
-        r = e1["commit_probe"]
-        add_row("Exp1 commit probe", "VBench total", r.get("captured_pct"), f"Dyn={r.get('dyn_captured_pct', '—')}%")
-    if "ridge_probe_3way" in e1:
-        r = e1["ridge_probe_3way"]
-        add_row("Exp1 ridge probe 3-way", "VBench total", r.get("captured_pct"))
+    if e1.get("skipped"):
+        lines.append(f"| Exp1 probe-and-route | — | — | **FAILED:** {e1.get('reason', '?')} |")
+    else:
+        if "commit_probe" in e1:
+            r = e1["commit_probe"]
+            add_row("Exp1 commit probe", "VBench total", r.get("captured_pct"), f"Dyn={r.get('dyn_captured_pct', '—')}%")
+        if "ridge_probe_3way" in e1:
+            r = e1["ridge_probe_3way"]
+            add_row("Exp1 ridge probe 3-way", "VBench total", r.get("captured_pct"))
 
     e2 = all_results.get("exp2_dyn_delta_router", {})
-    for key, label in (
-        ("row_delta_target_oof", "Exp2 ΔDyn OOF"),
-        ("row_total_vbench_from_dyn_picks", "Exp2 dyn picks → total"),
-        ("row_dyn_from_dyn_picks", "Exp2 dyn picks → Dyn"),
-    ):
-        if key in e2:
-            add_row(label, "see column", e2[key].get("captured_pct"))
+    if e2.get("skipped"):
+        lines.append(f"| Exp2 ΔDyn router | — | — | **FAILED:** {e2.get('reason', '?')} |")
+    else:
+        for key, label in (
+            ("row_delta_target_oof", "Exp2 ΔDyn OOF"),
+            ("row_total_vbench_from_dyn_picks", "Exp2 dyn picks → total"),
+            ("row_dyn_from_dyn_picks", "Exp2 dyn picks → Dyn"),
+        ):
+            if key in e2:
+                add_row(label, "see column", e2[key].get("captured_pct"))
 
     e3 = all_results.get("exp3_pairwise_ranker", {})
-    for r in e3.get("rows", []):
-        if r.get("skipped"):
-            lines.append(f"| {r['experiment']} | — | — | skipped |")
-        else:
-            add_row(r["experiment"], "VBench total", r.get("captured_pct"))
+    if e3.get("skipped"):
+        lines.append(f"| Exp3 pairwise | — | — | **FAILED:** {e3.get('reason', '?')} |")
+    else:
+        for r in e3.get("rows", []):
+            if r.get("skipped"):
+                lines.append(f"| {r['experiment']} | — | — | skipped |")
+            else:
+                add_row(r["experiment"], "VBench total", r.get("captured_pct"))
 
     e4 = all_results.get("exp4_bestof3_nr_proxy", {})
-    for r in e4.get("rows", []):
-        tau = r.get("mean_kendall_tau_vs_vbench")
-        note = f"τ={tau:.3f}" if tau is not None and not math.isnan(tau) else "NR proxy rank"
-        add_row(r["experiment"], "VBench total", r.get("captured_pct"), note)
+    if e4.get("skipped"):
+        lines.append(f"| Exp4 NR proxy | — | — | **FAILED:** {e4.get('reason', '?')} |")
+    else:
+        for r in e4.get("rows", []):
+            tau = r.get("mean_kendall_tau_vs_vbench")
+            note = f"τ={tau:.3f}" if tau is not None and not math.isnan(tau) else "NR proxy rank"
+            add_row(r["experiment"], "VBench total", r.get("captured_pct"), note)
 
     e5 = all_results.get("exp5_iq_constrained", {})
-    e5_status = "skipped" if e5.get("skipped") else "done"
-    lines.append(f"| Exp5 IQ-constrained TTA | — | — | **{e5_status}** |")
+    if e5.get("skipped"):
+        lines.append(f"| Exp5 IQ-constrained TTA | — | — | **skipped** (needs GPU) |")
+    elif e5:
+        lines.append(f"| Exp5 IQ-constrained TTA | — | — | done |")
+    else:
+        lines.append(f"| Exp5 IQ-constrained TTA | — | — | not run |")
 
     lines += [
         "",
@@ -455,17 +481,31 @@ def main() -> int:
     ap.add_argument("--output-dir", type=Path, default=None)
     ap.add_argument("--experiment", choices=ALL_FIVE, default=None)
     ap.add_argument("--run-all", action="store_true")
+    ap.add_argument(
+        "--aggregate-only",
+        action="store_true",
+        help="Merge existing per-task JSONs into summary (after Slurm array)",
+    )
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--n-folds", type=int, default=5)
     args = ap.parse_args()
 
-    if not args.run_all and not args.experiment:
-        ap.error("Use --run-all or --experiment expN_...")
+    if not args.run_all and not args.experiment and not args.aggregate_only:
+        ap.error("Use --run-all, --experiment NAME, or --aggregate-only")
 
     out = args.output_dir or (
         _REPO / "sweep_experiment/reports/per_video_analysis/2026-07-05/recommended_five_experiments"
     )
     out.mkdir(parents=True, exist_ok=True)
+
+    if args.aggregate_only:
+        all_results = load_results_from_dir(out)
+        if not all_results:
+            print(f"[error] no JSON files under {out}", file=sys.stderr)
+            return 1
+        write_summary(all_results, out)
+        print(f"Aggregated {len(all_results)} experiments → {out}/recommended_five_experiments_summary.md", file=sys.stderr)
+        return 0
 
     exps = list(ALL_FIVE) if args.run_all else [args.experiment]
     all_results: Dict[str, dict] = {}
@@ -504,8 +544,9 @@ def main() -> int:
             all_results[name] = {"experiment": name, "skipped": True, "reason": str(exc)}
             _write_json(out, name, all_results[name])
 
-    write_summary(all_results, out)
-    print(f"Wrote {out}/recommended_five_experiments_summary.md", file=sys.stderr)
+    if args.run_all:
+        write_summary(all_results, out)
+        print(f"Wrote {out}/recommended_five_experiments_summary.md", file=sys.stderr)
     return 0
 
 
