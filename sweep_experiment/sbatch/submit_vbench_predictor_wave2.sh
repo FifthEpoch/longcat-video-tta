@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# Wave-2 GPU follow-up placeholder — submit ONLY if wave1_decision.json has gpu_go=true.
+# Wave-2: learned verifier routing (Options 1–4). Replaces placeholder.
 #
 #   cd /scratch/wc3013/longcat-video-tta && git pull
-#   DEC=$(python3 -c "import json;print(json.load(open('sweep_experiment/reports/per_video_analysis/2026-07-06/wave1_predictor_experiments/wave1_decision.json'))['gpu_go'])")
-#   [ "$DEC" = "True" ] && bash sweep_experiment/sbatch/submit_vbench_predictor_wave2.sh
-#
-# TODO (Wave-2): VideoAlign probe scoring, CFG-gap GPU extract, 999v 3-way gate retrain.
+#   bash scripts/setup_verifier_models.sh   # first time only
+#   bash sweep_experiment/sbatch/submit_vbench_predictor_wave2.sh
 set -euo pipefail
 
-echo "Wave-2 not yet implemented. Check wave1_decision.json first."
-echo "If GO: implement VideoAlign on probe mp4s + CFG-gap feature job."
-exit 1
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec bash "${SCRIPT_DIR}/submit_verifier_options_pilot.sh" "$@"
