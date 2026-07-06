@@ -4,18 +4,18 @@
 **Pilot:** 200 OOD-stratified Panda clips × 12 AdaSteer configs  
 **Fixed AdaSteer baseline:** S10_LR5e-3 (headline deployable config @ 999v)
 
-**Metric convention:** Routing gains vs **NOTTA** and **fixed AdaSteer**. **% oracle headroom recovered** = (policy − fixed) / (config oracle − fixed); oracle mean gap = **+0.140** VBench total @ N=200.
+**Metric convention:** **Δ vs NOTTA** / **Δ vs fixed** report absolute VBench total change and **% relative to that row’s baseline** (same style as AdaState **+3.4%**). Denominators @ 999v Panda standard: **NOTTA = 0.772**, **fixed S10 = 0.773** (`panda_1000v_standard`). Router Δ from **N=200 OOF** pilot. **% oracle headroom recovered** = (policy − fixed) / (config oracle − fixed); oracle gap = **+0.140**.
 
-**Our router (this deck):** **Block A** (9-d video/caption stats) with **optional Block B** (12-d diffusion-OOD). Linear ridge, 5-fold OOF @ N=200 → **one** AdaSteer pass. No probe runs, no Tier-3 LoRA, no prior TTA metrics as inputs.
+**Our router (this deck):** **Block A** — 9-d video/caption stats → ridge → **one** AdaSteer. No probe, no Tier-3, no prior TTA metrics as inputs.
 
 ---
 
 ## Slide 1 — Title
 
 **VBench++ Config Routing for AdaSteer**  
-*Pick step×LR from the input video (+ optional OOD), then run AdaSteer once*
+*Pick step×LR from the input video, then run AdaSteer once*
 
-**Headline @ N=200:** **Block A → 20.8%** oracle headroom recovered (**+0.029 vs fixed S10**). With **Block B (OOD) allowed → 18.9%** (+0.027), best oracle-config match (21%).
+**Headline @ N=200:** Block A router → **20.8%** oracle headroom recovered · **+0.029 (+3.8%) vs fixed S10** · **~+0.030 (+3.9%) vs NOTTA**.
 
 ---
 
@@ -28,8 +28,8 @@
 | **NOTTA** | Does TTA help at all? |
 | **Fixed AdaSteer (S10/LR5e-3)** | Does *smart config choice* beat our best single recipe? |
 
-**@ 999v:** Fixed AdaSteer ≈ NOTTA (**+0.001**, ~+0.13%).  
-**Pilot @ N=200:** Config oracle vs fixed S10 = **+0.140** headroom (Slide 3).
+**@ 999v:** Fixed AdaSteer vs NOTTA = **+0.001 (+0.13%)**.  
+**Pilot @ N=200:** Config oracle vs fixed S10 = **+0.140 (+18.1%)** headroom (Slide 3).
 
 ---
 
@@ -41,183 +41,142 @@
 \text{oracle}(v) = \arg\max_{c \in \{12\}} \ \text{VBench}_\text{total}(v, c)
 \]
 
-**Headroom vs fixed S10:** **+0.140** mean · **not deployable** (needs all 12 runs at inference).
+**Headroom vs fixed S10:** **+0.140 (+18.1%)** · **not deployable** (needs all 12 runs at inference).
 
 **Router score:** fraction of this gap recovered with **one** AdaSteer after routing.
 
 ---
 
-## Slide 4 — Block B: diffusion-OOD (optional router input)
+## Slide 4 — Pilot design note (OOD stratification)
 
-**What it is:** Frozen **base LongCat DiT** flow-matching loss on the visible window — higher loss ⇒ more “surprised” / OOD (`compute_diffusion_ood_score.py`).
+Pilot clips were **OOD-stratified** (40 videos × 5 quintiles by frozen DiT difficulty) so the 200-video set spans easy→hard base-model surprise — not a router input in Block A, but explains “OOD” in the pilot name.
 
-**Computation (no TTA adapters):**
-1. VAE-encode visible window; context / target split (same as AdaSteer).
-2. Sample \(t \in \{100,500,900\}\), noise \(\varepsilon\), corrupt targets.
-3. Predict velocity \(\hat v = f_\theta(x_t, t, c)\); loss \(\|\hat v - (\varepsilon - x_0)\|^2\) on targets.
-4. **12 router features** in pilot CSV: per-t caption/uncond losses + score norms + summaries (e.g. `mean_diffusion_loss_caption`).
-
-**Also used for pilot design:** OOD quintile stratification → N=200 (`sample_ood_quintile_videos.py`).
-
-**Sources:** Lipman et al. ICLR 2023 (flow matching); Kingma et al. NeurIPS 2021 (loss as difficulty proxy).
+**Source:** `compute_diffusion_ood_score.py` + `sample_ood_quintile_videos.py` (see paper methods).
 
 ---
 
-## Slide 5 — Our router
+## Slide 5 — Our router (Block A)
 
 ### Deploy workflow
 
 ```
-Input video (+ caption)  →  Block A  [→  Block B if allowed]  →  x(v)  →  ridge  →  ONE AdaSteer
+Input video (+ caption)  →  Block A features x(v)  →  ridge  →  ONE AdaSteer
 ```
 
-**Rules:** No AdaSteer / probe TTA before config choice. Block B = one frozen DiT OOD pass — **optional**.
+**Rules:** No AdaSteer / probe TTA before config choice.
 
----
+### Feature space **x(v)** — 9 dimensions
 
-### Feature space **x(v) = [A | B?]**
+| Feature group | Dims | Source |
+|---------------|-----:|--------|
+| Cut structure | 3 | pyscenedetect + histogram cut counts, cut density |
+| Caption–video alignment | 3 | CLIP text–image sim (mean, var, min) |
+| Motion / texture | 3 | DINO temporal L2, Laplacian variance, RGB entropy |
 
-| Block | Name | Dims | Source | Deploy |
-|-------|------|-----:|--------|--------|
-| **A** | `video_caption` | **9** | `video_features.csv` | **Default** |
-| **B** | `diffusion_ood` | **12** | `diffusion_ood_scores.csv` | Optional |
+**CSV:** `video_features.csv` · **Model:** 12 ridge regressors, argmax predicted VBench · **Eval:** 5-fold OOF @ N=200.
 
-**Block A (9):** cut counts (×3), CLIP text–image sim (×3), DINO temporal L2, Laplacian variance, RGB histogram entropy.
-
-**Block B (12):** frozen DiT OOD features @ t∈{100,500,900} + aggregate stats (Slide 4).
-
-**Offline labels only:** pilot VBench total for all 12 configs (lab calibration — not router inputs).
-
----
-
-### Model & evaluation
-
-| Step | Detail |
-|------|--------|
-| **Model** | 12 ridge regressors (one per config); \(\hat c = \arg\max_c \widehat{\text{VB}}_c\) |
-| **Regularization** | Ridge λ via inner CV; features z-scored per fold |
-| **Eval** | **5-fold OOF** @ N=200 (no leakage) |
-| **Script** | `run_deploy_strict_router_experiments.py` |
+**Offline labels only:** pilot VBench for all 12 configs (lab calibration — not router inputs).
 
 ---
 
 ## Slide 6 — Main result: comparison with AdaState
 
-**This slide is the presentation anchor** — same columns as prior deck; numbers updated for Block A / A+B router @ N=200 OOF.
+**Presentation anchor.** Every Δ shows **absolute (+ relative % vs that column’s baseline)**.
 
-| Method | Δ vs **NOTTA** | Δ vs **fixed AdaSteer** | **% oracle headroom recovered** | 1× AdaSteer? |
-|--------|----------------|-------------------------|--------------------------------|--------------|
-| Fixed AdaSteer (S10) @ 999v | +0.001 (~+0.13%) | — | **0%** | Yes |
-| **Our router — Block A** (`video_caption_only`) | **~+0.030 (~3.7%)** | **+0.029** | **20.8%** | **Yes** |
-| **Our router — A+B** (`video_caption_ood`) | **~+0.028 (~3.5%)** | **+0.027** | **18.9%** | **Yes** (+ OOD pre-pass) |
-| **AdaState** (literature) | **~+0.026 (~+3.4%)**† | N/A (different base) | — | Yes (different stack) |
-| Config oracle (pilot) | ~+0.141 | **+0.140** | **100%** | No (12 configs) |
+| Method | Δ vs **NOTTA** (base **0.772**) | Δ vs **fixed AdaSteer** (base **0.773**) | **% oracle headroom recovered** | 1× AdaSteer? |
+|--------|--------------------------------|------------------------------------------|--------------------------------|--------------|
+| Fixed AdaSteer (S10) @ 999v | **+0.001 (+0.13%)** | — | **0%** | Yes |
+| **Our router — Block A** | **+0.030 (+3.9%)** | **+0.029 (+3.8%)** | **20.8%** | **Yes** |
+| **AdaState** (literature)† | **+0.026 (+3.4%)** | N/A (different base) | — | Yes (different stack) |
+| Config oracle (pilot) | **+0.141 (+18.3%)** | **+0.140 (+18.1%)** | **100%** | No (12 configs) |
 
-†**AdaState:** reported **~+3.4% relative** VBench total vs **their** base generator (~**+0.026** absolute on comparable scales) — **not** vs our NOTTA/fixed S10. Different model, task, and metric protocol; row is **context**, not a claimed win.
+†**AdaState:** **+3.4%** is vs **their** no-TTA / base generator (not our NOTTA 0.772). Different model and protocol — **context row**, not a claimed win.
 
-**% oracle headroom** = (method − fixed S10) / (config oracle − fixed S10); pilot oracle gap = **+0.140**.
+**% oracle headroom** = (method − fixed) / (oracle − fixed); pilot gap **+0.140**.
 
 **Takeaway for PI:**
-- **Routing works:** Block A recovers **~21%** of config-oracle gap with **one** AdaSteer — **~10×** our prior flat fixed-vs-NOTTA story @ 999v.
-- **vs AdaState (honest):** Our **absolute** lift vs fixed (**+0.029**) is **similar in magnitude** to AdaState’s reported **+0.026** vs their base — but **bases and stacks differ**. We do **not** claim to beat AdaState; we claim **comparable-order population lift** from a **different, cheaper mechanism** (config routing, not pathwise correction).
-- **Internal bar (>25% oracle headroom):** still **not met** (20.8%); config oracle (+0.140) shows headroom remains.
+- **Routing works:** Block A recovers **20.8%** of config-oracle gap — **~30×** the relative lift of fixed-vs-NOTTA (+3.8% vs +0.13%).
+- **vs AdaState (honest):** Similar **relative** scale (**+3.9%** vs NOTTA vs AdaState **+3.4%** vs their base) and similar **absolute** Δ (~0.03) — **different mechanism** (config routing vs pathwise correction). Do **not** claim we beat AdaState.
+- **Internal bar (>25% oracle headroom):** still **not met** (20.8%).
 
-**Do not say:** “We beat AdaState.” **Do say:** “Honest config routing reaches AdaState-scale **absolute** VBench deltas vs our fixed baseline, with one AdaSteer and no probe TTA.”
-
----
-
-## Slide 7 — Block ablation (router feature blocks)
-
-| Config | Blocks | Dims | Captured % | Δ vs fixed | Match % |
-|--------|--------|-----:|-----------:|-----------:|--------:|
-| **A only** | video/caption | 9 | **20.8** | +0.029 | 18.5 |
-| **A + B** | + diffusion-OOD | 21 | **18.9** | +0.027 | **21.0** |
-| B only | OOD alone | 12 | 4.9 | +0.007 | 18.0 |
-
-**Takeaways:** Signal lives in **Block A**. OOD alone is weak; stacked with A it **improves match rate** but **slightly lowers** captured headroom (−1.9 pp). Do **not** stack unrelated high-dim blocks @ N=200 (overfits).
+**Do not say:** “We beat AdaState.” **Do say:** “Config routing reaches **AdaState-comparable relative VBench lift** with one AdaSteer and no probe TTA.”
 
 ---
 
-## Slide 8 — AdaState: mechanism & apples-to-oranges
+## Slide 7 — AdaState: mechanism & apples-to-oranges
 
-| | Fixed AdaSteer | **Our router (A or A+B)** | **AdaState** |
-|--|----------------|---------------------------|--------------|
-| **What it optimizes** | One step×LR for all videos | Per-video step×LR before adapting | Pathwise / per-step correction during sampling |
-| **Input at deploy** | Video + caption | Block A (+ optional Block B OOD) | Their generator state / features |
-| **Adaptation cost** | 1× AdaSteer | **1× AdaSteer** | 1× (their stack; not LongCat AdaSteer) |
-| **Reported VBench lift** | +0.001 vs NOTTA @ 999v | **+0.029 vs fixed** (Block A @ N=200 OOF) | **~+0.026 vs their base** (~+3.4% rel) |
-| **Comparable to us?** | Our baseline | **Yes — primary result** | **Partial** — magnitude only; rebase differs |
-
-**Why both slides matter:** Slide 6 = **numbers for the PI** (NOTTA / fixed / us / AdaState / oracle). Slide 8 = **why the comparison is informative but not a horse race.**
+| | Fixed AdaSteer | **Our router (Block A)** | **AdaState** |
+|--|----------------|--------------------------|--------------|
+| **What it optimizes** | One step×LR for all videos | Per-video step×LR before adapting | Pathwise correction during sampling |
+| **Input at deploy** | Video + caption | 9-d video/caption stats | Their generator state / features |
+| **Adaptation cost** | 1× AdaSteer | **1× AdaSteer** | 1× (their stack) |
+| **Reported lift** | +0.001 (+0.13%) vs NOTTA | **+0.029 (+3.8%) vs fixed** · **+0.030 (+3.9%) vs NOTTA** | **+0.026 (+3.4%) vs their base** |
+| **Comparable?** | Our baseline | **Primary result** | **Partial** — magnitude only |
 
 ---
 
-## Slide 9 — Opportunity size (vs oracle & AdaState)
+## Slide 8 — Opportunity size
 
 ```
 NOTTA ──► Fixed S10 ──► Our router (A) ──► AdaState (ref) ──► Config oracle
-         +0.001          +0.029              ~+0.026†           +0.140
-                         (20.8% of oracle gap)
+       +0.13%          +3.8% vs fixed       +3.4%†            +18.1% vs fixed
+                       (20.8% of oracle gap)
 ```
 †AdaState vs their base — not on this chain.
 
-- **Fixed → router (A):** **+0.029** — main deploy win vs status quo  
-- **Router → oracle:** **~5×** headroom still on table (+0.140 − 0.029)  
-- **Router vs AdaState magnitude:** similar **absolute** Δ (~0.03) — **different mechanism & base** (Slide 8)  
+- **Fixed → router (A):** **+3.8%** relative — main deploy win  
+- **Router → oracle:** **~5×** absolute headroom remains (+0.140 − 0.029)  
 - **>25%** internal bar: not met (20.8%)
 
 ---
 
-## Slide 10 — Next steps
+## Slide 9 — Next steps
 
 | Item | Status |
 |------|--------|
-| Scale routing calibration 500–1K (same A / A+B features) | Open |
-| Small nonlinear router on A (+ B), strict OOF | Open |
-| 999v × 12 retrain with this feature set | Not started |
+| Scale routing calibration 500–1K (Block A features) | Open |
+| Small nonlinear router on Block A, strict OOF | Open |
+| 999v × 12 retrain | Not started |
 | Probe-and-route / extra AdaSteer before routing | **Out of scope** |
 
 ---
 
-## Slide 11 — Claims we can make today
+## Slide 10 — Claims we can make today
 
-1. Fixed AdaSteer ≈ NOTTA @ 999v (+0.13%).
-2. Config oracle **+0.140 vs fixed** @ N=200 — per-video budget choice matters in principle.
-3. **Our router (Block A): +0.029 vs fixed**, **20.8%** of oracle gap, **one** AdaSteer, 5-fold OOF.
-4. **Optional Block B (OOD): +0.027 vs fixed**, **21%** oracle-config match.
-5. **vs AdaState:** similar **absolute** VBench lift (~+0.03) but **different base & method** — config routing, not pathwise correction; do not claim a win.
+1. Fixed AdaSteer ≈ NOTTA @ 999v (**+0.13%**).
+2. Config oracle **+18.1% vs fixed** @ N=200 — per-video budget choice matters in principle.
+3. **Our router (Block A): +3.8% vs fixed / +3.9% vs NOTTA**, **20.8%** of oracle gap, one AdaSteer, 5-fold OOF.
+4. **vs AdaState:** comparable **relative** lift (~**3.9%** vs NOTTA vs their **+3.4%**) — different base & method; do not claim a win.
+5. Below **25%** internal oracle-headroom bar.
 
 ---
 
-## Slide 12 — FAQ backup
+## Slide 11 — FAQ backup
 
 **Q: What is “our router”?**  
-Ordered blocks **A** (9-d video/caption) **[+ B (12-d OOD)]** → ridge argmax over 12 configs → one AdaSteer. Eval: 5-fold OOF @ N=200.
+Block **A** (9-d video/caption) → ridge over 12 configs → one AdaSteer. 5-fold OOF @ N=200.
 
-**Q: Why two deploy variants (A vs A+B)?**  
-**A** maximizes recovered headroom with lowest pre-pass cost. **A+B** when a frozen DiT OOD pass is acceptable — better config match, −1.9 pp captured.
+**Q: How are the percentages computed?**  
+**% = Δ / baseline VBench total.** NOTTA **0.772**, fixed S10 **0.773** @ 999v; router Δ from N=200 pilot OOF. AdaState **+3.4%** uses **their** base (Slide 6 †).
 
 **Q: How do we compare to AdaState?**  
-See **Slide 6** (numbers) and **Slide 8** (mechanism). Similar **absolute** Δ (~+0.03) but different base and method — **not** a direct win; informative benchmark.
-
-**Q: Why N=200?**  
-OOD-stratified pilot for honest OOF; same feature contract scales to larger label sets later.
+Slide 6 (numbers) + Slide 7 (mechanism). Similar **~3–4% relative** scale; not a direct horse race.
 
 ---
 
 ## Reference numbers
 
-| Quantity | Value |
-|----------|-------|
-| Oracle headroom vs fixed (pilot) | +0.140 |
-| **Block A — headroom recovered** | **20.8%** |
-| **Block A — Δ vs fixed** | **+0.029** |
-| **A+B — headroom recovered** | **18.9%** |
-| **A+B — Δ vs fixed** | **+0.027** |
-| **A+B — oracle match rate** | **21.0%** |
-| Fixed AdaSteer vs NOTTA @ 999v | +0.001 |
-| AdaState VBench lift (literature) | ~+0.026 abs / ~+3.4% rel vs their base |
-| Internal success bar | >25% oracle headroom (not met; best 20.8%) |
+| Quantity | Absolute Δ | Relative % |
+|----------|------------|------------|
+| NOTTA → fixed S10 @ 999v | +0.001 | **+0.13%** |
+| Fixed → **router Block A** (pilot OOF) | +0.029 | **+3.8%** |
+| NOTTA → **router Block A** (pilot OOF) | +0.030 | **+3.9%** |
+| Fixed → config oracle (pilot) | +0.140 | **+18.1%** |
+| NOTTA → config oracle (pilot) | +0.141 | **+18.3%** |
+| AdaState vs their base (literature) | ~+0.026 | **+3.4%** |
+| Oracle headroom recovered (router A) | — | **20.8%** |
+
+**Baselines for %:** NOTTA VB total **0.772**, fixed S10 **0.773** @ 999v Panda standard.
 
 **Cluster path:** `per_video_analysis/2026-07-06/deploy_strict_router/`  
 **Paper table:** `2026-07-07_deploy_router_structured_blocks.md`
