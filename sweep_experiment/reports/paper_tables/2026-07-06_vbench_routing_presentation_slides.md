@@ -219,11 +219,14 @@ NOTTA ──► Fixed S10 ──► Our router (Block A) ──► AdaState (ref
 
 ## Slide 12 — FAQ backup
 
-**Q: Which run is the 20.8%?**  
-Experiment **`video_caption_only`** — Block **A** only (9 features from `video_features.csv`). Not VAE-only (that is Block C @ **9.7%**).
+**Q: What is the router model?**  
+**12 ridge regressors** (linear): predict VBench total per config from **x(v)**; pick argmax; 5-fold OOF. See Slide 5A.
 
-**Q: What about VAE / OOD blocks?**  
-Same pilot ablation (Slide 7). **A wins** on captured %; A+B optional for match rate; C alone underperforms A.
+**Q: What are the two input variants?**  
+**Router 1 (headline):** 9-d video/caption stats → **20.8%**. **Router 2 (ablation):** 130-d **pooled** LongCat-VAE profile (not raw latent) → **9.7%**. Same ridge, different **x(v)**.
+
+**Q: Which run is in the AdaState table?**  
+**Router 1 only** (video/caption, 20.8%). VAE variant is not in Slide 6.
 
 **Q: How are percentages computed?**  
 **% = Δ / baseline VB total** (NOTTA **0.772**, fixed **0.773** @ 999v).
