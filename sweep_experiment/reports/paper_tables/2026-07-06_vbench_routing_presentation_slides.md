@@ -8,7 +8,7 @@
 
 **Metric convention:** Δ columns show **absolute (+ relative % vs that baseline)**. Denominators @ 999v Panda standard: **NOTTA = 0.772**, **fixed S10 = 0.773**. Router Δ from N=200 OOF. **% oracle headroom recovered** = (policy − fixed) / (oracle − fixed); oracle gap = **+0.140**.
 
-**Our router (this deck):** **Block A — `video_caption_only`** (9-d video/caption stats) → ridge → **one** AdaSteer. Best result in the block ablation: **20.8%** captured.
+**Our router (headline):** **Block A — `video_caption_only`** → **20.8%** oracle headroom (Slide 6). Same model family also tested on **Block C** (VAE pooled profile @ 9.7%; Slide 5).
 
 ---
 
@@ -61,47 +61,93 @@ We scored **three deploy-side blocks** in isolation and combination (same ridge 
 
 ---
 
-## Slide 5 — Our router (Block A — `video_caption_only`)
+## Slide 5 — Router model & two input variants
 
-### Deploy workflow
+Both experiments use the **same router architecture** (`run_budget_config_task`); only the **feature vector x(v)** differs.
 
-```
-Input video (+ caption)  →  Block A features x(v)  →  ridge  →  ONE AdaSteer
-```
+---
 
-**Rules:** No AdaSteer / probe TTA before config choice. No Tier-3 LoRA.
+### A. Shared router model (both runs)
 
-### Feature space **x(v)** — 9 dimensions
+**Task:** pick one of **12 AdaSteer configs** (S2/S5/S10/S20 × 3 LRs) per video to maximize **VBench total** after a single adaptation.
 
-| Feature group | Dims | Source |
-|---------------|-----:|--------|
-| Cut structure | 3 | pyscenedetect + histogram cut counts, cut density |
-| Caption–video alignment | 3 | CLIP text–image sim (mean, var, min) |
-| Motion / texture | 3 | DINO temporal L2, Laplacian variance, RGB entropy |
+| Component | Specification |
+|-----------|----------------|
+| **Model** | **12 independent ridge regressors** — one per config \(c\) |
+| **Per-config predictor** | \(\widehat{\text{VB}}_c(v) = b_c + \mathbf{w}_c^\top \mathbf{x}(v)\) |
+| **Deploy rule** | \(\hat c(v) = \arg\max_c \widehat{\text{VB}}_c(v)\) |
+| **Regularization** | Ridge λ ∈ {10⁻⁴, 10⁻³, …, 10} chosen by inner CV |
+| **Preprocessing** | Z-score **x** per fold (train stats → apply on val) |
+| **Training labels** | Measured VBench total(v, c) from pilot sweep (**offline only** — not router inputs) |
+| **Evaluation** | **5-fold out-of-fold (OOF)** @ N=200 — no leakage |
 
-**CSV:** `video_features.csv` · **Experiment ID:** `video_caption_only` · **Eval:** 5-fold OOF @ N=200.
+**Not a neural router:** linear model, no hidden layers, no probe/TTA features in **x**.
 
-**Offline labels only:** pilot VBench for 12 configs (not router inputs).
+---
+
+### B. Router 1 — video/caption (**20.8%** captured) · `video_caption_only`
+
+| | |
+|--|--|
+| **Input x(v)** | **9 scalars** from `video_features.csv` |
+| **From raw video?** | **Yes — pixels + caption**, no LongCat VAE profile |
+| **Compression** | None (already low-dim hand stats) |
+
+**How x(v) is built** (`extract_video_features_for_tta.py`, frames **[0:48)**):
+
+| # | Feature | Computation |
+|---|---------|-------------|
+| 3 | Cuts | PySceneDetect + histogram cut counts, density |
+| 3 | Caption↔video | CLIP text–image similarity (mean, var, min) |
+| 1 | Motion | DINO temporal L2 on pixels |
+| 2 | Texture | Laplacian variance, RGB histogram entropy |
+
+**Deploy:** mp4 + caption → compute 9 stats → ridge → **one** AdaSteer.
+
+---
+
+### C. Router 2 — VAE pooled profile (**9.7%** captured) · `vae_inference_embedding`
+
+| | |
+|--|--|
+| **Input x(v)** | **130 scalars** from `vae_latent_profile_features.csv` |
+| **From raw video?** | **Yes — input pixels [0:48)** via LongCat VAE, **not** GT eval frames [48:62) |
+| **Compression** | **Hand pooling** of full latent tensor (~10⁵–10⁶ values → 130 summaries) |
+
+**How x(v) is built** (`extract_vae_latent_profile_features.py`):
+
+1. `encode_video` on visible pixels → latent **[1, C, T, H, W]** (same path as inference).
+2. Split latent into **context / target / full** regions (within [0:48), TTA split — not eval GT).
+3. Pool each region: per-channel **mean & std**, **token-norm** stats, **temporal-delta** stats, ctx/tgt **energy ratios** → **130 numbers**.
+
+**Deploy:** mp4 → VAE encode (already required) → cache 130-d profile → ridge → **one** AdaSteer.
+
+**Note:** We do **not** feed the million-element latent to ridge; fixed summarization keeps N=200 tractable.
+
+---
+
+**Headline for PI comparisons (Slide 6):** Router 1 (Block A). Router 2 (Block C) is the VAE-embedding ablation on Slide 7.
 
 ---
 
 ## Slide 6 — Main result: comparison with AdaState
 
-**Presentation anchor.** **Our router row = Block A only** (20.8% run).
+**Presentation anchor.** **Our router** = **video/caption variant only** (Block A, **20.8%**). VAE-pooled variant (9.7%) is ablation only (Slides 5C, 7).
 
 | Method | Δ vs **NOTTA** (base **0.772**) | Δ vs **fixed AdaSteer** (base **0.773**) | **% oracle headroom recovered** | 1× AdaSteer? |
 |--------|--------------------------------|------------------------------------------|--------------------------------|--------------|
 | Fixed AdaSteer (S10) @ 999v | **+0.001 (+0.13%)** | — | **0%** | Yes |
-| **Our router — Block A** | **+0.030 (+3.9%)** | **+0.029 (+3.8%)** | **20.8%** | **Yes** |
+| **Our router** (video/caption, 9-d ridge) | **+0.030 (+3.9%)** | **+0.029 (+3.8%)** | **20.8%** | **Yes** |
 | **AdaState** (literature)† | **+0.026 (+3.4%)** | N/A (different base) | — | Yes (different stack) |
 | Config oracle (pilot) | **+0.141 (+18.3%)** | **+0.140 (+18.1%)** | **100%** | No (12 configs) |
 
 †AdaState **+3.4%** vs **their** no-TTA base — not our NOTTA 0.772.
 
 **Takeaway:**
-- **Block A routing works:** **20.8%** of oracle gap · **~30×** relative lift vs fixed-vs-NOTTA (+3.8% vs +0.13%).
-- **vs AdaState (honest):** Similar **relative** scale (**+3.9%** vs NOTTA vs **+3.4%**) — different mechanism; do **not** claim we beat AdaState.
-- **Internal >25% bar:** not met (20.8%) — closest honest result so far.
+- **Config routing works:** **20.8%** of oracle gap · **~30×** relative lift vs fixed-vs-NOTTA (+3.8% vs +0.13%).
+- **vs AdaState (honest):** Similar **relative** scale (**+3.9%** vs NOTTA vs **+3.4%**) — we route **step×LR** from cheap video stats; AdaState does **pathwise correction** — do **not** claim we beat AdaState.
+- **VAE-pooled router** (same ridge, 130-d): **9.7%** — does **not** beat this row (Slide 7).
+- **Internal >25% bar:** not met (20.8%).
 
 ---
 
@@ -127,12 +173,13 @@ Input video (+ caption)  →  Block A features x(v)  →  ridge  →  ONE AdaSte
 
 ## Slide 8 — AdaState: mechanism & apples-to-oranges
 
-| | Fixed AdaSteer | **Our router (Block A)** | **AdaState** |
-|--|----------------|--------------------------|--------------|
-| **Mechanism** | One config for all | Per-video step×LR from 9-d video/caption stats | Pathwise correction |
-| **Pre-adapt cost** | None | Cheap CLIP/DINO/cut stats on clip | Their stack |
+| | Fixed AdaSteer | **Our router** (video/caption, Slide 6) | **AdaState** |
+|--|----------------|----------------------------------------|--------------|
+| **Mechanism** | One config for all | **12 ridge models** → argmax predicted VBench → one AdaSteer | Pathwise correction during sampling |
+| **Router model** | — | Linear ridge (shared architecture; Slide 5A) | Their adaptive stack |
+| **Input x(v)** | — | 9-d CLIP/cuts/DINO on pixels + caption | Their generator features |
 | **Reported lift** | +0.001 (+0.13%) vs NOTTA | **+0.029 (+3.8%) vs fixed** | **+0.026 (+3.4%) vs their base** |
-| **Comparable?** | Baseline | **Primary result** | Partial — different base |
+| **Comparable?** | Baseline | **Headline result** | Partial — different base & method |
 
 ---
 
