@@ -126,28 +126,29 @@ Both experiments use the **same router architecture** (`run_budget_config_task`)
 
 ---
 
-**Headline for PI comparisons (Slide 6):** Router 1 (Block A). Router 2 (Block C) is the VAE-embedding ablation on Slide 7.
+**Headline for PI comparisons (Slide 6):** Router 1 (Block A) is best; Router 2 (Block C) shown for context on Slide 6.
 
 ---
 
 ## Slide 6 — Main result: comparison with AdaState
 
-**Presentation anchor.** **Our router** = **video/caption variant only** (Block A, **20.8%**). VAE-pooled variant (9.7%) is ablation only (Slides 5C, 7).
+**Presentation anchor.** Both **our routers** (same ridge model, Slide 5) vs fixed AdaSteer and AdaState. **Headline = video/caption @ 20.8%.**
 
 | Method | Δ vs **NOTTA** (base **0.772**) | Δ vs **fixed AdaSteer** (base **0.773**) | **% oracle headroom recovered** | 1× AdaSteer? |
 |--------|--------------------------------|------------------------------------------|--------------------------------|--------------|
 | Fixed AdaSteer (S10) @ 999v | **+0.001 (+0.13%)** | — | **0%** | Yes |
 | **Our router** (video/caption, 9-d ridge) | **+0.030 (+3.9%)** | **+0.029 (+3.8%)** | **20.8%** | **Yes** |
+| Our router (VAE pooled, 130-d ridge) | **+0.015 (+1.9%)** | **+0.014 (+1.8%)** | **9.7%** | Yes |
 | **AdaState** (literature)† | **+0.026 (+3.4%)** | N/A (different base) | — | Yes (different stack) |
 | Config oracle (pilot) | **+0.141 (+18.3%)** | **+0.140 (+18.1%)** | **100%** | No (12 configs) |
 
 †AdaState **+3.4%** vs **their** no-TTA base — not our NOTTA 0.772.
 
 **Takeaway:**
-- **Config routing works:** **20.8%** of oracle gap · **~30×** relative lift vs fixed-vs-NOTTA (+3.8% vs +0.13%).
-- **vs AdaState (honest):** Similar **relative** scale (**+3.9%** vs NOTTA vs **+3.4%**) — we route **step×LR** from cheap video stats; AdaState does **pathwise correction** — do **not** claim we beat AdaState.
-- **VAE-pooled router** (same ridge, 130-d): **9.7%** — does **not** beat this row (Slide 7).
-- **Internal >25% bar:** not met (20.8%).
+- **Config routing works:** best router captures **20.8%** of oracle gap · **~30×** relative lift vs fixed-vs-NOTTA (+3.8% vs +0.13%).
+- **vs AdaState (honest):** Video/caption router is similar **relative** scale (**+3.9%** vs NOTTA vs **+3.4%**) — different mechanism; do **not** claim we beat AdaState.
+- **VAE-pooled router:** same ridge, weaker signal (**9.7%** / **+1.8%** vs fixed) — validates that cheap video stats beat latent pooling alone in this pilot.
+- **Internal >25% bar:** not met (20.8% best).
 
 ---
 
@@ -225,8 +226,8 @@ NOTTA ──► Fixed S10 ──► Our router (Block A) ──► AdaState (ref
 **Q: What are the two input variants?**  
 **Router 1 (headline):** 9-d video/caption stats → **20.8%**. **Router 2 (ablation):** 130-d **pooled** LongCat-VAE profile (not raw latent) → **9.7%**. Same ridge, different **x(v)**.
 
-**Q: Which run is in the AdaState table?**  
-**Router 1 only** (video/caption, 20.8%). VAE variant is not in Slide 6.
+**Q: Which runs are in the AdaState table?**  
+**Both routers:** video/caption (**20.8%**, headline) and VAE pooled (**9.7%**). Same ridge model (Slide 5A).
 
 **Q: How are percentages computed?**  
 **% = Δ / baseline VB total** (NOTTA **0.772**, fixed **0.773** @ 999v).
