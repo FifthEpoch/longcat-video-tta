@@ -619,3 +619,13 @@ Re-ran OOF ridge config picker with **only** `vae_latent_profile_features.csv` (
 **Refs:** `run_deploy_strict_router_experiments.py`, `submit_deploy_strict_router.sh`, `paper_tables/2026-07-06_deploy_strict_router_PENDING.md`
 
 User tightened deploy bar: router input = **only** the LongCat-VAE latent profile already computed for inference (`vae_latent_profile_features.csv`, ~130-d). **No** video_features.csv (CLIP/DINO/cuts), **no** Tier-3/OOD/probe/TTA-side metrics. Offline ridge labels still use pilot 12-config VBench matrix (calibration only). CPU eval: `vae_inference_embedding`. **Results pending** cluster run after push.
+
+---
+
+## 2026-07-07 — Cross-metric router eval (PSNR/SSIM/LPIPS/FVD) — script added, pending run
+**Tags:** methodology, routing, metrics, pending
+**Refs:** `scripts/analyze_deploy_router_aux_metrics.py`, `submit_deploy_router_aux_metrics.sh`, `paper_tables/2026-07-07_deploy_router_aux_metrics_PENDING.md`
+
+User asked whether VBench-trained routers (Block A @ 20.8%, Block C @ 9.7%) also move **PSNR/SSIM/LPIPS** when we apply the OOF-predicted config per video. Added CPU script: re-run OOF ridge → lookup per-video metrics from existing `panda_ood_budget_pilot` outputs (no new generation). Reports mean policy vs fixed/NOTTA/oracles + **metric-specific captured %** + Spearman ρ(VBench gain, ΔPSNR). **FVD/FID:** per-video lookup invalid; script builds symlink policy dirs + optional `eval_fvd.py` (`RUN_FVD=1`). **Results pending** cluster CPU job; FVD pending mp4 availability.
+
+**Decision:** Run CPU analysis first; if VBench captured % ≫ PSNR captured %, narrative = router optimizes perceptual VBench dims, not pixel fidelity. FVD row is the honest distributional check vs fixed S10.
