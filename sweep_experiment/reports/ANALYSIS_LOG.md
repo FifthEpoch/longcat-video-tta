@@ -594,13 +594,23 @@ Extracted **130-d** LongCat-VAE latent profiles (full/context/target pools on TT
 
 ---
 
+## 2026-07-07 — Structured blocks A/B/C: video/caption dominates @ 20.8%
+**Tags:** finding, routing, deploy, OOD, positive-result
+**Refs:** `deploy_strict_router/summary.md`, `paper_tables/2026-07-07_deploy_router_structured_blocks.md`
+
+OOF ridge ablation @ N=200 with blocks **A** (9-d video/caption), **B** (12-d diffusion-OOD), **C** (130-d VAE). **A alone: 20.8%** captured (+0.0291 vs fixed). **A+B (OOD allowed): 18.9%** (+0.0265, best match 21.0%). **C alone: 9.7%** (prior headline, now superseded). **B alone: 4.9%**. **A+B+C: 10.1%** (overfit). OOD adds match rate but **does not beat A** on captured headroom.
+
+**Decision:** **Promote Block A (`video_caption_only`) as default deploy router**; use **A+B** when frozen DiT OOD pass is acceptable. Retire VAE-only and 51-d lab bundles for product narrative. Still **below 25%** internal bar but **~2×** prior best honest router.
+
+---
+
 ## 2026-07-07 — Deploy-strict VAE router: 9.7% @ N=200 (headline deploy)
 **Tags:** finding, routing, deploy, VAE, positive-result
 **Refs:** `deploy_strict_router/summary.md`, `paper_tables/2026-07-07_deploy_strict_router_vae_only.md`, commit `1e163b9`+
 
 Re-ran OOF ridge config picker with **only** `vae_latent_profile_features.csv` (130-d, LongCat `encode_video` on input video). **No** CLIP/DINO/OOD/Tier-3/probe/TTA-side metrics. **Result:** **9.7%** oracle headroom captured, **+0.0136 vs fixed S10**, 16.5% oracle-config match — **≥** the 51-d lab router (9.0%, +0.013) with a strictly inference-compatible feature set.
 
-**Decision:** **Promote `vae_inference_embedding` as headline deploy router.** Retire 51-d Phase-0 bundle from product narrative (OOD+Tier-3 added lab complexity without deploy benefit). Revises same-day “CLOSED VAE” entry: null result was **stacked 177-d + probe** (4.2% overfit); **VAE-only is not null**. Internal >25% bar still **not met**. Next: nonlinear router on VAE latents or scale labels — still VAE-only constraint.
+**Decision:** ~~Promote `vae_inference_embedding` as headline deploy router.~~ **Superseded 2026-07-07** by Block A @ 20.8%. VAE-only result stands as ablation (9.7%).
 
 ---
 
