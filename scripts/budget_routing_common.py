@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -28,6 +28,32 @@ from scripts.predictor_analysis_common import join_feature_tables
 FIXED_BUDGET = FIXED_ADA_RUN_ID
 PROBE_RUNS = ("S2_LR5e3", "S10_LR1e3", "S10_LR5e3", "S20_LR1e3")
 BESTOF3_RUNS = ("S2_LR5e3", "S10_LR5e3", "S20_LR1e3")
+
+# Deploy-strict router: pixels + caption stats only (no DiT forwards, no LoRA probes).
+VIDEO_CORE_FEATURES: Tuple[str, ...] = (
+    "cut_count_pyscenedetect",
+    "cut_count_histogram",
+    "cut_density_per_frame",
+    "clip_text_image_sim_mean",
+    "clip_text_image_sim_var",
+    "clip_text_image_sim_min",
+    "dino_temporal_l2_mean",
+    "laplacian_variance_mean",
+    "rgb_histogram_entropy_mean",
+)
+
+# Optional cheap pixel-side stats (separate CSVs; no extra neural nets beyond CLIP/DINO above).
+FAST_PIXEL_FEATURES: Tuple[str, ...] = (
+    "bpp_h264",
+    "bpp_png_avg",
+    "hf_energy_ratio_3d",
+    "hf_energy_ratio_spatial_only",
+)
+
+VAE_RECERR_FEATURES: Tuple[str, ...] = (
+    "rec_err_l1",
+    "rec_err_lpips",
+)
 
 
 def _coerce(v) -> float:
@@ -74,11 +100,95 @@ def load_metric_matrix(
     return Y
 
 
+def join_pilot_feature_tables(
+    feature_date: Path,
+    *,
+    include_video_features: bool = True,
+    fast_pixel: bool = False,
+    vae_latent_profile: bool = False,
+    vae_recerr: bool = False,
+    ood: bool = False,
+    tier3: bool = False,
+    motion: bool = False,
+    loss_var: bool = False,
+    flow: bool = False,
+) -> Tuple[Dict[str, Dict[str, float]], List[str], Dict[str, str]]:
+    """Selectively merge pilot feature CSVs for deploy vs lab routers.
+
+    When ``include_video_features=False``, **only** the explicitly enabled
+    optional CSVs are loaded (e.g. VAE latent profile alone — no CLIP/DINO/bpp).
+    """
+    if include_video_features:
+        return join_feature_tables(
+            features_csv=feature_date / "video_features.csv",
+            ood_csv=(feature_date / "diffusion_ood_scores.csv") if ood else None,
+            tier3_csv=(feature_date / "tier3_probe_features.csv") if tier3 else None,
+            flow_csv=(feature_date / "flow_shape_features.csv") if flow else None,
+            bpp_csv=(feature_date / "bpp_features.csv") if fast_pixel else None,
+            fft_csv=(feature_date / "fft_features.csv") if fast_pixel else None,
+            vae_recerr_csv=(feature_date / "vae_recerr_features.csv") if vae_recerr else None,
+            vae_latent_profile_csv=(
+                feature_date / "vae_latent_profile_features.csv"
+            ) if vae_latent_profile else None,
+            motion_csv=(feature_date / "latent_motion_features.csv") if motion else None,
+            loss_var_csv=(feature_date / "loss_variance_features.csv") if loss_var else None,
+        )
+
+    from scripts.correlate_tta_gain_with_features import load_vae_latent_profile_csv
+
+    merged: Dict[str, Dict[str, float]] = {}
+    feature_names: List[str] = []
+    tiers: Dict[str, str] = {}
+
+    def _merge_source(src: Dict[str, Dict], cols: Iterable[str], tier: str) -> None:
+        for c in cols:
+            if c not in feature_names:
+                feature_names.append(c)
+            tiers[c] = tier
+        for vid, row in src.items():
+            bucket = merged.setdefault(vid, {})
+            for c in cols:
+                bucket[c] = _coerce(row.get(c))
+
+    if vae_latent_profile:
+        path = feature_date / "vae_latent_profile_features.csv"
+        if not path.exists():
+            raise FileNotFoundError(f"vae_latent_profile CSV missing: {path}")
+        rows, cols = load_vae_latent_profile_csv(path)
+        _merge_source(rows, cols, "VAE")
+
+    return merged, feature_names, tiers
+
+
+def filter_feature_names(
+    feat_names: Sequence[str],
+    keep: Sequence[str],
+) -> List[int]:
+    """Column indices whose names appear in *keep* (preserves *keep* order)."""
+    index = {n: i for i, n in enumerate(feat_names)}
+    return [index[n] for n in keep if n in index]
+
+
+def subset_feature_bundle(
+    features: Dict[str, Dict[str, float]],
+    feat_names: Sequence[str],
+    keep: Sequence[str],
+) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
+    """Drop columns not in *keep*; order follows *keep*."""
+    keep_present = [n for n in keep if n in feat_names]
+    out: Dict[str, Dict[str, float]] = {}
+    for vid, row in features.items():
+        out[vid] = {n: row.get(n, float("nan")) for n in keep_present}
+    return out, keep_present
+
+
 def load_pilot_bundle(
     series_root: Path,
     feature_date: Path,
     *,
     min_videos: int = 10,
+    feature_sources: Optional[dict] = None,
+    feature_keep: Optional[Sequence[str]] = None,
 ) -> dict:
     """Load Y (total + per-dim), PSNR/SSIM, Phase-0 features for pilot grid."""
     runs = discover_runs(series_root)
@@ -124,18 +234,25 @@ def load_pilot_bundle(
     psnr = load_metric_matrix(runs, grid_runs, video_ids, "psnr")
     ssim = load_metric_matrix(runs, grid_runs, video_ids, "ssim")
 
-    features, feat_names, _ = join_feature_tables(
-        features_csv=feature_date / "video_features.csv",
-        ood_csv=feature_date / "diffusion_ood_scores.csv",
-        tier3_csv=feature_date / "tier3_probe_features.csv",
-        flow_csv=feature_date / "flow_shape_features.csv",
-        bpp_csv=feature_date / "bpp_features.csv",
-        fft_csv=feature_date / "fft_features.csv",
-        vae_recerr_csv=feature_date / "vae_recerr_features.csv",
-        vae_latent_profile_csv=feature_date / "vae_latent_profile_features.csv",
-        motion_csv=feature_date / "latent_motion_features.csv",
-        loss_var_csv=feature_date / "loss_variance_features.csv",
-    )
+    if feature_sources is None:
+        features, feat_names, _ = join_feature_tables(
+            features_csv=feature_date / "video_features.csv",
+            ood_csv=feature_date / "diffusion_ood_scores.csv",
+            tier3_csv=feature_date / "tier3_probe_features.csv",
+            flow_csv=feature_date / "flow_shape_features.csv",
+            bpp_csv=feature_date / "bpp_features.csv",
+            fft_csv=feature_date / "fft_features.csv",
+            vae_recerr_csv=feature_date / "vae_recerr_features.csv",
+            vae_latent_profile_csv=feature_date / "vae_latent_profile_features.csv",
+            motion_csv=feature_date / "latent_motion_features.csv",
+            loss_var_csv=feature_date / "loss_variance_features.csv",
+        )
+    else:
+        features, feat_names, _ = join_pilot_feature_tables(
+            feature_date, **feature_sources,
+        )
+    if feature_keep is not None:
+        features, feat_names = subset_feature_bundle(features, feat_names, feature_keep)
 
     return {
         "series_root": series_root,
