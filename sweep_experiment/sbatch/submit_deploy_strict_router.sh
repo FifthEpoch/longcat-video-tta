@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Re-score budget router: VAE inference embedding ONLY (CPU @ N=200).
+# Re-score deploy routers with structured feature blocks (CPU @ N=200).
 #
-# Router input: vae_latent_profile_features.csv ONLY (~130-d from encode_video).
-# NO video_features, NO OOD/Tier-3/probe/TTA metrics.
+# Blocks: A=video/caption (9) · B=diffusion-OOD (~20) · C=VAE profile (~130)
+# Headline when OOD allowed: video_caption_ood (A+B, ~29-d)
 #
-# Prereqs:
-#   .../2026-07-06/vae_latent_profile_features.csv
-#   sweep_experiment/results/panda_ood_budget_pilot/  (12-config VBench — labels only)
+# Prereqs: video_features.csv, diffusion_ood_scores.csv, pilot VBench results
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-/scratch/${USER}/longcat-video-tta}"
