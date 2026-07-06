@@ -582,3 +582,13 @@ Ran 7 CPU experiments on pilot N=200 before bed. **Best deployable:** exp16 kNN 
 
 **Decision:** **NO-GO** Wave-2 GPU tonight (VideoAlign / CFG-gap / 999v retrain). Auto `wave1_decision.json` falsely GO'd on ceiling exp — corrected in script to split deployable vs ceiling. Paper line unchanged: oracle headroom real (+0.14 mean); honest offline routing ~13%; GT-probe ceiling ~17–18%.
 
+---
+
+## 2026-07-06 — VAE latent profile routing: null @ N=200 (overfit when stacked)
+**Tags:** finding, negative-result, routing, H9, VAE
+**Refs:** `vae_latent_profile_features.csv`, `vae_latent_profile_router/summary.md`, commit `766f48e`
+
+Extracted **130-d** LongCat-VAE latent profiles (full/context/target pools on TTA-visible [0:48)) and re-ran OOF ridge budget router vs exp7 baseline. **baseline_exp7:** 12.8% (sanity match). **vae_profile_probe** (130 VAE + probe only): **12.2%** (−0.6pp). **vae_profile_full** (Phase-0 + VAE + probe, 177 feats): **4.2%** (−8.6pp) — classic small-N overfit; more dims hurt.
+
+**Decision:** **CLOSED** VAE hand-pooling path for total-VBench routing. Do not scale 999v VAE-profile extraction for routing. Remaining honest ceiling is still **probe outputs scored by a learned quality model** (exp10/exp14_full ~17–18%), not richer latent CSVs.
+
