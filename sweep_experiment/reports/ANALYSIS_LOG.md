@@ -594,6 +594,16 @@ Extracted **130-d** LongCat-VAE latent profiles (full/context/target pools on TT
 
 ---
 
+## 2026-07-07 — Deploy-strict VAE router: 9.7% @ N=200 (headline deploy)
+**Tags:** finding, routing, deploy, VAE, positive-result
+**Refs:** `deploy_strict_router/summary.md`, `paper_tables/2026-07-07_deploy_strict_router_vae_only.md`, commit `1e163b9`+
+
+Re-ran OOF ridge config picker with **only** `vae_latent_profile_features.csv` (130-d, LongCat `encode_video` on input video). **No** CLIP/DINO/OOD/Tier-3/probe/TTA-side metrics. **Result:** **9.7%** oracle headroom captured, **+0.0136 vs fixed S10**, 16.5% oracle-config match — **≥** the 51-d lab router (9.0%, +0.013) with a strictly inference-compatible feature set.
+
+**Decision:** **Promote `vae_inference_embedding` as headline deploy router.** Retire 51-d Phase-0 bundle from product narrative (OOD+Tier-3 added lab complexity without deploy benefit). Revises same-day “CLOSED VAE” entry: null result was **stacked 177-d + probe** (4.2% overfit); **VAE-only is not null**. Internal >25% bar still **not met**. Next: nonlinear router on VAE latents or scale labels — still VAE-only constraint.
+
+---
+
 ## 2026-07-06 — Deploy-strict router: VAE inference embedding ONLY (pending)
 **Tags:** methodology, routing, deploy, VAE, pending
 **Refs:** `run_deploy_strict_router_experiments.py`, `submit_deploy_strict_router.sh`, `paper_tables/2026-07-06_deploy_strict_router_PENDING.md`

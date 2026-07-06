@@ -6,7 +6,7 @@
 
 **Metric convention (used throughout):** Routing gains are reported vs **NOTTA** and vs **fixed AdaSteer**. Internal routing score = fraction of per-video config-oracle headroom recovered (oracle mean **+0.140** VBench total vs fixed S10 @ N=200). Absolute VBench deltas are always shown alongside.
 
-**Our router (throughout this deck):** **Video-only Phase-0 linear ridge** — **51 input features** per video (`baseline_linear_total`; see Slide 5). Pick (steps, LR), then run **one** AdaSteer pass.
+**Our router (throughout this deck):** **VAE inference embedding** — **130 input features** from `vae_latent_profile_features.csv` only (`vae_inference_embedding`; see Slide 5). Reuses LongCat `encode_video` on the input clip → ridge pick config → **one** AdaSteer pass. **No** CLIP/OOD/Tier-3/probe/TTA-side metrics.
 
 ---
 
@@ -15,7 +15,7 @@
 **VBench++ Config Routing for AdaSteer**  
 *Pick step×LR from the input video, then run AdaSteer once*
 
-**Purpose (last week → this week):** Last week we ran the N=200 OOD budget pilot to measure config-oracle headroom (+0.140 vs fixed S10) and screen **video-only** config routers; this week we closed weaker Phase-0 predictor variants (tail gates, VAE pools, per-dim fusion) and identified the **Phase-0 linear ridge** as our deployable router baseline (**9%** oracle headroom, **+0.013 vs fixed**).
+**Purpose (last week → this week):** Last week we ran the N=200 OOD budget pilot (+0.140 config-oracle headroom vs fixed S10) and screened video-side routers; this week we tightened the deploy bar to **VAE inference embedding only** (130-d, same `encode_video` as LongCat). **Headline result:** **9.7%** oracle headroom recovered, **+0.0136 vs fixed S10** — matches the heavier 51-d lab router without OOD/Tier-3/probe inputs.
 
 ---
 
@@ -80,43 +80,35 @@ We always compare against two deployable references:
 
 **Why not deployable:** Requires running (or perfectly predicting) **all 12 configs** at inference. Offline upper bound only.
 
-**How we score our router:** Fraction of this gap recovered by a **video-only, single-run** policy — our router achieves **9%** → **+0.013 VBench total vs fixed**.
+**How we score our router:** Fraction of this gap recovered by a **single-run** policy from **inference-path VAE features only** — our router achieves **9.7%** → **+0.0136 VBench total vs fixed**.
 
 ---
 
-## Slide 5 — Our router (video-only Phase-0 linear ridge)
+## Slide 5 — Our router (VAE inference embedding)
 
 ### Deploy workflow
 
 ```
-Input video (+ caption)  →  extract video-only features x(v)  →  router f(x)  →  ONE AdaSteer run
+Input video  →  encode_video (LongCat VAE)  →  latent profile x(v)  →  router f(x)  →  ONE AdaSteer run
 ```
 
-**Rules:** No AdaSteer / TTA before the config is chosen. No probe runs, no ΔPSNR/ΔSSIM from partial TTA.
+**Rules:** No AdaSteer / TTA before the config is chosen. No probe runs. No DiT OOD forwards. No Tier-3 LoRA probes. **Only** pooled statistics of the VAE latent tensor you already compute for inference.
 
-**Offline training** uses the 12-config pilot sweep once to learn which config would have won VBench — label cost is lab-only, not per deploy.
+**Offline training** uses the 12-config pilot sweep once to fit ridge weights — label cost is lab-only, not per deploy.
 
 ---
 
-### Input — **x(v) ∈ ℝ^51** (video-only, exact)
+### Input — **x(v) ∈ ℝ^130** (VAE inference path only)
 
-One feature vector per video from `join_feature_tables` (`baseline_linear_total`; pilot feature date **2026-07-06**). Built from the **TTA-visible input clip + caption** before any AdaSteer run. **No NOTTA/AdaSteer evaluation metrics. No probe TTA. No ΔPSNR/ΔSSIM.**
+One feature vector per video from `vae_latent_profile_features.csv` (`extract_vae_latent_profile_features.py`; pilot date **2026-07-06**). Built from **TTA-visible pixels [0:48)** via the same `encode_video` path as AdaSteer. Pooled full / context / target latent regions (~130 scalars).
 
-| Block | # dims | Source CSV / script |
-|-------|--------|---------------------|
-| Core video + caption | 9 | `video_features.csv` — cuts, CLIP sim, DINO temporal, Laplacian, RGB entropy |
-| Diffusion-OOD (frozen base DiT) | 20 | `diffusion_ood_scores.csv` — 3 timesteps × (caption/uncond loss + score norm) + 8 summaries |
-| Tier-3 mini LoRA probe | 8 | `tier3_probe_features.csv` — grad-norm + loss-drop @ 3 timesteps + means |
-| Flow shape | 4 | `flow_shape_features.csv` |
-| Compression / spectrum | 4 | `bpp_features.csv` (2) + `fft_features.csv` (2) |
-| VAE rec-error | 2 | `vae_recerr_features.csv` |
-| Latent motion | 2 | `latent_motion_features.csv` |
-| Loss variance | 2 | `loss_variance_features.csv` |
-| **Total** | **51** | `submit_pilot_router_features.sh` pipeline |
+| Block | # dims | Source |
+|-------|--------|--------|
+| LongCat-VAE latent profile | **130** | `vae_latent_profile_features.csv` — ctx/tgt/full channel + token-norm + temporal-delta pools |
 
-*Note:* `vae_latent_profile_features.csv` is **not** in this pipeline; if added separately, dimension jumps to **169** — that is **not** the router reported @ 9%.
+**Not used:** `video_features.csv`, OOD, Tier-3, bpp/FFT, motion, probe metrics, NOTTA/AdaSteer eval outputs.
 
-**In flight (deploy-strict rerun):** Re-score with **`vae_latent_profile_features.csv` ONLY** (~130-d, same `encode_video` as inference). **No** CLIP/DINO/bpp/OOD/Tier-3/probe/TTA metrics. Script: `run_deploy_strict_router_experiments.py` · `submit_deploy_strict_router.sh` · experiment id: `vae_inference_embedding`.
+*Lab ablation (superseded for deploy):* 51-d Phase-0 bundle (`baseline_linear_total`) reached **9.0%** / +0.013 but required OOD DiT + Tier-3 LoRA — **not** inference-only.
 
 ---
 
@@ -141,13 +133,13 @@ f(\mathbf{x}) \in \{\texttt{S2\_LR1e3}, \ldots, \texttt{S20\_LR1e2}\}
 | **Deploy rule** | \(\hat c = \arg\max_c \widehat{\text{VB}}_c\) |
 | **Evaluation** | **5-fold out-of-fold (OOF):** train on 160, predict on held-out 40; rotate — no leakage |
 
-**Result @ N=200:** **9.0%** oracle headroom recovered · **+0.013 vs fixed S10** · **~+0.014 vs NOTTA** · 18.0% oracle-config match rate.
+**Result @ N=200:** **9.7%** oracle headroom recovered · **+0.0136 vs fixed S10** · **~+0.014 vs NOTTA** · 16.5% oracle-config match rate.
 
 ---
 
 ### Literature (inspiration, not a copied method)
 
-Per-instance **algorithm selection**: predict which hyperparameter config wins from **instance features** alone (SATzilla / AutoFolio / Hutter et al.-style performance models). Our instantiation is custom: **AdaSteer step×LR grid**, **VBench++ total** objective, **Phase-0 video feature battery**, **single-run** deploy constraint.
+Per-instance **algorithm selection**: predict which hyperparameter config wins from **instance features** alone (SATzilla / AutoFolio / Hutter et al.-style performance models). Our instantiation: **AdaSteer step×LR grid**, **VBench++ total** objective, **inference VAE latent profile**, **single AdaSteer** deploy constraint.
 
 ---
 
@@ -156,37 +148,38 @@ Per-instance **algorithm selection**: predict which hyperparameter config wins f
 | Method | Δ vs **NOTTA** | Δ vs **fixed AdaSteer** | **% oracle headroom recovered** | 1× AdaSteer? |
 |--------|----------------|-------------------------|--------------------------------|--------------|
 | Fixed AdaSteer (S10) @ 999v | +0.001 (~+0.13%) | — | **0%** | Yes |
-| **Our router (Phase-0 linear, OOF)** | **~+0.014 (~1.8%)** | **+0.013 (~1.7%)** | **9%** | **Yes** |
+| **Our router (VAE inference embedding, OOF)** | **~+0.014 (~1.8%)** | **+0.0136 (~1.7%)** | **9.7%** | **Yes** |
 | **AdaState** (literature) | ~+0.026 (~+3.4%)† | N/A | — | Yes (different stack) |
 | Config oracle (pilot) | ~+0.141 | +0.140 | **100%** | No (12 configs) |
 
 †AdaState: vs their base generator, not our NOTTA. **% oracle headroom** = (method − fixed S10) / (config oracle − fixed S10); oracle mean gap = **+0.140** VBench total @ N=200.
 
-**Takeaway:** Oracle headroom (+0.140) shows routing *could* matter a lot. **Our video-only router** already beats fixed S10 by **+0.013** with **one** AdaSteer run — modest but real; still **below** AdaState-scale gains.
+**Takeaway:** Oracle headroom (+0.140) shows routing *could* matter a lot. **Our VAE-only router** beats fixed S10 by **+0.0136** with **one** AdaSteer run and **no extra inference beyond VAE encode** — modest but real; still **below** AdaState-scale gains and internal **>25%** bar.
 
 ---
 
 ## Slide 7 — Experimental setup
 
 - **200 OOD-stratified videos** × **12 AdaSteer configs** (offline labels)
-- **Router input:** video-only Phase-0 features (**51-d**, `baseline_linear_total`)
+- **Router input:** LongCat-VAE latent profile only (**130-d**, `vae_inference_embedding`)
 - **Objective:** VBench total (7-dim mean)
 - **Evaluation:** 5-fold **out-of-fold** routing
-- **Success bar (internal):** >25% oracle headroom with bootstrap CI excluding 0 — **not met** (9%)
-- **Our router:** `baseline_linear_total` — best honest **video-only** variant @ N=200
+- **Success bar (internal):** >25% oracle headroom with bootstrap CI excluding 0 — **not met** (9.7%)
+- **Our router:** `vae_inference_embedding` — best **inference-path-only** variant @ N=200
 
-**Sample-size caveat:** 200 clips sufficient for honest OOF; richer feature stacks (177-d VAE pool) **overfit** (4.2% when stacked). Phase-0 correlation screen (H1–H8): no single feature clears \|ρ\|≥0.2 on both ADA and LoRA.
+**Sample-size caveat:** 200 clips sufficient for honest OOF. Stacking 177-d VAE+Phase-0+probe **overfit** (4.2%). **Deploy-strict VAE-only (130-d) does not overfit** — 9.7% vs 9.0% for the heavier 51-d lab bundle.
 
 ---
 
 ## Slide 8 — Video-only routing variants (ranked)
 
-All rows: **input video only**, **one AdaSteer run** at deploy.
+All rows: **inference-path features only**, **one AdaSteer run** at deploy.
 
 | Method | Oracle headroom recovered | Δ vs fixed |
 |--------|---------------------------|------------|
 | Fixed AdaSteer (reference) | 0% | — |
-| **Our router — Phase-0 linear ridge** | **9%** | **+0.013** |
+| **Our router — VAE inference embedding** | **9.7%** | **+0.0136** |
+| Lab Phase-0 linear (51-d, OOD+Tier-3) | 9.0% | +0.013 |
 | Phase-0 shallow MLP | 7–8% | +0.010–0.011 |
 | Phase-0 kNN (exp6) | 1.2% | ~+0.002 |
 | Pairwise top-4 classifiers | negative | hurts vs fixed |
@@ -201,11 +194,13 @@ Everything screened @ N=200. Rows marked **†** required extra TTA passes or fu
 
 | Line | What we tried | Outcome |
 |------|---------------|---------|
-| **Our router — Phase-0 linear** | Video-only ridge → 12-way pick | **Best video-only: 9%, +0.013 vs fixed** |
-| Phase-0 MLP / coarse grid | Nonlinear / binned video-only | **Weak:** 7–8% |
-| exp6 kNN (Phase-0 only) | Memory-based video-only | **Fail:** 1.2% |
-| Pairwise / best-of-3 NR | Video-only or proxy classifiers | **Fail:** negative |
-| VAE latent profile (video-only) | Richer frozen-VAE features | **Null / overfit:** 4–12% |
+| **Our router — VAE inference embedding** | VAE latent profile → 12-way ridge | **Best deploy: 9.7%, +0.0136 vs fixed** |
+| Lab Phase-0 linear (51-d) | OOD DiT + Tier-3 + aux | 9.0%, +0.013 — **not inference-only** |
+| Phase-0 MLP / coarse grid | Nonlinear / binned | **Weak:** 7–8% |
+| exp6 kNN (Phase-0 only) | Memory-based | **Fail:** 1.2% |
+| Pairwise / best-of-3 NR | Proxy classifiers | **Fail:** negative |
+| VAE + probe (`vae_profile_probe`) | VAE + AdaSteer probe metrics | 12.2% — **not deploy-strict** |
+| VAE stacked w/ Phase-0+probe | 177-d | **Overfit:** 4.2% |
 | Per-dim / tail / quintile gates | Video-only gating variants | **Fail:** ≤8% on total |
 | Panda / UCF retrieval | Neighbour-batch TTA | **Null:** SIM≈RAND |
 | 999v × 12 routing retrain | Scale video-only router | **NO-GO** |
@@ -218,11 +213,11 @@ Everything screened @ N=200. Rows marked **†** required extra TTA passes or fu
 
 | | Fixed AdaSteer | **Our router** | AdaState |
 |--|----------------|----------------|----------|
-| Mechanism | One config for all | Video-only features → pick config → **one** AdaSteer run | Pathwise correction during generation |
-| Δ VBench total (vs relevant base) | +0.001 vs NOTTA | **+0.013 vs fixed** | **~+0.026 vs their base** |
+| Mechanism | One config for all | VAE profile → pick config → **one** AdaSteer | Pathwise correction during generation |
+| Δ VBench total (vs relevant base) | +0.001 vs NOTTA | **+0.0136 vs fixed** | **~+0.026 vs their base** |
 | Inference cost | 1× AdaSteer | **1× AdaSteer** | 1× (different stack) |
 
-**Say:** Our router adds a **real but modest** population lift over fixed AdaSteer without extra TTA passes. Oracle (+0.140) shows headroom remains; closing it needs **better video-only predictors**, not multi-pass probing.
+**Say:** Our router adds a **real but modest** population lift over fixed AdaSteer using **only the VAE encode you already pay for** — no OOD/Tier-3/probe. Oracle (+0.140) shows headroom remains; closing it needs **better latent-side predictors**, not multi-pass probing.
 
 **Do not say:** “We beat AdaState” or “routing matches AdaState today.”
 
@@ -231,25 +226,26 @@ Everything screened @ N=200. Rows marked **†** required extra TTA passes or fu
 ## Slide 11 — Opportunity size
 
 ```
-NOTTA ──► Fixed S10 ──► Our router (video-only) ──► Config oracle
-         +0.001          +0.013 vs fixed              +0.140 vs fixed
-                         (9% of oracle gap)
+NOTTA ──► Fixed S10 ──► Our router (VAE-only) ──► Config oracle
+         +0.001          +0.0136 vs fixed              +0.140 vs fixed
+                         (9.7% of oracle gap)
 ```
 
 - Our router vs NOTTA: **~+0.014** — beats fixed S10 on both baselines, but **not** AdaState-scale (~+0.026)
-- Oracle vs fixed: **~11×** our router’s gain — routing **problem** is real; **video-only prediction** is the bottleneck
-- Internal bar (>25% headroom): **not met** at 9%; honest negative on scale-up to 999v×12 as well
+- Oracle vs fixed: **~10×** our router’s gain — routing **problem** is real; **latent-side prediction** is the bottleneck
+- Internal bar (>25% headroom): **not met** at 9.7%; honest negative on scale-up to 999v×12 as well
 
 ---
 
-## Slide 12 — Next steps (video-only router)
+## Slide 12 — Next steps (VAE inference router)
 
 | Item | Status |
 |------|--------|
-| Stronger Phase-0 features (raw-video verifiers, better motion/IQ proxies) | Open |
-| Nonlinear video-only router (MLP / small GBM) with strict OOF | Partially tried — marginal |
-| Scale routing labels 500–1K (same video-only constraint) | Not started |
+| Learned head on VAE latents (small MLP / GBM, strict OOF) | Open |
+| Scale routing labels 500–1K (same VAE-only constraint) | Not started |
+| 999v × 12 routing retrain with VAE-only features | Not started |
 | Probe-and-route / verifier-on-probe lines | **Deprioritized** — violate single-run constraint |
+| Heavier Phase-0 battery (OOD/Tier-3) | **Deprioritized** — no deploy gain vs VAE-only @ N=200 |
 
 ---
 
