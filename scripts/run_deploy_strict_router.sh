@@ -12,6 +12,7 @@ cd "$REPO"
 python3 scripts/run_deploy_strict_router_experiments.py \
   --series-root "$REPO/sweep_experiment/results/panda_ood_budget_pilot" \
   --feature-date "$REPO/sweep_experiment/reports/per_video_analysis/${FEATURE_DATE}" \
-  --output-dir "$OUT"
+  --output-dir "$OUT" \
+  --run-all
 
 echo "Done: $OUT/summary.md"

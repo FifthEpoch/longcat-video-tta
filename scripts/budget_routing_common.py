@@ -55,6 +55,88 @@ VAE_RECERR_FEATURES: Tuple[str, ...] = (
     "rec_err_lpips",
 )
 
+# Ordered deploy router blocks (see run_deploy_strict_router_experiments.py).
+DEPLOY_BLOCK_VIDEO_CORE = "video_caption"
+DEPLOY_BLOCK_OOD = "diffusion_ood"
+DEPLOY_BLOCK_VAE = "vae_inference"
+
+
+def load_video_core_features(
+    feature_date: Path,
+) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
+    """9-d video + caption stats from ``video_features.csv`` only."""
+    from scripts.predictor_analysis_common import load_features_csv
+
+    base = load_features_csv(feature_date / "video_features.csv")
+    cols = [c for c in VIDEO_CORE_FEATURES if any(c in r for r in base.values())]
+    out: Dict[str, Dict[str, float]] = {}
+    for vid, row in base.items():
+        out[vid] = {c: _coerce(row.get(c)) for c in cols}
+    return out, cols
+
+
+def load_ood_features(
+    feature_date: Path,
+) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
+    """~20-d diffusion-OOD block (Slide 2 / ``compute_diffusion_ood_score.py``)."""
+    from scripts.correlate_tta_gain_with_features import load_ood_csv
+
+    path = feature_date / "diffusion_ood_scores.csv"
+    if not path.exists():
+        raise FileNotFoundError(f"OOD CSV missing: {path}")
+    rows, cols = load_ood_csv(path)
+    out: Dict[str, Dict[str, float]] = {}
+    for vid, row in rows.items():
+        out[vid] = {c: _coerce(row.get(c)) for c in cols}
+    return out, cols
+
+
+def merge_feature_blocks(
+    *blocks: Tuple[Dict[str, Dict[str, float]], List[str], str],
+) -> Tuple[Dict[str, Dict[str, float]], List[str], Dict[str, str]]:
+    """Concatenate feature blocks in order; ``blocks`` = (rows, cols, tier)."""
+    merged: Dict[str, Dict[str, float]] = {}
+    feature_names: List[str] = []
+    tiers: Dict[str, str] = {}
+    for rows, cols, tier in blocks:
+        for c in cols:
+            if c not in feature_names:
+                feature_names.append(c)
+            tiers[c] = tier
+        for vid, row in rows.items():
+            bucket = merged.setdefault(vid, {})
+            for c in cols:
+                bucket[c] = row.get(c, float("nan"))
+    return merged, feature_names, tiers
+
+
+def build_deploy_feature_keep(
+    feature_date: Path,
+    *,
+    video_core: bool = False,
+    ood: bool = False,
+    vae_latent_profile: bool = False,
+) -> Tuple[List[str], Dict[str, List[str]]]:
+    """Return ordered feature list + block → column names for reporting."""
+    blocks: Dict[str, List[str]] = {}
+    order: List[str] = []
+    if video_core:
+        _, cols = load_video_core_features(feature_date)
+        blocks[DEPLOY_BLOCK_VIDEO_CORE] = cols
+        order.extend(cols)
+    if ood:
+        _, cols = load_ood_features(feature_date)
+        blocks[DEPLOY_BLOCK_OOD] = cols
+        order.extend(cols)
+    if vae_latent_profile:
+        from scripts.correlate_tta_gain_with_features import load_vae_latent_profile_csv
+
+        path = feature_date / "vae_latent_profile_features.csv"
+        _, cols = load_vae_latent_profile_csv(path)
+        blocks[DEPLOY_BLOCK_VAE] = cols
+        order.extend(cols)
+    return order, blocks
+
 
 def _coerce(v) -> float:
     if v is None or v == "":
@@ -104,6 +186,7 @@ def join_pilot_feature_tables(
     feature_date: Path,
     *,
     include_video_features: bool = True,
+    video_core: bool = False,
     fast_pixel: bool = False,
     vae_latent_profile: bool = False,
     vae_recerr: bool = False,
@@ -115,9 +198,28 @@ def join_pilot_feature_tables(
 ) -> Tuple[Dict[str, Dict[str, float]], List[str], Dict[str, str]]:
     """Selectively merge pilot feature CSVs for deploy vs lab routers.
 
-    When ``include_video_features=False``, **only** the explicitly enabled
-    optional CSVs are loaded (e.g. VAE latent profile alone — no CLIP/DINO/bpp).
+    When ``include_video_features=False``, load only explicit blocks via
+    ``video_core`` / ``ood`` / ``vae_latent_profile`` (structured concat).
     """
+    if not include_video_features and (video_core or ood or vae_latent_profile):
+        block_specs = []
+        if video_core:
+            block_specs.append((*load_video_core_features(feature_date), DEPLOY_BLOCK_VIDEO_CORE))
+        if ood:
+            block_specs.append((*load_ood_features(feature_date), DEPLOY_BLOCK_OOD))
+        if vae_latent_profile:
+            from scripts.correlate_tta_gain_with_features import load_vae_latent_profile_csv
+
+            path = feature_date / "vae_latent_profile_features.csv"
+            if not path.exists():
+                raise FileNotFoundError(f"vae_latent_profile CSV missing: {path}")
+            rows, cols = load_vae_latent_profile_csv(path)
+            vae_rows = {vid: {c: _coerce(row.get(c)) for c in cols} for vid, row in rows.items()}
+            block_specs.append((vae_rows, cols, DEPLOY_BLOCK_VAE))
+        if not block_specs:
+            return {}, [], {}
+        return merge_feature_blocks(*block_specs)
+
     if include_video_features:
         return join_feature_tables(
             features_csv=feature_date / "video_features.csv",
@@ -155,7 +257,7 @@ def join_pilot_feature_tables(
         if not path.exists():
             raise FileNotFoundError(f"vae_latent_profile CSV missing: {path}")
         rows, cols = load_vae_latent_profile_csv(path)
-        _merge_source(rows, cols, "VAE")
+        _merge_source(rows, cols, DEPLOY_BLOCK_VAE)
 
     return merged, feature_names, tiers
 
