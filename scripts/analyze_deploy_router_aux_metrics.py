@@ -569,11 +569,12 @@ def main() -> int:
     video_ids = bundle["video_ids"]
     grid = bundle["grid_runs"]
     valid = labeled_mask(bundle["fixed_vb"], bundle["Y_total"])
+    runs = discover_runs(args.series_root)
 
     metric_mats = {
         "psnr": bundle["psnr"],
         "ssim": bundle["ssim"],
-        "lpips": load_metric_matrix(args.series_root, grid, video_ids, "lpips"),
+        "lpips": load_metric_matrix(runs, grid, video_ids, "lpips"),
     }
     notta = load_notta_metrics(args.series_root, video_ids)
 
