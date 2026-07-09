@@ -639,3 +639,11 @@ User asked whether VBench-trained routers (Block A @ 20.8%, Block C @ 9.7%) also
 OOF router-selected configs @ N=200, metrics looked up from existing grid outputs (no new gen). **Block A:** 20.8% VBench captured but **+0.009 dB PSNR** (1.2% PSNR-oracle headroom), ρ(VB gain, ΔPSNR)=**0.10**. **Oracle VBench** only +0.027 dB PSNR (3.5% cap) vs **oracle PSNR** +0.748 dB — VBench-optimal configs in this grid are not PSNR-optimal. **Block C:** −0.046 dB PSNR. SSIM/LPIPS slightly worse than fixed for routers. Fixed FVD 331.2 / FID 63.4; router FVD not run.
 
 **Decision:** PI/paper story = route for **VBench perceptual bundle**, not reconstruction. Do not claim PSNR wins from VBench-trained router. Optional follow-up: `RUN_FVD=1` if mp4s exist; compare router symlink FVD to fixed 331.2.
+
+---
+
+## 2026-07-09 — PSNR-targeted router experiment (9-d Block A, pending)
+**Tags:** methodology, routing, PSNR, pending
+**Refs:** `scripts/run_deploy_psnr_router.py`, `submit_deploy_psnr_router.sh`
+
+User asked whether 9-d handcrafted inputs can route for **PSNR gain** (cross-metric showed VBench router +0.009 dB). **Clarification:** poor PSNR transfer is primarily **objective mismatch** (VBench oracle +0.027 dB PSNR vs PSNR oracle +0.748 dB), not proven bad features. Added deploy-strict experiment: **same 9-d Block A**, ridge predicts **PSNR per config**, argmax PSNR. Compare PSNR captured % vs VBench router (1.2% PSNR / 20.8% VB). **Results pending** cluster run.
