@@ -647,3 +647,13 @@ OOF router-selected configs @ N=200, metrics looked up from existing grid output
 **Refs:** `scripts/run_deploy_psnr_router.py`, `submit_deploy_psnr_router.sh`
 
 User asked whether 9-d handcrafted inputs can route for **PSNR gain** (cross-metric showed VBench router +0.009 dB). **Clarification:** poor PSNR transfer is primarily **objective mismatch** (VBench oracle +0.027 dB PSNR vs PSNR oracle +0.748 dB), not proven bad features. Added deploy-strict experiment: **same 9-d Block A**, ridge predicts **PSNR per config**, argmax PSNR. Compare PSNR captured % vs VBench router (1.2% PSNR / 20.8% VB). **Results pending** cluster run.
+
+---
+
+## 2026-07-09 — PSNR-targeted router: objective tradeoff confirmed @ N=200
+**Tags:** finding, routing, PSNR, objective-tradeoff
+**Refs:** `deploy_psnr_router/summary.md`, `paper_tables/2026-07-09_deploy_psnr_router.md`, commit `90c2ead`
+
+Same 9-d Block A features; ridge target switched to **PSNR per config**. **Result:** +0.0539 dB vs fixed (**7.2%** PSNR oracle captured, 15.5% match) vs VBench router +0.009 dB (**1.2%** PSNR cap). **VBench side effect** only **5.6%** captured (vs **20.8%** VB-targeted). **Conclusion:** input format was not the PSNR problem — **wrong training objective** was; but 9-d still weak in absolute PSNR terms (7.2% cap). **Cannot maximize VB and PSNR with one 9-d picker.**
+
+**Decision:** Headline deploy router stays **VBench-targeted Block A**. PSNR-targeted run is ablation / tradeoff evidence only.
