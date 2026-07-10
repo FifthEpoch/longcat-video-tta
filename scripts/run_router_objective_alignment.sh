@@ -9,9 +9,22 @@ cd "$REPO"
 EXTRA=()
 if [ -f "$VB_CSV" ]; then EXTRA+=(--vb-picks-csv "$VB_CSV"); fi
 if [ -f "$PSNR_CSV" ]; then EXTRA+=(--psnr-picks-csv "$PSNR_CSV"); fi
-python3 scripts/analyze_router_objective_alignment.py \
-  --series-root "$REPO/sweep_experiment/results/panda_ood_budget_pilot" \
-  --feature-date "$REPO/sweep_experiment/reports/per_video_analysis/${FEATURE_DATE}" \
-  --output-dir "$OUT" \
-  "${EXTRA[@]}"
+if [ ! -f "$VB_CSV" ] || [ ! -f "$PSNR_CSV" ]; then
+  echo "[info] missing pick CSV(s); script will re-run needed routers" >&2
+  echo "  vb:  $VB_CSV" >&2
+  echo "  psnr: $PSNR_CSV" >&2
+fi
+# Avoid set -u unbound error on empty EXTRA[@] (some cluster bash builds).
+if ((${#EXTRA[@]} > 0)); then
+  python3 scripts/analyze_router_objective_alignment.py \
+    --series-root "$REPO/sweep_experiment/results/panda_ood_budget_pilot" \
+    --feature-date "$REPO/sweep_experiment/reports/per_video_analysis/${FEATURE_DATE}" \
+    --output-dir "$OUT" \
+    "${EXTRA[@]}"
+else
+  python3 scripts/analyze_router_objective_alignment.py \
+    --series-root "$REPO/sweep_experiment/results/panda_ood_budget_pilot" \
+    --feature-date "$REPO/sweep_experiment/reports/per_video_analysis/${FEATURE_DATE}" \
+    --output-dir "$OUT"
+fi
 echo "Done: $OUT/summary.md"
