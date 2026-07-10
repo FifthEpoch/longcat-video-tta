@@ -657,3 +657,13 @@ User asked whether 9-d handcrafted inputs can route for **PSNR gain** (cross-met
 Same 9-d Block A features; ridge target switched to **PSNR per config**. **Result:** +0.0539 dB vs fixed (**7.2%** PSNR oracle captured, 15.5% match) vs VBench router +0.009 dB (**1.2%** PSNR cap). **VBench side effect** only **5.6%** captured (vs **20.8%** VB-targeted). **Conclusion:** input format was not the PSNR problem — **wrong training objective** was; but 9-d still weak in absolute PSNR terms (7.2% cap). **Cannot maximize VB and PSNR with one 9-d picker.**
 
 **Decision:** Headline deploy router stays **VBench-targeted Block A**. PSNR-targeted run is ablation / tradeoff evidence only.
+
+---
+
+## 2026-07-10 — VBench vs PSNR router pick alignment @ N=200
+**Tags:** finding, routing, objective-tradeoff, alignment
+**Refs:** `router_objective_alignment/summary.md`, `paper_tables/2026-07-10_router_objective_alignment.md`, commit `e3835f9`
+
+OOF pick comparison (same 9-d Block A). **Pick agreement 12.5%** (25/200); **oracle agreement 15%**; when oracles agree routers agree only **10%**. Config Jaccard **0.75**. **But** realized metrics across picks: ρ(VB)=**0.995**, ρ(PSNR)=**0.987** — objectives diverge in **config label** space, not **outcome** space (flat local grid). On disagreeing videos, each router wins its own metric only **51–55%** (near coin-flip). Top agree pair: `S20_LR1e2`.
+
+**Decision:** Narrative = routing escapes fixed S10 into a better grid **region**; fine objective (VB vs PSNR) swaps among near-tie configs. Supports keeping VB headline while explaining low PSNR transfer.
