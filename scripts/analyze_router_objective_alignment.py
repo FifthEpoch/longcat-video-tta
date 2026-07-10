@@ -139,7 +139,7 @@ def build_pair_crosstab(
         if vj < 0 or pj < 0:
             continue
         counts[(grid[vj], grid[pj])] += 1
-    return sorted(counts.items(), key=lambda x: -x[2])
+    return sorted(counts.items(), key=lambda x: -x[1])
 
 
 def analyze(
