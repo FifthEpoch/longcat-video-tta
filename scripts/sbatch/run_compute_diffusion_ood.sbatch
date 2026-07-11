@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=04:00:00
+#SBATCH --time=48:00:00
 #SBATCH --mem=192G
 #SBATCH --gres=gpu:h200:1
 #SBATCH --account=torch_pr_36_mren
@@ -24,8 +24,10 @@
 # Resource profile (must match the TTA runners since the model loading
 # is identical): h200 GPU, 192 G memory, 8 CPU. No backprop, no
 # optimiser step, ~6 forward passes per video — expect ~5-15 s/video on
-# H200. For 1000 videos that's ~1.5-4 hours; --time=04:00:00 is the
-# conservative upper bound.
+# H200 (~0.08 vid/s observed). For 1000 videos that's ~1.5-4 hours.
+# Segment-pool full pass (~30K videos) needs ~100 GPU-hours; default
+# --time=48:00:00 (~14K videos/cycle) cuts resume churn vs 4h slices.
+# Override at submit: sbatch --time=24:00:00 ...
 # ============================================================================
 
 set -euo pipefail
