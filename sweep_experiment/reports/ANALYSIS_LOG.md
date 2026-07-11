@@ -677,3 +677,13 @@ OOF pick comparison (same 9-d Block A). **Pick agreement 12.5%** (25/200); **ora
 Cluster audit confirms **`datasets/panda_segment_pool`**: **29,577** mp4 + **caption_embeddings.npy (29577×384)**. `panda_pool_10k` empty. OOD CSVs exist only for **panda_1000 (999)** and **pilot (200)** — **not** segment pool. No `vae_latent_cache`. Partial `panda_ood_budget_1000v` (3 runs) used **`panda_1000_480p`**, not OOD-stratified pool — **do not continue** for router scale-up.
 
 **Decision:** (1) GPU-score OOD on segment pool → (2) `sample_ood_quintile_videos.py --per-quintile 200` → `panda_ood_budget_1000v_480p` → (3) precompute router features + **VAE cache** (code TBD) → (4) submit **12-config** pilot grid @ 1000v to `panda_ood_budget_1000v` (new OOD-stratified series).
+
+---
+
+## 2026-07-11 — Preview 1000v from partial segment-pool OOD (~6K scored)
+**Tags:** methodology, routing, scale-up, preview
+**Refs:** job `13325919`, `sample_segment_pool_ood_preview_1000v.sh`
+
+While full 29K OOD scoring runs, **~5885+ scored rows** suffice for `--per-quintile 200` (1000 total). Quintiles computed on **scored prefix only** (canonical `video_id` sort order — not random sample of pool). Acceptable for **router N=1000 preview** vs N=200 pilot; final paper set should re-sample from complete CSV.
+
+**Decision:** Use `panda_ood_budget_1000v_preview_{480p,results,list}` — distinct from stale `panda_ood_budget_1000v` (3-run partial on `panda_1000_480p`). Re-sample final set when `wc -l` → 29578.
