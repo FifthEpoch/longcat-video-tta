@@ -13,6 +13,7 @@
 #   vbench     — VBench backfill on saved mp4s (12 GPU jobs)
 #   routers    — deploy router CPU suite (sbatch chain)
 #   audit      — PSNR/chunk coverage check (run before routers)
+#   diagnose   — classify per-video NaN PSNR failure modes
 #   status     — print paths + CSV line counts
 #
 # Full happy path (metrics-first, then mp4+vbench+routers):
@@ -61,6 +62,10 @@ case "${PHASE}" in
     cd "${REPO}"
     python3 scripts/audit_preview_1000v_sweep.py --series-root "${PREVIEW_SERIES_ROOT}"
     ;;
+  diagnose)
+    cd "${REPO}"
+    python3 scripts/diagnose_preview_psnr_nan.py --series-root "${PREVIEW_SERIES_ROOT}"
+    ;;
   status)
     echo "PREVIEW_SERIES_ROOT=${PREVIEW_SERIES_ROOT}"
     echo "PREVIEW_DATASET_DIR=${PREVIEW_DATASET_DIR}"
@@ -87,7 +92,7 @@ case "${PHASE}" in
     ;;
   *)
     echo "Unknown phase: ${PHASE}" >&2
-    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | status" >&2
+    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | diagnose | status" >&2
     exit 1
     ;;
 esac

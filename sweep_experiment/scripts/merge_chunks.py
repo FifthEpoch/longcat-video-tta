@@ -139,7 +139,10 @@ def merge_summaries(chunks):
     metric_keys = ["psnr", "ssim", "lpips"]
     metrics = {}
     for k in metric_keys:
-        vals = [r[k] for r in successful if k in r and r[k] is not None]
+        vals = [
+            r[k] for r in successful
+            if k in r and r[k] is not None and np.isfinite(r[k])
+        ]
         if vals:
             metrics[k] = float(np.mean(vals))
             metrics[k + "_std"] = float(np.std(vals))
