@@ -869,6 +869,17 @@ def main():
 
                 # ── Pre-encode all videos in the training batch ──
                 _cached_gen_cond_frames = None
+                _cached_tta_pixels = None
+                # Only hold out a val split if it will actually be consumed
+                # (early stopping or anchor regularization). Otherwise adapt on
+                # all observed frames — carving an unused val split silently
+                # discards ~25% of the available TTA adaptation signal.
+                _use_val = early_stopper is not None or float(
+                    getattr(args, "anchor_reg_weight", 0.0) or 0.0
+                ) > 0.0
+                _tta_holdout = (
+                    getattr(args, "es_holdout_fraction", 0.25) if _use_val else 0.0
+                )
                 batch_data = []
                 for entry in training_entries:
                     video_path = entry["video_path"]
@@ -890,7 +901,7 @@ def main():
                     num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
                     cond_latents, train_latents, val_latents = split_tta_latents(
                         all_latents, num_ctx_lat,
-                        holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+                        holdout_fraction=_tta_holdout,
                     )
 
                     _t = time.time()
@@ -914,6 +925,11 @@ def main():
 
                     if _cached_gen_cond_frames is None and args.tta_total_frames >= args.num_cond_frames:
                         _cached_gen_cond_frames = pixel_frames[:, :, -args.num_cond_frames:].clone()
+                    if _cached_tta_pixels is None and args.aug_enabled and not batch_level:
+                        # First entry is the eval video; keep its TTA-window pixels
+                        # on CPU so the augmentation path can reuse them instead of
+                        # re-decoding the same clip from disk.
+                        _cached_tta_pixels = pixel_frames.detach().to("cpu")
                     del all_latents, pixel_frames
                     torch_gc()
 
@@ -1007,10 +1023,14 @@ def main():
                         from common import build_augmented_pixel_variants
                         _tta_start = args.gen_start_frame - args.tta_total_frames
                         _t = time.time()
-                        _pf = load_video_frames(
-                            bd["video_path"], args.tta_total_frames,
-                            height=480, width=832, start_frame=max(0, _tta_start),
-                        ).to(args.device, torch.bfloat16)
+                        if _cached_tta_pixels is not None:
+                            # Reuse pixels decoded during pre-encode (no disk re-read).
+                            _pf = _cached_tta_pixels.to(args.device, torch.bfloat16)
+                        else:
+                            _pf = load_video_frames(
+                                bd["video_path"], args.tta_total_frames,
+                                height=480, width=832, start_frame=max(0, _tta_start),
+                            ).to(args.device, torch.bfloat16)
                         pix_variants = build_augmented_pixel_variants(
                             _pf,
                             enable_flip=args.aug_flip,

@@ -687,3 +687,17 @@ Cluster audit confirms **`datasets/panda_segment_pool`**: **29,577** mp4 + **cap
 While full 29K OOD scoring runs, **~5885+ scored rows** suffice for `--per-quintile 200` (1000 total). Quintiles computed on **scored prefix only** (canonical `video_id` sort order — not random sample of pool). Acceptable for **router N=1000 preview** vs N=200 pilot; final paper set should re-sample from complete CSV.
 
 **Decision:** Use `panda_ood_budget_1000v_preview_{480p,results,list}` — distinct from stale `panda_ood_budget_1000v` (3-run partial on `panda_1000_480p`). Re-sample final set when `wc -l` → 29578. Pipeline: `scripts/run_preview_1000v_pipeline.sh` + `submit_deploy_router_1000v_preview.sh`.
+
+---
+
+## 2026-07-14 — TTA runner audit: unused val holdout removed (affects all budget-grid numbers)
+**Tags:** methodology, finding, decision
+**Refs:** commit pushing run_delta_a/b/c, run_film_tta, run_norm_tune_tta, run_lora_tta, run_full_tta; audit in `experiment_outputs/2026-07-14.md` (13:20)
+
+Expert ML audit of the shared TTA plumbing (`common.py`, `frame_window.py`, `early_stopping.py`) and all 8 runners. **No ground-truth leakage:** TTA window is strictly pre-anchor `[gen_start-tta_total, gen_start)` (explicit clamp), the conditioned flow-matching loss noises/scores only the target latents (cond tokens clean at t=0), generation conditioning comes from the eval clip's observed prefix (`training_entries[0] == eval_entry`), and future GT is read only post-generation for metrics (aligned `gen_output[num_cond:]` ↔ GT from `gen_start`).
+
+**Finding (fixed):** `split_tta_latents` unconditionally carved a 25% val holdout via `es_holdout_fraction`, but the budget grid runs with `ES_DISABLE=1` and `anchor_reg_weight=0`, so the holdout was never consumed — every runner adapted on only ~75% of the observed frames. Batch/retrieval paths (`cl, tl, _`) discarded val outright, wasting it too. **Fix:** holdout is now `0.0` unless val will actually be used (single-video paths gate on `early_stopper is not None or anchor_reg_weight>0`; batch paths pass `0.0`).
+
+Also fixed a delta-a-only inefficiency: it re-decoded the eval clip from disk for augmentation despite already holding it (now cached on CPU and reused). No numeric effect.
+
+**Decision:** AdaSteer/LoRA/full budget-grid numbers produced BEFORE this commit trained on 75% of frames and are superseded. The pending preview-1000v **resweep** runs with the fix, so the paper's 1000v budget-grid numbers will reflect full-data adaptation. Any earlier pilot (N=200) budget numbers should be re-derived or explicitly caveated if cited alongside post-fix numbers. Do NOT mix pre- and post-fix budget-grid rows in the same table.

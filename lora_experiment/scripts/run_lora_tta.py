@@ -1160,7 +1160,7 @@ def main():
                     num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
                     cl, tl, _ = split_tta_latents(
                         al, num_ctx_lat,
-                        holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+                        holdout_fraction=0.0,  # batch path discards val; use all frames
                     )
                     pe, pm = encode_prompt(
                         tokenizer, text_encoder,
@@ -1202,9 +1202,17 @@ def main():
 
                 vae_t_scale = 4
                 num_ctx_lat = 1 + (args.tta_context_frames - 1) // vae_t_scale
+                # Only hold out a val split if it will be consumed (early
+                # stopping); otherwise adapt on all observed frames rather than
+                # discarding ~25% of the TTA signal to an unused holdout.
+                _use_val = early_stopper is not None or float(
+                    getattr(args, "anchor_reg_weight", 0.0) or 0.0
+                ) > 0.0
                 cond_latents, train_latents, val_latents = split_tta_latents(
                     all_latents, num_ctx_lat,
-                    holdout_fraction=getattr(args, "es_holdout_fraction", 0.25),
+                    holdout_fraction=(
+                        getattr(args, "es_holdout_fraction", 0.25) if _use_val else 0.0
+                    ),
                 )
 
                 prompt_embeds, prompt_mask = encode_prompt(
