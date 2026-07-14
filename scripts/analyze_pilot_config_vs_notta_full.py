@@ -233,6 +233,15 @@ def build_report(
         "`merged_summary.json`. NOTTA-subset and routing FVD/FID need saved "
         "frames (pilot ran `NO_SAVE_VIDEOS=1`) and are shown as `—`.",
         "",
+        "> **VBench caveat:** the `VBench` column is the *unweighted mean of the 7 "
+        "raw dims* (`vbench_total_score`), dominated by the largest-scale dims "
+        "(imaging_quality/MUSIQ ~0–100, aesthetic ~0–10). It is **not** the "
+        "normalized VBench++ score (~0.77) used in the slides, so do not "
+        "cross-compare the two. Use the per-dimension VBench oracle report "
+        "(`analyze_adasteer_budget_vbench_oracle.py`) for the real perceptual "
+        "story; NOTTA > TTA here likely reflects imaging_quality dropping under "
+        "adaptation, not overall quality.",
+        "",
     ]
 
     # --------------------------------------------------------------------- #
@@ -456,10 +465,21 @@ def main() -> int:
             )
 
     _run_ids, psnr_table = build_video_table(runs)
-    vids = sorted(psnr_table.keys())
     grid_runs = [r for r in PILOT_GRID_RUN_ORDER if r in runs]
     if FIXED_ADA_RUN_ID not in grid_runs:
         print(f"[warn] fixed run {FIXED_ADA_RUN_ID} not found in grid", file=sys.stderr)
+
+    # Restrict the analysis set to the pilot videos (those covered by >=1 grid
+    # config). Otherwise the NOTTA baseline (full standard series, ~999 videos)
+    # would inflate the union and make NOTTA/quintile means cover a different,
+    # larger pool than the 200-video config rows.
+    grid_set = set(grid_runs)
+    vids = sorted(v for v, row in psnr_table.items() if any(r in row for r in grid_set))
+    print(
+        f"[info] analysis restricted to {len(vids)} pilot videos with grid coverage "
+        f"(NOTTA joined on this subset only)",
+        file=sys.stderr,
+    )
 
     metric_maps = build_metric_maps(runs, grid_runs, include_notta=NOTTA_RUN_ID in runs)
     active_dims = metric_maps.pop("_active_dims")  # type: ignore[assignment]
