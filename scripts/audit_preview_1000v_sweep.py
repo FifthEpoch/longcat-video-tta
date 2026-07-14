@@ -37,6 +37,12 @@ def main() -> int:
         type=Path,
         default=_REPO / "sweep_experiment/results/panda_ood_budget_1000v_preview",
     )
+    ap.add_argument(
+        "--min-intersection",
+        type=int,
+        default=900,
+        help="Minimum videos with finite PSNR in ALL configs (default: 900)",
+    )
     args = ap.parse_args()
 
     print(f"Series: {args.series_root}")
@@ -68,12 +74,19 @@ def main() -> int:
         for rid in PILOT_GRID_RUN_ORDER
         if (args.series_root / rid).is_dir()
     }
+    n_intersection = 0
     if metric_maps:
         common = None
         for rid, m in metric_maps.items():
             ids = set(m.keys())
             common = ids if common is None else common & ids
-        print(f"videos with finite PSNR in ALL present runs: {len(common or [])}")
+        n_intersection = len(common or [])
+        print(f"videos with finite PSNR in ALL present runs: {n_intersection}")
+        if n_intersection < args.min_intersection:
+            problems.append(
+                f"intersection {n_intersection} < {args.min_intersection} "
+                "(mixed-era chunk data — wipe all runs and resubmit full grid)"
+            )
 
     if problems:
         print("\nWARN:")

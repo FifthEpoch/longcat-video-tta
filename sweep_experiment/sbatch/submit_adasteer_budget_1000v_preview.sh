@@ -84,6 +84,35 @@ if [ ! -d "${DATA_DIR}" ]; then
     exit 1
 fi
 
+# Guard: never launch against an incomplete / shifting dataset. This is exactly
+# the failure that produced misaligned per-video sets (intersection collapse).
+# Verify every symlink/video resolves BEFORE burning any GPU time.
+VIDEO_DIR="${VIDEO_DIR:-${DATA_DIR}/videos}"
+SKIP_DATASET_GUARD="${SKIP_DATASET_GUARD:-0}"
+if [ "${SKIP_DATASET_GUARD}" != "1" ]; then
+    if [ ! -d "${VIDEO_DIR}" ]; then
+        echo "ERROR: video dir missing: ${VIDEO_DIR}" >&2
+        exit 1
+    fi
+    n_total=0
+    n_broken=0
+    while IFS= read -r -d '' f; do
+        n_total=$((n_total + 1))
+        # -e follows symlinks; a dangling symlink fails this test.
+        [ -e "${f}" ] || n_broken=$((n_broken + 1))
+    done < <(find "${VIDEO_DIR}" -maxdepth 1 \( -type f -o -type l \) -print0)
+    echo "Dataset guard: ${n_total} videos, ${n_broken} broken under ${VIDEO_DIR}"
+    if [ "${n_total}" -lt "${MAX_VIDEOS}" ]; then
+        echo "ERROR: only ${n_total} videos (< MAX_VIDEOS=${MAX_VIDEOS}). Dataset not fully materialized." >&2
+        echo "Re-run: bash scripts/sample_segment_pool_ood_preview_1000v.sh  (set SKIP_DATASET_GUARD=1 to override)" >&2
+        exit 1
+    fi
+    if [ "${n_broken}" -gt 0 ]; then
+        echo "ERROR: ${n_broken} broken/dangling video links. Fix before sweeping (set SKIP_DATASET_GUARD=1 to override)." >&2
+        exit 1
+    fi
+fi
+
 echo "============================================================"
 echo "AdaSteer budget-grid 1000v PREVIEW submission"
 echo "============================================================"

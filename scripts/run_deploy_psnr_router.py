@@ -90,8 +90,9 @@ def _load_oof_picks(csv_path: Path, video_ids: List[str], grid: List[str]) -> np
 def write_summary(out: Path, report: dict) -> None:
     psnr = report["psnr_policy"]
     vb = report.get("vbench_side_effect")
+    n = report["n_videos"]
     lines = [
-        "# Deploy PSNR router @ N=200 — Block A (9-d) → predict PSNR per config",
+        f"# Deploy PSNR router @ N={n} — Block A (9-d) → predict PSNR per config",
         "",
         "**Features:** same 9-d ``video_caption_only`` (cuts, CLIP, DINO, texture).",
         "**Target:** PSNR (not VBench). **Deploy:** argmax predicted PSNR → one AdaSteer.",
@@ -154,16 +155,24 @@ def main() -> int:
     args = ap.parse_args()
 
     spec = EXPERIMENT_SPECS["video_caption_only"]
-    bundle, feat_names, block_map = _load_bundle(args.series_root, args.feature_date, spec)
+    bundle, feat_names, block_map = _load_bundle(
+        args.series_root, args.feature_date, spec, require_vbench=False,
+    )
     video_ids = bundle["video_ids"]
     grid = bundle["grid_runs"]
     psnr = bundle["psnr"]
     Y_vb = bundle["Y_total"]
     fixed_vb = bundle["fixed_vb"]
+    if bundle["fixed_run"] not in grid:
+        print(
+            f"[error] fixed run {bundle['fixed_run']!r} not in PSNR grid {grid}",
+            file=sys.stderr,
+        )
+        return 2
     fixed_j = grid.index(bundle["fixed_run"])
     fixed_psnr = _fixed_metric_per_video(psnr, fixed_j)
 
-    mask = labeled_mask(fixed_vb, Y_vb) & labeled_mask(fixed_psnr, psnr)
+    mask = labeled_mask(fixed_psnr, psnr)
     if mask.sum() < 30:
         print(f"[error] only {mask.sum()} labeled videos", file=sys.stderr)
         return 2

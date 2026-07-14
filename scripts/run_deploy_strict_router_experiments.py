@@ -117,6 +117,8 @@ def _load_bundle(
     series_root: Path,
     feature_date: Path,
     spec: dict,
+    *,
+    require_vbench: bool = True,
 ) -> Tuple[dict, List[str], Dict[str, List[str]]]:
     _, block_map = build_deploy_feature_keep(
         feature_date,
@@ -128,6 +130,7 @@ def _load_bundle(
         series_root,
         feature_date,
         feature_sources=_feature_sources(spec),
+        require_vbench=require_vbench,
     )
     return bundle, bundle["feat_names"], block_map
 

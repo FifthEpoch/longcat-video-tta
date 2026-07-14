@@ -13,6 +13,8 @@
 #   vbench     — VBench backfill on saved mp4s (12 GPU jobs)
 #   routers    — deploy router CPU suite (sbatch chain)
 #   audit      — PSNR/chunk coverage check (run before routers)
+#   scope      — per-config overlap vs reference; scopes which configs to rerun
+#   resweep    — wipe stale chunk artifacts + resubmit full 12-config grid
 #   diagnose   — classify per-video NaN PSNR failure modes
 #   status     — print paths + CSV line counts
 #
@@ -62,9 +64,20 @@ case "${PHASE}" in
     cd "${REPO}"
     python3 scripts/audit_preview_1000v_sweep.py --series-root "${PREVIEW_SERIES_ROOT}"
     ;;
+  resweep)
+    CONFIRM=1 bash "${REPO}/scripts/wipe_preview_1000v_sweep.sh"
+    bash "${REPO}/sweep_experiment/sbatch/submit_adasteer_budget_1000v_preview.sh"
+    ;;
   diagnose)
     cd "${REPO}"
     python3 scripts/diagnose_preview_psnr_nan.py --series-root "${PREVIEW_SERIES_ROOT}"
+    ;;
+  scope)
+    cd "${REPO}"
+    python3 scripts/diagnose_preview_intersection.py \
+      --series-root "${PREVIEW_SERIES_ROOT}" \
+      --retain-json "${REPO}/${PREVIEW_JSON}" \
+      --per-chunk
     ;;
   status)
     echo "PREVIEW_SERIES_ROOT=${PREVIEW_SERIES_ROOT}"
@@ -92,7 +105,7 @@ case "${PHASE}" in
     ;;
   *)
     echo "Unknown phase: ${PHASE}" >&2
-    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | diagnose | status" >&2
+    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | scope | resweep | diagnose | status" >&2
     exit 1
     ;;
 esac

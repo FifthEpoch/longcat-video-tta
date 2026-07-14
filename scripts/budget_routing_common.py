@@ -289,10 +289,16 @@ def load_pilot_bundle(
     feature_date: Path,
     *,
     min_videos: int = 10,
+    require_vbench: bool = True,
     feature_sources: Optional[dict] = None,
     feature_keep: Optional[Sequence[str]] = None,
 ) -> dict:
-    """Load Y (total + per-dim), PSNR/SSIM, Phase-0 features for pilot grid."""
+    """Load Y (total + per-dim), PSNR/SSIM, Phase-0 features for pilot grid.
+
+    When ``require_vbench=False``, include every present pilot-grid config that
+    has per-video PSNR (no VBench backfill required). VBench arrays are still
+    loaded when available but may be all-NaN.
+    """
     runs = discover_runs(series_root)
     if FIXED_BUDGET not in runs:
         raise FileNotFoundError(f"fixed run {FIXED_BUDGET} missing under {series_root}")
@@ -305,9 +311,17 @@ def load_pilot_bundle(
     video_ids = sorted(psnr_table.keys())
 
     vb_by_run = load_vbench_by_run(runs, list(runs.keys()))
-    grid_runs, excluded = filter_vbench_grid_runs(
-        vb_by_run, grid_all, min_videos=min_videos,
-    )
+    if require_vbench:
+        grid_runs, excluded = filter_vbench_grid_runs(
+            vb_by_run, grid_all, min_videos=min_videos,
+        )
+    else:
+        grid_runs = [r for r in PILOT_GRID_RUN_ORDER if r in runs]
+        excluded = [r for r in grid_all if r not in grid_runs]
+        if FIXED_BUDGET not in grid_runs:
+            raise FileNotFoundError(
+                f"fixed run {FIXED_BUDGET} missing from PSNR grid under {series_root}"
+            )
     active_dims = list(VBENCH_DIMS)
     total_table, dim_tables = build_score_table(
         vb_by_run, grid_runs, video_ids, active_dims,
