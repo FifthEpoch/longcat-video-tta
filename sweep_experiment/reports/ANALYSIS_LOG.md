@@ -701,3 +701,17 @@ Expert ML audit of the shared TTA plumbing (`common.py`, `frame_window.py`, `ear
 Also fixed a delta-a-only inefficiency: it re-decoded the eval clip from disk for augmentation despite already holding it (now cached on CPU and reused). No numeric effect.
 
 **Decision:** AdaSteer/LoRA/full budget-grid numbers produced BEFORE this commit trained on 75% of frames and are superseded. The pending preview-1000v **resweep** runs with the fix, so the paper's 1000v budget-grid numbers will reflect full-data adaptation. Any earlier pilot (N=200) budget numbers should be re-derived or explicitly caveated if cited alongside post-fix numbers. Do NOT mix pre- and post-fix budget-grid rows in the same table.
+
+---
+
+## 2026-07-14 — Defer 1000v budget grid to full-pool OOD resample; skip preview resweep
+**Tags:** decision, methodology, routing, scale-up
+**Refs:** `run_preview_1000v_pipeline.sh scope` output (this date), OOD job 13491658
+
+`scope` on `panda_ood_budget_1000v_preview`: the 6 S10/S20 configs are 100% aligned to reference `S10_LR1e3` (997 videos); the 6 S2/S5 configs overlap only **11.5%** (115) with `∈retain=115` — every chunk ~1% overlap, i.e. they ran on the stale pre-symlink-fix video set. Pure-alignment rerun scope would be **6 configs / 60 jobs**.
+
+**But** the aligned S10/S20 results predate the holdout fix (commit `29af8a2`) → they trained on 75% of adaptation frames. Rerunning only S2/S5 under the fixed code (100%) would produce a **mixed-protocol grid** (confounded per-video config comparison); a consistent grid would need all 12 → 120 jobs on a set that is discarded anyway (preview was sampled from the ~6K scored **prefix** of the segment pool, not full-pool quintiles).
+
+**Decision (user):** WAIT for the full **29,578**-line segment-pool OOD scoring to finish (**19,512** as of 13:51; job 13491658 RUNNING ~11h; ~291 videos/h ⇒ ~1.5 day ETA). Then draw the FINAL 1000v set from the complete pool (correct quintile edges), build a **guarded** dataset, and run all 12 configs **once** under the fixed holdout protocol. The prefix-sampled preview is discarded — **do NOT resweep it**. Pipeline already validated by the N=200 pilot + partial preview (which caught the symlink instability and holdout bug), so nothing blocks on the preview router.
+
+**Next when OOD → 29578:** resample → guarded dataset build → 12-config sweep → merge → audit (gated ≥900 intersection) → routers. If 13491658 TIMEOUTs first, resubmit via `scripts/sbatch/submit_segment_pool_ood.sh` (RESUME=1; do NOT hand-export env vars on a fresh login).
