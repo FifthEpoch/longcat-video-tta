@@ -68,6 +68,50 @@ def load_ood_rows(path: Path) -> List[dict]:
     return out
 
 
+def _available_stems(source_dataset: Path) -> set:
+    """Set of on-disk video filename stems (what ``_resolve_video_path`` matches).
+
+    A row's (already-canonical) ``video_id`` is resolvable iff a file named
+    ``{video_id}.mp4`` exists. Segment-pool ids whose YouTube portion contains
+    ``_<digit>`` get truncated by ``canonical_video_id`` (e.g. ``ETcLgl5_8xY_3``
+    -> ``ETcLgl5_8``), so they will NOT appear here and are dropped — which is
+    correct: those ids collide under canonicalization and would cross-contaminate
+    the downstream feature/metric joins that key on the same canonical id.
+    """
+    stems: set = set()
+    for d in (source_dataset / "videos", source_dataset):
+        if d.is_dir():
+            for p in d.glob("*.mp4"):
+                stems.add(p.stem)
+    return stems
+
+
+def clean_rows(
+    rows: List[dict],
+    *,
+    available_stems: Optional[set],
+) -> Tuple[List[dict], int, int]:
+    """Dedup by canonical id and (if known) keep only on-disk-resolvable ids.
+
+    Returns (clean_rows, n_dropped_missing, n_dropped_duplicate).
+    """
+    seen: set = set()
+    clean: List[dict] = []
+    n_missing = 0
+    n_dup = 0
+    for r in rows:
+        vid = r["video_id"]
+        if available_stems is not None and vid not in available_stems:
+            n_missing += 1
+            continue
+        if vid in seen:
+            n_dup += 1
+            continue
+        seen.add(vid)
+        clean.append(r)
+    return clean, n_missing, n_dup
+
+
 def quintile_assign(
     values: Sequence[float],
     n_bins: int = 5,
@@ -176,15 +220,24 @@ def create_pilot_dataset(
             continue
         rows_out.append(meta_row)
 
+    # Selection pre-filters to resolvable ids, so misses here should be ~0.
+    # Warn + skip rather than nuke a multi-minute dataset build; the downstream
+    # dataset guard enforces the final video count.
     if missing_video:
-        raise FileNotFoundError(
-            f"Missing source videos for {len(missing_video)} ids "
-            f"(first: {missing_video[:5]})"
+        print(
+            f"[warn] skipped {len(missing_video)} ids with no source video "
+            f"(first: {missing_video[:5]})",
+            file=sys.stderr,
         )
     if missing_meta:
-        raise KeyError(
-            f"Missing metadata rows for {len(missing_meta)} ids "
-            f"(first: {missing_meta[:5]})"
+        print(
+            f"[warn] skipped {len(missing_meta)} ids with no metadata row "
+            f"(first: {missing_meta[:5]})",
+            file=sys.stderr,
+        )
+    if not rows_out:
+        raise RuntimeError(
+            "No videos materialized — source dataset ids do not match selection."
         )
 
     fieldnames = list(rows_out[0].keys())
@@ -285,6 +338,24 @@ def main() -> int:
     rows = load_ood_rows(args.ood_csv)
     if not rows:
         print("[error] no valid OOD rows", file=sys.stderr)
+        return 2
+
+    # Dedup collisions + drop ids with no on-disk video so the sampled set is
+    # exactly reproducible and materializable (segment-pool canonicalization
+    # can truncate/collide YouTube-style ids — see clean_rows docstring).
+    available = _available_stems(args.source_dataset)
+    n_before = len(rows)
+    rows, n_missing, n_dup = clean_rows(
+        rows, available_stems=available if available else None,
+    )
+    print(
+        f"[info] candidate rows: {n_before} -> {len(rows)} "
+        f"(dropped {n_missing} unresolvable, {n_dup} duplicate canonical ids; "
+        f"{len(available)} videos on disk)",
+        file=sys.stderr,
+    )
+    if not rows:
+        print("[error] no resolvable OOD rows after cleaning", file=sys.stderr)
         return 2
 
     selected, edges = sample_per_quintile(

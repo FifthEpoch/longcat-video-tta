@@ -715,3 +715,17 @@ Also fixed a delta-a-only inefficiency: it re-decoded the eval clip from disk fo
 **Decision (user):** WAIT for the full **29,578**-line segment-pool OOD scoring to finish (**19,512** as of 13:51; job 13491658 RUNNING ~11h; ~291 videos/h ⇒ ~1.5 day ETA). Then draw the FINAL 1000v set from the complete pool (correct quintile edges), build a **guarded** dataset, and run all 12 configs **once** under the fixed holdout protocol. The prefix-sampled preview is discarded — **do NOT resweep it**. Pipeline already validated by the N=200 pilot + partial preview (which caught the symlink instability and holdout bug), so nothing blocks on the preview router.
 
 **Next when OOD → 29578:** resample → guarded dataset build → 12-config sweep → merge → audit (gated ≥900 intersection) → routers. If 13491658 TIMEOUTs first, resubmit via `scripts/sbatch/submit_segment_pool_ood.sh` (RESUME=1; do NOT hand-export env vars on a fresh login).
+
+---
+
+## 2026-07-15 — `canonical_video_id` truncates segment-pool YouTube ids (data-join bug)
+**Tags:** bug, methodology, data-integrity, routing, scale-up
+**Refs:** `scripts/caption_utils.py::canonical_video_id`, `scripts/sample_ood_quintile_videos.py`, sampler crash in `experiment_outputs/2026-07-15.md`
+
+Firing the full-pool 1000v sample crashed: sampler wrote **999** (not 1000) ids and `create_pilot_dataset` raised `Missing source videos for 3 ids` (e.g. `E1_0`, `ETcLgl5_8`). Root cause: `_CANONICAL_PREFIX_RE = ^([A-Za-z][A-Za-z0-9]*_\d+)` was designed to strip synthetic method suffixes (`panda_0010_delta_a` → `panda_0010`), but Panda-70M segment files are `<youtubeID>_<segment>`, and when the **YouTube ID itself contains `_<digit>`** (e.g. `ETcLgl5_8xY_3`) the regex truncates mid-ID → `ETcLgl5_8`. Effects: (a) **collisions** — sibling segments of the same video collapse to one id (1000→999); (b) **unresolvable** — file is `ETcLgl5_8xY_3.mp4`, so `{canonical}.mp4` lookup fails.
+
+**Latent risk (important):** every downstream table joins OOD score ↔ features ↔ PSNR/VBench on this canonical id. For the ~0.3% of segment-pool ids whose YouTube portion contains `_<digit>`, distinct segments share a key → **cross-contaminated rows**. Excluding them is therefore the *safe* choice, not just a convenience.
+
+**Fix (this commit):** `sample_ood_quintile_videos.py` now (1) builds the set of on-disk `.mp4` stems, (2) drops rows whose canonical id is not an exact on-disk stem (removes the mangled/colliding ids), (3) dedups by canonical id, then samples — guaranteeing an exactly-reproducible, materializable N. `create_pilot_dataset` softened to warn+skip (no hard crash); the dataset stability guard remains the final count gate. Did NOT touch the global `canonical_video_id` (load-bearing across the repo).
+
+**TODO (deferred, not paper-blocking):** properly fix `canonical_video_id` to strip only known method suffixes (`_delta_a`, `_lora`, `_notta`, …) instead of the greedy `<word>_<digit>` prefix, then audit whether any *already-produced* segment-pool feature/OOD joins silently merged colliding ids. Until then, the sampler-level exclusion keeps the 1000v set clean.
