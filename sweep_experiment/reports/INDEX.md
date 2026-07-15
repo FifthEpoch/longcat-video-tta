@@ -26,6 +26,15 @@ for audit trail.
 
 ---
 
+## Config-routing pilot (N=200 OOD-stratified) — current headline thread
+
+| Series | Dataset | N | Methods | Status | Cluster path | Paper table | Key finding |
+|---|---|---|---|---|---|---|---|
+| `panda_ood_budget_pilot` | Panda-70M | 200 (40/quintile × 5 OOD) | 12 AdaSteer configs (S{2,5,10,20} × LR{1e-3,5e-3,1e-2}); NOTTA joined by id from `panda_1000v_standard/NOTTA` | DONE + 7-dim VBench backfilled | `sweep_experiment/results/panda_ood_budget_pilot/` | [`2026-07-15_pilot_config_vs_notta_routing.md`](paper_tables/2026-07-15_pilot_config_vs_notta_routing.md), [`2026-07-09_deploy_psnr_router.md`](paper_tables/2026-07-09_deploy_psnr_router.md), [`2026-07-09_deploy_router_aux_metrics.md`](paper_tables/2026-07-09_deploy_router_aux_metrics.md) | Same-200-video: oracle PSNR routing **+0.95 dB vs no-TTA**, **+0.75 vs best fixed config** (also ↑SSIM ↓LPIPS); no single config wins across OOD quintiles. Learned 9-d OOF router realizes ≈7.2% (PSNR) / ≈20.8% (VBench) of oracle gap. VBench/PSNR objectives decouple. |
+| `panda_ood_budget_1000v_preview` | Panda segment pool | 1000 (target) | same 12-config grid | Preview; prior run had holdout-bug + symlink instability (both fixed); re-sample/re-sweep pending OOD scoring | `sweep_experiment/results/panda_ood_budget_1000v_preview/` | — | Scale-up of pilot router calibration; fire from partial OOD pool or wait for full 29K. |
+
+---
+
 ## Missing / not-yet-run experiments (paper-blocking or paper-relevant)
 
 | Series | Why it's needed | Cluster status | Decision |
