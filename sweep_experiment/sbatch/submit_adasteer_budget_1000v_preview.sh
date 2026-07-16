@@ -123,6 +123,11 @@ echo "  configs      : ${#PREVIEW_RUNS[@]} runs"
 echo "  chunking     : ${NUM_CHUNKS} × ${CHUNK_SIZE} (max ${MAX_VIDEOS} videos)"
 echo "  dry run      : ${DRY_RUN}"
 echo "  only runs    : ${ONLY_RUNS:-<all>}"
+if [ "${NO_SAVE_VIDEOS}" = "1" ]; then
+    echo "  save mp4s    : NO  (NO_SAVE_VIDEOS=1, metrics-only — NO VBench, NO reusable videos)"
+else
+    echo "  save mp4s    : YES (NO_SAVE_VIDEOS=0 — frames written for VBench + downstream reuse)"
+fi
 echo "============================================================"
 echo ""
 
@@ -150,12 +155,23 @@ done
 echo ""
 echo "Submitted ${count} jobs."
 echo ""
-echo "After completion:"
-echo "  bash scripts/run_preview_1000v_pipeline.sh merge"
-echo "  bash scripts/run_preview_1000v_pipeline.sh features"
-echo ""
-echo "For VBench routers (needs mp4s):"
-echo "  bash scripts/run_preview_1000v_pipeline.sh sweep-mp4"
-echo "  bash scripts/run_preview_1000v_pipeline.sh vbench"
-echo "  bash scripts/run_preview_1000v_pipeline.sh routers"
+if [ "${NO_SAVE_VIDEOS}" = "1" ]; then
+    echo "*** METRICS-ONLY RUN (NO_SAVE_VIDEOS=1): no mp4s saved. ***"
+    echo "You will get PSNR/SSIM/LPIPS/FVD/FID but NOT VBench, and NO reusable"
+    echo "videos for downstream experiments. To get frames you must re-run:"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh sweep-mp4"
+    echo ""
+    echo "After completion:"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh merge"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh features"
+else
+    echo "*** FRAME-SAVING RUN (NO_SAVE_VIDEOS=0): mp4s ARE being written. ***"
+    echo "This single pass yields PSNR/SSIM/LPIPS/FVD/FID + saved videos."
+    echo ""
+    echo "After completion:"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh merge"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh features"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh vbench   # VBench on saved mp4s"
+    echo "  bash scripts/run_preview_1000v_pipeline.sh routers"
+fi
 echo "============================================================"

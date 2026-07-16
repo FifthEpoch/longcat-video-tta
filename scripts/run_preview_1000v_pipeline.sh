@@ -14,7 +14,8 @@
 #   routers    — deploy router CPU suite (sbatch chain)
 #   audit      — PSNR/chunk coverage check (run before routers)
 #   scope      — per-config overlap vs reference; scopes which configs to rerun
-#   resweep    — wipe stale chunk artifacts + resubmit full 12-config grid
+#   resweep    — wipe stale chunk artifacts + resubmit (metrics-only, NO mp4s)
+#   resweep-mp4— wipe + resubmit WITH mp4s saved (VBench + downstream reuse)
 #   diagnose   — classify per-video NaN PSNR failure modes
 #   status     — print paths + CSV line counts
 #
@@ -68,6 +69,13 @@ case "${PHASE}" in
     CONFIRM=1 bash "${REPO}/scripts/wipe_preview_1000v_sweep.sh"
     bash "${REPO}/sweep_experiment/sbatch/submit_adasteer_budget_1000v_preview.sh"
     ;;
+  resweep-mp4)
+    # Wipe stale chunk artifacts + resubmit WITH frames saved (NO_SAVE_VIDEOS=0).
+    # Use this — not plain `resweep` — whenever you need the generated videos
+    # (VBench backfill, downstream predictor experiments, etc.).
+    CONFIRM=1 bash "${REPO}/scripts/wipe_preview_1000v_sweep.sh"
+    NO_SAVE_VIDEOS=0 bash "${REPO}/sweep_experiment/sbatch/submit_adasteer_budget_1000v_preview.sh"
+    ;;
   diagnose)
     cd "${REPO}"
     python3 scripts/diagnose_preview_psnr_nan.py --series-root "${PREVIEW_SERIES_ROOT}"
@@ -105,7 +113,7 @@ case "${PHASE}" in
     ;;
   *)
     echo "Unknown phase: ${PHASE}" >&2
-    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | scope | resweep | diagnose | status" >&2
+    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | scope | resweep | resweep-mp4 | diagnose | status" >&2
     exit 1
     ;;
 esac
