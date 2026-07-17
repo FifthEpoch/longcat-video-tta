@@ -35,15 +35,29 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-_CANONICAL_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*_\d+)")
+# Match key = the normalized video INDEX, robust to the three filename schemes
+# actually on disk:
+#   "panda_0010_lora.mp4"                         -> prefix_<idx>       -> 10
+#   "107_a-close-up…_no-TTA.mp4"                  -> <idx>_<caption>    -> 107
+#   "943_…_adasteer.mp4"                          -> <idx>_<caption>    -> 943
+# and to the summary-level ids in --ids-file / OOD csv ("panda_0107" -> 107).
+# Keying on the integer index lets NOTTA/ADA/LoRA (and the pool id list) all
+# line up for true side-by-side panels.
+_LEAD_INT_RE = re.compile(r"^(\d{1,6})(?:_|$)")
+_PREFIX_INT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*_(\d{1,6})")
 
 
 def _canonical_video_id(s: Optional[str]) -> str:
     if not s:
         return ""
     stem = Path(str(s)).stem
-    m = _CANONICAL_PREFIX_RE.match(stem)
-    return m.group(1) if m else stem
+    m = _LEAD_INT_RE.match(stem)
+    if m:
+        return str(int(m.group(1)))
+    m = _PREFIX_INT_RE.match(stem)
+    if m:
+        return str(int(m.group(1)))
+    return stem
 
 
 def discover_runs(series_root: Path) -> List[Path]:
@@ -143,7 +157,10 @@ def main() -> int:
         common = set().union(*[set(f.keys()) for f in run_files.values()])
 
     if args.ids_file and args.ids_file.is_file():
-        pinned = {ln.strip() for ln in args.ids_file.read_text().splitlines() if ln.strip()}
+        pinned = {
+            _canonical_video_id(ln.strip())
+            for ln in args.ids_file.read_text().splitlines() if ln.strip()
+        }
         missing = pinned - common
         common = common & pinned
         print(f"[info] pinned to {len(pinned)} ids from {args.ids_file}; "
@@ -167,10 +184,12 @@ def main() -> int:
     n_copied = 0
     for run in runs:
         files = run_files[run.name]
+        run_hits = 0
         for cid in picked:
             src = files.get(cid)
             if src is None:
                 continue
+            run_hits += 1
             dst = args.dest / series_name / run.name / src.name
             if dst.exists():
                 continue
@@ -180,6 +199,9 @@ def main() -> int:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
             n_copied += 1
+        tag = "" if run_hits == len(picked) else "  <-- INCOMPLETE panel"
+        print(f"[info]   {run.name}: {run_hits}/{len(picked)} picked ids present{tag}",
+              file=sys.stderr)
     verb = "would copy" if args.dry_run else "copied"
     print(f"[info] {verb} {n_copied} clips into {args.dest / series_name}",
           file=sys.stderr)
