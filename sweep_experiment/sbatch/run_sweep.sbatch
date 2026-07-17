@@ -14,8 +14,8 @@
 # ============================================================================
 # Unified TTA Sweep Template
 #
-# This sbatch script handles all 7 TTA methods via the METHOD env var:
-#   METHOD = full | lora | delta_a | delta_b | delta_c | norm_tune | film
+# This sbatch script handles all TTA methods via the METHOD env var:
+#   METHOD = full | lora | temp_lora | delta_a | delta_b | delta_c | norm_tune | film
 #
 # All hyperparameters are passed via environment variables.
 # The sweep runner (run_sweep.py) sets these before submission.
@@ -114,6 +114,12 @@ LORA_TARGET_BLOCKS="${LORA_TARGET_BLOCKS:-all}"
 USE_BUILTIN_LORA="${USE_BUILTIN_LORA:-}"
 TARGET_FFN="${TARGET_FFN:-}"
 SKIP_GENERATION="${SKIP_GENERATION:-}"
+
+# Temp-LoRA (SlowFast-VGen) specific
+TEMP_LORA_STEP_LATENTS="${TEMP_LORA_STEP_LATENTS:-1}"
+TEMP_LORA_CTX_LATENTS="${TEMP_LORA_CTX_LATENTS:-0}"
+TEMP_LORA_WARM_START="${TEMP_LORA_WARM_START:-1}"
+TEMP_LORA_UPDATE_ROLLOUT="${TEMP_LORA_UPDATE_ROLLOUT:-1}"
 
 # Batch-level TTA (retrieval-augmented)
 BATCH_VIDEOS="${BATCH_VIDEOS:-1}"
@@ -545,6 +551,76 @@ case "${METHOD}" in
         ${X0_FLAGS}
     ;;
 
+  temp_lora)
+    # SlowFast-VGen (ICLR 2025) Temp-LoRA fast-learning baseline.
+    # Note: this runner does NOT accept ES / augmentation / CLIP-gate flags,
+    # so those are intentionally omitted here.
+    echo "Method-specific config (Temp-LoRA / SlowFast-VGen):"
+    echo "  LoRA impl      : ${USE_BUILTIN_LORA:-custom}"
+    echo "  LoRA rank/alpha: ${LORA_RANK}/${LORA_ALPHA}"
+    echo "  Target modules : ${TARGET_MODULES}"
+    echo "  Target blocks  : ${LORA_TARGET_BLOCKS}"
+    echo "  Steps/lr chunk : ${NUM_STEPS} / ${LEARNING_RATE}"
+    echo "  Stream step lat: ${TEMP_LORA_STEP_LATENTS}"
+    echo "  Stream ctx lat : ${TEMP_LORA_CTX_LATENTS} (0=from tta_context)"
+    echo "  Warm-start ctx : ${TEMP_LORA_WARM_START}"
+    echo "  Update rollout : ${TEMP_LORA_UPDATE_ROLLOUT}"
+    echo "=============================================================================="
+
+    EXTRA_FLAGS=""
+    if [ "${TARGET_FFN}" = "1" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --target-ffn"
+    fi
+    if [ "${USE_BUILTIN_LORA}" = "1" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --use-builtin-lora"
+    fi
+    if [ "${TEMP_LORA_WARM_START}" = "1" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --warm-start-on-context"
+    else
+        EXTRA_FLAGS="${EXTRA_FLAGS} --no-warm-start-on-context"
+    fi
+    if [ "${TEMP_LORA_UPDATE_ROLLOUT}" = "1" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --update-during-rollout"
+    else
+        EXTRA_FLAGS="${EXTRA_FLAGS} --no-update-during-rollout"
+    fi
+
+    "$PYTHON" lora_experiment/scripts/run_temp_lora_tta.py \
+        --checkpoint-dir "${CHECKPOINT_DIR}" \
+        --data-dir "${DATA_DIR}" \
+        --output-dir "${OUTPUT_DIR}" \
+        --max-videos "${MAX_VIDEOS}" \
+        --start-video-idx "${START_VIDEO_IDX}" \
+        --chunk-size "${CHUNK_SIZE}" \
+        --lora-rank "${LORA_RANK}" \
+        --lora-alpha "${LORA_ALPHA}" \
+        --target-modules "${TARGET_MODULES}" \
+        --lora-target-blocks "${LORA_TARGET_BLOCKS}" \
+        --learning-rate "${LEARNING_RATE}" \
+        --num-steps "${NUM_STEPS}" \
+        --warmup-steps "${WARMUP_STEPS}" \
+        --weight-decay "${WEIGHT_DECAY}" \
+        --max-grad-norm "${MAX_GRAD_NORM}" \
+        --temp-lora-step-latents "${TEMP_LORA_STEP_LATENTS}" \
+        --temp-lora-ctx-latents "${TEMP_LORA_CTX_LATENTS}" \
+        --num-cond-frames "${NUM_COND_FRAMES}" \
+        --num-frames "${NUM_FRAMES}" \
+        --gen-start-frame "${GEN_START_FRAME}" \
+        --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+        --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
+        --num-inference-steps "${NUM_INFERENCE_STEPS}" \
+        --guidance-scale "${GUIDANCE_SCALE}" \
+        --resolution "${RESOLUTION}" \
+        --seed "${SEED}" \
+        ${SAVE_FLAGS} \
+        ${EXTRA_FLAGS} \
+        ${CAPTION_FLAGS} \
+        ${FEATURE_FLAGS} \
+        ${EVAL_FLAGS} \
+        ${NOPROMPT_FLAGS} \
+        ${X0_FLAGS}
+    ;;
+
   delta_a)
     echo "Method-specific config:"
     echo "  Delta LR       : ${DELTA_LR}"
@@ -810,7 +886,7 @@ case "${METHOD}" in
     ;;
 
   *)
-    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|delta_a|delta_b|delta_c|norm_tune|film|vae_decoder" >&2
+    echo "ERROR: Unknown METHOD '${METHOD}'. Use: full|lora|temp_lora|delta_a|delta_b|delta_c|norm_tune|film|vae_decoder" >&2
     exit 1
     ;;
 esac

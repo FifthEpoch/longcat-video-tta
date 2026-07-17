@@ -78,6 +78,11 @@ _KEY_TO_ENV = {
     "lora_target_blocks": "LORA_TARGET_BLOCKS",
     "use_builtin_lora": "USE_BUILTIN_LORA",
     "target_ffn": "TARGET_FFN",
+    # Temp-LoRA (SlowFast-VGen) specific
+    "temp_lora_step_latents": "TEMP_LORA_STEP_LATENTS",
+    "temp_lora_ctx_latents": "TEMP_LORA_CTX_LATENTS",
+    "temp_lora_warm_start": "TEMP_LORA_WARM_START",
+    "temp_lora_update_rollout": "TEMP_LORA_UPDATE_ROLLOUT",
     # Delta shared
     "delta_steps": "DELTA_STEPS",
     "delta_lr": "DELTA_LR",
@@ -167,6 +172,7 @@ _KEY_TO_ENV = {
 _METHOD_MAP = {
     "full": "full",
     "lora": "lora",
+    "temp_lora": "temp_lora",
     "delta_a": "delta_a",
     "delta_b": "delta_b",
     "delta_c": "delta_c",
@@ -324,6 +330,14 @@ def estimate_time(method: str, run_overrides: dict, fixed: dict) -> str:
         if tta_total > num_cond:
             hours += 2
         return f"{min(hours, 48):02d}:00:00"
+    elif method == "temp_lora":
+        # Temp-LoRA does many small fast-updates (warm-start streams over the
+        # observed context + per-rollout-chunk updates), so budget generously.
+        steps = merged.get("num_steps", 10)
+        hours = 18 if steps <= 10 else 24
+        if tta_total > num_cond:
+            hours += 4
+        return f"{min(hours, 48):02d}:00:00"
     elif method in ("delta_a", "delta_b", "delta_c"):
         steps = merged.get("delta_steps", 20)
         extended_factor = max(1, tta_total / 32)
@@ -369,7 +383,7 @@ def estimate_mem(method: str) -> str:
     """Estimate memory requirement based on method."""
     if method == "full":
         return "256G"
-    elif method == "lora":
+    elif method in ("lora", "temp_lora"):
         # LoRA runs can spike host RAM with ES/CLIP enabled (extra snapshots,
         # validation passes, and feature buffers). Keep parity with template.
         return "256G"

@@ -28,6 +28,8 @@ echo "Loss mode: ${SAVI_LOSS_MODE:-latent} (default: latent loss for LongCat)"
 echo "Rollout steps: ${SAVI_ROLLOUT_STEPS:-10}"
 echo "Max grad norm: ${SAVI_MAX_GRAD_NORM:-1.0}"
 echo "No-optimize: ${SAVI_NO_OPTIMIZE:-}"
+echo "Oracle-leak: ${SAVI_ORACLE_LEAK:-0} (1=leaky oracle upper bound; default 0=fair leakage-free)"
+echo "Geometry: cond=${SAVI_NUM_COND_FRAMES:-14} total=${SAVI_NUM_FRAMES:-28} gen_start=${SAVI_GEN_START_FRAME:-48}"
 echo "=============================================================================="
 
 SCRATCH_BASE="/scratch/wc3013"
@@ -89,6 +91,13 @@ LOSS_FLAG=""
 if [ "${SAVI_LOSS_MODE:-latent}" = "pixel" ]; then
     LOSS_FLAG="--pixel-loss"
 fi
+# Fair protocol is the DEFAULT (adapt noise on observed history, predict unseen
+# future). Set SAVI_ORACLE_LEAK=1 only to produce a labelled oracle upper bound
+# (optimizes noise against the scored future = ground-truth leakage).
+ORACLE_FLAG=""
+if [ -n "${SAVI_ORACLE_LEAK:-}" ] && [ "${SAVI_ORACLE_LEAK}" = "1" ]; then
+    ORACLE_FLAG="--oracle-leak"
+fi
 
 # ============================================================================
 # Run SAVi-DNO with LongCat backbone
@@ -106,9 +115,13 @@ fi
     --p "${SAVI_P:-0.7}" \
     --rollout-steps "${SAVI_ROLLOUT_STEPS:-10}" \
     --max-grad-norm "${SAVI_MAX_GRAD_NORM:-1.0}" \
+    --num-cond-frames "${SAVI_NUM_COND_FRAMES:-14}" \
+    --num-frames "${SAVI_NUM_FRAMES:-28}" \
+    --gen-start-frame "${SAVI_GEN_START_FRAME:-48}" \
     --seed 42 \
     ${NO_OPT_FLAG} \
     ${LOSS_FLAG} \
+    ${ORACLE_FLAG} \
     ${GT_CACHE_FLAG} \
     ${SAVE_LIST_FLAG}
 

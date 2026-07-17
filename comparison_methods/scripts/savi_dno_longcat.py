@@ -13,6 +13,18 @@ Key differences from PVDM-based SAVi-DNO:
   - AutoencoderKLWan instead of ViT autoencoder
   - 480x832 resolution, 14 cond + 14 gen frames
   - Conditioning via temporal concatenation + per-token timesteps
+
+Fair comparison protocol (default, leakage-free):
+  The sequence-adaptive noise is optimized ONLY on an observed history
+  segment (predict [gen_start-num_gen, gen_start) from the frames before it),
+  then that adapted noise seeds the sampler to predict the true UNSEEN future
+  [gen_start, gen_start+num_gen). The scored future frames never enter
+  optimization -> apples-to-apples with AdaSteer / LoRA-TTA, which adapt on
+  pre-gen_start context only.
+
+  --oracle-leak reverts to optimizing the noise directly against the scored
+  future frames (the previous behaviour). That is an ORACLE UPPER BOUND, not a
+  fair baseline, and must be labelled as such if ever reported.
 """
 
 import sys
@@ -659,6 +671,43 @@ class SAViDNO_LongCat:
             pred_pixels = decode_latents(self.vae, z_pred, denorm=True)
         return pred_pixels
 
+    def generate_with_optimized_eps(
+        self,
+        cond_latents: torch.Tensor,
+        target_latent_shape: tuple,
+        prompt_embeds: torch.Tensor,
+        prompt_mask: torch.Tensor,
+    ):
+        """Generate the (unseen) future segment using the noise that was
+        adapted on OBSERVED history frames.
+
+        This is the leakage-free "apply" step of the fair SAVi-DNO protocol:
+        the sequence-adaptive noise ``self.eps_optimized`` was fit against
+        already-observed frames (see ``predict_and_optimize`` called on the
+        history segment), and here we simply seed the sampler with it to
+        predict the true future.  No gradient / no ground-truth of the scored
+        segment is touched.  Falls back to fresh Gaussian noise if adaptation
+        never ran.
+        """
+        with torch.no_grad():
+            if self.eps_optimized is not None:
+                eps = self.eps_optimized.detach().to(self.device, torch.float32)
+                if tuple(eps.shape) != tuple(target_latent_shape):
+                    # History segment had a different geometry than the target
+                    # window; cannot transfer noise 1:1 -> reseed.
+                    eps = torch.randn(
+                        target_latent_shape, device=self.device, dtype=torch.float32,
+                    )
+            else:
+                eps = torch.randn(
+                    target_latent_shape, device=self.device, dtype=torch.float32,
+                )
+            z_pred = self._flow_euler_sample_differentiable(
+                cond_latents, eps, prompt_embeds, prompt_mask,
+            )
+            pred_pixels = decode_latents(self.vae, z_pred, denorm=True)
+        return pred_pixels
+
     def reset(self):
         self.eps_optimized = None
         self.optimizer = None
@@ -707,9 +756,15 @@ def main():
     parser.add_argument("--save-dir", type=str, default=None)
     parser.add_argument("--gt-features-cache", type=str, default=None)
     parser.add_argument("--rollout-steps", type=int, default=10,
-                        help="Number of noise optimization steps per video")
+                        help="Number of noise optimization (Adam) steps taken on the "
+                             "OBSERVED history segment before predicting the future")
     parser.add_argument("--max-grad-norm", type=float, default=1.0,
                         help="Max gradient norm for eps_optimized (0=disable)")
+    parser.add_argument("--oracle-leak", action="store_true",
+                        help="DEBUG/UPPER-BOUND ONLY: optimize the noise directly against "
+                             "the scored future frames (ground-truth leakage). This is NOT a "
+                             "fair baseline; it reproduces the old behaviour as an oracle "
+                             "upper bound. Leave OFF for the paper comparison.")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -820,8 +875,21 @@ def main():
     if args.max_videos > 0:
         video_list = video_list[:args.max_videos]
 
-    method_name = "longcat_baseline" if args.no_optimize else "savi_dno_longcat"
+    if args.no_optimize:
+        method_name = "longcat_baseline"
+    elif args.oracle_leak:
+        method_name = "savi_dno_longcat_oracle"
+    else:
+        method_name = "savi_dno_longcat"
+    leakage_free = not args.oracle_leak
+    protocol = ("no_optimize" if args.no_optimize
+                else ("oracle_leak_UPPER_BOUND" if args.oracle_leak
+                      else "fair_streaming_observed_history"))
     print("\nProcessing %d videos (%s)..." % (len(video_list), method_name))
+    print("  Protocol     : %s (leakage_free=%s)" % (protocol, leakage_free))
+    if args.oracle_leak:
+        print("  *** WARNING: --oracle-leak optimizes noise against the SCORED "
+              "future. Oracle upper bound only, NOT a fair baseline. ***")
 
     # --- FVD/FID accumulators ---
     d_fvd = _I3D_FEATURE_DIM
@@ -879,7 +947,17 @@ def main():
                 prompt=caption, device=device, dtype=torch.bfloat16,
             )
 
-            # Load conditioning frames [1, C, T, H, W] in [-1, 1]
+            # ----------------------------------------------------------------
+            # Frame windows (leakage-free fair protocol):
+            #   cond       = [gen_start - num_cond, gen_start)       real context
+            #   target     = [gen_start, gen_start + num_gen)        UNSEEN future (scored)
+            #   adapt_tgt  = [gen_start - num_gen,  gen_start)       OBSERVED (adapt on this)
+            #   adapt_cond = [adapt_tgt - num_cond, adapt_tgt)       OBSERVED
+            # SAVi-DNO fits the sequence-adaptive noise on the observed history
+            # segment (adapt_cond -> adapt_tgt), then seeds the sampler with that
+            # noise to predict the true future WITHOUT optimizing against it.
+            # No future GT enters optimization -> apples-to-apples with AdaSteer.
+            # ----------------------------------------------------------------
             cond_start = args.gen_start_frame - args.num_cond_frames
             pixel_cond = load_video_frames(
                 video_path, args.num_cond_frames,
@@ -887,13 +965,12 @@ def main():
                 start_frame=max(0, cond_start),
             ).to(device, torch.bfloat16)
 
-            # Load GT frames [1, C, T_gen, H, W] in [-1, 1]
+            # True future frames [1, C, T_gen, H, W] in [-1, 1] -> [0,1] (SCORED ONLY)
             pixel_gt = load_video_frames(
                 video_path, num_gen_frames,
                 height=height, width=width,
                 start_frame=args.gen_start_frame,
             ).to(device, torch.bfloat16)
-            # Convert GT to [0, 1] for loss computation
             gt_01 = (pixel_gt + 1.0) / 2.0
 
             # Encode conditioning to latents
@@ -909,18 +986,64 @@ def main():
                 cond_latents.shape[4],
             )
 
+            adapt_cond_latents = None
             # --- Run SAVi-DNO or baseline ---
             if args.no_optimize:
                 pred_pixels = savi.predict_no_optimize(
                     cond_latents, target_shape, prompt_embeds, prompt_mask,
                 )
                 loss_val = None
-            else:
+            elif args.oracle_leak:
+                # UPPER BOUND ONLY — leaks the scored future into optimization.
+                # Not a fair baseline; kept for a labelled oracle row.
+                loss_val = None
                 for _opt_step in range(args.rollout_steps):
                     pred_pixels, loss_val = savi.predict_and_optimize(
                         cond_latents, gt_01, target_shape,
                         prompt_embeds, prompt_mask,
                     )
+            else:
+                # FAIR leakage-free protocol.
+                adapt_tgt_start = args.gen_start_frame - num_gen_frames
+                adapt_cond_start = adapt_tgt_start - args.num_cond_frames
+                loss_val = None
+                if adapt_cond_start < 0:
+                    # Not enough observed history to form an adaptation segment
+                    # of matching geometry -> leakage-free no-optimization fallback.
+                    if idx == 0:
+                        print("  [warn] gen_start=%d too small for an observed "
+                              "adaptation segment (need >= %d); using no-optimize "
+                              "fallback." % (args.gen_start_frame,
+                                             num_gen_frames + args.num_cond_frames))
+                    pred_pixels = savi.predict_no_optimize(
+                        cond_latents, target_shape, prompt_embeds, prompt_mask,
+                    )
+                else:
+                    pixel_adapt_cond = load_video_frames(
+                        video_path, args.num_cond_frames,
+                        height=height, width=width,
+                        start_frame=adapt_cond_start,
+                    ).to(device, torch.bfloat16)
+                    pixel_adapt_tgt = load_video_frames(
+                        video_path, num_gen_frames,
+                        height=height, width=width,
+                        start_frame=adapt_tgt_start,
+                    ).to(device, torch.bfloat16)
+                    adapt_tgt_01 = (pixel_adapt_tgt + 1.0) / 2.0
+                    adapt_cond_latents = savi.encode(pixel_adapt_cond)
+
+                    # Adapt the noise on the OBSERVED history segment only.
+                    for _opt_step in range(args.rollout_steps):
+                        _, loss_val = savi.predict_and_optimize(
+                            adapt_cond_latents, adapt_tgt_01, target_shape,
+                            prompt_embeds, prompt_mask,
+                        )
+
+                    # Apply the sequence-adaptive noise to the UNSEEN future.
+                    pred_pixels = savi.generate_with_optimized_eps(
+                        cond_latents, target_shape, prompt_embeds, prompt_mask,
+                    )
+                    del pixel_adapt_cond, pixel_adapt_tgt, adapt_tgt_01
 
             elapsed = time.time() - t_start
 
@@ -1008,6 +1131,8 @@ def main():
             # Free memory
             del pred_pixels, pixel_cond, pixel_gt, gt_01, cond_latents
             del prompt_embeds, prompt_mask
+            if adapt_cond_latents is not None:
+                del adapt_cond_latents
             torch_gc()
 
         except Exception as e:
@@ -1037,6 +1162,8 @@ def main():
     summary = {
         "method": method_name,
         "backbone": "longcat",
+        "protocol": protocol,
+        "leakage_free": leakage_free,
         "num_videos": len(video_list),
         "num_successful": n_ok,
         "avg_psnr": total_psnr / max(n_ok, 1),

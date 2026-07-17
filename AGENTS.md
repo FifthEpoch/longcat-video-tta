@@ -155,6 +155,20 @@ TinyLoRA lives separately under `delta_experiment/results/`:
 - `tinylora_ucf101_932v_standard/` (TL_BARE_R2, TL_TIED_R2 — NOT merged)
 - `tinylora_longctx_1000v/` (PANDA_TL_LAST24 — merged, used in §1.1 of recap)
 
+### 2d-bis. Comparison baselines (ADDED 2026-07-17)
+
+Three TTA comparison baselines for AdaSteer, all leakage-free and pinned to the
+paper pools + shared metric code:
+
+| Baseline | Horizon | Entry point | Notes |
+|---|---|---|---|
+| **SAVi-DNO** (noise opt) | short (14+14@48) | `comparison_methods/scripts/savi_dno_longcat.py` + `sbatch/run_savi_dno_longcat.sbatch` | DEFAULT is now the **fair leakage-free** protocol (adapt noise on observed history, predict unseen future). `--oracle-leak` (env `SAVI_ORACLE_LEAK=1`) reproduces the OLD behaviour = optimizes noise against the scored future = ORACLE upper bound only. The previous default leaked GT — do NOT cite pre-2026-07-17 SAVi-DNO numbers. |
+| **SlowFast-VGen** (Temp-LoRA) | short | `lora_experiment/scripts/run_temp_lora_tta.py`, `METHOD=temp_lora` in run_sweep | Config `sweep_experiment/configs/panda_1000v_temp_lora.yaml`. Temp-LoRA fast-learns sequentially (warm-start streams over observed context, then per-rollout-chunk updates on self-generated frames). Uses the standard summary/FVD/VBench plumbing. |
+| **TTC** (pathwise correction) | **LONG only** (14+79@14) | `comparison_methods/scripts/ttc_longcat.py` + `sbatch/run_ttc_longcat.sbatch` | Training-free; re-anchors appearance to first frame at low-noise steps. Do NOT report short-horizon. Knobs (sigma-threshold/cadence/weight) are a LongCat adaptation of the T2V TTC paper — tune/validate before citing. `--no-correction` gives the matched baseline arm. |
+
+All three were syntax/dry-run validated 2026-07-17 but NOT yet cluster-run;
+smoke-test before full 1000v.
+
 ### 2e. `merged_summary.json` schema (CONFIRMED 2026-06-01)
 
 Top-level keys (no nested `metrics` dict):

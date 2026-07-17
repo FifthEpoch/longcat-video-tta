@@ -1,0 +1,58 @@
+# Panda-70M: 1000-video SlowFast-VGen (Temp-LoRA) comparison baseline
+#
+# SHORT-HORIZON comparison for AdaSteer (with router). Same pool + geometry as
+# panda_1000v_lora / panda_notta (14 cond + 14 gen @ gen_start=48), so numbers
+# drop directly into the standard 1000v comparison table.
+#
+# Temp-LoRA (SlowFast-VGen, ICLR 2025) fast-learns the adapter SEQUENTIALLY:
+# warm-starts by streaming over the observed context, then (in a rollout)
+# updates per generated chunk. Leakage-free: it never touches future GT.
+#
+# Saves videos + VBench in a single pass (reusable for figures / downstream).
+#
+# Submit with:
+#   python sweep_experiment/scripts/run_sweep.py \
+#       --config sweep_experiment/configs/panda_1000v_temp_lora.yaml \
+#       --data-dir /scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p \
+#       --account torch_pr_36_mren
+
+method: temp_lora
+series: panda
+series_name: panda_1000v_temp_lora
+description: "Panda-70M 1000-video: SlowFast-VGen Temp-LoRA baseline (short horizon)"
+
+fixed:
+  warmup_steps: 1
+  weight_decay: 0.01
+  max_grad_norm: 10.0
+  num_cond_frames: 14
+  num_frames: 28
+  gen_start_frame: 48
+  tta_total_frames: 48
+  tta_context_frames: 14
+  temp_lora_step_latents: 1
+  temp_lora_ctx_latents: 0        # 0 => derive from tta_context_frames
+  temp_lora_warm_start: 1
+  temp_lora_update_rollout: 1
+  num_inference_steps: 50
+  guidance_scale: 4.0
+  resolution: 480p
+  seed: 42
+  max_videos: 1000
+  compute_fvd: true
+  compute_fid: true
+  compute_vbench: true
+  es_disable: true
+  caption_guard_mode: warn
+  feature_frame_guard_mode: warn
+  no_save_videos: false
+
+sweep:
+  # Match the best LoRA-TTA config (R8, alpha16, all blocks, 10 steps, LR 5e-5)
+  # so the only difference vs LORA_R8 is the Temp-LoRA sequential fast-learning.
+  - run_id: TEMP_LORA_R8
+    lora_rank: 8
+    lora_alpha: 16
+    lora_target_blocks: all
+    num_steps: 10
+    learning_rate: 5.0e-5
