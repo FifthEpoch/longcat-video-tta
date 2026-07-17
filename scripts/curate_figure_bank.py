@@ -115,6 +115,10 @@ def main() -> int:
     ap.add_argument("--ood-csv", type=Path, default=None)
     ap.add_argument("--methods", nargs="*", default=None,
                     help="restrict to these run/method subdir names")
+    ap.add_argument("--ids-file", type=Path, default=None,
+                    help="newline-separated canonical ids to pin (e.g. a "
+                         "pool_ids/<fp>.txt from build_run_manifest.py); "
+                         "guarantees the SAME ids across series sharing a pool")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -137,6 +141,16 @@ def main() -> int:
         print("[warn] no canonical id common to all runs; "
               "falling back to union (panels may be incomplete)", file=sys.stderr)
         common = set().union(*[set(f.keys()) for f in run_files.values()])
+
+    if args.ids_file and args.ids_file.is_file():
+        pinned = {ln.strip() for ln in args.ids_file.read_text().splitlines() if ln.strip()}
+        missing = pinned - common
+        common = common & pinned
+        print(f"[info] pinned to {len(pinned)} ids from {args.ids_file}; "
+              f"{len(common)} present here, {len(missing)} absent", file=sys.stderr)
+        if not common:
+            print("[error] none of the pinned ids exist in this series", file=sys.stderr)
+            return 2
 
     quintiles = load_ood_quintiles(args.ood_csv) if args.ood_csv else {}
     picked = pick_ids(sorted(common), args.per_series, quintiles)

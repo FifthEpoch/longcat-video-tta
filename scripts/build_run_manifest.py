@@ -64,6 +64,13 @@ def _canonical_video_id(s: Optional[str]) -> str:
 
 # Population metric keys we care about (superset of the merged_summary schema).
 POP_METRICS = ("psnr", "ssim", "lpips", "fvd", "fid", "vbench")
+# VBench is frequently stored as a per-dimension DICT (or under an alternate
+# key), not a scalar. Detect presence across all known spellings so we never
+# false-flag a fully-scored run as "VBench-missing".
+_VBENCH_KEYS = (
+    "vbench", "vbench_total_score", "vbench_total", "vbench_score",
+    "vbench_quality_score", "vbench_num_chunks",
+)
 _PROVENANCE_KEYS = (
     "num_videos", "num_successful", "num_chunks",
     "fvd_num_videos", "fid_num_frames_gen", "vbench_num_chunks",
@@ -124,12 +131,41 @@ def _git_commit(repo_root: Path) -> str:
 # ---------------------------------------------------------------------------
 # Per-run scan
 # ---------------------------------------------------------------------------
-def _run_pop_metrics(run_dir: Path) -> Tuple[Dict[str, Optional[float]], dict]:
-    """Return (population metrics, raw merged_summary dict) for a run."""
-    merged = _load_json(run_dir / "merged_summary.json") or {}
-    pop = {m: _coerce_float(merged.get(m)) for m in POP_METRICS}
-    prov = {k: merged.get(k) for k in _PROVENANCE_KEYS if merged.get(k) is not None}
-    return pop, prov
+def _metric_presence(d: dict, m: str) -> Tuple[bool, Optional[float]]:
+    """(present?, scalar-if-any). VBench may be a dict -> present but scalar=None."""
+    if m == "vbench":
+        for k in _VBENCH_KEYS:
+            if d.get(k) is not None:
+                return True, _coerce_float(d.get(k))
+        return False, None
+    v = d.get(m)
+    return (v is not None), _coerce_float(v)
+
+
+def _run_pop_metrics(
+    run_dir: Path,
+) -> Tuple[Dict[str, Optional[float]], Dict[str, bool], dict]:
+    """Return (scalar metrics, presence flags, provenance) for a run.
+
+    Unions across EVERY merged_summary.json under the run (some series split
+    FVD/FID and PSNR/VBench across nested merged files), so presence matches
+    the authoritative glob-based view rather than only the run-level file.
+    """
+    pop: Dict[str, Optional[float]] = {m: None for m in POP_METRICS}
+    has: Dict[str, bool] = {m: False for m in POP_METRICS}
+    prov: dict = {}
+    for p in sorted(run_dir.rglob("merged_summary.json")):
+        d = _load_json(p) or {}
+        for m in POP_METRICS:
+            present, val = _metric_presence(d, m)
+            if present:
+                has[m] = True
+                if pop[m] is None and val is not None:
+                    pop[m] = val
+        for k in _PROVENANCE_KEYS:
+            if d.get(k) is not None and k not in prov:
+                prov[k] = d.get(k)
+    return pop, has, prov
 
 
 def _run_pool(run_dir: Path) -> Tuple[List[str], Dict[str, bool]]:
@@ -172,7 +208,7 @@ def _pool_fingerprint(ids: List[str]) -> str:
 
 
 def scan_run(series: str, run_dir: Path) -> dict:
-    pop, prov = _run_pop_metrics(run_dir)
+    pop, has, prov = _run_pop_metrics(run_dir)
     ids, have_pv = _run_pool(run_dir)
     fp = _pool_fingerprint(ids)
     return {
@@ -183,6 +219,7 @@ def scan_run(series: str, run_dir: Path) -> dict:
         "n_eval_videos": len(ids),
         "pool_fingerprint": fp,
         "pop_metrics": pop,
+        "has_metrics": has,
         "per_video_available": have_pv,
         "provenance": prov,
         "eval_ids": ids,
@@ -245,7 +282,7 @@ def render_markdown(entries: List[dict], repo_root: Path) -> str:
     ]
     for e in sorted(entries, key=lambda x: (x["series"], x["run"])):
         m = e["pop_metrics"]
-        vb = "✓" if m.get("vbench") is not None else "—"
+        vb = "✓" if e.get("has_metrics", {}).get("vbench") else "—"
         lines.append(
             f"| {e['series']} | {e['run']} | {e['mp4_count']} | {e['n_eval_videos']} | "
             f"`{e['pool_fingerprint']}` | {_fmt(m.get('psnr'))} | {_fmt(m.get('ssim'),4)} | "
@@ -283,9 +320,9 @@ def render_markdown(entries: List[dict], repo_root: Path) -> str:
     ]
     any_bf = False
     for e in sorted(entries, key=lambda x: (x["series"], x["run"])):
-        if e["mp4_count"] > 0 and e["pop_metrics"].get("vbench") is None:
+        if e["mp4_count"] > 0 and not e.get("has_metrics", {}).get("vbench"):
             any_bf = True
-            has_psnr = "✓" if e["pop_metrics"].get("psnr") is not None else "—"
+            has_psnr = "✓" if e.get("has_metrics", {}).get("psnr") else "—"
             lines.append(f"| {e['series']} | {e['run']} | {e['mp4_count']} | "
                          f"{e['n_eval_videos']} | {has_psnr} |")
     if not any_bf:
@@ -342,7 +379,7 @@ def main() -> int:
         for e in sorted(slim, key=lambda x: (x["series"], x["run"])):
             w.writerow([e["series"], e["run"], e["pool_fingerprint"],
                         e["n_eval_videos"], e["mp4_count"],
-                        int(e["pop_metrics"].get("vbench") is not None)])
+                        int(bool(e.get("has_metrics", {}).get("vbench")))])
 
     (out_dir / "MANIFEST.md").write_text(render_markdown(slim, args.repo_root))
     print(f"[info] wrote manifest for {len(slim)} runs -> {out_dir}", file=sys.stderr)
