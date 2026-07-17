@@ -103,6 +103,26 @@ paths to paper tables; no audit trail when narrative pivots happened.
    new dated table file (don't edit the old one — keep the audit trail)
    AND add an entry to `ANALYSIS_LOG.md` explaining what was stale and why.
 
+8. **NEVER delete generated videos without a manifest + metric capture.**
+   The `*.mp4` files are the ONLY source from which frame-based metrics
+   (VBench++, FID, FVD, future perceptual metrics) can ever be recomputed;
+   once deleted a run is frozen at whatever is already in `merged_summary.json`.
+   Before deleting any generated videos:
+   (a) run `scripts/build_run_manifest.py` (records per-run provenance +
+       metrics + a sha1 pool fingerprint proving which runs share a test set);
+   (b) confirm each run's needed metrics — ESPECIALLY VBench — are captured,
+       and backfill on the saved frames first if not;
+   (c) curate a few matched examples into `figure_bank/` via
+       `scripts/curate_figure_bank.py` (keys on the normalized video index so
+       NOTTA/ADA/LoRA filename schemes align);
+   (d) delete only via `scripts/cleanup_generated_videos.sh` — use PURGE
+       allowlist mode (delete only named series), which refuses to run without
+       a manifest and hard-protects `datasets/`, `**/figure_bank/`,
+       `baseline_experiment/results/gt_clips_*`, and `LongCat-Video/`.
+   Comparison-method / T2V baselines (PVDM, DFoT, OpenSora, LongCat-T2V) have
+   NO stored metrics as of 2026-07-17 — do not delete their frames until their
+   FVD/FID/etc. are computed and saved.
+
 ### 2c. Local repo is mostly dehydrated
 
 Don't waste tokens trying to read files like
