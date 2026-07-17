@@ -35,7 +35,12 @@ cd "$REPO"
 CONFIRM="${CONFIRM:-0}"
 MANIFEST_GLOB="${MANIFEST_GLOB:-sweep_experiment/reports/cleanup_manifests/*/MANIFEST.md}"
 
-# Series (relative paths) whose mp4s to KEEP entirely. Newline/space separated.
+# Two modes:
+#   PURGE (allowlist, SAFER): delete mp4s ONLY under the listed series. Nothing
+#     else can be touched. Preferred for staged cleanup.
+#   KEEP  (denylist): delete every mp4 EXCEPT under the listed series.
+# If PURGE is set it wins; otherwise KEEP mode is used.
+PURGE="${PURGE:-}"
 KEEP="${KEEP:-sweep_experiment/results/panda_ood_budget_1000v_preview
 sweep_experiment/results/panda_ood_budget_pilot}"
 
@@ -55,21 +60,36 @@ PROTECT=(
     "./baseline_experiment/results/gt_clips_*"
     "./LongCat-Video/*"
 )
-for k in ${KEEP}; do
-    PROTECT+=("./${k}/*")
-done
 
 PRUNE=()
 for p in "${PROTECT[@]}"; do
     PRUNE+=(-not -path "${p}")
 done
 
-echo "Protected (kept):"
+echo "Protected (never deleted):"
 for p in "${PROTECT[@]}"; do echo "  ${p}"; done
 echo ""
 
 LIST="$(mktemp -t cleanup-mp4-XXXXX.txt)"
-find . -type f -name '*.mp4' "${PRUNE[@]}" -printf '%s %p\n' 2>/dev/null > "${LIST}"
+if [ -n "${PURGE}" ]; then
+    echo "MODE: PURGE (allowlist) — deleting mp4s ONLY under:"
+    : > "${LIST}"
+    for s in ${PURGE}; do
+        if [ ! -d "${s}" ]; then
+            echo "  [skip] not found: ${s}" >&2
+            continue
+        fi
+        echo "  ${s}"
+        find "${s}" -type f -name '*.mp4' "${PRUNE[@]}" -printf '%s %p\n' 2>/dev/null >> "${LIST}"
+    done
+    echo ""
+else
+    echo "MODE: KEEP (denylist) — deleting all mp4s EXCEPT protected + KEEP series."
+    for k in ${KEEP}; do
+        PRUNE+=(-not -path "./${k}/*")
+    done
+    find . -type f -name '*.mp4' "${PRUNE[@]}" -printf '%s %p\n' 2>/dev/null > "${LIST}"
+fi
 
 n=$(wc -l < "${LIST}")
 gb=$(awk '{s+=$1} END{printf "%.1f", s/1073741824}' "${LIST}")
