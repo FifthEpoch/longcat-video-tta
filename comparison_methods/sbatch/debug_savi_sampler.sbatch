@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=savi_dbg
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --gres=gpu:h200:1
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
