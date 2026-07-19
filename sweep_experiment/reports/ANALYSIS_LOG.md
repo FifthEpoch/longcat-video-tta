@@ -756,3 +756,31 @@ skip} recovers oracle headroom that any fixed choice leaves on the table."
 **Next:** merge NOTTA (jobs 14319937–946, same pool) → confirm AdaSteer≈NoTTA at
 population level apples-to-apples → per-video oracle + learned-router analysis
 across the 5 OOD quintiles (`analyze_adasteer_budget_oracle.py`).
+
+---
+
+## 2026-07-19 — SAVi-DNO LongCat sampler is broken (baseline unusable as-is)
+**Tags:** bug, baseline, savi-dno, comparison-methods, blocker
+**Refs:** `comparison_methods/scripts/savi_dno_longcat.py` (`_flow_euler_sample_differentiable`, `_dit_forward_step`, `generate_with_optimized_eps`), `experiment_outputs/2026-07-19.md` (A/B diagnostic, jobs 14259120/14259121)
+
+Ran the SAVi-DNO 10-video sanity pair at production knobs (10 Euler / 10 rollout):
+A (optimized) vs B (--no-optimize). Result: **A ≈ B** (PSNR 7.212 vs 7.202) and
+**both catastrophic** (SSIM 0.04, LPIPS 0.96, FVD ~5400) against the AdaSteer grid's
+PSNR ~19.4 / FVD ~66 on the same pool type. VBench subject/background consistency
+≈ 0.95 with aesthetic 0.375 → the sampler produces internally-coherent but
+GT-unrelated video = conditioning is not being applied.
+
+**Two conclusions:** (1) the sequence-adaptive noise optimization is INERT in this
+port (72 min of Adam → +0.01 dB); (2) the custom differentiable sampler
+reimplements LongCat's conditioned flow-matching and gets it wrong. The standard
+pipeline (NOTTA/AdaSteer) yields PSNR ~19 on the identical model, so the model is
+fine — the bug is SAVi's sampler (candidate causes: per-token timestep /
+num_cond_latents handling, sigma-direction / velocity sign, latent normalization,
+and CFG-off during the differentiable rollout).
+
+**Decision:** do NOT launch full SAVi-DNO (~110 GPU-pair-hours) until the sampler
+is fixed and validated (predict_no_optimize vs generate_video_continuation on
+identical cond frames must match). Open question for the paper: fix SAVi-DNO, or
+drop it and rely on SlowFast-VGen/Temp-LoRA (short horizon) + TTC (long horizon).
+The "we chose PSNR because SAVi-DNO reports it" lineage does NOT require SAVi-DNO
+to ship if it can't be made correct.
