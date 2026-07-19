@@ -72,7 +72,8 @@ run_one "SAVi-DNO (fair)"
     --output-dir "${OUT_ROOT}/savi_dno" \
     --max-videos "${N}" --num-gpus 2 \
     --num-cond-frames 14 --num-frames 28 --gen-start-frame 48 \
-    --num-inference-steps 6 --rollout-steps 2
+    --num-inference-steps 6 --rollout-steps 2 \
+    --save-videos
 RC_SAVI=$?
 echo "[smoke] SAVi-DNO exit=${RC_SAVI}"
 fi

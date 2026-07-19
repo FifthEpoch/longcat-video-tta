@@ -98,6 +98,20 @@ ORACLE_FLAG=""
 if [ -n "${SAVI_ORACLE_LEAK:-}" ] && [ "${SAVI_ORACLE_LEAK}" = "1" ]; then
     ORACLE_FLAG="--oracle-leak"
 fi
+# Save every generated mp4 by default (bank videos for the figure bank / future
+# experiments). Set SAVI_NO_SAVE_VIDEOS=1 for a metrics-only run.
+SAVE_FLAG="--save-videos"
+if [ "${SAVI_NO_SAVE_VIDEOS:-0}" = "1" ]; then
+    SAVE_FLAG=""
+fi
+# VBench++ (7 dims) on the saved mp4s so SAVi-DNO matches AdaSteer's metric set.
+# On by default; needs saved videos. Set SAVI_COMPUTE_VBENCH=0 to skip.
+VBENCH_FLAG="--compute-vbench"
+if [ "${SAVI_COMPUTE_VBENCH:-1}" != "1" ] || [ -z "${SAVE_FLAG}${SAVE_LIST_FLAG}" ]; then
+    VBENCH_FLAG=""
+fi
+echo "Save videos  : ${SAVE_FLAG:-NO (metrics only)}"
+echo "VBench       : ${VBENCH_FLAG:-OFF}"
 
 # ============================================================================
 # Run SAVi-DNO with LongCat backbone
@@ -122,6 +136,8 @@ fi
     ${NO_OPT_FLAG} \
     ${LOSS_FLAG} \
     ${ORACLE_FLAG} \
+    ${SAVE_FLAG} \
+    ${VBENCH_FLAG} \
     ${GT_CACHE_FLAG} \
     ${SAVE_LIST_FLAG}
 

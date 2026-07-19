@@ -66,6 +66,7 @@ from delta_experiment.scripts.common import (
     encode_prompt,
     load_video_frames,
     _get_model_config,
+    _extract_vbench_score,
 )
 
 # ---------------------------------------------------------------------------
@@ -754,6 +755,14 @@ def main():
     parser.add_argument("--no-gradient-checkpointing", action="store_true")
     parser.add_argument("--save-only-list", type=str, default=None)
     parser.add_argument("--save-dir", type=str, default=None)
+    parser.add_argument("--save-videos", action="store_true",
+                        help="Save EVERY generated mp4 (not just --save-only-list ids). "
+                             "Needed to bank videos for the figure bank / future "
+                             "experiments and to enable VBench backfill.")
+    parser.add_argument("--compute-vbench", action="store_true",
+                        help="After generation, run VBench++ (7 dims) on the saved "
+                             "mp4s so SAVi-DNO has the same metric set as AdaSteer. "
+                             "Requires saved videos (--save-videos or --save-only-list).")
     parser.add_argument("--gt-features-cache", type=str, default=None)
     parser.add_argument("--rollout-steps", type=int, default=10,
                         help="Number of noise optimization (Adam) steps taken on the "
@@ -781,8 +790,10 @@ def main():
             retain_set = set(json.load(f).get("all", []))
         print("[Retain] Will save %d videos" % len(retain_set))
     save_dir = Path(args.save_dir) if args.save_dir else output_dir / "videos"
-    if retain_set:
+    if retain_set or args.save_videos:
         save_dir.mkdir(parents=True, exist_ok=True)
+        if args.save_videos:
+            print("[Save] Saving ALL generated videos -> %s" % save_dir)
 
     # Derive geometry
     num_gen_frames = args.num_frames - args.num_cond_frames
@@ -1108,9 +1119,9 @@ def main():
             }
             results.append(entry_result)
 
-            # Save video if in retain set
+            # Save video: everything when --save-videos, else only retain-set ids
             video_stem = Path(video_name).stem
-            if video_stem in retain_set:
+            if args.save_videos or (video_stem in retain_set):
                 import imageio
                 frames_hwc = pred_np.transpose(0, 2, 3, 1)
                 frames_uint8 = np.clip(frames_hwc * 255, 0, 255).astype(np.uint8)
@@ -1202,6 +1213,56 @@ def main():
             }
         summary["gpu_memory"] = gpu_mem
     summary["results"] = results
+
+    # --- VBench++ (optional): run on the saved mp4s so SAVi-DNO carries the
+    # same 7-dim scores as the AdaSteer runs. Purely post-hoc on saved videos;
+    # does not touch the PSNR/SSIM/LPIPS/FVD/FID path above. ---
+    if args.compute_vbench:
+        mp4s = sorted(save_dir.glob("*.mp4")) if save_dir.is_dir() else []
+        if not mp4s:
+            print("[VBench] SKIPPED: no saved mp4s (need --save-videos or "
+                  "--save-only-list).")
+        else:
+            print("\n[VBench++] Running on %d videos in %s ..." % (len(mp4s), save_dir))
+            try:
+                from vbench import VBench
+                import vbench as _vbench_pkg
+                _VBENCH_DIMS = [
+                    "subject_consistency", "background_consistency",
+                    "motion_smoothness", "dynamic_degree",
+                    "aesthetic_quality", "imaging_quality",
+                ]
+                pkg_dir = os.path.dirname(_vbench_pkg.__file__)
+                full_info_json = os.path.join(pkg_dir, "VBench_full_info.json")
+                if not os.path.exists(full_info_json):
+                    full_info_json = os.path.join(
+                        os.path.dirname(pkg_dir), "vbench", "VBench_full_info.json")
+                vbench_output = str(output_dir / "vbench_results")
+                os.makedirs(vbench_output, exist_ok=True)
+                vb = VBench(torch.device("cuda"), full_info_json, vbench_output)
+                vbench_scores = {}
+                for dim in _VBENCH_DIMS:
+                    try:
+                        print("  Evaluating %s..." % dim)
+                        vb.evaluate(videos_path=str(save_dir), name="vbench_%s" % dim,
+                                    dimension_list=[dim], mode="custom_input")
+                        rf = os.path.join(vbench_output, "vbench_%s_eval_results.json" % dim)
+                        if os.path.exists(rf):
+                            with open(rf) as _f:
+                                score = _extract_vbench_score(dim, json.load(_f))
+                            if score is not None:
+                                vbench_scores[dim] = score
+                    except Exception as _ve:
+                        print("    [VBench] %s failed: %s" % (dim, _ve))
+                if vbench_scores:
+                    summary["vbench"] = vbench_scores
+                    summary["vbench_num_videos"] = len(mp4s)
+                    print("  VBench dims: %s" % vbench_scores)
+            except Exception as ve:
+                import traceback
+                traceback.print_exc()
+                print("[VBench] FAILED (metrics above are unaffected): %s" % ve)
+
     with open(output_dir / "summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=str)
 
