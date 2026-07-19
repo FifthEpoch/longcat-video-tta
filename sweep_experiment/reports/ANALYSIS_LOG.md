@@ -729,3 +729,30 @@ Firing the full-pool 1000v sample crashed: sampler wrote **999** (not 1000) ids 
 **Fix (this commit):** `sample_ood_quintile_videos.py` now (1) builds the set of on-disk `.mp4` stems, (2) drops rows whose canonical id is not an exact on-disk stem (removes the mangled/colliding ids), (3) dedups by canonical id, then samples — guaranteeing an exactly-reproducible, materializable N. `create_pilot_dataset` softened to warn+skip (no hard crash); the dataset stability guard remains the final count gate. Did NOT touch the global `canonical_video_id` (load-bearing across the repo).
 
 **TODO (deferred, not paper-blocking):** properly fix `canonical_video_id` to strip only known method suffixes (`_delta_a`, `_lora`, `_notta`, …) instead of the greedy `<word>_<digit>` prefix, then audit whether any *already-produced* segment-pool feature/OOD joins silently merged colliding ids. Until then, the sampler-level exclusion keeps the 1000v set clean.
+
+---
+
+## 2026-07-19 — 12-config budget grid is population-flat at 1000v (router-motivating)
+**Tags:** finding, paper-narrative, routing, scale-up, budget-grid
+**Refs:** `sweep_experiment/results/panda_ood_budget_1000v_preview/*/merged_summary.json`, `paper_tables/2026-07-19_budget_grid_1000v_preview.md`, `experiment_outputs/2026-07-19.md`
+
+The full 12-config AdaSteer step×LR grid (S{2,5,10,20} × LR{1e-3,5e-3,1e-2})
+finished and merged on the N=1000 OOD-stratified preview pool. **Population
+metrics are flat:** PSNR spans only 0.11 dB (19.372–19.486), SSIM 0.0038, LPIPS
+0.0039, FVD 3.6 (65.2–68.8), FID 0.2. train time is the only thing that scales
+(15→34→65→128 s with steps, 8.4×), buying no quality. The single visible trend is
+that the most aggressive config S20_LR1e2 is *worst* on PSNR/SSIM/LPIPS — mild
+over-adaptation. This reproduces the in-domain short-horizon saturation first seen
+in `panda_1000v_standard`, now at 1000v on the OOD-preview pool.
+
+**Why it matters:** a flat fixed-config mean is precisely the regime where a
+per-video router must carry the result (cf. N=200 pilot: oracle PSNR routing
++0.95 dB vs no-TTA, +0.75 vs best fixed config; no config wins across OOD
+quintiles). It also justifies the **13th "skip-TTA" router candidate**: if the
+budget grid doesn't beat the mean, many clips are better left untouched. The
+paper claim is NOT "config X wins" but "per-video routing over {12 configs +
+skip} recovers oracle headroom that any fixed choice leaves on the table."
+
+**Next:** merge NOTTA (jobs 14319937–946, same pool) → confirm AdaSteer≈NoTTA at
+population level apples-to-apples → per-video oracle + learned-router analysis
+across the 5 OOD quintiles (`analyze_adasteer_budget_oracle.py`).
