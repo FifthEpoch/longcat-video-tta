@@ -36,7 +36,16 @@ SCRATCH_BASE="/scratch/wc3013"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
 DATA_DIR="${SAVI_LC_DATA_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
-OUTPUT_DIR="${SAVI_LC_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/savi_dno_longcat_s${SAVI_EULER_STEPS:-10}}"
+# Default output dir is keyed on Euler steps AND the variant (optimized / no-opt
+# / oracle) so distinct runs can NEVER silently overwrite each other's
+# summary.json when SAVI_LC_OUTPUT_DIR is not set explicitly.
+_SAVI_VARIANT=""
+if [ "${SAVI_NO_OPTIMIZE:-}" = "1" ]; then
+    _SAVI_VARIANT="_noopt"
+elif [ "${SAVI_ORACLE_LEAK:-}" = "1" ]; then
+    _SAVI_VARIANT="_oracle"
+fi
+OUTPUT_DIR="${SAVI_LC_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/savi_dno_longcat_s${SAVI_EULER_STEPS:-10}${_SAVI_VARIANT}}"
 MAX_VIDEOS="${SAVI_LC_MAX_VIDEOS:-1000}"
 
 # ============================================================================

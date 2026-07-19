@@ -8,6 +8,7 @@
 #   sample     — OOD-quintile 1000v retain list + symlink dataset
 #   sweep      — 12-config budget grid (metrics-only default)
 #   sweep-mp4  — same with NO_SAVE_VIDEOS=0 (needed for VBench backfill)
+#   notta      — NO-TTA baseline on the SAME pool (router's 13th candidate)
 #   merge      — merge chunk summaries per run
 #   features   — video + filtered OOD + VAE profile (sbatch chain)
 #   vbench     — VBench backfill on saved mp4s (12 GPU jobs)
@@ -45,6 +46,11 @@ case "${PHASE}" in
     ;;
   sweep-mp4)
     NO_SAVE_VIDEOS=0 bash "${REPO}/sweep_experiment/sbatch/submit_adasteer_budget_1000v_preview.sh"
+    ;;
+  notta)
+    # NO-TTA baseline on the SAME OOD-preview pool (router's 13th candidate).
+    # Saves frames by default so it matches the grid arms + enables VBench.
+    bash "${REPO}/sweep_experiment/sbatch/submit_notta_1000v_preview.sh"
     ;;
   merge)
     cd "${REPO}"
@@ -113,7 +119,7 @@ case "${PHASE}" in
     ;;
   *)
     echo "Unknown phase: ${PHASE}" >&2
-    echo "Use: sample | sweep | sweep-mp4 | merge | features | vbench | routers | audit | scope | resweep | resweep-mp4 | diagnose | status" >&2
+    echo "Use: sample | sweep | sweep-mp4 | notta | merge | features | vbench | routers | audit | scope | resweep | resweep-mp4 | diagnose | status" >&2
     exit 1
     ;;
 esac
