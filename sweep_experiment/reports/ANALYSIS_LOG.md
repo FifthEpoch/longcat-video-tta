@@ -863,3 +863,15 @@ identical pool/geometry (`submit_notta_1000v_preview.sh`), and the pilot matched
 baseline (`run_pilot_matched_fvd_baselines.py`, cond=14/gen=14) is likewise matched.
 Residual low-risk checks left open: pilot dataset frame-identity vs panda_1000_480p,
 rollout_steps=1 parity, and NOTTA (caption-on) vs NOTTA_NOPROMPT arm selection.
+
+## 2026-07-20 — Matched no-TTA FVD + per-quintile gains reframe the 200v-pilot story
+**Tags:** fvd, ood, router, notta, methodology, paper-narrative
+**Refs:** `run_pilot_matched_fvd_baselines.py`, `analyze_adasteer_budget_oracle.py` (7627e67), `paper_tables/2026-07-20_router_200v_pilot_matched_fvd_and_ood_gains.md`
+
+Two corrections/findings on the 200v AdaSteer budget pilot:
+
+(1) FVD pipeline mismatch: the grid's per-config in-run FVDs (316–336, from merged_summary.json) are NOT comparable to the oracle FVD (383.9). Confirmed via the matched-FVD baselines (eval_fvd.py + shared GT cache, same 200 IDs): no-TTA=368.9, fixed S10_LR5e3=375.9, oracle=383.9 (in-run fixed S10=331 vs matched=376). Use the matched trio for any FVD comparison. Conclusion: no-TTA is the FVD floor; both fixed and routed AdaSteer worsen distributional realism (+7.0, +15.0).
+
+(2) Per-quintile gains vs no-TTA (analyzer now emits paired Δ fixed−NOTTA / Δ oracle−NOTTA): fixed-budget AdaSteer is net-NEGATIVE vs no-TTA in Q1 (-0.227) and Q4 (-0.572), ~flat Q2 (+0.062), positive Q3/Q5. Per-video oracle routing is positive in all five quintiles (+0.24…+1.74), largest on the high-OOD tail; routing edge (oracle−fixed) is +0.39…+1.07 dB. This is the paper's motivation for OOD-aware routing with a skip-TTA action: TTA is not universally beneficial, and the quintiles where it backfires are recoverable by routing.
+
+Caveat: the analyzer's standalone per-quintile NOTTA absolute column is over the 999-pool quintile membership; the Δ columns are correctly paired over the pilot subset (~40/quintile).
