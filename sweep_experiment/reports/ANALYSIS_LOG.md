@@ -784,3 +784,27 @@ identical cond frames must match). Open question for the paper: fix SAVi-DNO, or
 drop it and rely on SlowFast-VGen/Temp-LoRA (short horizon) + TTC (long horizon).
 The "we chose PSNR because SAVi-DNO reports it" lineage does NOT require SAVi-DNO
 to ship if it can't be made correct.
+
+---
+
+## 2026-07-20 — SAVi-DNO root cause: sampler discretization, not conditioning
+**Tags:** bug, baseline, savi-dno, comparison-methods, resolved-diagnosis
+**Refs:** `comparison_methods/scripts/debug_savi_sampler.py` (job 14322111), `savi_dno_longcat.py:_flow_euler_sample_differentiable`, `experiment_outputs/2026-07-19.md` (2026-07-20 11:40 entry)
+
+The bounded debug (REF standard pipeline vs custom sampler CFG off/on + a
+conditioning-sensitivity probe) rules out the two cheap hypotheses and localizes the
+bug. probe=0.44–0.68 (velocity changes when context latents are zeroed) => conditioning
+IS applied. CUST0≈CUST1 (+0.2 dB) => CFG-off is NOT the cause. REF 12–15 dB vs CUST
+8–9 dB on identical cond frames/prompt/geometry => the custom differentiable Euler
+sampler is the problem, specifically its **discretization**: a 10-step shift-heavy
+schedule with a huge penultimate step (σ 0.624→0.126→0) while the standard LongCat
+pipeline uses ~19 steps. The Euler update itself is correct, so this is a step-count/
+schedule mismatch (and possibly x0-anchored vs velocity-Euler stepping in the real
+pipeline), NOT a formula error.
+
+Combined with the earlier finding that the noise optimization is inert (A/B PSNR
+identical), SAVi-DNO-on-LongCat is a hand-port that does not match the reference sampler.
+Its native backbone is PVDM, and we have closer, working analogs (SlowFast-VGen/Temp-LoRA
+for short horizon; TTC for long horizon). **Recommendation: drop SAVi-DNO as a LongCat
+baseline** unless a 15-min matched-step (steps≈20) re-test closes the REF−CUST gap, in
+which case the fix is just the default step count. Not a paper-blocking baseline either way.
