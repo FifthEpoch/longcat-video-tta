@@ -875,3 +875,17 @@ Two corrections/findings on the 200v AdaSteer budget pilot:
 (2) Per-quintile gains vs no-TTA (analyzer now emits paired Δ fixed−NOTTA / Δ oracle−NOTTA): fixed-budget AdaSteer is net-NEGATIVE vs no-TTA in Q1 (-0.227) and Q4 (-0.572), ~flat Q2 (+0.062), positive Q3/Q5. Per-video oracle routing is positive in all five quintiles (+0.24…+1.74), largest on the high-OOD tail; routing edge (oracle−fixed) is +0.39…+1.07 dB. This is the paper's motivation for OOD-aware routing with a skip-TTA action: TTA is not universally beneficial, and the quintiles where it backfires are recoverable by routing.
 
 Caveat: the analyzer's standalone per-quintile NOTTA absolute column is over the 999-pool quintile membership; the Δ columns are correctly paired over the pilot subset (~40/quintile).
+
+## 2026-07-20 — Trained routers vs oracle, PSNR & VBench: consolidated 200v-pilot picture
+**Tags:** router, oracle, psnr, vbench, deployability, paper-narrative
+**Refs:** `2026-07-09_deploy_psnr_router.md`, `2026-07-10_router_objective_alignment.md`, `2026-07-15_pilot_config_vs_notta_routing.md`, `analyze_adasteer_budget_vbench_oracle.py` (ce2c971)
+
+Consolidated the deployable trained routers against the oracle upper bounds on the same 200 pilot videos, for both objectives:
+
+PSNR objective (dB vs no-TTA 17.798): fixed 17.996 (+0.198); VBench router 18.005 (+0.207, 1.2% oracle cap); PSNR router 18.050 (+0.252, 7.2% cap); oracle 18.744 (+0.946, 100%). Deployable routing captures <8% of the PSNR oracle headroom.
+
+Raw-VBench objective (vs no-TTA 9.993): fixed 9.398 (-0.595); PSNR router ~9.406; VBench router ~9.427 (captures 20.8% of the fixed→oracle gap); oracle 9.538 (-0.455). EVERY TTA policy — fixed, trained, and oracle — is BELOW no-TTA on raw-VBench. Per-quintile VBench oracle Δ vs no-TTA is negative in all five quintiles (-0.21…-0.77).
+
+Cross-objective (2026-07-10): the PSNR and VBench routers agree on config only 12.5%; realized per-video metrics correlate ρ≈0.99; each router beats the other on its own metric only 51–55% of the time when picks differ. Conclusion: on this flat 12-config grid, objective choice mostly swaps between metrically-equivalent configs; you cannot optimize both with one 9-d router. Paper stance (2026-07-09): keep VBench-targeted Block A as the perceptual deploy headline; the PSNR router is an objective-tradeoff ablation.
+
+Caveat: trained-router raw-VBench absolute levels are derived from the reported % oracle captured; the vbench analyzer's standalone per-quintile NOTTA column is over the 999-pool membership (the paired Δ columns are correct).
