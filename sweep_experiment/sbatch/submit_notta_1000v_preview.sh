@@ -30,7 +30,10 @@ RUN_ID="${RUN_ID:-NOTTA}"
 NUM_CHUNKS="${NUM_CHUNKS:-10}"
 CHUNK_SIZE="${CHUNK_SIZE:-100}"
 MAX_VIDEOS="${MAX_VIDEOS:-1000}"
-TIME_BUDGET="${TIME_BUDGET:-8:00:00}"
+# 100 videos/chunk (~3.7h gen-only), matched to the grid submitter's budget for
+# comfortable margin. NOTE: correct per-chunk slicing is what keeps this bounded —
+# see run_full_tta.py --start-video-idx/--chunk-size (fixed 2026-07-20).
+TIME_BUDGET="${TIME_BUDGET:-14:00:00}"
 
 NUM_FRAMES="${NUM_FRAMES:-28}"
 NUM_COND_FRAMES="${NUM_COND_FRAMES:-14}"
