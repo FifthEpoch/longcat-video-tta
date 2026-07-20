@@ -838,3 +838,28 @@ population fixed-budget TTA is flat (all 12 configs within 0.11 dB), per-video o
 uplift +0.382 dB [+0.337,+0.429] (median +0.144, tail-driven), the worst-population
 config S20_LR1e2 is the most-picked oracle winner (30.6%), and PSNR-oracle routing
 inflates FVD (383.9 vs ~66) — the routing objective is not free.
+
+## 2026-07-20 — Frame-geometry parity of 200v-pilot NOTTA baseline confirmed
+**Tags:** provenance, methodology, notta, geometry, router
+**Refs:** `scripts/analyze_adasteer_budget_oracle.py` (`_infer_baseline_series_root`), `submit_adasteer_budget_pilot.sh`, `submit_standard_1000v_chunked.sh`, `experiment_outputs/2026-07-20.md`
+
+Question raised: the 200v-pilot budget-grid oracle report cites a NOTTA baseline
+(PSNR 17.798 dB, VBench-total 9.993), but no NOTTA was generated on the pilot pool.
+Where does it come from, and is it the same generation task?
+
+Finding: the analyzer's `_infer_baseline_series_root` joins the NOTTA arm from
+`sweep_experiment/results/panda_1000v_standard/NOTTA` per canonical video ID (the pilot
+200 is a subset of that 999-video pool; the Δ-vs-NOTTA rows report N=200, i.e. all 200
+matched). An on-cluster probe of the recorded per-video `summary.json` confirms IDENTICAL
+frame geometry across the grid arms and the NOTTA baseline: cond=14, total=28,
+gen_start=48 → 14 generated frames (video[48:62]). Both submitters hardcode 50 steps /
+GS 4.0 / 480p (not persisted in summary.json, hence the `None`s). Initial worry that
+"standard" implied the code-default 2/16/32 geometry was WRONG — the standard submitter
+explicitly sets the same long-context 14/28/48 as the pilot.
+
+Conclusion: the 200v-pilot NOTTA comparison is a fair, same-task join, not a mismatched
+pool. The 1000v-preview analysis is even cleaner — it has its own dedicated NOTTA on the
+identical pool/geometry (`submit_notta_1000v_preview.sh`), and the pilot matched-FVD
+baseline (`run_pilot_matched_fvd_baselines.py`, cond=14/gen=14) is likewise matched.
+Residual low-risk checks left open: pilot dataset frame-identity vs panda_1000_480p,
+rollout_steps=1 parity, and NOTTA (caption-on) vs NOTTA_NOPROMPT arm selection.
