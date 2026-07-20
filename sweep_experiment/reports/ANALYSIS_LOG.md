@@ -808,3 +808,33 @@ Its native backbone is PVDM, and we have closer, working analogs (SlowFast-VGen/
 for short horizon; TTC for long horizon). **Recommendation: drop SAVi-DNO as a LongCat
 baseline** unless a 15-min matched-step (steps≈20) re-test closes the REF−CUST gap, in
 which case the fix is just the default step count. Not a paper-blocking baseline either way.
+
+---
+
+## 2026-07-20 — 1000v-preview router: two data bugs fixed (NOTTA chunking + OOD CSV coverage)
+**Tags:** bug, record-keeping, router, ood, notta, provenance
+**Refs:** `lora_experiment/scripts/run_full_tta.py`, `sweep_experiment/sbatch/run_sweep.sbatch` (7a35aa4), `submit_notta_1000v_preview.sh` (6be10de), `experiment_outputs/2026-07-20.md`
+
+The first `analyze_adasteer_budget_oracle.py` run on `panda_ood_budget_1000v_preview`
+produced a table with `+nan` NOTTA deltas and N=35 OOD quintiles. Two independent bugs:
+
+(A) The NOTTA baseline (METHOD=full) never merged: `run_full_tta.py` lacked
+`--start-video-idx`/`--chunk-size`, and the `full)` branch of `run_sweep.sbatch`
+never passed them, so all 10 chunks re-ran the full 1000 videos and hit the 8h wall
+at ~216 (no `summary.json`). The delta_a grid arms were unaffected (they slice
+`eval_videos[start:end]`). Fixed by adding the flags + slicing (mirrors delta_a) and
+forwarding them in the sbatch; wall bumped 8h->14h. NOTTA resubmitted 10×100.
+
+(B) The OOD-quintile join used `per_video_analysis/2026-07-12/diffusion_ood_scores.csv`,
+which overlaps the swept set only 35/1000 (a stale/different 1000-sample). IDs are
+identical `<youtube>_segNN` on both sides — a coverage, not format, mismatch. The
+segment-pool CSV (`2026-07-10/diffusion_ood_scores_segment_pool.csv`, 29,379 rows)
+overlaps 1000/1000 and is the authoritative source (preview was OOD-stratified from
+that pool). Analysis will use the segment-pool CSV going forward.
+
+Decision: the broken table was NOT committed to `paper_tables/` (would have enshrined
+`+nan`/N=35). Regenerate after NOTTA merges. The valid, bug-independent findings stand:
+population fixed-budget TTA is flat (all 12 configs within 0.11 dB), per-video oracle
+uplift +0.382 dB [+0.337,+0.429] (median +0.144, tail-driven), the worst-population
+config S20_LR1e2 is the most-picked oracle winner (30.6%), and PSNR-oracle routing
+inflates FVD (383.9 vs ~66) — the routing objective is not free.
