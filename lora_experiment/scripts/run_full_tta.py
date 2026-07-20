@@ -367,6 +367,10 @@ def main():
     parser.add_argument("--output-dir", type=str, required=True,
                         help="Output directory for results")
     parser.add_argument("--max-videos", type=int, default=100)
+    parser.add_argument("--start-video-idx", type=int, default=0,
+                        help="Index of first video to process (for chunked runs)")
+    parser.add_argument("--chunk-size", type=int, default=0,
+                        help="Number of videos to process from start-video-idx (0 = all remaining)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--restart", action="store_true",
@@ -552,6 +556,14 @@ def main():
     eval_videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed, validate_decodable=True
     )
+    # Chunked runs: slice [start:start+chunk] AFTER the deterministic (seed) load
+    # so per-video sets align 1:1 with the delta_a grid arms (which slice the same way).
+    if args.start_video_idx > 0 or args.chunk_size > 0:
+        end = len(eval_videos)
+        if args.chunk_size > 0:
+            end = min(args.start_video_idx + args.chunk_size, end)
+        eval_videos = eval_videos[args.start_video_idx:end]
+        print(f"Chunk: videos [{args.start_video_idx}:{end}] -> {len(eval_videos)} videos")
     eval_videos = apply_fixed_caption(eval_videos, args.fixed_caption, context="eval")
     validate_caption_quality(
         eval_videos,

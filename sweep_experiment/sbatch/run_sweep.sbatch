@@ -453,6 +453,8 @@ case "${METHOD}" in
         --data-dir "${DATA_DIR}" \
         --output-dir "${OUTPUT_DIR}" \
         --max-videos "${MAX_VIDEOS}" \
+        --start-video-idx "${START_VIDEO_IDX}" \
+        --chunk-size "${CHUNK_SIZE}" \
         --learning-rate "${LEARNING_RATE}" \
         --num-steps "${NUM_STEPS}" \
         --warmup-steps "${WARMUP_STEPS}" \
