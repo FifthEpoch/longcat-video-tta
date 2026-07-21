@@ -864,3 +864,35 @@ because its label `config_oracle−NOTTA` is a max over 12 noisy configs (≈alw
 corrected to `fixed−NOTTA` (deployable, non-degenerate) and added combined per-OOD-quintile
 Δ-vs-NOTTA to all tricks. Decision: PSNR remains ~unroutable-for-net-gain-vs-NOTTA at 1000v;
 the surviving positive AdaSteer result is the matched-FVD win (job pending), not PSNR routing.
+
+---
+
+## 2026-07-21 — Methodology: "fixed" baseline = best population config (per metric); VBench is skip-averse
+tags: [router, methodology, baseline, vbench, psnr, 1000v]
+refs: run_routing_tricks.py; experiment_outputs/2026-07-21.md (15:55)
+
+Decision (per research-partner instruction): every "Δ vs fixed" must compare against the
+**best-performing single config on the same candidate pool for the relevant metric** — the
+best-PSNR config for the PSNR router, the best-VBench-total config for the VBench router — NOT
+a designated default (previously S10_LR5e3). This is the strongest no-per-video-routing
+baseline. Implemented in `run_routing_tricks.py`: fixed = argmax_j population-mean of the
+metric over the paired pool (≥1 config + NOTTA scored). Prior tricks numbers (15:55 log) used
+S10; expect the small PSNR Δ-vs-fixed to shrink toward/below 0 against best-config.
+
+Finding (v2, still vs S10 pending re-run): **VBench is un-routable AND skip-averse.** The
+config-argmax router (route_for_metric −0.0069) and even the semi-oracle probe upper-bound
+(−0.0033) sit at fixed/NOTTA on VBench-total (negligible on the ~tens raw-total scale), so
+there is no deployable VBench routing win. Adding NOTTA as a 13th action is *net-negative*
+for VBench (skip_augmented/gain_target −0.1276, adapt_gate −0.1197): VBench-total prefers some
+adaptation, and skipping to no-TTA on 40–60% of videos costs quality. So for VBench neither
+routing nor no-TTA beats fixed adaptation. For PSNR, routing ≈ fixed ≈ no-TTA; only the
+observed-probe upper bound (+0.09 dB, 4× cost) clears no-TTA.
+
+Scope note (audit of what was actually trained, to prevent overclaim): the clean feature-block
+ablation (A / B / A+B / C / A+B+C) exists for the **VBench** deploy router
+(`run_deploy_strict_router_experiments.py`, 12-config argmax, no NOTTA option); the **PSNR**
+deploy router (`run_deploy_psnr_router.py`) used **Block A only** (12-config argmax, no NOTTA).
+The 13-output NOTTA-skip action space exists only in `run_routing_tricks.py` (both metrics,
+full feature set), not crossed with A/B/C. Missing subsets: A+C, B+C for both metrics; full
+block ablation for PSNR. High-dim input was covered at 1000v via `run_budget_routing_experiments`
+(~159-d merged + MLP/HGBM).

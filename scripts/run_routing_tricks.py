@@ -254,22 +254,18 @@ def main() -> int:
     fixed_run: str = bundle["fixed_run"]
     n_full = len(vids)
 
-    # ---- metric matrix + fixed column ------------------------------------
+    # ---- metric matrix ----------------------------------------------------
     if metric == "psnr":
         Y = np.array(bundle["psnr"], dtype=float)
-        if fixed_run not in grid_runs:
-            print(f"[error] fixed {fixed_run} not in grid", file=sys.stderr)
-            return 2
-        fixed_vb = Y[:, grid_runs.index(fixed_run)].copy()
         other = np.array(bundle["Y_total"], dtype=float)  # VBench side-effect
         other_name = "VBench-total"
     else:
         Y = np.array(bundle["Y_total"], dtype=float)
-        fixed_vb = np.array(bundle["fixed_vb"], dtype=float)
         other = np.array(bundle["psnr"], dtype=float)  # PSNR side-effect
         other_name = "PSNR"
     if np.all(np.isnan(other)):
         other = None
+    designated_fixed = fixed_run  # e.g. S10_LR5e3 (kept for reference only)
 
     # ---- NOTTA per-video metric ------------------------------------------
     runs = discover_runs(args.series_root)
@@ -289,8 +285,29 @@ def main() -> int:
                 if tot is not None:
                     notta[i] = float(tot)
     n_notta = int(np.sum(~np.isnan(notta)))
-    print(f"[info] metric={metric} N={n_full} grid={len(grid_runs)} NOTTA-scored={n_notta}",
-          file=sys.stderr)
+
+    # ---- fixed = best single config on THIS pool for THIS metric ----------
+    # Deploy-fair baseline: the best population-mean config among the 12 (best
+    # PSNR config for --metric psnr, best VBench-total config for --metric
+    # vbench), NOT a designated default. Chosen on the paired pool (≥1 config +
+    # NOTTA score) so every reported Δ vs fixed uses the same candidate set.
+    pool0 = ~np.all(np.isnan(Y), axis=1) & ~np.isnan(notta)
+    with np.errstate(invalid="ignore"):
+        col_means = np.array(
+            [
+                np.nanmean(Y[pool0, j]) if np.any(~np.isnan(Y[pool0, j])) else -np.inf
+                for j in range(Y.shape[1])
+            ]
+        )
+    best_idx = int(np.argmax(col_means))
+    fixed_run = grid_runs[best_idx]
+    fixed_vb = Y[:, best_idx].copy()
+    print(
+        f"[info] metric={metric} N={n_full} grid={len(grid_runs)} NOTTA-scored={n_notta} "
+        f"fixed=best-config {fixed_run} (mean={col_means[best_idx]:.4f}) "
+        f"[designated {designated_fixed}]",
+        file=sys.stderr,
+    )
 
     # ---- features ---------------------------------------------------------
     impute = compute_impute(vids, bundle["features"], bundle["feat_names"])
@@ -438,6 +455,8 @@ def main() -> int:
         "feature_date": str(args.feature_date),
         "grid_runs": grid_runs,
         "fixed_run": fixed_run,
+        "fixed_selection": "best population-mean config on paired pool",
+        "designated_fixed": designated_fixed,
         "fixed_mean": _nanmean(fixedm),
         "notta_mean": _nanmean(nottam),
         "config_oracle_mean": _nanmean(config_oracle),
@@ -454,10 +473,14 @@ def main() -> int:
         f"# Five routing tricks — metric = {metric} ({unit})",
         "",
         f"**Series:** `{args.series_root.name}`  ·  **N:** {n}  ·  5-fold OOF (seed {args.seed}).",
-        f"**Fixed ({fixed_run}):** {_fmt(_nanmean(fixedm))}  ·  "
+        f"**Fixed = best {metric} config on this pool (`{fixed_run}`):** {_fmt(_nanmean(fixedm))}  ·  "
         f"**NOTTA:** {_fmt(_nanmean(nottam))}  ·  "
         f"**Config-oracle:** {_fmt(_nanmean(config_oracle))}  ·  "
         f"**Augmented-oracle (incl. skip):** {_fmt(_nanmean(aug_oracle))}.",
+        "",
+        f"> `Fixed` is the best single population-mean config among the 12 for this "
+        f"metric (deploy-fair; picked on the paired pool), NOT the designated "
+        f"`{designated_fixed}`. This is the strongest no-routing baseline.",
         "",
         "Higher is better. Δ vs fixed / Δ vs NOTTA are mean(policy − baseline). "
         "`Captured` = fraction of (oracle − fixed) headroom recovered "
