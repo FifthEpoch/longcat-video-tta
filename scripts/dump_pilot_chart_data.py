@@ -38,9 +38,9 @@ sys.path.insert(0, str(_REPO))
 
 from scripts.analyze_adasteer_budget_oracle import (  # noqa: E402
     NOTTA_RUN_ID,
+    OOD_COL,
     PILOT_GRID_RUN_ORDER,
     discover_runs,
-    load_ood_quintiles,
 )
 from scripts.analyze_per_video_tta_gain import load_per_video_metrics  # noqa: E402
 from scripts.analyze_per_video_vbench_agreement import (  # noqa: E402
@@ -61,6 +61,45 @@ def _resolve_notta(series_runs, baseline_runs) -> Optional[Path]:
     if NOTTA_RUN_ID in series_runs:
         return series_runs[NOTTA_RUN_ID]
     return baseline_runs.get(NOTTA_RUN_ID)
+
+
+def _load_ood_scores(path: Path) -> Dict[str, float]:
+    """Map canonical video_id -> OOD score (mean_diffusion_loss_caption)."""
+    import csv
+
+    out: Dict[str, float] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            vid = canonical_video_id(row.get("video_id", ""))
+            v = row.get(OOD_COL, "")
+            if not vid or v in ("", None):
+                continue
+            try:
+                x = float(v)
+            except ValueError:
+                continue
+            if not np.isnan(x):
+                out[vid] = x
+    return out
+
+
+def _assign_quintiles(scores: np.ndarray, n_bins: int = 5) -> np.ndarray:
+    """Assign 1..n_bins quintiles over the *evaluated pool's* OOD scores.
+
+    Quantile edges are computed only over the finite scores passed in (i.e. the
+    videos actually being charted), so quintiles are balanced within the pool —
+    matching the 200v-pilot semantics. NaN score -> NaN quintile.
+    """
+    q = np.full(scores.shape[0], np.nan, dtype=float)
+    finite = np.isfinite(scores)
+    vals = scores[finite]
+    if vals.size == 0:
+        return q
+    edges = np.unique(np.quantile(vals, np.linspace(0.0, 1.0, n_bins + 1)))
+    idx = np.digitize(scores[finite], edges[1:-1], right=False)
+    idx = np.clip(idx, 0, max(len(edges) - 2, 0))
+    q[finite] = idx + 1
+    return q
 
 
 def _oracle(M: np.ndarray) -> np.ndarray:
@@ -107,7 +146,7 @@ def main() -> int:
         raise SystemExit(f"[error] no pilot grid configs under {args.series_root}")
     notta_dir = _resolve_notta(runs, baseline_runs)
 
-    quint_map = load_ood_quintiles(args.ood_csv)
+    ood_scores = _load_ood_scores(args.ood_csv)
 
     # ---- PSNR matrices ----
     per_psnr = {r: _canon(load_per_video_metrics(runs[r])) for r in grid_runs}
@@ -125,8 +164,9 @@ def main() -> int:
         if nv is not None:
             npsnr[i] = float(nv)
 
-    quint = np.array([quint_map.get(v, 0) for v in vids], dtype=float)
-    quint[quint == 0] = np.nan
+    ood_vec = np.array([ood_scores.get(v, np.nan) for v in vids], dtype=float)
+    n_ood_join = int(np.isfinite(ood_vec).sum())
+    quint = _assign_quintiles(ood_vec, n_bins=5)  # balanced within evaluated pool
     have = np.any(np.isfinite(P), axis=1) & np.isfinite(npsnr) & np.isfinite(quint)
     psnr_delta = np.where(have, _oracle(P) - npsnr, np.nan)
 
@@ -182,6 +222,7 @@ def main() -> int:
             "ood_csv": str(args.ood_csv),
             "grid_runs": grid_runs,
             "n_videos_total": len(vids),
+            "n_ood_join": n_ood_join,
             "n_psnr_pool": int(have.sum()),
             "vbench_dims": list(VBENCH_DIMS),
         },
@@ -193,8 +234,9 @@ def main() -> int:
     }
     print(json.dumps(out, indent=2))
     print(
-        f"\n[info] grid={K} psnr_pool={int(have.sum())} "
-        f"vbench_dims_ok={len(dim_gain)} winner={winner} notta={notta_dir}",
+        f"\n[info] grid={K} n_vids={len(vids)} ood_join={n_ood_join}/{len(vids)} "
+        f"psnr_pool={int(have.sum())} vbench_dims_ok={len(dim_gain)} "
+        f"winner={winner} notta={notta_dir}",
         file=sys.stderr,
     )
     return 0
