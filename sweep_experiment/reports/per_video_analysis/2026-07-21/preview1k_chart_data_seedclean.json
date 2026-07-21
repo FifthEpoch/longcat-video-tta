@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "series_root": "sweep_experiment/results/panda_ood_budget_1000v_preview",
+    "notta_dir": "sweep_experiment/results/panda_ood_budget_1000v_preview/NOTTA",
+    "ood_csv": "sweep_experiment/reports/per_video_analysis/2026-07-10/diffusion_ood_scores_segment_pool.csv",
+    "grid_runs": [
+      "S2_LR1e3",
+      "S2_LR5e3",
+      "S2_LR1e2",
+      "S5_LR1e3",
+      "S5_LR5e3",
+      "S5_LR1e2",
+      "S10_LR1e3",
+      "S10_LR5e3",
+      "S10_LR1e2",
+      "S20_LR1e3",
+      "S20_LR5e3",
+      "S20_LR1e2"
+    ],
+    "n_videos_total": 998,
+    "n_ood_join": 998,
+    "n_psnr_pool": 898,
+    "vbench_dims": [
+      "subject_consistency",
+      "background_consistency",
+      "aesthetic_quality",
+      "motion_smoothness",
+      "dynamic_degree",
+      "imaging_quality",
+      "temporal_flickering"
+    ]
+  },
+  "chart1_psnr_delta": {
+    "quintiles": [1, 2, 3, 4, 5],
+    "mean": [0.356906, 0.364685, 0.325823, 0.344124, 0.382666],
+    "sem": [0.044455, 0.053131, 0.040981, 0.053501, 0.061661],
+    "n": [177, 176, 185, 179, 181],
+    "pop_mean": 0.354671
+  },
+  "chart2_config_picks": {
+    "Q1": {"S2_LR1e3": 9, "S2_LR5e3": 5, "S2_LR1e2": 5, "S5_LR1e3": 7, "S5_LR5e3": 9, "S5_LR1e2": 12, "S10_LR1e3": 8, "S10_LR5e3": 9, "S10_LR1e2": 21, "S20_LR1e3": 4, "S20_LR5e3": 21, "S20_LR1e2": 67},
+    "Q2": {"S2_LR1e3": 6, "S2_LR5e3": 5, "S2_LR1e2": 8, "S5_LR1e3": 7, "S5_LR5e3": 5, "S5_LR1e2": 15, "S10_LR1e3": 6, "S10_LR5e3": 8, "S10_LR1e2": 28, "S20_LR1e3": 4, "S20_LR5e3": 15, "S20_LR1e2": 69},
+    "Q3": {"S2_LR1e3": 5, "S2_LR5e3": 6, "S2_LR1e2": 11, "S5_LR1e3": 11, "S5_LR5e3": 6, "S5_LR1e2": 12, "S10_LR1e3": 5, "S10_LR5e3": 10, "S10_LR1e2": 43, "S20_LR1e3": 8, "S20_LR5e3": 14, "S20_LR1e2": 54},
+    "Q4": {"S2_LR1e3": 13, "S2_LR5e3": 7, "S2_LR1e2": 8, "S5_LR1e3": 6, "S5_LR5e3": 10, "S5_LR1e2": 15, "S10_LR1e3": 12, "S10_LR5e3": 11, "S10_LR1e2": 32, "S20_LR1e3": 5, "S20_LR5e3": 16, "S20_LR1e2": 44},
+    "Q5": {"S2_LR1e3": 17, "S2_LR5e3": 9, "S2_LR1e2": 14, "S5_LR1e3": 16, "S5_LR5e3": 9, "S5_LR1e2": 15, "S10_LR1e3": 14, "S10_LR5e3": 8, "S10_LR1e2": 19, "S20_LR1e3": 5, "S20_LR5e3": 12, "S20_LR1e2": 43}
+  },
+  "vbench_dim_gain": {
+    "subject_consistency": {"raw": 0.003347, "rel_pct": 0.3538, "n": 898, "notta_mean": 0.94594},
+    "background_consistency": {"raw": 0.003477, "rel_pct": 0.3631, "n": 898, "notta_mean": 0.95759},
+    "aesthetic_quality": {"raw": 0.006744, "rel_pct": 1.4031, "n": 898, "notta_mean": 0.480632},
+    "motion_smoothness": {"raw": 0.000588, "rel_pct": 0.0595, "n": 898, "notta_mean": 0.987998},
+    "dynamic_degree": {"raw": 0.036748, "rel_pct": 5.1562, "n": 898, "notta_mean": 0.712695},
+    "imaging_quality": {"raw": 0.667296, "rel_pct": 1.0775, "n": 898, "notta_mean": 61.931237},
+    "temporal_flickering": {"raw": 0.000955, "rel_pct": 0.0982, "n": 898, "notta_mean": 0.97292}
+  },
+  "vbench_dim_delta_by_quintile": {
+    "subject_consistency": {"quintiles": [1, 2, 3, 4, 5], "mean": [-0.001699, 0.00725, -0.003388, 0.017896, -0.003019], "sem": [0.005461, 0.00575, 0.005811, 0.005547, 0.005476], "n": [177, 176, 185, 179, 181], "pop_mean": 0.003347},
+    "background_consistency": {"quintiles": [1, 2, 3, 4, 5], "mean": [0.000469, 0.005262, 0.000949, 0.010006, 0.000812], "sem": [0.003015, 0.002963, 0.003201, 0.003817, 0.002938], "n": [177, 176, 185, 179, 181], "pop_mean": 0.003477},
+    "aesthetic_quality": {"quintiles": [1, 2, 3, 4, 5], "mean": [-0.000234, 0.008251, 0.00792, 0.014595, 0.003135], "sem": [0.009689, 0.009276, 0.009563, 0.00996, 0.008763], "n": [177, 176, 185, 179, 181], "pop_mean": 0.006744},
+    "motion_smoothness": {"quintiles": [1, 2, 3, 4, 5], "mean": [-0.000862, 0.000115, 0.000989, 0.003453, -0.000778], "sem": [0.001082, 0.001085, 0.001158, 0.001178, 0.000915], "n": [177, 176, 185, 179, 181], "pop_mean": 0.000588},
+    "dynamic_degree": {"quintiles": [1, 2, 3, 4, 5], "mean": [0.045198, 0.005682, 0.145946, -0.01676, 0.0], "sem": [0.046597, 0.043017, 0.048799, 0.043013, 0.041459], "n": [177, 176, 185, 179, 181], "pop_mean": 0.036748},
+    "imaging_quality": {"quintiles": [1, 2, 3, 4, 5], "mean": [-1.391224, 1.838043, 0.059121, 2.007285, 0.838352], "sem": [1.283252, 1.316612, 1.237116, 1.394852, 1.353127], "n": [177, 176, 185, 179, 181], "pop_mean": 0.667296},
+    "temporal_flickering": {"quintiles": [1, 2, 3, 4, 5], "mean": [0.000171, -0.00097, 2.2e-05, 0.007595, -0.002019], "sem": [0.002224, 0.002271, 0.002517, 0.002137, 0.002075], "n": [177, 176, 185, 179, 181], "pop_mean": 0.000955}
+  },
+  "winner_dim": "dynamic_degree"
+}

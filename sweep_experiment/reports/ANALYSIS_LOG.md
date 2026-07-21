@@ -1064,3 +1064,47 @@ seeds under the existing scheme, OR retire the pilot's vs-NOTTA numbers in favor
 of the seed-clean 1000v preview. Going forward: never borrow NO-TTA cross-series;
 always generate compared arms in-series with matched chunking (the preview
 pipeline already does this).
+
+---
+
+## 2026-07-21 — Seed-clean 1000v vs-NO-TTA analysis: OOD-routing hypothesis does not hold
+
+**Tags:** seeds, oracle-headroom, OOD-routing, max-over-noise, 1000v-preview, negative-result, methodology
+**Refs:** scripts/dump_pilot_chart_data.py, scripts/render_pilot_charts_from_json.py,
+scripts/analyze_adasteer_budget_oracle.py, scripts/verify_seed_alignment.py,
+sweep_experiment/reports/per_video_analysis/2026-07-21/preview1k_chart_data_seedclean.json,
+sweep_experiment/reports/per_video_analysis/2026-07-21/preview1k_ood_charts_seedclean/,
+sweep_experiment/reports/per_video_analysis/2026-07-21/adasteer_budget_oracle_1000v_seedclean.md
+
+Re-ran the full vs-NO-TTA analysis on the seed-clean 1000v preview
+(panda_ood_budget_1000v_preview), using the IN-SERIES NOTTA (verified 100%
+seed-matched to the 12 configs) instead of the confounded cross-series pilot
+NOTTA. OOD scores joined via the full segment-pool CSV
+(2026-07-10/diffusion_ood_scores_segment_pool.csv): ood_join=998/998,
+n_psnr_pool=898 paired.
+
+Findings (all on seed-matched noise):
+1. PSNR oracle Δ vs NOTTA (max over 12 configs) is FLAT across OOD quintiles:
+   Q1 +0.357, Q2 +0.365, Q3 +0.326, Q4 +0.344, Q5 +0.383 dB; pop mean +0.355 dB.
+   No OOD gradient. (The seed confound was the only mechanism that could have
+   manufactured a gradient; removing it leaves none.)
+2. Per-video argmax is dominated by S20_LR1e2 in EVERY quintile — the most
+   aggressive config (20 steps, LR 1e-2) and the WORST population PSNR (19.372,
+   last of 12). High-variance arm winning the per-video max = textbook
+   max-over-noise. Its share even shrinks with OOD (Q1 67 -> Q5 43 picks).
+3. Oracle table: oracle +0.406 dB vs NOTTA, +0.382 dB vs fixed S10_LR5e3
+   [95% CI +0.337, +0.429]; but fixed AdaSteer barely beats NOTTA (+0.024 dB).
+4. DECISIVE negative: the realized quintile-adaptive policy (deploy modal-best
+   config per quintile) = 19.372 dB vs 19.462 fixed = -0.089 dB (LOSES). The
+   modal winner is S20_LR1e2 in all 5 quintiles => no quintile-conditional
+   policy exists, and the config it names is the worst population performer.
+5. VBench: dynamic_degree has the largest relative oracle headroom (+5.16%) but
+   is a noisy near-binary metric with no OOD structure (Q3 +0.146, Q4 -0.017,
+   SEMs ~= effects). aesthetic_quality +1.40%, imaging_quality +1.08%; none show
+   an OOD gradient.
+
+Conclusion: the OOD-stratified budget-routing headroom is a max-over-noise
+artifact, not a routable OOD-adaptive signal — now demonstrated on clean,
+seed-matched data. This supersedes the confounded 200v pilot's vs-NOTTA charts
+(see 2026-07-21 seed-confound entry). Charts saved as PNGs under
+per_video_analysis/2026-07-21/preview1k_ood_charts_seedclean/.

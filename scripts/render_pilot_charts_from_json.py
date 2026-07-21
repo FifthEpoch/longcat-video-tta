@@ -66,7 +66,8 @@ def _bar_quintile(stats: dict, *, title: str, ylabel: str, color: str, out_path:
     print(f"  wrote {out_path}")
 
 
-def _config_picks(picks: Dict[str, Dict[str, int]], grid_runs: List[str], out_dir: Path) -> None:
+def _config_picks(picks: Dict[str, Dict[str, int]], grid_runs: List[str], out_dir: Path,
+                  label: str = "200v pilot") -> None:
     x = np.arange(len(grid_runs))
     per_q = {q: [picks.get(f"Q{q}", {}).get(r, 0) for r in grid_runs] for q in range(1, 6)}
     ymax = max((max(v) if v else 0 for v in per_q.values()), default=1)
@@ -79,7 +80,7 @@ def _config_picks(picks: Dict[str, Dict[str, int]], grid_runs: List[str], out_di
         ax.set_xticklabels(grid_runs, rotation=45, ha="right", fontsize=8)
         ax.set_ylabel("videos won (PSNR oracle)")
         ax.set_ylim(0, ymax * 1.18 + 1)
-        ax.set_title(f"200v pilot — config picks, OOD {QUINTILE_LABELS[q].splitlines()[0]} "
+        ax.set_title(f"{label} — config picks, OOD {QUINTILE_LABELS[q].splitlines()[0]} "
                      f"(n={int(sum(counts))})", fontsize=11)
         for xi, c in zip(x, counts):
             if c:
@@ -102,14 +103,14 @@ def _config_picks(picks: Dict[str, Dict[str, int]], grid_runs: List[str], out_di
         ax.grid(axis="y", alpha=0.25)
     axes[-1].set_xticks(x)
     axes[-1].set_xticklabels(grid_runs, rotation=45, ha="right", fontsize=8)
-    axes[0].set_title("200v pilot — PSNR-oracle config picks by OOD quintile", fontsize=12)
+    axes[0].set_title(f"{label} — PSNR-oracle config picks by OOD quintile", fontsize=12)
     fig.tight_layout()
     fig.savefig(out_dir / "config_picks_all_quintiles.png", dpi=150)
     plt.close(fig)
     print(f"  wrote {out_dir / 'config_picks_all_quintiles.png'}")
 
 
-def _dim_gain(dim_gain: Dict[str, dict], out_path: Path) -> None:
+def _dim_gain(dim_gain: Dict[str, dict], out_path: Path, label: str = "200v pilot") -> None:
     dims = [d for d, g in dim_gain.items() if g.get("rel_pct") is not None]
     if not dims:
         print("  [warn] no VBench dims with finite gain — skipping dim-gain chart")
@@ -127,8 +128,10 @@ def _dim_gain(dim_gain: Dict[str, dict], out_path: Path) -> None:
     ax.set_xticks(x)
     ax.set_xticklabels([DIM_SHORT.get(d, d) for d in dims], rotation=30, ha="right", fontsize=9)
     ax.set_ylabel("config-oracle gain vs NO-TTA (% of NO-TTA mean)")
-    ax.set_title("200v pilot — VBench per-dimension oracle headroom (max over 12 configs)", fontsize=11)
+    ax.set_title(f"{label} — VBench per-dimension oracle headroom (max over 12 configs)", fontsize=11)
     span = max((abs(r) for r in rel), default=1.0)
+    lo = min(rel + [0.0])
+    ax.set_ylim(lo - 0.12 * span, max(rel + [0.0]) + 0.30 * span)  # headroom so labels clear title
     for xi, r, rw, n in zip(x, rel, raw, ns):
         ax.text(xi, r + (0.02 * span if r >= 0 else -0.02 * span),
                 f"{r:+.2f}%\nraw {rw:+.3f}\n(n={n})",
@@ -144,33 +147,36 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Render 200v-pilot charts from dumped JSON")
     ap.add_argument("--json", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, default=Path("charts_out"))
+    ap.add_argument("--label", type=str, default="200v pilot",
+                    help="Label used in chart titles (e.g. '1000v preview (seed-clean)').")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     data = json.loads(args.json.read_text(encoding="utf-8"))
     grid_runs = data["meta"]["grid_runs"]
     winner = data.get("winner_dim")
+    label = args.label
     print(f"[info] grid={len(grid_runs)} psnr_pool={data['meta'].get('n_psnr_pool')} winner={winner}")
 
     # Chart 1
     _bar_quintile(
         data["chart1_psnr_delta"],
-        title="PSNR oracle Δ vs NO-TTA (dB) · 200v pilot\n(oracle = per-video max over 12 configs)",
+        title=f"PSNR oracle Δ vs NO-TTA (dB) · {label}\n(oracle = per-video max over 12 configs)",
         ylabel="mean ΔPSNR (dB)", color=BLUE,
         out_path=args.out_dir / "psnr_oracle_delta_by_ood_quintile.png",
     )
 
     # Chart 2
-    _config_picks(data["chart2_config_picks"], grid_runs, args.out_dir)
+    _config_picks(data["chart2_config_picks"], grid_runs, args.out_dir, label=label)
 
     # Chart 3a
-    _dim_gain(data["vbench_dim_gain"], args.out_dir / "vbench_dim_oracle_gain.png")
+    _dim_gain(data["vbench_dim_gain"], args.out_dir / "vbench_dim_oracle_gain.png", label=label)
 
     # Chart 3b
     if winner and winner in data.get("vbench_dim_delta_by_quintile", {}):
         _bar_quintile(
             data["vbench_dim_delta_by_quintile"][winner],
-            title=f"{DIM_SHORT.get(winner, winner)} oracle Δ vs NO-TTA · 200v pilot\n"
+            title=f"{DIM_SHORT.get(winner, winner)} oracle Δ vs NO-TTA · {label}\n"
                   f"(oracle = per-video max over 12 configs)",
             ylabel=f"mean Δ {DIM_SHORT.get(winner, winner)}", color=GREEN,
             out_path=args.out_dir / f"vbench_{winner}_oracle_delta_by_ood_quintile.png",
