@@ -889,3 +889,18 @@ Raw-VBench objective (vs no-TTA 9.993): fixed 9.398 (-0.595); PSNR router ~9.406
 Cross-objective (2026-07-10): the PSNR and VBench routers agree on config only 12.5%; realized per-video metrics correlate ρ≈0.99; each router beats the other on its own metric only 51–55% of the time when picks differ. Conclusion: on this flat 12-config grid, objective choice mostly swaps between metrically-equivalent configs; you cannot optimize both with one 9-d router. Paper stance (2026-07-09): keep VBench-targeted Block A as the perceptual deploy headline; the PSNR router is an objective-tradeoff ablation.
 
 Caveat: trained-router raw-VBench absolute levels are derived from the reported % oracle captured; the vbench analyzer's standalone per-quintile NOTTA column is over the 999-pool membership (the paired Δ columns are correct).
+
+## 2026-07-21 — Learned config routing does not scale (200v pilot → 1000v OOD-preview)
+**Tags:** router, oracle, psnr, vbench, scaling, deployability, paper-narrative, negative-result
+**Refs:** `per_video_analysis/2026-07-12/{deploy_psnr_router,deploy_strict_router,router_objective_alignment,deploy_router_aux_metrics}/summary.md`; `paper_tables/2026-07-21_router_1000v_vs_200v_pilot.md`; jobs 14434827–30
+
+Trained the full deploy-router suite on the completed 1000v OOD-preview pool (N=998, 12 configs + NOTTA merged, VBench backfilled). Clean negative for the learned-router thread:
+
+1. PSNR router capture 7.2%→3.3% (+0.054→+0.0128 dB vs fixed, i.e. ≈ fixed). The oracle PSNR headroom itself shrank +0.748→+0.382 dB, so both ceiling and captured fraction dropped.
+2. Every learned VBench router captures NEGATIVE at scale: Block A(9d) −4.0%, Block B(20d, best) −1.6%, A+B −3.0%, Block C(130d VAE) −7.1%, A+B+C(159d) −7.6%. The pilot headline of +20.8% VBench capture (Block A) was a small-N artifact. Adding features monotonically worsens capture → not a capacity problem, the per-video VBench signal isn't there.
+3. PSNR↔VBench pick agreement rose 12.5%→39.0% and realized ρ hit 0.999 — the metric landscape is even flatter at N=998; routers collapse onto a couple near-equivalent configs (S5_LR1e3 dominant).
+4. Distributional AdaSteer win survives independent of routing: population FVD Fixed AdaSteer 68.8 ≪ NOTTA 157.0 (caveat: merged_summary estimator, N=900 vs 1000, not matched). Oracle PSNR routing co-improves SSIM/LPIPS (+0.0085 / −0.0108).
+
+Narrative pivot: de-emphasize the "learned router captures oracle headroom" claim. The defensible story is (a) per-video oracle PSNR headroom exists (esp. OOD tail at pilot scale) but (b) is NOT learnable from cuts/CLIP/DINO/OOD/VAE features at 1000v, and (c) VBench routing is counterproductive. Keep fixed-AdaSteer FVD improvement as a robust result. Next: matched-pipeline FVD for NOTTA vs fixed vs oracle-routed on the 1000v pool; consider whether any per-video signal survives with a skip-TTA action.
+
+Minor: `deploy_strict_router` / `router_objective_alignment` summary titles hardcode "@N=200" (stale f-string) though they ran on N=998 — cosmetic, numbers are 1000v.
