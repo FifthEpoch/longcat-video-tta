@@ -1025,3 +1025,42 @@ DON'T adapt (on short-horizon in-domain). Combined with the routability result
 (per-video config oracle is noise), the deployable recommendation on this regime is
 NO-TTA. Real TTA wins in the literature come from long-horizon drift (TANGO -28% FVD)
 and diverse-candidate generation, not from AdaSteer-config routing.
+
+---
+
+## 2026-07-21 — Generation seed confound in the 200v pilot's vs-NO-TTA comparison
+
+**Tags:** seeds, reproducibility, pilot, methodology, oracle-headroom
+**Refs:** scripts/verify_seed_alignment.py, sweep_experiment/sbatch/submit_notta_pilot.sh,
+sweep_experiment/sbatch/submit_notta_1000v_preview.sh, delta_experiment/scripts/run_delta_a.py,
+lora_experiment/scripts/run_full_tta.py
+
+Per-generation seed is `base_seed(42) + position-within-chunk (+ rollout_step)`,
+where the index is the video's position in its chunk's `eval_videos` slice
+(the `enumerate` order == the order in summary.json `per_video_results`). So
+per-video seeds line up across arms ONLY when the arms share the same pool
+ordering AND chunking.
+
+Verification (scripts/verify_seed_alignment.py, reconstructs per-video seed from
+summary.json ordering):
+- 1000v preview: config S10_LR5e3 vs in-series NOTTA -> 900/900 (100%) seed MATCH.
+- 200v pilot: config S10_LR5e3 vs the NOTTA it was joined against
+  (panda_1000v_standard/NOTTA, a DIFFERENT series) -> 1/200 (0.5%) match.
+
+Consequences:
+1. The paper-grade 1000v preview is seed-clean; all real vs-NO-TTA analysis
+   should use it. No regeneration needed there.
+2. The 200v pilot's per-video "oracle Δ vs NO-TTA", augmented oracle (adding
+   NOTTA as a 13th option), and any Δ-vs-NOTTA chart are CONFOUNDED — NOTTA used
+   different initial noise per video. The pilot's config-vs-config oracle (max
+   over the 12) is still valid (those 12 are in-series, seed-matched to each other).
+3. This is the mechanism behind the previously-noted VBench "augmented-oracle
+   max-over-noise" inflation: the pilot NOTTA was statistically independent of
+   the configs because it literally was an independent noise draw (different seed).
+
+Fix: re-generate the pilot NO-TTA in-series with the pilot's exact 2×100 /
+SEED=42 chunking (sweep_experiment/sbatch/submit_notta_pilot.sh), which aligns
+seeds under the existing scheme, OR retire the pilot's vs-NOTTA numbers in favor
+of the seed-clean 1000v preview. Going forward: never borrow NO-TTA cross-series;
+always generate compared arms in-series with matched chunking (the preview
+pipeline already does this).
