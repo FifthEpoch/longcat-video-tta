@@ -904,3 +904,16 @@ Trained the full deploy-router suite on the completed 1000v OOD-preview pool (N=
 Narrative pivot: de-emphasize the "learned router captures oracle headroom" claim. The defensible story is (a) per-video oracle PSNR headroom exists (esp. OOD tail at pilot scale) but (b) is NOT learnable from cuts/CLIP/DINO/OOD/VAE features at 1000v, and (c) VBench routing is counterproductive. Keep fixed-AdaSteer FVD improvement as a robust result. Next: matched-pipeline FVD for NOTTA vs fixed vs oracle-routed on the 1000v pool; consider whether any per-video signal survives with a skip-TTA action.
 
 Minor: `deploy_strict_router` / `router_objective_alignment` summary titles hardcode "@N=200" (stale f-string) though they ran on N=998 — cosmetic, numbers are 1000v.
+
+## 2026-07-21 — VBench is un-routable at 1000v across 13 feature/model variants
+**Tags:** router, vbench, features, gbm, mlp, probe, imaging-quality, negative-result, paper-narrative
+**Refs:** `paper_tables/2026-07-21_router_1000v_feature_model_suite.md`; `per_video_analysis/2026-07-21/budget_routing_experiments_1000v/routing_experiments_summary.md`
+
+Ran `run_budget_routing_experiments.py --run-all` on the 1000v preview (N≈998) to test whether richer features / nonlinear models route VBench. They do not:
+
+1. Every VBench-total policy captures ≤ +0.8% of (oracle−fixed) headroom: proxy_psnr_all +0.8, pairwise_gbm −0.2, pairwise_logistic −1.1, probe_simulated −2.4, mlp_shallow −2.9, composite_psnr_ridge −3.8, proxy_bestof3 −4.5, baseline ridge −7.6, coarse_steps_lr −7.6. Nonlinear (HistGBM, MLP) ≈ linear ≈ negative → signal problem, not capacity. The script was built to test GBM/MLP "at N≈999–2400"; at N≈998 they still fail.
+2. Even the causal probe features fail (probe_simulated −2.4%): actual S2/S10/S20 probe PSNR/SSIM deltas don't reveal the VBench-best config ⇒ per-video cross-config VBench differences are ~noise.
+3. The only routable VBench component is imaging_quality (98.7% captured) and it is DEGENERATE: MUSIQ is monotone in how little you adapt, so the IQ-optimal router collapses to "pick the least-adaptive config" ≈ no-TTA — trivially predictable (98.7% value, 6.3% exact-match) and anti-correlated with the adaptation benefit. Other dims (aesthetic/subject/dynamic) have ~0 headroom.
+4. High Match% without capture (mlp 21.6%, dim_dynamic 19.4%) = collapse onto the modal config on a flat landscape.
+
+Closes the "better features/models will route VBench" hypothesis. Deployable VBench routing is dead on this pool; honest wins remain PSNR-oracle headroom (small, OOD-tail) and fixed-AdaSteer FVD. Next: NOTTA VBench backfill (job 14479759) → VBench-oracle-vs-NOTTA headroom analyzer.
