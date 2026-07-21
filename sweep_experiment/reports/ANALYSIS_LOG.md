@@ -896,3 +896,37 @@ The 13-output NOTTA-skip action space exists only in `run_routing_tricks.py` (bo
 full feature set), not crossed with A/B/C. Missing subsets: A+C, B+C for both metrics; full
 block ablation for PSNR. High-dim input was covered at 1000v via `run_budget_routing_experiments`
 (~159-d merged + MLP/HGBM).
+
+---
+
+## 2026-07-21 — Full router matrix @ 1000v (7 blocks × {12,13} × {PSNR,VBench}); VBench oracle is fat-tail noise
+tags: [router, matrix, ablation, psnr, vbench, oracle, variance, 1000v]
+refs: run_router_full_matrix.py; paper_tables/2026-07-21_router_full_matrix_1000v.md;
+router_full_matrix_1000v/router_full_matrix_summary.md
+
+Filled the complete matrix (missing A+C, B+C subsets + full PSNR block ladder + 13-action
+skip variants) on the 1000v preview, N=898 paired (config VBench/PSNR + NO-TTA scored) —
+coverage confirmed fine (NOT the feared 70/config). Fixed = best population-mean config per
+metric; oracle = augmented (max over 12 configs + NO-TTA) per partner instruction.
+
+PSNR: all 14 cells negative vs best config AND vs NO-TTA (−0.004…−0.018). Skip option (13)
+helps a hair, never clears 0. Best population PSNR config = S2_LR1e2 (LEAST-adaptive budget)
+→ no-TTA ≈ minimal adaptation is PSNR-optimal. Un-routable across every feature block.
+
+VBench: 12-action routers ~flat (≤ −0.007, cap ≈ −0.5%; config-oracle headroom only +0.098
+≈ +1%). 13-action routers UNIFORMLY collapse to ≈ −0.13 across all 7 blocks — adding NO-TTA
+as an action is structurally harmful, feature-independent.
+
+Key mechanism (answers "why is a skip-capable router still < NO-TTA / is it hyperparameters?"):
+the augmented oracle = 10.6005 is +1.03 over NO-TTA while config-oracle is only +0.098 over
+fixed. One extra option (NO-TTA, mean 9.57) raising the per-video max by ~0.93 ⇒ NO-TTA's
+per-video VBench has MUCH fatter tails than the tightly-clustered adapted configs. So (a)
+12-action routers sit on the stable config cluster (~9.57, flat); (b) 13-action routers pick
+NO-TTA ~59% on NOISY predictions and eat its downside tail (−0.13), while the oracle banks the
+upside tail (+1.03) because it sees truth. The apparent VBench "oracle headroom" is therefore
+max-of-a-fat-tailed-noisy-variable, NOT routable signal — a signal/variance ceiling, not a
+tuning problem (λ CV-selected; ridge/MLP/HGBM/high-dim/pairwise + observed-probe all fail).
+
+Testable follow-up (before citing +1.03 headroom): confirm NO-TTA VBench fat tail is genuine
+(⇒ real "TTA reduces VBench variance / stabilizes quality" angle) vs a coverage/alignment
+artifact. Probe = per-config VBench N + NO-TTA-vs-config per-video std/percentiles (queued).
