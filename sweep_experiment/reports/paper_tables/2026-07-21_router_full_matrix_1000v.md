@@ -79,6 +79,25 @@ adapted configs**. Mechanism:
   signal — consistent with un-routability across 13 model/feature variants and even the
   observed-probe upper bound. This is a signal/variance-structure ceiling, NOT hyperparameters.
 
-**Open verification (before citing the +1.03 headroom):** confirm the NO-TTA VBench fat tail
-is genuine (TTA *reduces* VBench variance — a real angle) vs a coverage/alignment artifact.
-Probe: per-config VBench N + NO-TTA-vs-config per-video std/percentiles.
+## RESOLVED (routability diagnostic, `diagnose_routability.py`, N=898)
+
+The apparent oracle headroom is **max-over-noise, not routable signal**, for BOTH metrics.
+Coverage is complete (per-config VBench = 998; NOTTA VBench = 898). NOTTA vs CONFIG marginals
+are identical (mean 9.570/9.570, std 1.860/1.848), so the fat tail is neither a variance
+story nor a coverage artifact — it is independence.
+
+| quantity | PSNR | VBench | reading |
+|---|---:|---:|---|
+| within-video config σ | 0.2515 dB | 0.0579 | config choice barely moves the metric per video |
+| mean pairwise config corr | 0.992 | 0.998 | the 12 configs are ~identical per video |
+| corr(NO-TTA, config-mean) | **0.998** | **0.051** | VBench: no-TTA is an INDEPENDENT draw ⇒ aug-oracle = max-of-noise |
+| oracle gain / fixed | 0.3575 dB | 0.0978 | ≈ pure-noise floor σ·E[max/12] (PSNR 0.25·1.63≈0.41) |
+| **OOF R² predict oracle gain (features)** | **−0.092** | **−0.082** | negative ⇒ NO learnable routing signal |
+| OOF R² (+ probe outcomes) | −0.092 | −0.082 | even observing probes (GT-needing) adds nothing to the *gain* |
+
+**Conclusion:** there is no deployable per-video routing win to be had — not a feature/model/
+hyperparameter gap, but because the per-video oracle headroom is a statistical artifact of
+taking a max over noisy per-config measurements. For VBench specifically, per-video VBench-total
+(MUSIQ, no-reference) is scoring noise (no-TTA↔config corr = 0.05 vs PSNR's 0.998). This is a
+clean negative result that supports shipping a single fixed config (≈ no-TTA) rather than a
+per-video router.

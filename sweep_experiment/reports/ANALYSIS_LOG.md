@@ -930,3 +930,33 @@ tuning problem (λ CV-selected; ridge/MLP/HGBM/high-dim/pairwise + observed-prob
 Testable follow-up (before citing +1.03 headroom): confirm NO-TTA VBench fat tail is genuine
 (⇒ real "TTA reduces VBench variance / stabilizes quality" angle) vs a coverage/alignment
 artifact. Probe = per-config VBench N + NO-TTA-vs-config per-video std/percentiles (queued).
+
+---
+
+## 2026-07-21 — RESOLVED: per-video oracle headroom is NOISE, not routable signal (both metrics)
+tags: [router, routability, noise, oracle, vbench, psnr, negative-result, 1000v]
+refs: diagnose_routability.py; routability_diag_1000v/routability_diag_summary.md;
+paper_tables/2026-07-21_router_full_matrix_1000v.md (RESOLVED section)
+
+Coverage probe: per-config VBench = 998 (complete); NOTTA VBench = 898 (100 missing = 1 chunk).
+NOTTA vs CONFIG per-video marginals IDENTICAL (mean 9.570/9.570, std 1.860/1.848, matched
+percentiles/min/max) → the fat aug-oracle is neither variance-reduction nor coverage artifact.
+
+Routability diagnostic (N=898):
+  PSNR : within_cfg_σ=0.2515 corr_cc=0.992 corr(notta,cfg)=0.998 oracle_gain/fixed=0.3575
+         R²(gain|features)=−0.092  R²(gain|+probe)=−0.092
+  VBench: within_cfg_σ=0.0579 corr_cc=0.998 corr(notta,cfg)=0.051 oracle_gain/fixed=0.0978
+         R²(gain|features)=−0.082  R²(gain|+probe)=−0.082
+
+Decisive reading: the per-video oracle gains are MAX-OVER-NOISE, not signal. (1) 12 configs
+are ~identical per video (corr ≥0.99) so their per-config differences are noise; observed PSNR
+oracle gain 0.36 dB ≈ pure-noise floor σ·E[max12]=0.41. (2) OOF R² predicting the per-video
+oracle GAIN is NEGATIVE from the full 159-d stack AND with probe outcomes — no learnable
+structure (explains all 28 matrix cells + 13 variants + 5 tricks failing). (3) VBench smoking
+gun: corr(NOTTA,config)=0.051 (vs PSNR 0.998) — same clip, no-TTA VBench independent of adapted
+VBench ⇒ per-video VBench-total (MUSIQ, no-reference) is scoring noise; the +1.03 aug-oracle is
+max of two independent noise draws.
+
+DECISION: stop per-video routing signal-hunting; it is a noise ceiling, not a features/models/
+hyperparameters gap. Present as a clean negative result supporting "AdaSteer ≈ No-TTA → deploy a
+single fixed config." N=898→~1000 backfill (100 NOTTA VBench, 1 chunk) is cosmetic only.
