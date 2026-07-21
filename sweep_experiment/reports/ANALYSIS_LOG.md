@@ -960,3 +960,34 @@ max of two independent noise draws.
 DECISION: stop per-video routing signal-hunting; it is a noise ceiling, not a features/models/
 hyperparameters gap. Present as a clean negative result supporting "AdaSteer ≈ No-TTA → deploy a
 single fixed config." N=898→~1000 backfill (100 NOTTA VBench, 1 chunk) is cosmetic only.
+
+## 2026-07-21 — Per-VBench-dimension routability: no dimension is routable (short-horizon 1000v)
+
+**Tags:** routing, vbench, per-dimension, negative-result, routability, literature
+**Refs:** scripts/diagnose_routability_per_vbench_dim.py; routability_per_dim_1000v/; ANALYSIS_LOG 2026-07-21 (RESOLVED noise); INDEX router-matrix row
+
+Ran the routability diagnostic per VBench dimension (all 7 raw dims) on
+panda_ood_budget_1000v_preview (N=898 paired: 12 configs + NO-TTA scored).
+Result: every dimension is un-routable.
+- R2 (OOF ridge predicting per-video oracle gain) <= 0 for all 7 dims
+  (best = dynamic_degree at -0.004; worst = aesthetic_quality -0.094).
+- corr(NO-TTA, config-mean) ~ 0 on every dim (0.012-0.092) -> NO-TTA behaves
+  as an independent noise draw per dimension, identical signature to
+  VBench-total. This is why adding NO-TTA as a 13th action inflates the
+  augmented oracle (max-over-independent-noise) without being routable.
+- imaging_quality holds essentially all inter-config movement
+  (within-cfg sigma=0.40, oracle gain 0.67) and thus drives VBench-total's
+  apparent headroom -- but it too is max-over-noise (R2=-0.08).
+- subject_consistency, which looked promising in LONG-CONTEXT Panda
+  (2026-06-08 headline note), is flat on THIS short-horizon in-domain pool
+  (sigma=0.0025, oracle 0.0035, R2=-0.05). The long-context regime is untested here.
+
+Decision: per-dimension routing on short-horizon in-domain video is a dead end,
+consistent with the VBench-total and PSNR routability conclusions. Real signal,
+if any, lives in (a) the long-context/long-horizon drift regime and (b) DIVERSE
+candidate generation (seed/noise variation), not hyperparameter-config routing.
+Literature support (2026): SAVi-DNO's best-of-k-SEED oracle is a REAL +1.18 dB
+PSNR (recoverable to +0.83), whereas our config oracle is noise because configs
+corr~0.99; TANGO reports +3.1% VBench / -28% FVD via test-time noise optimization;
+Video-T1 gains land in semantic dims (+10-19%), motion/imaging barely move.
+Next testable step: best-of-k-seeds headroom on our model.
