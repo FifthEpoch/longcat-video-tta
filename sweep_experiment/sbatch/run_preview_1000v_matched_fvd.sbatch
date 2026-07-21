@@ -63,6 +63,11 @@ NUM_GEN_FRAMES="${NUM_GEN_FRAMES:-14}"
 NUM_COND_FRAMES="${NUM_COND_FRAMES:-14}"
 
 SKIP_GT_CACHE="${SKIP_GT_CACHE:-0}"
+# Set INTERSECT_NOTTA=1 to restrict ALL policies to the common set NOTTA has
+# (matched-N FVD; removes the 898-vs-998 set-membership confound). Re-eval only.
+INTERSECT_NOTTA="${INTERSECT_NOTTA:-0}"
+EXTRA_ARGS=""
+[ "${INTERSECT_NOTTA}" = "1" ] && EXTRA_ARGS="--intersect-with-notta"
 
 module purge
 module load anaconda3/2025.06
@@ -119,6 +124,7 @@ python sweep_experiment/scripts/run_pilot_matched_fvd_baselines.py \
   --gt-cache "${GT_CACHE}" \
   --fixed-run "${FIXED_RUN}" \
   --min-linked "${MIN_LINKED}" \
+  ${EXTRA_ARGS} \
   --policies ${POLICIES}
 
 echo ""

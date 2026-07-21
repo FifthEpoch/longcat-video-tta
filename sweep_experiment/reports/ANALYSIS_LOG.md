@@ -991,3 +991,37 @@ PSNR (recoverable to +0.83), whereas our config oracle is noise because configs
 corr~0.99; TANGO reports +3.1% VBench / -28% FVD via test-time noise optimization;
 Video-T1 gains land in semantic dims (+10-19%), motion/imaging barely move.
 Next testable step: best-of-k-seeds headroom on our model.
+
+## 2026-07-21 — FVD: AdaSteer TTA HURTS distributional realism; routing helps vs fixed only (confounded, matched rerun pending)
+
+**Tags:** fvd, routing, negative-result, tta-tradeoff, distribution-metric, confound
+**Refs:** run_preview_1000v_matched_fvd.sbatch; run_pilot_matched_fvd_baselines.py (--intersect-with-notta); budget_oracle_fvd_1000v_preview/matched/
+
+Matched-FVD on the 1000v OOD-preview pool, 3 policies, one GT cache, one protocol:
+  always_notta      N=898  FVD  81.52   (best)
+  oracle_best_psnr  N=998  FVD 168.68   (PSNR-router)
+  fixed_S10_LR5e3   N=998  FVD 198.20   (worst)
+
+Findings:
+1. AdaSteer TTA badly degrades FVD: no-TTA 81.5 -> any-config ~168-198 (2-2.4x).
+   Per-video PSNR/VBench gain is ~0, so on this pool AdaSteer is STRICTLY harmful
+   (no fidelity gain, large realism loss). Mechanism = the classic TTA tradeoff
+   also reported by SAVi-DNO: pixel/context-fitting improves pixelwise metrics
+   but pushes samples off the real-video manifold, raising FVD.
+2. Routing DOES move FVD in the right direction vs committing to one config
+   (198.2 -> 168.7, ~30 pts) — the only place we have seen routing help a metric —
+   but it is still far worse than no-TTA. So "router improves FVD" is true ONLY
+   relative to a fixed config, not relative to no-TTA.
+
+CONFOUND (blocking a clean claim): no-TTA scored on N=898, fixed/oracle on N=998
+(100 NOTTA videos missing). FVD small-N bias is upward, so it cannot explain
+no-TTA being the LOWEST; but the 100 extra videos in fixed/oracle (possibly the
+hard/OOD ones) could inflate their FVD. Fix implemented: --intersect-with-notta
+restricts all policies to the common 898 set (matched-N, re-eval only). Rerun
+pending; will update this entry with matched numbers.
+
+Narrative implication: FVD is the metric that separates policies here, and it says
+DON'T adapt (on short-horizon in-domain). Combined with the routability result
+(per-video config oracle is noise), the deployable recommendation on this regime is
+NO-TTA. Real TTA wins in the literature come from long-horizon drift (TANGO -28% FVD)
+and diverse-candidate generation, not from AdaSteer-config routing.

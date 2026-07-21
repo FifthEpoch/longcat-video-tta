@@ -204,6 +204,16 @@ def main() -> int:
     )
     ap.add_argument("--skip-build", action="store_true")
     ap.add_argument("--skip-eval", action="store_true")
+    ap.add_argument(
+        "--intersect-with-notta",
+        action="store_true",
+        help=(
+            "Restrict EVERY policy to the video IDs that the NOTTA run actually "
+            "has (the common set), so FVD is computed on the identical sample for "
+            "all policies. Removes the N=898 vs 998 set-membership confound. "
+            "Re-eval only; no regeneration."
+        ),
+    )
     ap.add_argument("--clean", action="store_true")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--min-linked", type=int, default=50)
@@ -225,6 +235,28 @@ def main() -> int:
         print(f"ERROR: GT cache missing: {args.gt_cache}", file=sys.stderr)
         return 2
 
+    # Optionally collapse to the common set the NOTTA run actually has, so every
+    # policy's FVD is computed on the SAME videos (matched-N, no membership bias).
+    restrict_ids: Optional[set] = None
+    if args.intersect_with_notta:
+        notta_avail = set(index_method_videos(baseline_root, NOTTA_RUN_ID).keys())
+        common = sorted(set(video_ids) & notta_avail)
+        restrict_ids = set(common)
+        print(
+            f"[intersect] common NOTTA∩manifest set: N={len(common)} "
+            f"(manifest={len(video_ids)}, notta_available={len(notta_avail)})"
+        )
+        if len(common) < args.min_linked:
+            print(
+                f"ERROR: common set N={len(common)} < min_linked={args.min_linked}",
+                file=sys.stderr,
+            )
+            return 1
+        video_ids = common
+        # Restricting changes the sample: force clean rebuild + re-eval so stale
+        # (full-998) symlinks and cached fvd.json are not silently reused.
+        args.clean = True
+
     summary_rows: List[dict] = []
 
     for policy in args.policies:
@@ -241,6 +273,28 @@ def main() -> int:
                 out_json = args.oracle_manifest.parent / "fvd.json"
                 linked = len(list(gen_dir.glob("*.mp4")))
             print(f"[oracle] using existing dir {gen_dir} (N={linked})")
+            if restrict_ids is not None:
+                # Build a common-set filtered copy of the pre-built oracle dir.
+                filt_dir = args.output_root / f"{ORACLE_POLICY}_common" / "videos"
+                if filt_dir.parent.exists():
+                    import shutil
+
+                    shutil.rmtree(filt_dir.parent)
+                filt_dir.mkdir(parents=True, exist_ok=True)
+                fl = 0
+                for vid in video_ids:
+                    src_mp4 = gen_dir / f"{vid}.mp4"
+                    if not (src_mp4.exists() or src_mp4.is_symlink()):
+                        continue
+                    dst = filt_dir / f"{vid}.mp4"
+                    if dst.exists() or dst.is_symlink():
+                        dst.unlink()
+                    os.symlink(src_mp4.resolve(), dst)
+                    fl += 1
+                gen_dir = filt_dir
+                out_json = filt_dir.parent / "fvd.json"
+                linked = fl
+                print(f"[oracle] restricted to common set (N={linked}) -> {gen_dir}")
         elif policy == "always_notta":
             if not args.skip_build:
                 notta_index = index_method_videos(baseline_root, NOTTA_RUN_ID)
