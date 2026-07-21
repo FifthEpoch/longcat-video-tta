@@ -199,6 +199,31 @@ def _side_effect_mean(
     return float(np.mean(vals)) if vals else None
 
 
+def _quintile_rows(
+    q_m: np.ndarray,
+    apply: np.ndarray,
+    realized: np.ndarray,
+    notta: np.ndarray,
+    oracle: np.ndarray,
+) -> List[dict]:
+    """Per-OOD-quintile apply-rate + Δ-vs-NOTTA for a policy (Q1 low … Q5 high OOD)."""
+    rows: List[dict] = []
+    for q in sorted(set(int(x) for x in q_m if x >= 0)):
+        sel = q_m == q
+        if sel.sum() == 0:
+            continue
+        rows.append(
+            {
+                "q": q,
+                "n": int(sel.sum()),
+                "apply_rate": float(np.mean(apply[sel])),
+                "d_vs_notta": _nanmean(realized[sel] - notta[sel]),
+                "oracle_d_vs_notta": _nanmean(oracle[sel] - notta[sel]),
+            }
+        )
+    return rows
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Five routing tricks (offline)")
     ap.add_argument(
@@ -318,6 +343,7 @@ def main() -> int:
         match=float(np.mean(pick2 == np.nanargmax(Ym, axis=1))),
         side_effect=_side_effect_mean(otherm, pick2, np.ones(n, bool)),
     )
+    s2["quintiles"] = _quintile_rows(q_m, np.ones(n, bool), real2, nottam, config_oracle)
     results.append(s2)
 
     # ===== Trick 1: skip_augmented (configs + NOTTA as 13th action) ========
@@ -335,6 +361,7 @@ def main() -> int:
         skip_rate=float(np.mean(picked_notta1)),
         side_effect=_side_effect_mean(otherm, pick1, ~picked_notta1),
     )
+    s1["quintiles"] = _quintile_rows(q_m, ~picked_notta1, real1, nottam, aug_oracle)
     results.append(s1)
 
     # ===== Trick 3: gain_target (predict metric − NOTTA, gate at 0) ========
@@ -354,10 +381,15 @@ def main() -> int:
         skip_rate=float(np.mean(~adapt3)),
         side_effect=_side_effect_mean(otherm, pickg, adapt3),
     )
+    s3["quintiles"] = _quintile_rows(q_m, adapt3, real3, nottam, aug_oracle)
     results.append(s3)
 
     # ===== Trick 4: adapt_gate (binary "will TTA help?" → pick or NOTTA) ===
-    margin = config_oracle - nottam
+    # Label = deployable adapt decision: does the default (fixed) config beat
+    # no-TTA? NOTE: config_oracle−NOTTA is a max over 12 noisy configs, so it is
+    # ~always positive and collapses the gate to "always adapt"; fixed−NOTTA is
+    # the honest, non-degenerate signal for whether adaptation is worth it.
+    margin = fixedm - nottam
     z = (margin > 0.0).astype(float)
     if len(np.unique(z)) == 2:
         oof_p = _oof_logistic(Xm, z, args.n_folds, args.seed)
@@ -370,7 +402,7 @@ def main() -> int:
     s4 = _summ(real4, fixedm, nottam, aug_oracle)
     s4.update(
         trick="adapt_gate",
-        desc="logistic gate on 'best config beats NOTTA' → route_for_metric pick else NOTTA",
+        desc="logistic gate on 'fixed config beats NOTTA' → route_for_metric pick else NOTTA",
         lam=None,
         auc=auc,
         apply_rate=float(np.mean(adapt4)),
@@ -378,22 +410,7 @@ def main() -> int:
         pos_rate=float(np.mean(z)),
         side_effect=_side_effect_mean(otherm, pick2, adapt4),
     )
-    # per-OOD-quintile apply-rate + realized gain vs NOTTA
-    q_rows = []
-    for q in sorted(set(int(x) for x in q_m if x >= 0)):
-        sel = q_m == q
-        if sel.sum() == 0:
-            continue
-        q_rows.append(
-            {
-                "q": q,
-                "n": int(sel.sum()),
-                "apply_rate": float(np.mean(adapt4[sel])),
-                "d_vs_notta": _nanmean(real4[sel] - nottam[sel]),
-                "oracle_d_vs_notta": _nanmean(aug_oracle[sel] - nottam[sel]),
-            }
-        )
-    s4["quintiles"] = q_rows
+    s4["quintiles"] = _quintile_rows(q_m, adapt4, real4, nottam, aug_oracle)
     results.append(s4)
 
     # ===== Trick 5: probe_route (probe PSNR/SSIM features + argmax) ========
@@ -408,6 +425,7 @@ def main() -> int:
         match=float(np.mean(pick5 == np.nanargmax(Ym, axis=1))),
         side_effect=_side_effect_mean(otherm, pick5, np.ones(n, bool)),
     )
+    s5["quintiles"] = _quintile_rows(q_m, np.ones(n, bool), real5, nottam, config_oracle)
     results.append(s5)
 
     # ---- write outputs ----------------------------------------------------
@@ -481,18 +499,41 @@ def main() -> int:
             lines.append(f"| `{t}` | {_fmt(r['side_effect'])} |")
     lines.append("")
 
-    gate = by_trick.get("adapt_gate", {})
-    if gate.get("quintiles"):
+    # combined per-OOD-quintile Δ-vs-NOTTA across all tricks (the adapt-by-OOD story)
+    q_index: Dict[int, dict] = {}
+    for t in order:
+        for qr in by_trick.get(t, {}).get("quintiles", []) or []:
+            slot = q_index.setdefault(qr["q"], {"n": qr["n"], "oracle": qr["oracle_d_vs_notta"]})
+            slot[t] = qr
+    if q_index:
         lines += [
-            "## adapt_gate by OOD quintile (Q1 low … Q5 high OOD)",
+            "## Δ vs NOTTA by OOD quintile (Q1 low … Q5 high OOD)",
             "",
-            "| Quintile | N | Apply% | Δ gate−NOTTA | Δ oracle−NOTTA |",
-            "|---|---:|---:|---:|---:|",
+            "Each cell is mean(policy − NOTTA) for that quintile; `(apply%)` is the "
+            "adapt rate for skip-aware tricks. `Oracle` = augmented-oracle − NOTTA (ceiling).",
+            "",
+            "| Quintile | N | skip_augmented | gain_target | adapt_gate | route_for_metric | probe_route | Oracle |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
         ]
-        for qr in gate["quintiles"]:
+
+        def _cell(qr: Optional[dict], show_apply: bool) -> str:
+            if not qr:
+                return "—"
+            s = _fmt_d(qr["d_vs_notta"])
+            if show_apply:
+                s += f" ({_pct(qr['apply_rate'])})"
+            return s
+
+        for q in sorted(q_index):
+            slot = q_index[q]
             lines.append(
-                f"| Q{qr['q']} | {qr['n']} | {_pct(qr['apply_rate'])} | "
-                f"{_fmt_d(qr['d_vs_notta'])} | {_fmt_d(qr['oracle_d_vs_notta'])} |"
+                f"| Q{q} | {slot['n']} | "
+                f"{_cell(slot.get('skip_augmented'), True)} | "
+                f"{_cell(slot.get('gain_target'), True)} | "
+                f"{_cell(slot.get('adapt_gate'), True)} | "
+                f"{_cell(slot.get('route_for_metric'), False)} | "
+                f"{_cell(slot.get('probe_route'), False)} | "
+                f"{_fmt_d(slot['oracle'])} |"
             )
         lines.append("")
 

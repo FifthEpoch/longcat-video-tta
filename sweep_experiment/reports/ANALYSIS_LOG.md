@@ -839,81 +839,28 @@ uplift +0.382 dB [+0.337,+0.429] (median +0.144, tail-driven), the worst-populat
 config S20_LR1e2 is the most-picked oracle winner (30.6%), and PSNR-oracle routing
 inflates FVD (383.9 vs ~66) — the routing objective is not free.
 
-## 2026-07-20 — Frame-geometry parity of 200v-pilot NOTTA baseline confirmed
-**Tags:** provenance, methodology, notta, geometry, router
-**Refs:** `scripts/analyze_adasteer_budget_oracle.py` (`_infer_baseline_series_root`), `submit_adasteer_budget_pilot.sh`, `submit_standard_1000v_chunked.sh`, `experiment_outputs/2026-07-20.md`
+---
 
-Question raised: the 200v-pilot budget-grid oracle report cites a NOTTA baseline
-(PSNR 17.798 dB, VBench-total 9.993), but no NOTTA was generated on the pilot pool.
-Where does it come from, and is it the same generation task?
+## 2026-07-21 — 5 routing tricks @ 1000v (PSNR): deployable routing ≈ no-TTA
+tags: [router, psnr, 1000v, adapt-gate, probe, deployable]
+refs: run_routing_tricks.py; experiment_outputs/2026-07-21.md (15:30);
+per_video_analysis/2026-07-21/routing_tricks_psnr_1000v/
 
-Finding: the analyzer's `_infer_baseline_series_root` joins the NOTTA arm from
-`sweep_experiment/results/panda_1000v_standard/NOTTA` per canonical video ID (the pilot
-200 is a subset of that 999-video pool; the Δ-vs-NOTTA rows report N=200, i.e. all 200
-matched). An on-cluster probe of the recorded per-video `summary.json` confirms IDENTICAL
-frame geometry across the grid arms and the NOTTA baseline: cond=14, total=28,
-gen_start=48 → 14 generated frames (video[48:62]). Both submitters hardcode 50 steps /
-GS 4.0 / 480p (not persisted in summary.json, hence the `None`s). Initial worry that
-"standard" implied the code-default 2/16/32 geometry was WRONG — the standard submitter
-explicitly sets the same long-context 14/28/48 as the pilot.
+Ran the five deployable tricks (skip_augmented, route_for_metric, gain_target,
+adapt_gate, probe_route) on PSNR over the 1000v preview grid, paired against the
+now-present **in-pool** NOTTA (N=898 with NOTTA PSNR; grid N=998). Headline: on this
+OOD-preview pool **no-TTA marginally beats fixed AdaSteer AND every deployable router**
+(Δ-vs-NOTTA ≈ −0.015 dB; NOTTA ≈ fixed+0.03 dB) — all noise-level. This is the clean
+in-pool restatement of the "AdaSteer ≈ No-TTA" saturation result (the 200v pilot's
++0.95 dB oracle-vs-NOTTA was cross-pool against panda_1000v_standard, not paired).
 
-Conclusion: the 200v-pilot NOTTA comparison is a fair, same-task join, not a mismatched
-pool. The 1000v-preview analysis is even cleaner — it has its own dedicated NOTTA on the
-identical pool/geometry (`submit_notta_1000v_preview.sh`), and the pilot matched-FVD
-baseline (`run_pilot_matched_fvd_baselines.py`, cond=14/gen=14) is likewise matched.
-Residual low-risk checks left open: pilot dataset frame-identity vs panda_1000_480p,
-rollout_steps=1 parity, and NOTTA (caption-on) vs NOTTA_NOPROMPT arm selection.
-
-## 2026-07-20 — Matched no-TTA FVD + per-quintile gains reframe the 200v-pilot story
-**Tags:** fvd, ood, router, notta, methodology, paper-narrative
-**Refs:** `run_pilot_matched_fvd_baselines.py`, `analyze_adasteer_budget_oracle.py` (7627e67), `paper_tables/2026-07-20_router_200v_pilot_matched_fvd_and_ood_gains.md`
-
-Two corrections/findings on the 200v AdaSteer budget pilot:
-
-(1) FVD pipeline mismatch: the grid's per-config in-run FVDs (316–336, from merged_summary.json) are NOT comparable to the oracle FVD (383.9). Confirmed via the matched-FVD baselines (eval_fvd.py + shared GT cache, same 200 IDs): no-TTA=368.9, fixed S10_LR5e3=375.9, oracle=383.9 (in-run fixed S10=331 vs matched=376). Use the matched trio for any FVD comparison. Conclusion: no-TTA is the FVD floor; both fixed and routed AdaSteer worsen distributional realism (+7.0, +15.0).
-
-(2) Per-quintile gains vs no-TTA (analyzer now emits paired Δ fixed−NOTTA / Δ oracle−NOTTA): fixed-budget AdaSteer is net-NEGATIVE vs no-TTA in Q1 (-0.227) and Q4 (-0.572), ~flat Q2 (+0.062), positive Q3/Q5. Per-video oracle routing is positive in all five quintiles (+0.24…+1.74), largest on the high-OOD tail; routing edge (oracle−fixed) is +0.39…+1.07 dB. This is the paper's motivation for OOD-aware routing with a skip-TTA action: TTA is not universally beneficial, and the quintiles where it backfires are recoverable by routing.
-
-Caveat: the analyzer's standalone per-quintile NOTTA absolute column is over the 999-pool quintile membership; the Δ columns are correctly paired over the pilot subset (~40/quintile).
-
-## 2026-07-20 — Trained routers vs oracle, PSNR & VBench: consolidated 200v-pilot picture
-**Tags:** router, oracle, psnr, vbench, deployability, paper-narrative
-**Refs:** `2026-07-09_deploy_psnr_router.md`, `2026-07-10_router_objective_alignment.md`, `2026-07-15_pilot_config_vs_notta_routing.md`, `analyze_adasteer_budget_vbench_oracle.py` (ce2c971)
-
-Consolidated the deployable trained routers against the oracle upper bounds on the same 200 pilot videos, for both objectives:
-
-PSNR objective (dB vs no-TTA 17.798): fixed 17.996 (+0.198); VBench router 18.005 (+0.207, 1.2% oracle cap); PSNR router 18.050 (+0.252, 7.2% cap); oracle 18.744 (+0.946, 100%). Deployable routing captures <8% of the PSNR oracle headroom.
-
-Raw-VBench objective (vs no-TTA 9.993): fixed 9.398 (-0.595); PSNR router ~9.406; VBench router ~9.427 (captures 20.8% of the fixed→oracle gap); oracle 9.538 (-0.455). EVERY TTA policy — fixed, trained, and oracle — is BELOW no-TTA on raw-VBench. Per-quintile VBench oracle Δ vs no-TTA is negative in all five quintiles (-0.21…-0.77).
-
-Cross-objective (2026-07-10): the PSNR and VBench routers agree on config only 12.5%; realized per-video metrics correlate ρ≈0.99; each router beats the other on its own metric only 51–55% of the time when picks differ. Conclusion: on this flat 12-config grid, objective choice mostly swaps between metrically-equivalent configs; you cannot optimize both with one 9-d router. Paper stance (2026-07-09): keep VBench-targeted Block A as the perceptual deploy headline; the PSNR router is an objective-tradeoff ablation.
-
-Caveat: trained-router raw-VBench absolute levels are derived from the reported % oracle captured; the vbench analyzer's standalone per-quintile NOTTA column is over the 999-pool membership (the paired Δ columns are correct).
-
-## 2026-07-21 — Learned config routing does not scale (200v pilot → 1000v OOD-preview)
-**Tags:** router, oracle, psnr, vbench, scaling, deployability, paper-narrative, negative-result
-**Refs:** `per_video_analysis/2026-07-12/{deploy_psnr_router,deploy_strict_router,router_objective_alignment,deploy_router_aux_metrics}/summary.md`; `paper_tables/2026-07-21_router_1000v_vs_200v_pilot.md`; jobs 14434827–30
-
-Trained the full deploy-router suite on the completed 1000v OOD-preview pool (N=998, 12 configs + NOTTA merged, VBench backfilled). Clean negative for the learned-router thread:
-
-1. PSNR router capture 7.2%→3.3% (+0.054→+0.0128 dB vs fixed, i.e. ≈ fixed). The oracle PSNR headroom itself shrank +0.748→+0.382 dB, so both ceiling and captured fraction dropped.
-2. Every learned VBench router captures NEGATIVE at scale: Block A(9d) −4.0%, Block B(20d, best) −1.6%, A+B −3.0%, Block C(130d VAE) −7.1%, A+B+C(159d) −7.6%. The pilot headline of +20.8% VBench capture (Block A) was a small-N artifact. Adding features monotonically worsens capture → not a capacity problem, the per-video VBench signal isn't there.
-3. PSNR↔VBench pick agreement rose 12.5%→39.0% and realized ρ hit 0.999 — the metric landscape is even flatter at N=998; routers collapse onto a couple near-equivalent configs (S5_LR1e3 dominant).
-4. Distributional AdaSteer win survives independent of routing: population FVD Fixed AdaSteer 68.8 ≪ NOTTA 157.0 (caveat: merged_summary estimator, N=900 vs 1000, not matched). Oracle PSNR routing co-improves SSIM/LPIPS (+0.0085 / −0.0108).
-
-Narrative pivot: de-emphasize the "learned router captures oracle headroom" claim. The defensible story is (a) per-video oracle PSNR headroom exists (esp. OOD tail at pilot scale) but (b) is NOT learnable from cuts/CLIP/DINO/OOD/VAE features at 1000v, and (c) VBench routing is counterproductive. Keep fixed-AdaSteer FVD improvement as a robust result. Next: matched-pipeline FVD for NOTTA vs fixed vs oracle-routed on the 1000v pool; consider whether any per-video signal survives with a skip-TTA action.
-
-Minor: `deploy_strict_router` / `router_objective_alignment` summary titles hardcode "@N=200" (stale f-string) though they ran on N=998 — cosmetic, numbers are 1000v.
-
-## 2026-07-21 — VBench is un-routable at 1000v across 13 feature/model variants
-**Tags:** router, vbench, features, gbm, mlp, probe, imaging-quality, negative-result, paper-narrative
-**Refs:** `paper_tables/2026-07-21_router_1000v_feature_model_suite.md`; `per_video_analysis/2026-07-21/budget_routing_experiments_1000v/routing_experiments_summary.md`
-
-Ran `run_budget_routing_experiments.py --run-all` on the 1000v preview (N≈998) to test whether richer features / nonlinear models route VBench. They do not:
-
-1. Every VBench-total policy captures ≤ +0.8% of (oracle−fixed) headroom: proxy_psnr_all +0.8, pairwise_gbm −0.2, pairwise_logistic −1.1, probe_simulated −2.4, mlp_shallow −2.9, composite_psnr_ridge −3.8, proxy_bestof3 −4.5, baseline ridge −7.6, coarse_steps_lr −7.6. Nonlinear (HistGBM, MLP) ≈ linear ≈ negative → signal problem, not capacity. The script was built to test GBM/MLP "at N≈999–2400"; at N≈998 they still fail.
-2. Even the causal probe features fail (probe_simulated −2.4%): actual S2/S10/S20 probe PSNR/SSIM deltas don't reveal the VBench-best config ⇒ per-video cross-config VBench differences are ~noise.
-3. The only routable VBench component is imaging_quality (98.7% captured) and it is DEGENERATE: MUSIQ is monotone in how little you adapt, so the IQ-optimal router collapses to "pick the least-adaptive config" ≈ no-TTA — trivially predictable (98.7% value, 6.3% exact-match) and anti-correlated with the adaptation benefit. Other dims (aesthetic/subject/dynamic) have ~0 headroom.
-4. High Match% without capture (mlp 21.6%, dim_dynamic 19.4%) = collapse onto the modal config on a flat landscape.
-
-Closes the "better features/models will route VBench" hypothesis. Deployable VBench routing is dead on this pool; honest wins remain PSNR-oracle headroom (small, OOD-tail) and fixed-AdaSteer FVD. Next: NOTTA VBench backfill (job 14479759) → VBench-oracle-vs-NOTTA headroom analyzer.
+Three signals: (1) skip-awareness helps a hair — skip_augmented/gain_target beat
+always-adapt (+0.0186 vs +0.0151 vs fixed) and elect to skip TTA on 58% of videos;
+still below NOTTA (imperfect gate/pick). (2) probe_route (+0.09 dB vs NOTTA, 31.9% of
+oracle) is the ONLY policy clearing no-TTA, but it is a semi-oracle upper bound (uses
+actual probe PSNR/SSIM) costing ~4× inference — confirms static features can't route,
+observed probes can, but not cheaply. (3) adapt_gate initially collapsed to always-adapt
+because its label `config_oracle−NOTTA` is a max over 12 noisy configs (≈always > 0);
+corrected to `fixed−NOTTA` (deployable, non-degenerate) and added combined per-OOD-quintile
+Δ-vs-NOTTA to all tricks. Decision: PSNR remains ~unroutable-for-net-gain-vs-NOTTA at 1000v;
+the surviving positive AdaSteer result is the matched-FVD win (job pending), not PSNR routing.
