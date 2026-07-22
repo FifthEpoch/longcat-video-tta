@@ -367,15 +367,17 @@ def load_per_video_vbench(method_dir: Path) -> Dict[str, Dict[str, float]]:
     original dims (prompt_en keys) and backfill dims (video_path keys) land
     on the same canonical id as PSNR/SSIM/LPIPS.
     """
+    import os
+    vbench_subdir = os.environ.get("VBENCH_SUBDIR", "vbench_results")
     merged: Dict[str, Dict[str, float]] = {}
     chunk_dirs = sorted(method_dir.glob("chunk_*"))
     if not chunk_dirs:
-        vb_root = method_dir / "vbench_results"
+        vb_root = method_dir / vbench_subdir
         if vb_root.is_dir():
             chunk_dirs = [method_dir]
     for chunk_dir in chunk_dirs:
         anchor_ids = _chunk_anchor_ids(chunk_dir)
-        vb_dir = chunk_dir / "vbench_results"
+        vb_dir = chunk_dir / vbench_subdir
         if not vb_dir.is_dir():
             continue
         for dim in VBENCH_DIMS:

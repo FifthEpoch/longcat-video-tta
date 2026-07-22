@@ -78,24 +78,27 @@ def _extract_overall_score(parsed: dict, dim: str) -> Optional[float]:
     return None
 
 
-def _count_videos_in_chunk(chunk_dir: Path) -> int:
-    vd = chunk_dir / "videos"
+def _count_videos_in_chunk(chunk_dir: Path, videos_subdir: str = "videos") -> int:
+    vd = chunk_dir / videos_subdir
     if not vd.is_dir():
         return 0
     return len(list(vd.glob("*.mp4")))
 
 
 def collect_dim_scores(method_dir: Path,
-                       dim: str) -> Tuple[Optional[float], int, List[Path]]:
+                       dim: str,
+                       vbench_subdir: str = "vbench_results",
+                       videos_subdir: str = "videos",
+                       ) -> Tuple[Optional[float], int, List[Path]]:
     """Returns (weighted_mean, total_videos, list_of_files_used)."""
     files = []
     for cd in sorted(method_dir.glob("chunk_*")):
-        f = cd / "vbench_results" / f"vbench_{dim}_eval_results.json"
+        f = cd / vbench_subdir / f"vbench_{dim}_eval_results.json"
         if f.exists():
             files.append((cd, f))
     if not files:
         # older single-job layout
-        f = method_dir / "vbench_results" / f"vbench_{dim}_eval_results.json"
+        f = method_dir / vbench_subdir / f"vbench_{dim}_eval_results.json"
         if f.exists():
             files.append((method_dir, f))
 
@@ -115,7 +118,7 @@ def collect_dim_scores(method_dir: Path,
         if s is None:
             print(f"  [warn] no usable score in {f}", file=sys.stderr)
             continue
-        w = _count_videos_in_chunk(chunk_dir) or 1
+        w = _count_videos_in_chunk(chunk_dir, videos_subdir) or 1
         weighted += s * w
         total_w += w
         used.append(f)
@@ -125,7 +128,10 @@ def collect_dim_scores(method_dir: Path,
     return weighted / total_w, total_w, used
 
 
-def update_method_dir(method_dir: Path, force: bool = False) -> int:
+def update_method_dir(method_dir: Path, force: bool = False,
+                      vbench_subdir: str = "vbench_results",
+                      videos_subdir: str = "videos",
+                      deprecate_existing: bool = False) -> int:
     if not method_dir.exists():
         print(f"[error] {method_dir} does not exist", file=sys.stderr)
         return 2
@@ -153,8 +159,20 @@ def update_method_dir(method_dir: Path, force: bool = False) -> int:
               file=sys.stderr)
         vbench = {}
 
-    print(f"Method dir : {method_dir}")
-    print(f"Summary    : {summary_path.name}")
+    # Preserve the old (full-clip / contaminated) VBench for audit before we
+    # overwrite it with generated-only scores.
+    if deprecate_existing and vbench and "vbench_fullclip_deprecated" not in summary:
+        summary["vbench_fullclip_deprecated"] = dict(vbench)
+        summary["vbench_window_note"] = (
+            "vbench = GENERATED-ONLY (cond frames trimmed via make_geneval_clips.py); "
+            "vbench_fullclip_deprecated = old cond+gen full-clip scores (do not cite)."
+        )
+        print("  [audit] stashed old full-clip vbench -> 'vbench_fullclip_deprecated'")
+        vbench = {}  # rebuild from gen-only results
+
+    print(f"Method dir    : {method_dir}")
+    print(f"Summary       : {summary_path.name}")
+    print(f"VBench subdir : {vbench_subdir}")
     print(f"Existing vbench dims : {sorted(vbench.keys()) or '-'}")
     print()
 
@@ -168,7 +186,8 @@ def update_method_dir(method_dir: Path, force: bool = False) -> int:
             print(f"  {dim:<25} SKIP (existing = {vbench[dim]:.4f})")
             n_skipped += 1
             continue
-        score, n_vid, files = collect_dim_scores(method_dir, dim)
+        score, n_vid, files = collect_dim_scores(
+            method_dir, dim, vbench_subdir=vbench_subdir, videos_subdir=videos_subdir)
         if score is None:
             print(f"  {dim:<25} MISSING (no per-chunk results found)")
             n_missing += 1
@@ -206,8 +225,21 @@ def main() -> int:
     ap.add_argument("--method-dir", required=True, type=Path)
     ap.add_argument("--force", action="store_true",
                     help="Replace existing vbench entries instead of skipping.")
+    ap.add_argument("--vbench-subdir", default="vbench_results",
+                    help="Per-chunk results dir to read (default 'vbench_results'; "
+                         "use 'vbench_results_geneval' for gen-only scores).")
+    ap.add_argument("--videos-subdir", default="videos",
+                    help="Per-chunk clip dir used for per-chunk video-count weights "
+                         "(default 'videos'; use 'videos_geneval').")
+    ap.add_argument("--deprecate-existing", action="store_true",
+                    help="Stash the current summary['vbench'] under "
+                         "'vbench_fullclip_deprecated' and rebuild 'vbench' from "
+                         "--vbench-subdir (use when switching to gen-only).")
     args = ap.parse_args()
-    return update_method_dir(args.method_dir, args.force)
+    return update_method_dir(args.method_dir, args.force,
+                             vbench_subdir=args.vbench_subdir,
+                             videos_subdir=args.videos_subdir,
+                             deprecate_existing=args.deprecate_existing)
 
 
 if __name__ == "__main__":

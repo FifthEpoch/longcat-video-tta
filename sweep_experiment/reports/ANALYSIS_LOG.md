@@ -1195,3 +1195,32 @@ dir and re-run VBench backfill + oracle/router analysis for all arms; (2) FVD/FI
 fairness — matched offline recompute (INTERSECT_NOTTA=1) so all arms share
 N/reference/provenance; (3) recover/complete NO-TTA FVD or rely on offline
 recompute from the 969 saved mp4s; (4) pixel metrics unchanged.
+
+## 2026-07-22 — Eval-metric fix: VBench gen-only window + matched FVD/FID
+tags: [eval, vbench, fvd, leakage, methodology]
+refs: sweep_experiment/reports/per_video_analysis/2026-07-22/eval_metric_audit.md,
+      sweep_experiment/reports/per_video_analysis/2026-07-22/FIX_AND_RECOMPUTE_RUNBOOK.md
+
+Audit found VBench++ was scoring the FULL saved mp4 ([14 cond | 15 gen] = 29
+frames) instead of generated-only frames — ~half of every VBench score was real
+conditioning footage, contaminating absolute scores and the TTA-vs-NOTTA signal.
+Pixel metrics (PSNR/SSIM/LPIPS) and the FVD/FID *window* were already gen-only
+(video[48:62]); FVD *comparisons* were confounded (NOTTA online FVD accumulated
+only ~375/969 videos, chunk_5 missing; per-video paired refs vs frozen cache; N
+898 vs 998). TTA training uses video[0:48], disjoint from scored video[48:62] —
+no train/eval leakage.
+
+Fix (code, pushed this commit): scripts/make_geneval_clips.py trims the first 14
+cond frames of each saved mp4 into videos_geneval/ (15-frame gen-only tail,
+encoded identically to the pipeline writer; verified frame-exact on a synthetic
+29-frame clip: out[0]==src[14], out[-1]==src[28]). run_vbench_backfill.py gained
+--videos-subdir/--out-subdir; VBench re-runs on videos_geneval/ into
+vbench_results_geneval/. load_per_video_vbench honors VBENCH_SUBDIR env so ALL
+analysis consumers (oracle, router matrix, chart dumper) read gen-only with no
+call-site edits. update_merged_with_vbench.py --deprecate-existing stashes old
+full-clip means under merged_summary["vbench_fullclip_deprecated"] and rebuilds
+"vbench" from gen-only. FVD/FID: no code change — recompute all 3 policies
+offline vs the frozen preview GT cache on the common video set
+(INTERSECT_NOTTA=1). Full ordered recompute in FIX_AND_RECOMPUTE_RUNBOOK.md.
+All prior VBench-based numbers on panda_ood_budget_1000v_preview are superseded
+pending the gen-only recompute; do not cite them.

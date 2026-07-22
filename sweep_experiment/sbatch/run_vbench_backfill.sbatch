@@ -6,8 +6,9 @@
 #SBATCH --mem=24GB
 #SBATCH --gres=gpu:h200:1
 #SBATCH --time=12:00:00
-#SBATCH --output=sweep_experiment/slurm_log/vbench_backfill_%j.out
-#SBATCH --error=sweep_experiment/slurm_log/vbench_backfill_%j.err
+# Logs use absolute path via --chdir in submit script; fallback set below after PROJECT_ROOT.
+#SBATCH --output=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/vbench_backfill_%j.out
+#SBATCH --error=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/vbench_backfill_%j.err
 # Allow preemptible H200 GPUs; cancelled jobs will be requeued (per cluster IT guidance)
 #SBATCH --comment="preemption=yes;requeue=true"
 
@@ -42,12 +43,25 @@ export PYTHONNOUSERSITE=1
 SCRATCH_BASE="/scratch/$USER"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 ENV_NAME="${VBENCH_ENV_NAME:-vbench-backfill}"
+# Prefer explicit env python — conda activate is unreliable on some compute nodes.
+DEFAULT_VBENCH_PYTHON="${SCRATCH_BASE}/conda-envs/${ENV_NAME}/bin/python"
 CACHE_DIR="${VBENCH_CACHE_DIR:-${SCRATCH_BASE}/vbench-cache}"
 
+cd "${PROJECT_ROOT}"
+
 METHOD_DIR="${METHOD_DIR:?ERROR: METHOD_DIR must be set (--export=ALL,METHOD_DIR=...)}"
+# Discovery TSV uses repo-relative paths; normalize to absolute under PROJECT_ROOT.
+if [[ "${METHOD_DIR}" != /* ]]; then
+    METHOD_DIR="${PROJECT_ROOT}/${METHOD_DIR}"
+fi
 DIMS_DEFAULT="motion_smoothness dynamic_degree imaging_quality temporal_flickering"
 DIMS="${DIMS:-$DIMS_DEFAULT}"
 MODE="${MODE:-custom_input}"
+# Which per-chunk clip dir to evaluate and where to write results. For the
+# GENERATED-ONLY VBench recompute (conditioning frames trimmed) pass
+# VIDEOS_SUBDIR=videos_geneval OUT_SUBDIR=vbench_results_geneval.
+VIDEOS_SUBDIR="${VIDEOS_SUBDIR:-videos}"
+OUT_SUBDIR="${OUT_SUBDIR:-vbench_results}"
 FORCE_FLAG=""
 if [ "${FORCE:-0}" = "1" ]; then
     FORCE_FLAG="--force"
@@ -68,6 +82,8 @@ echo "==========================================================================
 echo "  Method dir : ${METHOD_DIR}"
 echo "  Dims       : ${DIMS}"
 echo "  Mode       : ${MODE}"
+echo "  Videos dir : ${VIDEOS_SUBDIR}"
+echo "  Out dir    : ${OUT_SUBDIR}"
 echo "  Force      : ${FORCE:-0}"
 echo "  Env        : ${ENV_NAME}"
 echo "  Cache      : ${CACHE_DIR}"
@@ -80,28 +96,44 @@ if [ ! -d "${METHOD_DIR}" ]; then
 fi
 
 # Activate the vbench-backfill conda env (not longcat!)
-module purge
-module load anaconda3/2025.06
-source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
-conda activate "${ENV_NAME}"
+if [ -n "${VBENCH_PYTHON:-}" ] && [ -x "${VBENCH_PYTHON}" ]; then
+    PYTHON="${VBENCH_PYTHON}"
+elif [ -x "${DEFAULT_VBENCH_PYTHON}" ]; then
+    PYTHON="${DEFAULT_VBENCH_PYTHON}"
+else
+    module purge
+    module load anaconda3/2025.06
+    source /share/apps/anaconda3/2025.06/etc/profile.d/conda.sh
+    conda activate "${ENV_NAME}"
+    PYTHON="$(which python)"
+fi
 unset PYTHONHOME
 unset PYTHONPATH
-PYTHON="$(which python)"
+
+if [ ! -x "${PYTHON}" ]; then
+    echo "ERROR: Python not found. Set VBENCH_PYTHON or create ${DEFAULT_VBENCH_PYTHON}" >&2
+    exit 2
+fi
 
 # Sanity-print so we can diagnose any mix-up later
 echo ""
 echo "Active env       : ${CONDA_DEFAULT_ENV:-?}"
 echo "Python           : ${PYTHON}"
 "${PYTHON}" -c "
-import numpy, torch, vbench
+import importlib
+import numpy, torch, vbench, cv2
 print('  numpy =', numpy.__version__)
 print('  torch =', torch.__version__)
+print('  cv2   =', cv2.__version__)
 print('  cuda available =', torch.cuda.is_available())
 import importlib.metadata
 try:
     print('  vbench =', importlib.metadata.version('vbench'))
 except Exception:
     print('  vbench = (unknown)')
+for d in ['motion_smoothness','dynamic_degree','imaging_quality','temporal_flickering']:
+    importlib.import_module(f'vbench.{d}')
+    print(f'  vbench.{d} -> OK')
 "
 echo ""
 
@@ -111,6 +143,8 @@ cd "${PROJECT_ROOT}"
     --method-dir "${METHOD_DIR}" \
     --dimensions ${DIMS} \
     --mode "${MODE}" \
+    --videos-subdir "${VIDEOS_SUBDIR}" \
+    --out-subdir "${OUT_SUBDIR}" \
     ${FORCE_FLAG}
 
 EXIT=$?

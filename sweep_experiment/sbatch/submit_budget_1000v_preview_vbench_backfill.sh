@@ -21,9 +21,23 @@ SBATCH_SCRIPT="${SBATCH_SCRIPT:-sweep_experiment/sbatch/run_vbench_backfill.sbat
 DRY_RUN="${DRY_RUN:-0}"
 ONLY_RUNS="${ONLY_RUNS:-}"
 
+# GENEVAL=1 -> evaluate the GENERATED-ONLY clips (conditioning frames trimmed by
+# scripts/make_geneval_clips.py) and write to a separate results dir so the old
+# full-clip results remain for audit. This is the CORRECT window for VBench.
+GENEVAL="${GENEVAL:-0}"
+if [ "${GENEVAL}" = "1" ]; then
+    VIDEOS_SUBDIR="${VIDEOS_SUBDIR:-videos_geneval}"
+    OUT_SUBDIR="${OUT_SUBDIR:-vbench_results_geneval}"
+else
+    VIDEOS_SUBDIR="${VIDEOS_SUBDIR:-videos}"
+    OUT_SUBDIR="${OUT_SUBDIR:-vbench_results}"
+fi
+
 ALL_DIMS="subject_consistency background_consistency aesthetic_quality motion_smoothness dynamic_degree imaging_quality temporal_flickering"
 
+# NOTTA first so the baseline is ready for downstream vs-NOTTA analysis.
 PREVIEW_RUNS=(
+    NOTTA
     S2_LR1e3 S2_LR5e3 S2_LR1e2
     S5_LR1e3 S5_LR5e3 S5_LR1e2
     S10_LR1e3 S10_LR5e3 S10_LR1e2
@@ -60,9 +74,12 @@ for run_id in "${PREVIEW_RUNS[@]}"; do
         skipped=$((skipped + 1))
         continue
     fi
-    n_mp4=$(find "${METHOD_DIR}" -path '*/videos/*.mp4' 2>/dev/null | wc -l | tr -d ' ')
+    n_mp4=$(find "${METHOD_DIR}" -path "*/${VIDEOS_SUBDIR}/*.mp4" 2>/dev/null | wc -l | tr -d ' ')
     if [ "${n_mp4}" = "0" ]; then
-        echo "WARN: no mp4s under ${METHOD_DIR} — skip (need NO_SAVE_VIDEOS=0 sweep)" >&2
+        echo "WARN: no mp4s under ${METHOD_DIR}/*/${VIDEOS_SUBDIR} — skip" >&2
+        if [ "${GENEVAL}" = "1" ]; then
+            echo "      (run scripts/make_geneval_clips.py --method-dir ${METHOD_DIR} first)" >&2
+        fi
         skipped=$((skipped + 1))
         continue
     fi
@@ -70,7 +87,7 @@ for run_id in "${PREVIEW_RUNS[@]}"; do
     _exec sbatch \
         --account="${ACCOUNT}" \
         --job-name="${job_name}" \
-        --export="ALL,METHOD_DIR=${METHOD_DIR},DIMS=${ALL_DIMS},PROJECT_ROOT=${PROJECT_ROOT}" \
+        --export="ALL,METHOD_DIR=${METHOD_DIR},DIMS=${ALL_DIMS},PROJECT_ROOT=${PROJECT_ROOT},VIDEOS_SUBDIR=${VIDEOS_SUBDIR},OUT_SUBDIR=${OUT_SUBDIR},FORCE=${FORCE:-0}" \
         "${SBATCH_SCRIPT}"
     count=$((count + 1))
 done

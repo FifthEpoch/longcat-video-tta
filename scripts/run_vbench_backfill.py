@@ -62,8 +62,18 @@ def _result_file(chunk_vbench_dir: Path, dim: str) -> Path:
 def run_backfill(method_dir: Path, dimensions: List[str],
                  mode: str = "custom_input",
                  force: bool = False,
-                 dry_run: bool = False) -> int:
-    """Returns 0 on success."""
+                 dry_run: bool = False,
+                 videos_subdir: str = "videos",
+                 out_subdir: str = "vbench_results") -> int:
+    """Returns 0 on success.
+
+    videos_subdir : which per-chunk clip dir to evaluate (default 'videos').
+                    Use 'videos_geneval' for generated-only clips produced by
+                    scripts/make_geneval_clips.py.
+    out_subdir    : where per-chunk vbench_<dim>_eval_results.json are written
+                    (default 'vbench_results'; use 'vbench_results_geneval' to
+                    keep gen-only results separate from the old full-clip ones).
+    """
 
     if not method_dir.exists():
         print(f"[error] method dir does not exist: {method_dir}", file=sys.stderr)
@@ -71,25 +81,27 @@ def run_backfill(method_dir: Path, dimensions: List[str],
 
     chunks = sorted(method_dir.glob("chunk_*"))
     if not chunks:
-        # support older single-job layout: method_dir/videos/*.mp4
-        if (method_dir / "videos").is_dir():
+        # support older single-job layout: method_dir/<videos_subdir>/*.mp4
+        if (method_dir / videos_subdir).is_dir():
             chunks = [method_dir]
         else:
             print(f"[error] no chunks under {method_dir}", file=sys.stderr)
             return 2
 
-    print(f"Method dir : {method_dir}")
-    print(f"Dimensions : {dimensions}")
-    print(f"Mode       : {mode}")
-    print(f"Force      : {force}")
-    print(f"Chunks     : {len(chunks)}")
+    print(f"Method dir   : {method_dir}")
+    print(f"Dimensions   : {dimensions}")
+    print(f"Mode         : {mode}")
+    print(f"Force        : {force}")
+    print(f"Videos subdir: {videos_subdir}")
+    print(f"Out subdir   : {out_subdir}")
+    print(f"Chunks       : {len(chunks)}")
     print()
 
     if dry_run:
         for chunk_dir in chunks:
-            videos_dir = chunk_dir / "videos"
+            videos_dir = chunk_dir / videos_subdir
             n = len(list(videos_dir.glob("*.mp4"))) if videos_dir.is_dir() else 0
-            vb_dir = chunk_dir / "vbench_results"
+            vb_dir = chunk_dir / out_subdir
             existing = []
             for dim in dimensions:
                 if _result_file(vb_dir, dim).exists():
@@ -115,19 +127,19 @@ def run_backfill(method_dir: Path, dimensions: List[str],
     failed: List = []
 
     for chunk_idx, chunk_dir in enumerate(chunks):
-        videos_dir = chunk_dir / "videos"
+        videos_dir = chunk_dir / videos_subdir
         if not videos_dir.is_dir():
             print(f"  [{chunk_idx+1}/{len(chunks)}] {chunk_dir.name}: "
-                  f"no videos/ subdir — skipping")
+                  f"no {videos_subdir}/ subdir — skipping")
             continue
 
         mp4_count = len(list(videos_dir.glob("*.mp4")))
         if mp4_count == 0:
             print(f"  [{chunk_idx+1}/{len(chunks)}] {chunk_dir.name}: "
-                  f"0 mp4 in videos/ — skipping")
+                  f"0 mp4 in {videos_subdir}/ — skipping")
             continue
 
-        vb_dir = chunk_dir / "vbench_results"
+        vb_dir = chunk_dir / out_subdir
         vb_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialise a fresh VBench per chunk so output_path is set correctly.
@@ -202,9 +214,17 @@ def main() -> int:
                     help="Re-run even if result file already exists.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print plan without invoking VBench.")
+    ap.add_argument("--videos-subdir", default="videos",
+                    help="Per-chunk clip dir to evaluate (default 'videos'; "
+                         "use 'videos_geneval' for generated-only clips).")
+    ap.add_argument("--out-subdir", default="vbench_results",
+                    help="Per-chunk output dir for results (default "
+                         "'vbench_results'; use 'vbench_results_geneval').")
     args = ap.parse_args()
     return run_backfill(args.method_dir, args.dimensions, args.mode,
-                        args.force, args.dry_run)
+                        args.force, args.dry_run,
+                        videos_subdir=args.videos_subdir,
+                        out_subdir=args.out_subdir)
 
 
 if __name__ == "__main__":
