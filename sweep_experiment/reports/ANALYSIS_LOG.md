@@ -1153,3 +1153,45 @@ provenance, so N is identical across arms. Until that lands, FVD cannot be used
 to compare TTA vs NO-TTA. Prerequisite: re-accumulate NO-TTA's missing ~525 FVD
 videos (or score all saved NOTTA mp4s offline) so the common set is well-sampled
 (>=256).
+
+---
+
+## 2026-07-22 — Full evaluation-metric audit: VBench scores cond+gen (window bug); pixel clean; FVD window ok but comparison broken
+
+**Tags:** audit, evaluation, leakage, VBench, FVD, FID, PSNR, fairness, methodology
+**Refs:** sweep_experiment/reports/per_video_analysis/2026-07-22/eval_metric_audit.md,
+delta_experiment/scripts/common.py, sweep_experiment/scripts/eval_vbench.py,
+scripts/run_vbench_backfill.py, sweep_experiment/scripts/eval_fvd.py,
+sweep_experiment/scripts/precompute_gt_features.py, sweep_experiment/scripts/merge_chunks.py
+
+Audited every eval metric for (1) fairness and (2) generated-only scoring
+(geometry: gen_start=48, cond=14, gen=14; pipeline returns 29 frames =
+[14 cond | 15 gen]; saved mp4 = 29 frames).
+
+- PSNR/SSIM/LPIPS: CLEAN. evaluate_generation_metrics scores gen_output[14:28] =
+  video[48:62] vs source video[48:62]. Gen-only, no leakage, same window/GT for
+  NO-TTA and TTA (paired, N=898 seed-clean). No action.
+- FVD: window CORRECT (online accumulator, GT cache, and offline eval_fvd all use
+  gen-only video[48:62]); merge_chunks sufficient-stats sum is correct. BUT the
+  comparison is broken: online NO-TTA fvd=157@N=375 vs configs 66-69@N=998 (TTA
+  "halves"), offline matched NO-TTA=81.5@898 vs fixed=198@998 (TTA "doubles") —
+  sign FLIPS => confound (N/subset/reference-protocol/provenance), FVD is small-N
+  biased. Data-integrity bug: NO-TTA online FVD accumulated only 375/~969 videos,
+  chunk_5 summary missing/unmerged. Stale 383.9 oracle FVD row = old N=200 vs
+  wrong reference (panda_1000_longcat.npz); ignore.
+- FID: same gen-only window; same matched-N requirement as FVD.
+- VBench++: WINDOW BUG. eval_vbench.py and run_vbench_backfill.py feed the ENTIRE
+  mp4 ([14 cond | 15 gen]) to VBench(mode=custom_input) with NO cond-frame
+  trimming. So all per-video VBench scores are ~half real conditioning footage:
+  violates gen-only, inflates absolute values, compresses/muddies the
+  TTA-vs-NO-TTA signal (explains tiny ~0.06 gains), and the mp4 cond region is the
+  per-arm VAE reconstruction (not guaranteed identical across arms). winner_dim
+  dynamic_degree +5.16% is cond+gen, not gen-only headroom.
+- Train->eval leakage: NONE. run_delta_a clamps tta_total_frames to gen_start
+  (explicit guard) => TTA trains video[0:48], scores disjoint video[48:62].
+
+Actions: (1) VBench correctness fix — trim first cond frames into a gen-only clip
+dir and re-run VBench backfill + oracle/router analysis for all arms; (2) FVD/FID
+fairness — matched offline recompute (INTERSECT_NOTTA=1) so all arms share
+N/reference/provenance; (3) recover/complete NO-TTA FVD or rely on offline
+recompute from the 969 saved mp4s; (4) pixel metrics unchanged.
