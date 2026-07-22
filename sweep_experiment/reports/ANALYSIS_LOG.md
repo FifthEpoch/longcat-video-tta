@@ -1108,3 +1108,48 @@ artifact, not a routable OOD-adaptive signal — now demonstrated on clean,
 seed-matched data. This supersedes the confounded 200v pilot's vs-NOTTA charts
 (see 2026-07-21 seed-confound entry). Charts saved as PNGs under
 per_video_analysis/2026-07-21/preview1k_ood_charts_seedclean/.
+
+---
+
+## 2026-07-22 — FVD comparisons across TTA arms are confounded (effect sign flips); generation is clean
+
+**Tags:** FVD, confound, methodology, sample-size-bias, provenance, 1000v-preview, negative-result
+**Refs:** delta_experiment/scripts/common.py (generate_video_continuation, evaluate_generation_metrics, OnlineFrechetAccumulator), sweep_experiment/scripts/eval_fvd.py, sweep_experiment/sbatch/run_preview_1000v_matched_fvd.sbatch
+
+Investigated the suspicious "TTA doubles FVD" result. Code audit: NO-TTA
+(run_full_tta.py) and TTA (run_delta_a.py) share the SAME common.py and the SAME
+generation path — identical conditioning window (source video[gen_start-cond :
+gen_start] = video[34:48]), identical seed (42 + local_idx + step_i), and both
+score the identical generated tail gen_output[num_cond:num_cond+num_gen] =
+video[48:62] for PSNR/SSIM/LPIPS AND online FVD. generate_video_continuation
+returns cond+gen frames [N,H,W,3] in [0,1]. So TTA cannot structurally
+restructure the output; it only applies a small weight delta. PSNR moves only
++0.02 dB => the videos are near-identical, so any large FVD change is not a real
+TTA effect.
+
+FVD numbers gathered (all confounded — do NOT cite as TTA effect):
+- ONLINE merged_summary (gt_cached=n/a => per-video PAIRED reference):
+  NOTTA fvd=157.0 @ N=375 (only 375 of ~900 videos accumulated!);
+  configs fvd 66-69 @ N=998. => looks like TTA HALVES FVD.
+- OFFLINE matched job (frozen preview cache, saved mp4s):
+  always_notta fvd=81.5 @ N=898; fixed_S10_LR5e3 fvd=198 @ N=998;
+  oracle_best_psnr fvd=168 @ N=998. => looks like TTA DOUBLES FVD.
+The EFFECT SIGN FLIPS between the two computations => neither measures TTA's
+real effect on FVD. Root confounds: (1) NO-TTA online FVD is incomplete
+(375/900 videos) — a data-integrity bug in FVD accumulation/merge; (2) N
+mismatch (375 or 898 vs 998) and FVD's strong small-N upward bias; (3) different
+video subsets; (4) reference protocol differs (per-video paired online vs frozen
+gt_cache offline); (5) provenance differs (raw float gen online vs lossy
+H.264-reencoded mp4s from a separate save pass offline).
+
+Also stale: the oracle-analysis FVD row (383.9) is the old N=200 pilot number
+computed against panda_1000_longcat.npz, which the preview sbatch explicitly
+flags as the WRONG reference for this pool. Ignore it.
+
+Resolution (pending): one matched recompute — ALL arms scored on the SAME
+video-ID set (INTERSECT_NOTTA=1 => --intersect-with-notta), SAME frozen preview
+reference (gt_caches/panda_ood_budget_1000v_preview_longcat.npz), SAME mp4
+provenance, so N is identical across arms. Until that lands, FVD cannot be used
+to compare TTA vs NO-TTA. Prerequisite: re-accumulate NO-TTA's missing ~525 FVD
+videos (or score all saved NOTTA mp4s offline) so the common set is well-sampled
+(>=256).
