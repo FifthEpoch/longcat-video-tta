@@ -1,3 +1,5 @@
+
+
 # Eval-metric fix + full recompute runbook (2026-07-22)
 
 Single ordered runbook to fix the evaluation bugs found in the metric audit
@@ -8,12 +10,14 @@ on the cluster. Do not skip steps; each later step depends on earlier ones.
 
 ## What was broken and what the fix does
 
-| Metric | Bug | Fix |
-|---|---|---|
-| **VBench++** | Scored the **entire mp4** `[14 cond \| 15 gen]` (29 frames). ~half the score was real conditioning footage → contaminated absolute scores and muddied TTA-vs-NOTTA. | Trim the first 14 (cond) frames → `videos_geneval/` (15 gen frames), re-run VBench on those into `vbench_results_geneval/`. |
-| **FVD/FID** | Comparisons broken: NOTTA online FVD accumulated only ~375/969 videos (chunk_5 missing); configs used per-video paired refs while offline used a frozen cache; N mismatch (898 vs 998). Window itself was correct (`video[48:62]`). | One offline recompute for **all 3 policies** vs the **same frozen preview GT cache**, intersected to the **common video set** (`INTERSECT_NOTTA=1`). |
-| **PSNR/SSIM/LPIPS** | Clean — already score gen-only `video[48:62]`, seed-matched, paired. | No change. |
-| **TTA train leakage** | None — TTA trains on `video[0:48]`, disjoint from scored `video[48:62]`. | No change. |
+
+| Metric                | Bug                                                                                                                                                                                                                                 | Fix                                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **VBench++**          | Scored the **entire mp4** `[14 cond | 15 gen]` (29 frames). ~half the score was real conditioning footage → contaminated absolute scores and muddied TTA-vs-NOTTA.                                                                  | Trim the first 14 (cond) frames → `videos_geneval/` (15 gen frames), re-run VBench on those into `vbench_results_geneval/`.                          |
+| **FVD/FID**           | Comparisons broken: NOTTA online FVD accumulated only ~375/969 videos (chunk_5 missing); configs used per-video paired refs while offline used a frozen cache; N mismatch (898 vs 998). Window itself was correct (`video[48:62]`). | One offline recompute for **all 3 policies** vs the **same frozen preview GT cache**, intersected to the **common video set** (`INTERSECT_NOTTA=1`). |
+| **PSNR/SSIM/LPIPS**   | Clean — already score gen-only `video[48:62]`, seed-matched, paired.                                                                                                                                                                | No change.                                                                                                                                           |
+| **TTA train leakage** | None — TTA trains on `video[0:48]`, disjoint from scored `video[48:62]`.                                                                                                                                                            | No change.                                                                                                                                           |
+
 
 Geometry (fixed everywhere): `gen_start=48`, `num_cond_frames=14`,
 `num_gen_frames=14`. Saved mp4 = 29 frames (14 cond + 15 gen). Pixel/FVD score
@@ -25,30 +29,73 @@ Frame-exactness of the trim was verified locally on a synthetic 29-frame clip:
 ## Code changes (already pushed)
 
 - `scripts/make_geneval_clips.py` **(new)** — trims cond frames → `videos_geneval/`,
-  encoded identically to the pipeline writer (imageio + libx264, quality=9).
+encoded identically to the pipeline writer (imageio + libx264, quality=9).
 - `scripts/run_vbench_backfill.py` — `--videos-subdir` / `--out-subdir`.
 - `scripts/analyze_per_video_vbench_agreement.py` — `load_per_video_vbench`
-  honors `VBENCH_SUBDIR` env (redirects **all** analysis consumers to gen-only).
+honors `VBENCH_SUBDIR` env (redirects **all** analysis consumers to gen-only).
 - `scripts/update_merged_with_vbench.py` — `--vbench-subdir` / `--videos-subdir`
-  / `--deprecate-existing` (stashes old full-clip means under
-  `vbench_fullclip_deprecated`, rebuilds `vbench` from gen-only).
+/ `--deprecate-existing` (stashes old full-clip means under
+`vbench_fullclip_deprecated`, rebuilds `vbench` from gen-only).
 - `run_vbench_backfill.sbatch` + `submit_budget_1000v_preview_vbench_backfill.sh`
-  — `VIDEOS_SUBDIR`/`OUT_SUBDIR` passthrough, `GENEVAL=1` shortcut, NOTTA added.
+— `VIDEOS_SUBDIR`/`OUT_SUBDIR` passthrough, `GENEVAL=1` shortcut, NOTTA added.
+
+New sbatch pipeline (so nothing runs on the login node / needs a live SSH session):
+
+| Job | Script | Kind | Depends on |
+|---|---|---|---|
+| TRIM | `run_geneval_trim.sbatch` (array 0-12) | CPU | — |
+| VBENCH | `submit_budget_1000v_preview_vbench_backfill.sh` (GENEVAL=1) | GPU ×13 | TRIM |
+| FOLD | `run_vbench_geneval_fold.sbatch` | CPU | all VBENCH |
+| FVD | `run_preview_1000v_matched_fvd.sbatch` (INTERSECT_NOTTA=1) | GPU | — (parallel) |
+| ANALYSES | `run_geneval_analyses.sbatch` | CPU | FOLD + FVD |
+| **orchestrator** | `submit_fix_and_recompute.sh` | — | wires all deps |
 
 ---
 
-## Runbook
+## Recommended: one-command sbatch pipeline (unattended)
+
+Submit the whole dependency chain and log out — SLURM runs it in order:
 
 ```bash
 cd /scratch/wc3013/longcat-video-tta
 git pull --ff-only origin main
+bash sweep_experiment/sbatch/submit_fix_and_recompute.sh      # DRY_RUN=1 to preview
+```
 
+Job graph:
+
+```
+TRIM (array 0-12, CPU) --> VBENCH (13 jobs, GPU) --> FOLD (CPU) --\
+FVD  (matched, GPU) ----------------------------------------------> ANALYSES (CPU)
+```
+
+- TRIM is self-healing: it deletes any partial/corrupt `videos_geneval` clip
+  (`!= 15` frames, e.g. from an interrupted foreground run) and recreates it,
+  then skips good clips. So a previously-interrupted trim needs no manual fix.
+- Each job re-verifies its own output and exits non-zero on any bad clip, so an
+  `afterok` dependency will **not** release the next stage on partial data.
+- Monitor: `squeue -u wc3013`. Final artifacts land under
+  `sweep_experiment/reports/per_video_analysis/<today>/`.
+- `SKIP_FVD=1` runs only the VBench pipeline; FVD can be submitted separately.
+
+When ANALYSES finishes, paste back `chart_data_1000v_geneval.json` and the
+matched FVD summary — charts get re-rendered locally and tables refreshed.
+
+---
+
+## Manual step-by-step (fallback; foreground — use `tmux`/`nohup`)
+
+Only needed if you want to run a single stage by hand. These run in the
+foreground, so wrap long ones in `tmux` to survive an SSH disconnect.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta
 SERIES=sweep_experiment/results/panda_ood_budget_1000v_preview
 ARMS="NOTTA S2_LR1e3 S2_LR5e3 S2_LR1e2 S5_LR1e3 S5_LR5e3 S5_LR1e2 \
 S10_LR1e3 S10_LR5e3 S10_LR1e2 S20_LR1e3 S20_LR5e3 S20_LR1e2"
 ```
 
-### Step 1 — Trim gen-only clips for all 13 arms (longcat env; CPU, fast)
+### Step 1 — Trim gen-only clips for all 13 arms (longcat env; CPU)
 
 ```bash
 conda activate /scratch/wc3013/conda-envs/longcat
@@ -151,11 +198,12 @@ done
 ## Notes / gotchas
 
 - Old full-clip VBench (`vbench_results/`) is **kept** for audit; nothing is
-  deleted. The deprecated population means live under
-  `merged_summary["vbench_fullclip_deprecated"]`.
+deleted. The deprecated population means live under
+`merged_summary["vbench_fullclip_deprecated"]`.
 - If Step 2's `vbench-backfill` conda env is missing:
-  `bash scripts/setup_vbench_backfill_env.sh` (once).
+`bash scripts/setup_vbench_backfill_env.sh` (once).
 - FVD is distribution-level (not per-video) → only the 3-policy comparison is
-  meaningful; do not route on it.
+meaningful; do not route on it.
 - Re-record: after Step 5, add the new dated tables to `INDEX.md` and an
-  `ANALYSIS_LOG.md` entry, then push (§2b-bis of AGENTS.md).
+`ANALYSIS_LOG.md` entry, then push (§2b-bis of AGENTS.md).
+

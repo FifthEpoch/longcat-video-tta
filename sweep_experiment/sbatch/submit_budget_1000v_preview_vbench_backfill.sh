@@ -21,6 +21,12 @@ SBATCH_SCRIPT="${SBATCH_SCRIPT:-sweep_experiment/sbatch/run_vbench_backfill.sbat
 DRY_RUN="${DRY_RUN:-0}"
 ONLY_RUNS="${ONLY_RUNS:-}"
 
+# Chain support: DEP_AFTEROK=<jobid[:jobid...]> makes every VBench job wait for
+# those jobs (e.g. the trim array). JOBID_FILE receives the colon-joined ids of
+# the jobs submitted here, so a downstream fold job can depend on them.
+DEP_AFTEROK="${DEP_AFTEROK:-}"
+JOBID_FILE="${JOBID_FILE:-sweep_experiment/slurm_log/vbench_geneval_jobids.txt}"
+
 # GENEVAL=1 -> evaluate the GENERATED-ONLY clips (conditioning frames trimmed by
 # scripts/make_geneval_clips.py) and write to a separate results dir so the old
 # full-clip results remain for audit. This is the CORRECT window for VBench.
@@ -64,8 +70,12 @@ _exec() {
 cd "${PROJECT_ROOT}"
 mkdir -p sweep_experiment/slurm_log
 
+DEP_FLAG=""
+[ -n "${DEP_AFTEROK}" ] && DEP_FLAG="--dependency=afterok:${DEP_AFTEROK}"
+
 count=0
 skipped=0
+SUBMITTED_IDS=""
 for run_id in "${PREVIEW_RUNS[@]}"; do
     _in_filter "${run_id}" || continue
     METHOD_DIR="${PROJECT_ROOT}/${RESULTS_SUBDIR}/${run_id}"
@@ -74,25 +84,41 @@ for run_id in "${PREVIEW_RUNS[@]}"; do
         skipped=$((skipped + 1))
         continue
     fi
-    n_mp4=$(find "${METHOD_DIR}" -path "*/${VIDEOS_SUBDIR}/*.mp4" 2>/dev/null | wc -l | tr -d ' ')
-    if [ "${n_mp4}" = "0" ]; then
-        echo "WARN: no mp4s under ${METHOD_DIR}/*/${VIDEOS_SUBDIR} — skip" >&2
-        if [ "${GENEVAL}" = "1" ]; then
-            echo "      (run scripts/make_geneval_clips.py --method-dir ${METHOD_DIR} first)" >&2
+    # When chained behind a dependency (e.g. the trim job), the clips may not
+    # exist yet at submit time — the dependency will create them. Only enforce
+    # the existence check for un-chained submissions.
+    if [ -z "${DEP_AFTEROK}" ]; then
+        n_mp4=$(find "${METHOD_DIR}" -path "*/${VIDEOS_SUBDIR}/*.mp4" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "${n_mp4}" = "0" ]; then
+            echo "WARN: no mp4s under ${METHOD_DIR}/*/${VIDEOS_SUBDIR} — skip" >&2
+            if [ "${GENEVAL}" = "1" ]; then
+                echo "      (run scripts/make_geneval_clips.py --method-dir ${METHOD_DIR} first)" >&2
+            fi
+            skipped=$((skipped + 1))
+            continue
         fi
-        skipped=$((skipped + 1))
-        continue
     fi
     job_name="vb_prev1k_${run_id}"
-    _exec sbatch \
-        --account="${ACCOUNT}" \
-        --job-name="${job_name}" \
-        --export="ALL,METHOD_DIR=${METHOD_DIR},DIMS=${ALL_DIMS},PROJECT_ROOT=${PROJECT_ROOT},VIDEOS_SUBDIR=${VIDEOS_SUBDIR},OUT_SUBDIR=${OUT_SUBDIR},FORCE=${FORCE:-0}" \
-        "${SBATCH_SCRIPT}"
+    EXPORTS="ALL,METHOD_DIR=${METHOD_DIR},DIMS=${ALL_DIMS},PROJECT_ROOT=${PROJECT_ROOT},VIDEOS_SUBDIR=${VIDEOS_SUBDIR},OUT_SUBDIR=${OUT_SUBDIR},FORCE=${FORCE:-0}"
+    if [ "${DRY_RUN}" = "1" ]; then
+        echo "[DRY] sbatch --parsable ${DEP_FLAG} --account=${ACCOUNT} --job-name=${job_name} --export=${EXPORTS} ${SBATCH_SCRIPT}"
+    else
+        jid=$(sbatch --parsable ${DEP_FLAG} \
+            --account="${ACCOUNT}" \
+            --job-name="${job_name}" \
+            --export="${EXPORTS}" \
+            "${SBATCH_SCRIPT}")
+        echo "submitted ${job_name} -> ${jid}"
+        SUBMITTED_IDS="${SUBMITTED_IDS:+${SUBMITTED_IDS}:}${jid}"
+    fi
     count=$((count + 1))
 done
 
+if [ "${DRY_RUN}" != "1" ] && [ -n "${SUBMITTED_IDS}" ]; then
+    echo "${SUBMITTED_IDS}" > "${JOBID_FILE}"
+fi
+
 echo ""
 echo "Submitted ${count} VBench backfill jobs (${skipped} skipped)."
-echo "After completion:"
-echo "  bash sweep_experiment/sbatch/submit_deploy_router_1000v_preview.sh"
+echo "VBENCH_JOB_IDS=${SUBMITTED_IDS}"
+[ -n "${SUBMITTED_IDS}" ] && echo "  (written to ${JOBID_FILE})"
