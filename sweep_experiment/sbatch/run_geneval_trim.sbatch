@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=geneval_trim
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/geneval_trim_%A_%a.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/geneval_trim_%A_%a.err
 #SBATCH --cpus-per-task=8

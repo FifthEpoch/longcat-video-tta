@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=vb_geneval_fold
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/vb_geneval_fold_%j.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/vb_geneval_fold_%j.err
 #SBATCH --cpus-per-task=2

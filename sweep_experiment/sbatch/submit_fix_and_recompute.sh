@@ -48,7 +48,8 @@ echo "  dry_run      : ${DRY_RUN}   skip_fvd: ${SKIP_FVD}"
 echo "=============================================================="
 
 # ---- 1. TRIM (array over 13 arms) -----------------------------------------
-JID_TRIM=$(_run sbatch --parsable sweep_experiment/sbatch/run_geneval_trim.sbatch)
+JID_TRIM=$(_run sbatch --parsable --account="${ACCOUNT}" \
+    sweep_experiment/sbatch/run_geneval_trim.sbatch)
 echo "[1] TRIM array   -> ${JID_TRIM}"
 
 # ---- 2. VBENCH on gen-only clips (depends on TRIM) ------------------------
@@ -64,7 +65,7 @@ fi
 echo "[2] VBENCH jobs  -> ${VB_IDS}"
 
 # ---- 3. FOLD gen-only VBench into merged_summary (depends on all VBench) ---
-JID_FOLD=$(_run sbatch --parsable --dependency=afterok:"${VB_IDS}" \
+JID_FOLD=$(_run sbatch --parsable --account="${ACCOUNT}" --dependency=afterok:"${VB_IDS}" \
     sweep_experiment/sbatch/run_vbench_geneval_fold.sbatch)
 echo "[3] FOLD         -> ${JID_FOLD}  (afterok:${VB_IDS})"
 
@@ -73,7 +74,7 @@ DEP_ANALYSES="afterok:${JID_FOLD}"
 if [ "${SKIP_FVD}" = "1" ]; then
     echo "[4] FVD          -> SKIPPED (SKIP_FVD=1)"
 else
-    JID_FVD=$(_run sbatch --parsable \
+    JID_FVD=$(_run sbatch --parsable --account="${ACCOUNT}" \
         --export=ALL,INTERSECT_NOTTA=1,SKIP_GT_CACHE=1 \
         sweep_experiment/sbatch/run_preview_1000v_matched_fvd.sbatch)
     echo "[4] FVD matched  -> ${JID_FVD}  (INTERSECT_NOTTA=1)"
@@ -81,7 +82,7 @@ else
 fi
 
 # ---- 5. ANALYSES on corrected data (depends on FOLD [+ FVD]) --------------
-JID_ANALYSES=$(_run sbatch --parsable --dependency="${DEP_ANALYSES}" \
+JID_ANALYSES=$(_run sbatch --parsable --account="${ACCOUNT}" --dependency="${DEP_ANALYSES}" \
     sweep_experiment/sbatch/run_geneval_analyses.sbatch)
 echo "[5] ANALYSES     -> ${JID_ANALYSES}  (dependency=${DEP_ANALYSES})"
 

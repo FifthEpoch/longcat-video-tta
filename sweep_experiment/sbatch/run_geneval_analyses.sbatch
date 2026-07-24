@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=geneval_analyses
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/geneval_analyses_%j.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/sweep_experiment/slurm_log/geneval_analyses_%j.err
 #SBATCH --cpus-per-task=4
