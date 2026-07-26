@@ -160,15 +160,22 @@ def update_method_dir(method_dir: Path, force: bool = False,
         vbench = {}
 
     # Preserve the old (full-clip / contaminated) VBench for audit before we
-    # overwrite it with generated-only scores.
-    if deprecate_existing and vbench and "vbench_fullclip_deprecated" not in summary:
-        summary["vbench_fullclip_deprecated"] = dict(vbench)
+    # overwrite it with generated-only scores. Note: the merged_summary may not
+    # have held any VBench previously (e.g. the preview series kept per-video
+    # scores only under vbench_results/), in which case there is nothing to
+    # stash — that is expected, not an error.
+    if deprecate_existing:
+        if vbench and "vbench_fullclip_deprecated" not in summary:
+            summary["vbench_fullclip_deprecated"] = dict(vbench)
+            print("  [audit] stashed old full-clip vbench -> 'vbench_fullclip_deprecated'")
+            vbench = {}  # rebuild from gen-only results
+        else:
+            print("  [audit] no pre-existing merged vbench to stash (expected for preview)")
         summary["vbench_window_note"] = (
             "vbench = GENERATED-ONLY (cond frames trimmed via make_geneval_clips.py); "
-            "vbench_fullclip_deprecated = old cond+gen full-clip scores (do not cite)."
+            "vbench_fullclip_deprecated (if present) = old cond+gen full-clip scores "
+            "(do not cite)."
         )
-        print("  [audit] stashed old full-clip vbench -> 'vbench_fullclip_deprecated'")
-        vbench = {}  # rebuild from gen-only results
 
     print(f"Method dir    : {method_dir}")
     print(f"Summary       : {summary_path.name}")

@@ -52,15 +52,36 @@ for a in "${ARMS[@]}"; do
 done
 
 echo ""
-echo "=== verify gen-only vbench present + old means preserved ==="
-for a in "${ARMS[@]}"; do
-    if jq -e '.vbench_fullclip_deprecated and .vbench.aesthetic_quality' \
-        "${SERIES}/${a}/merged_summary.json" >/dev/null 2>&1; then
-        echo "  ${a}: vbench ok"
-    else
-        echo "  ${a}: vbench MISSING/incomplete"; fail=$((fail + 1))
-    fi
-done
+echo "=== verify gen-only vbench folded (7 dims present) ==="
+# Python check (no jq dependency). Passes when all 7 gen-only dims are present.
+# vbench_fullclip_deprecated is INFORMATIONAL only: it exists only if the
+# merged_summary previously held full-clip VBench means (the preview series did
+# not, so its absence is expected and not a failure).
+python3 - "${SERIES}" "${ARMS[@]}" <<'PY'
+import json, sys
+from pathlib import Path
+series = sys.argv[1]; arms = sys.argv[2:]
+DIMS = ["subject_consistency", "background_consistency", "aesthetic_quality",
+        "motion_smoothness", "dynamic_degree", "imaging_quality",
+        "temporal_flickering"]
+bad = 0
+for a in arms:
+    p = Path(series) / a / "merged_summary.json"
+    try:
+        s = json.loads(p.read_text())
+    except Exception as e:
+        print(f"  {a}: cannot read merged_summary.json ({e})"); bad += 1; continue
+    vb = s.get("vbench") or {}
+    missing = [d for d in DIMS if d not in vb]
+    dep = "yes" if "vbench_fullclip_deprecated" in s else "no (none pre-existed)"
+    if missing:
+        print(f"  {a}: gen-only vbench MISSING dims={missing}"); bad += 1
+    else:
+        print(f"  {a}: gen-only vbench ok (7 dims)  [deprecated_stash={dep}]")
+sys.exit(1 if bad else 0)
+PY
+pyrc=$?
 
-[ "${fail}" = "0" ] || { echo "ERROR: ${fail} arm(s) failed fold/verify" >&2; exit 1; }
+[ "${fail}" = "0" ] && [ "${pyrc}" = "0" ] \
+    || { echo "ERROR: fold/verify failed (fold_fail=${fail} verify_rc=${pyrc})" >&2; exit 1; }
 echo "fold: all arms OK"
