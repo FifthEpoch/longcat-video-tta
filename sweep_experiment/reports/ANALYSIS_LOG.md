@@ -1224,3 +1224,14 @@ offline vs the frozen preview GT cache on the common video set
 (INTERSECT_NOTTA=1). Full ordered recompute in FIX_AND_RECOMPUTE_RUNBOOK.md.
 All prior VBench-based numbers on panda_ood_budget_1000v_preview are superseded
 pending the gen-only recompute; do not cite them.
+
+## 2026-07-27 — FVD duplication bug in `_index_grid_videos` (invalidates offline fixed/oracle FVD)
+
+**Tags:** fvd, bug, provenance, budget-grid, 1000v-preview
+**Refs:** `sweep_experiment/scripts/build_budget_oracle_policy_dirs.py`; `sweep_experiment/scripts/run_pilot_matched_fvd_baselines.py`; `sweep_experiment/reports/budget_oracle_fvd_1000v_preview/`
+
+The "FVD doubles under TTA" anomaly (fixed_S10_LR5e3 offline FVD=216.7 vs NOTTA=81.5) was a symlink-duplication artifact, NOT a real TTA effect. `_index_grid_videos` resolved config mp4s via `find_mp4`, whose `_numeric_id` fallback matched the trailing seg-number of the video id against the leading numeric prefix of the renamed config filenames (`{prefix}_{caption}_..._adasteer.mp4`). Those prefixes are non-unique and sparse (range 0-368 for a 100-video chunk; e.g. two files share prefix `0_`), so 898 distinct video ids collapsed onto **442 unique files**. FVD is a distribution metric; feeding ~2x duplicated clips inflated FVD. NOTTA was unaffected (its files keep raw-stem names and matched directly -> 898 unique).
+
+**Impact:** All offline `fixed_*` and `oracle_best_psnr` matched-FVD numbers under `budget_oracle_fvd*` are INVALID and must be recomputed. Only `always_notta` offline FVD (81.5) and the online per-run FVDs (configs ~67-69) are trustworthy. PSNR/SSIM/LPIPS and VBench analyses are NOT affected — they read per-video metrics directly, never the symlink layer.
+
+**Fix:** `_index_grid_videos` now resolves each record's mp4 by the per-video metric fingerprint `(psnr, ssim, lpips)` embedded in the filename (verified bijective on S10_LR5e3: 1000 records -> 998 matched -> 998 unique files, 0 collisions, 2 known failed-gen). Added a hard bijectivity guard that raises RuntimeError if `#ids != #unique files`, so a duplicated policy dir can never silently corrupt FVD again. Re-run matched FVD with `--clean` to regenerate the fixed/oracle policy dirs.

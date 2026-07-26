@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -33,19 +34,65 @@ from scripts.analyze_adasteer_budget_oracle import (  # noqa: E402
 )
 from scripts.caption_utils import canonical_video_id
 from sweep_experiment.scripts.build_oracle_policy_dirs import (  # noqa: E402
-    find_mp4,
-    _load_chunk_summary_order,
     _mp4_readable,
 )
 
 
-def _index_grid_videos(series_root: Path, run_id: str) -> Dict[str, Path]:
-    """Map canonical video_id -> generated mp4 for one grid config."""
+_METRIC_RE = {
+    "psnr": re.compile(r"PSNR-(-?\d+\.?\d*)"),
+    "ssim": re.compile(r"SSIM-(-?\d+\.?\d*)"),
+    "lpips": re.compile(r"LPIPS-(-?\d+\.?\d*)"),
+}
+
+
+def _parse_filename_metrics(name: str) -> Dict[str, float]:
+    """Extract per-video PSNR/SSIM/LPIPS embedded in a renamed config mp4."""
+    out: Dict[str, float] = {}
+    for key, rx in _METRIC_RE.items():
+        m = rx.search(name)
+        if m:
+            try:
+                out[key] = float(m.group(1))
+            except ValueError:
+                pass
+    return out
+
+
+def _record_metrics(rec: dict) -> Dict[str, Optional[float]]:
+    """Pull per-video psnr/ssim/lpips from a summary record (flat or nested)."""
+    src = rec.get("metrics") if isinstance(rec.get("metrics"), dict) else rec
+    out: Dict[str, Optional[float]] = {}
+    for key in ("psnr", "ssim", "lpips"):
+        val = src.get(key)
+        try:
+            out[key] = float(val) if val is not None else None
+        except (TypeError, ValueError):
+            out[key] = None
+    return out
+
+
+def _index_grid_videos(
+    series_root: Path, run_id: str, *, tol: float = 5e-4
+) -> Dict[str, Path]:
+    """Map canonical video_id -> generated mp4 for one grid config.
+
+    Grid configs rename outputs to
+    ``{idx}_{caption}_..._PSNR-{p}_SSIM-{s}_LPIPS-{l}_..._adasteer.mp4``.  The
+    leading ``{idx}`` is NOT a usable key (prefixes repeat and are sparse), and
+    the summary's ``output_path`` is the stale pre-rename path.  The only
+    reliable join is the per-video metric fingerprint embedded in the filename
+    matched against the record's ``psnr/ssim/lpips``.  A bijectivity guard
+    aborts the build if two ids resolve to the same file (which would corrupt
+    FVD by silently duplicating videos, as happened before this fix).
+    """
     run_dir = series_root / run_id
     if not run_dir.is_dir():
         return {}
 
     out: Dict[str, Path] = {}
+    used_files: set = set()
+    ambiguous = 0
+    unresolved = 0
     chunk_dirs = sorted(run_dir.glob("chunk_*/"))
     if not chunk_dirs:
         chunk_dirs = [run_dir]
@@ -53,11 +100,15 @@ def _index_grid_videos(series_root: Path, run_id: str) -> Dict[str, Path]:
     for chunk_dir in chunk_dirs:
         videos_dir = chunk_dir / "videos"
         summary_path = chunk_dir / "summary.json"
-        if not summary_path.exists():
+        if not summary_path.exists() or not videos_dir.is_dir():
             continue
         with summary_path.open(encoding="utf-8") as f:
             summary = json.load(f)
-        idx_by_name = _load_chunk_summary_order(summary)
+
+        file_metrics = [
+            (p, _parse_filename_metrics(p.name))
+            for p in sorted(videos_dir.glob("*.mp4"))
+        ]
 
         for rec in summary.get("per_video_results", summary.get("results", [])):
             if not rec.get("success", False):
@@ -66,15 +117,54 @@ def _index_grid_videos(series_root: Path, run_id: str) -> Dict[str, Path]:
             vid = canonical_video_id(vname)
             if not vid:
                 continue
-            mp4 = find_mp4(videos_dir, vname, idx_by_name)
-            if mp4 is None:
-                op = rec.get("output_path")
-                if op:
-                    p = Path(op)
-                    if p.exists() and p.suffix.lower() == ".mp4":
-                        mp4 = p
-            if mp4 is not None and _mp4_readable(mp4):
-                out[vid] = mp4.resolve()
+            rm = _record_metrics(rec)
+            if rm.get("psnr") is None:
+                unresolved += 1
+                continue
+
+            cands: List[Path] = []
+            for p, fm in file_metrics:
+                if "psnr" not in fm or abs(fm["psnr"] - rm["psnr"]) > tol:
+                    continue
+                if (rm.get("ssim") is not None and "ssim" in fm
+                        and abs(fm["ssim"] - rm["ssim"]) > tol):
+                    continue
+                if (rm.get("lpips") is not None and "lpips" in fm
+                        and abs(fm["lpips"] - rm["lpips"]) > tol):
+                    continue
+                cands.append(p)
+
+            if len(cands) != 1:
+                if len(cands) > 1:
+                    ambiguous += 1
+                else:
+                    unresolved += 1
+                continue
+            mp4 = cands[0]
+            if not _mp4_readable(mp4):
+                unresolved += 1
+                continue
+            rp = mp4.resolve()
+            if rp in used_files:
+                # Never map two ids to one file — drop rather than duplicate.
+                ambiguous += 1
+                continue
+            used_files.add(rp)
+            out[vid] = rp
+
+    n_unique = len(set(out.values()))
+    if n_unique != len(out):
+        raise RuntimeError(
+            f"_index_grid_videos({run_id}): non-bijective mapping "
+            f"({len(out)} ids -> {n_unique} unique files). Refusing to build a "
+            "duplicated policy dir (would corrupt FVD)."
+        )
+    if ambiguous or unresolved:
+        print(
+            f"  [index] {run_id}: mapped {len(out)} ids "
+            f"(ambiguous={ambiguous}, unresolved={unresolved})",
+            file=sys.stderr,
+        )
     return out
 
 
