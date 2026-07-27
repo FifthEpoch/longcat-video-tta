@@ -1235,3 +1235,18 @@ The "FVD doubles under TTA" anomaly (fixed_S10_LR5e3 offline FVD=216.7 vs NOTTA=
 **Impact:** All offline `fixed_*` and `oracle_best_psnr` matched-FVD numbers under `budget_oracle_fvd*` are INVALID and must be recomputed. Only `always_notta` offline FVD (81.5) and the online per-run FVDs (configs ~67-69) are trustworthy. PSNR/SSIM/LPIPS and VBench analyses are NOT affected — they read per-video metrics directly, never the symlink layer.
 
 **Fix:** `_index_grid_videos` now resolves each record's mp4 by the per-video metric fingerprint `(psnr, ssim, lpips)` embedded in the filename (verified bijective on S10_LR5e3: 1000 records -> 998 matched -> 998 unique files, 0 collisions, 2 known failed-gen). Added a hard bijectivity guard that raises RuntimeError if `#ids != #unique files`, so a duplicated policy dir can never silently corrupt FVD again. Re-run matched FVD with `--clean` to regenerate the fixed/oracle policy dirs.
+
+## 2026-07-27 — Corrected matched FVD (post duplication-bug fix)
+
+**Tags:** fvd, corrected, budget-grid, 1000v-preview
+**Refs:** `sweep_experiment/reports/paper_tables/2026-07-27_matched_fvd_1000v_corrected.md`; `sweep_experiment/reports/budget_oracle_fvd_1000v_preview/matched/`; commit `2b23b8b`
+
+Re-ran matched FVD on the common set (N=898, `INTERSECT_NOTTA=1`) after fixing the `_index_grid_videos` duplication bug. Verified via `pilot_matched_fvd_summary.md`:
+
+| Policy | N | FVD | Δ vs NO-TTA |
+|---|---:|---:|---:|
+| always_notta | 898 | 81.22 | — |
+| fixed_S10_LR5e3 | 898 | 84.77 | +3.55 (+4.4%) |
+| oracle_best_psnr | 898 | 72.28 | -8.94 (-11.0%) |
+
+The pre-fix fixed/oracle values (fixed=198-217, oracle=169-184) are now formally SUPERSEDED and must not be cited. Conclusion: fixed AdaSteer is FVD-neutral (within run-to-run noise, consistent with online config FVDs ~67-69 and flat PSNR +0.02 dB); the PSNR-oracle modestly reduces pooled FVD (~-11%, upper bound). The "TTA doubles FVD" claim was entirely a symlink-duplication artifact.
