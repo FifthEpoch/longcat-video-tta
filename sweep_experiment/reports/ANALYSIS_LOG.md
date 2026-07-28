@@ -1250,3 +1250,22 @@ Re-ran matched FVD on the common set (N=898, `INTERSECT_NOTTA=1`) after fixing t
 | oracle_best_psnr | 898 | 72.28 | -8.94 (-11.0%) |
 
 The pre-fix fixed/oracle values (fixed=198-217, oracle=169-184) are now formally SUPERSEDED and must not be cited. Conclusion: fixed AdaSteer is FVD-neutral (within run-to-run noise, consistent with online config FVDs ~67-69 and flat PSNR +0.02 dB); the PSNR-oracle modestly reduces pooled FVD (~-11%, upper bound). The "TTA doubles FVD" claim was entirely a symlink-duplication artifact.
+
+## 2026-07-28 — Trained-router FVD (matched-N=898): headroom exists but is not routable
+
+**Tags:** fvd, router, budget-grid, 1000v-preview, routability
+**Refs:** `sweep_experiment/reports/paper_tables/2026-07-28_router_fvd_1000v.md`; `scripts/build_router_fvd_dirs.py`; `sweep_experiment/sbatch/run_router_fvd.sbatch`; commit `6a06ada`; job 14847128
+
+FVD of the deployable PSNR- and VBench-motivated routers (5-fold OOF ridge, block A+B+C, gen-only VBench), composed per-video and scored on the matched N=898 pool (all dirs bijective, links=unique=898):
+
+| Policy | FVD | Δ vs NO-TTA | Apply% |
+|---|---:|---:|---:|
+| always_notta | 81.22 | — | 0% |
+| fixed_S10_LR5e3 | 84.77 | +3.55 | 100% |
+| router_psnr_ABC_13act | 80.71 | -0.51 | 42.3% |
+| router_psnr_ABC_12act | 82.19 | +0.97 | 100% |
+| router_vbench_ABC_13act | 82.43 | +1.21 | 40.8% |
+| router_vbench_ABC_12act | 82.67 | +1.45 | 100% |
+| oracle_best_psnr | 72.28 | -8.94 | — |
+
+Deployable routers are FVD-neutral (within +-1.5 of NO-TTA, all beat the fixed single config) but capture ~6% of the oracle's FVD headroom (-0.5 of the -8.9 gap). Allowing skip (13-action) helps FVD (stay near NO-TTA rather than the fixed config's 84.8); PSNR routers beat VBench routers on FVD. Conclusion consistent with PSNR/VBench routability (R^2(gain) <= 0): real oracle headroom, not routable from cheap features. Router picks are leakage-free OOF (deployable), unlike the oracle which needs GT.
