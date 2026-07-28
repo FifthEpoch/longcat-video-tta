@@ -1269,3 +1269,16 @@ FVD of the deployable PSNR- and VBench-motivated routers (5-fold OOF ridge, bloc
 | oracle_best_psnr | 72.28 | -8.94 | — |
 
 Deployable routers are FVD-neutral (within +-1.5 of NO-TTA, all beat the fixed single config) but capture ~6% of the oracle's FVD headroom (-0.5 of the -8.9 gap). Allowing skip (13-action) helps FVD (stay near NO-TTA rather than the fixed config's 84.8); PSNR routers beat VBench routers on FVD. Conclusion consistent with PSNR/VBench routability (R^2(gain) <= 0): real oracle headroom, not routable from cheap features. Router picks are leakage-free OOF (deployable), unlike the oracle which needs GT.
+
+## 2026-07-28 — Cross-metric per-policy table (FVD + PSNR + 7 VBench dims), matched N=898
+
+**Tags:** fvd, psnr, vbench, router, oracle, cross-metric, 1000v-preview
+**Refs:** `sweep_experiment/reports/paper_tables/2026-07-28_cross_metric_policy_1000v.md`; `scripts/build_cross_metric_policy_table.py`; commit `ab9b3de`
+
+One row per policy across all three metric families (generated-only VBench):
+
+- Best deployable per column: FVD -> router_psnr_13act 80.71 (<NO-TTA 81.22); PSNR -> NO-TTA 19.438 (all TTA policies slightly below); VB-mean(norm) -> router_psnr_13act 0.8150 (~tie NO-TTA 0.8133).
+- oracle_best_psnr: FVD 72.28, PSNR 19.793 (+0.36), but VB-mean 0.8138 ~= NO-TTA -> oracle PSNR headroom does NOT transfer to VBench.
+- VBench routers do not robustly win VBench dims (vbench_13act worst on Aes/Imaging).
+
+Conclusion: real per-video oracle headroom on PSNR/FVD, not routable from cheap features, does not extend to VBench. Deployable AdaSteer (fixed or routed) ~= NO-TTA across all metric families.
