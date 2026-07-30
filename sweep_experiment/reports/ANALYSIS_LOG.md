@@ -1317,3 +1317,33 @@ Status: code only; GPU jobs not yet run. Submit via
 comparison_methods/sbatch/run_noise_opt_baselines.sh on the 1000v preview pool
 (requires that pool's video dataset dir + the shared preview GT cache for a
 matched FVD/PSNR comparison).
+
+## 2026-07-31 — Router is not winning from randomness (it is not winning at all)
+
+**Tags:** router, significance, oracle, max-over-noise, routability, negative-result
+**Refs:** scripts/router_significance_analysis.py; paper_tables/2026-07-31_router_significance_1000v.md
+
+Ran a leakage-free significance/randomness analysis on the 1000v preview
+(N=898, block A+B+C, 5-fold OOF ridge — identical picks to the router matrix) to
+check, before the TTA-method comparison, whether the 12-config (and 13-action)
+router beats randomness and whether the oracle headroom is real.
+
+Result across all four variants (PSNR/VBench x 12/13-action): the router does
+NOT win. (1) Every Delta-vs-fixed 95% CI includes 0 or is negative; the only
+significant cell (VBench 13-action, p=0.048) is significant in the WRONG
+direction (router worse than best fixed config, because the added NO-TTA action
+hurts). (2) Shuffle-own-picks null p_shuf = 0.94-0.999 everywhere — randomly
+reassigning which video gets which of the router's own picks does as well or
+better ~94-99.9% of the time, so per-video targeting carries no signal;
+argmax match% (0.02-0.085) is at/below the 1/12 chance floor. (3) The
+config-oracle headroom (+0.358 dB PSNR, +0.098 VBench-raw) sits AT OR BELOW the
+parametric max-over-noise floor (+0.428 dB, +0.099); "captured by router" is
+negative. sigma estimated from the same values -> floor is conservative.
+
+Decision: do not present a per-video AdaSteer config router as a positive
+result on this grid; treat it as a clean negative result (per-video config
+selection unlearnable; oracle gain is a noise artifact). Reframe the DNO /
+Direct-Noise-Opt comparison at the population level (does any method move
+PSNR/FVD/VBench vs NO-TTA more than AdaSteer's ~+0.02 dB fixed config?), not as
+"router beats X." Consistent with the earlier routability diagnostic
+(OOF R^2(gain) <= 0, corr(NO-TTA, config) ~ 0).
