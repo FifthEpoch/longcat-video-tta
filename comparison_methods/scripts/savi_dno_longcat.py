@@ -232,6 +232,87 @@ def torch_gc():
 
 
 # ============================================================================
+# In-distribution noise regularizers for published noise-optimization methods
+# ============================================================================
+#
+# The two published, peer-reviewed noise-optimization methods we add on top of
+# this differentiable LongCat sampler differ from SAVi-DNO only in *how they
+# keep the optimized initial noise in-distribution* (SAVi-DNO uses fresh-noise
+# interpolation, param ``p``; these use an explicit regularizer term):
+#
+#   * dno              -> decorrelation regularizer.  Karunratanakul et al.,
+#                         "Optimizing Diffusion Noise Can Serve As Universal
+#                         Motion Priors", CVPR 2024 (arXiv:2312.11994).
+#   * direct_noise_opt -> probability ("Gaussian-shell") regularizer.  Tang et
+#                         al., "Inference-Time Alignment of Diffusion Models
+#                         with Direct Noise Optimization", ICML 2025
+#                         (arXiv:2405.18881).
+#
+# Both were designed to optimize the noise against a reward on the SAME sample
+# being generated.  In our video-*prediction* setting there is no test-time
+# reward for the unseen future, so we optimize the noise against an OBSERVED
+# history segment and transfer it to the future exactly as the leakage-free
+# SAVi-DNO protocol does (see `predict_and_optimize` / `generate_with_optimized_eps`).
+# This is the only fair, deployable way to bring these reward-driven methods
+# into prediction, and it keeps them apples-to-apples with SAVi-DNO / AdaSteer.
+
+
+def decorrelation_loss(eps: torch.Tensor) -> torch.Tensor:
+    """DNO decorrelation regularizer (Karunratanakul et al., CVPR 2024).
+
+    Keeps the optimized noise close to white i.i.d. Gaussian by penalizing
+    autocorrelation along the sequence axis.  DNO applies this along the
+    motion-sequence (time) axis; the video analogue is the latent temporal
+    axis ``T``.  We penalize the squared off-diagonal entries of the
+    normalized cross-frame correlation matrix (zero = temporally white noise).
+    """
+    B, C, T, H, W = eps.shape
+    if T < 2:
+        return torch.zeros((), device=eps.device, dtype=torch.float32)
+    x = eps.permute(0, 2, 1, 3, 4).reshape(B, T, -1).float()  # [B, T, M]
+    x = x - x.mean(dim=1, keepdim=True)
+    gram = torch.matmul(x, x.transpose(1, 2))                  # [B, T, T]
+    diag = torch.diagonal(gram, dim1=1, dim2=2).clamp_min(1e-8)
+    denom = torch.sqrt(diag.unsqueeze(2) * diag.unsqueeze(1))
+    corr = gram / denom
+    eye = torch.eye(T, device=eps.device).unsqueeze(0)
+    off = corr * (1.0 - eye)
+    return (off ** 2).sum() / (B * T * (T - 1))
+
+
+def gaussian_shell_penalty(eps: torch.Tensor) -> torch.Tensor:
+    """Direct Noise Optimization probability regularizer (Tang et al., ICML 2025).
+
+    For isotropic Gaussian noise in ``d`` dimensions, ``||z||^2`` concentrates
+    on the shell ``||z||^2 ~ d`` (the Gaussian typical set).  Penalizing
+    deviation from this shell keeps the optimized noise in the support of the
+    pretrained prior and prevents out-of-distribution reward hacking (the
+    failure mode DNO-direct's probability regularization was introduced to
+    fix).  Dimension-normalized so the scale is independent of latent size.
+    """
+    B = eps.shape[0]
+    z = eps.reshape(B, -1).float()
+    d = z.shape[1]
+    sq_norm = (z ** 2).sum(dim=1)
+    return ((sq_norm / d) - 1.0).pow(2).mean()
+
+
+_REGULARIZERS = {
+    "none": None,
+    "decorr": decorrelation_loss,
+    "gaussian_shell": gaussian_shell_penalty,
+}
+
+# method name -> (regularizer key, use noise interpolation, default reg weight,
+#                 output method_name)
+_NOISE_OPT_METHODS = {
+    "savi_dno": ("none", True, 0.0, "savi_dno_longcat"),
+    "dno": ("decorr", False, 1.0, "dno_longcat"),
+    "direct_noise_opt": ("gaussian_shell", False, 0.01, "direct_noise_opt_longcat"),
+}
+
+
+# ============================================================================
 # 2-GPU model parallelism for DiT
 # ============================================================================
 
@@ -379,6 +460,9 @@ class SAViDNO_LongCat:
         gradient_checkpointing: bool = True,
         latent_loss: bool = False,
         max_grad_norm: float = 1.0,
+        regularizer: str = "none",
+        reg_weight: float = 0.0,
+        noise_interp: bool = True,
     ):
         self.device = device
         self.dtype = dtype
@@ -396,6 +480,18 @@ class SAViDNO_LongCat:
         self.gradient_checkpointing = gradient_checkpointing
         self.latent_loss = latent_loss
         self.max_grad_norm = max_grad_norm
+
+        # In-distribution noise regularizer for published noise-opt methods.
+        # regularizer="none" + noise_interp=True reproduces SAVi-DNO exactly.
+        if regularizer not in _REGULARIZERS:
+            raise ValueError(
+                "regularizer must be one of %s (got %r)"
+                % (list(_REGULARIZERS), regularizer)
+            )
+        self.regularizer = regularizer
+        self.reg_fn = _REGULARIZERS[regularizer]
+        self.reg_weight = float(reg_weight)
+        self.noise_interp = bool(noise_interp)
 
         self.feature_model = None
         if feature_model is not None and not latent_loss:
@@ -583,8 +679,20 @@ class SAViDNO_LongCat:
             )
             self.optimizer = torch.optim.Adam([self.eps_optimized], lr=self.lr)
 
-        eps_fresh = torch.randn_like(self.eps_optimized)
-        eps_mixed = self._noise_interpolation(self.eps_optimized, eps_fresh)
+        # SAVi-DNO regularizes via fresh-noise interpolation (noise_interp=True);
+        # DNO / Direct-Noise-Optimization instead optimize the raw noise with an
+        # explicit in-distribution regularizer (noise_interp=False).
+        if self.noise_interp:
+            eps_fresh = torch.randn_like(self.eps_optimized)
+            eps_mixed = self._noise_interpolation(self.eps_optimized, eps_fresh)
+        else:
+            eps_mixed = self.eps_optimized
+
+        # Regularizer is always computed on the raw optimization variable
+        # (self.eps_optimized), matching both papers' formulations.
+        reg_loss = None
+        if self.reg_fn is not None and self.reg_weight > 0.0:
+            reg_loss = self.reg_fn(self.eps_optimized)
 
         z_pred = self._flow_euler_sample_differentiable(
             cond_latents, eps_mixed, prompt_embeds, prompt_mask,
@@ -601,6 +709,8 @@ class SAViDNO_LongCat:
                     z_gt = encode_video(self.vae, gt_for_vae, normalize=True)
 
                 total_loss = F.l1_loss(z_pred, z_gt.to(z_pred.dtype), reduction="mean")
+                if reg_loss is not None:
+                    total_loss = total_loss + self.reg_weight * reg_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 if self.max_grad_norm > 0:
@@ -637,6 +747,8 @@ class SAViDNO_LongCat:
                     loss_feature = F.mse_loss(feat_pred, feat_gt, reduction="mean")
 
                 total_loss = loss_pixel + self.lam * loss_feature
+                if reg_loss is not None:
+                    total_loss = total_loss + self.reg_weight * reg_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 if self.max_grad_norm > 0:
@@ -774,7 +886,23 @@ def main():
                              "the scored future frames (ground-truth leakage). This is NOT a "
                              "fair baseline; it reproduces the old behaviour as an oracle "
                              "upper bound. Leave OFF for the paper comparison.")
+    parser.add_argument("--method", type=str, default="savi_dno",
+                        choices=list(_NOISE_OPT_METHODS),
+                        help="Which published noise-optimization method to run. All share "
+                             "the same differentiable LongCat sampler + leakage-free "
+                             "prediction protocol and differ only in the in-distribution "
+                             "regularizer: 'savi_dno' (fresh-noise interpolation, arXiv:2511.18255, "
+                             "default/unchanged), 'dno' (decorrelation reg, Karunratanakul CVPR 2024), "
+                             "'direct_noise_opt' (Gaussian-shell probability reg, Tang ICML 2025).")
+    parser.add_argument("--reg-weight", type=float, default=-1.0,
+                        help="Weight of the in-distribution regularizer for --method dno / "
+                             "direct_noise_opt. <0 (default) uses the method's built-in default "
+                             "(dno=1.0, direct_noise_opt=0.01). Ignored for --method savi_dno.")
     args = parser.parse_args()
+
+    # Resolve the noise-opt method into (regularizer, noise_interp, reg_weight).
+    _reg_key, _noise_interp, _default_reg_w, _method_out_name = _NOISE_OPT_METHODS[args.method]
+    reg_weight = _default_reg_w if args.reg_weight < 0 else args.reg_weight
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -807,8 +935,11 @@ def main():
     loss_mode = "latent (Vista-style)" if use_latent_loss else "pixel+feature (PVDM-style, no CFG)"
 
     print("=" * 70)
-    print("SAVi-DNO with LongCat Backbone")
+    print("Noise-Optimization TTA with LongCat Backbone")
     print("=" * 70)
+    print("  Method       : %s -> %s" % (args.method, _method_out_name))
+    print("  Regularizer  : %s (weight=%g, noise_interp=%s)" % (
+        _reg_key, reg_weight, _noise_interp))
     print("  Checkpoint   : %s" % args.checkpoint_dir)
     print("  Resolution   : %dx%d" % (height, width))
     print("  Cond frames  : %d" % args.num_cond_frames)
@@ -871,6 +1002,9 @@ def main():
         gradient_checkpointing=not args.no_gradient_checkpointing,
         latent_loss=use_latent_loss,
         max_grad_norm=args.max_grad_norm,
+        regularizer=_reg_key,
+        reg_weight=reg_weight,
+        noise_interp=_noise_interp,
     )
 
     # --- Load metric models ---
@@ -889,9 +1023,9 @@ def main():
     if args.no_optimize:
         method_name = "longcat_baseline"
     elif args.oracle_leak:
-        method_name = "savi_dno_longcat_oracle"
+        method_name = "%s_oracle" % _method_out_name
     else:
-        method_name = "savi_dno_longcat"
+        method_name = _method_out_name
     leakage_free = not args.oracle_leak
     protocol = ("no_optimize" if args.no_optimize
                 else ("oracle_leak_UPPER_BOUND" if args.oracle_leak
@@ -1172,6 +1306,10 @@ def main():
     # --- Save summary ---
     summary = {
         "method": method_name,
+        "noise_opt_method": args.method,
+        "regularizer": _reg_key,
+        "reg_weight": reg_weight,
+        "noise_interp": _noise_interp,
         "backbone": "longcat",
         "protocol": protocol,
         "leakage_free": leakage_free,

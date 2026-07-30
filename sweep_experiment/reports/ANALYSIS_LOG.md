@@ -1282,3 +1282,38 @@ One row per policy across all three metric families (generated-only VBench):
 - VBench routers do not robustly win VBench dims (vbench_13act worst on Aes/Imaging).
 
 Conclusion: real per-video oracle headroom on PSNR/FVD, not routable from cheap features, does not extend to VBench. Deployable AdaSteer (fixed or routed) ~= NO-TTA across all metric families.
+
+## 2026-07-30 — Added two PUBLISHED noise-optimization TTA baselines (DNO, Direct Noise Optimization)
+
+**Tags:** comparison-baselines, noise-optimization, related-work, code
+**Refs:** comparison_methods/scripts/savi_dno_longcat.py, comparison_methods/sbatch/run_savi_dno_longcat.sbatch, comparison_methods/sbatch/run_noise_opt_baselines.sh
+
+Decision: implement peer-reviewed noise-optimization TTA methods on the frozen
+LongCat backbone for apples-to-apples comparison with AdaSteer / LoRA-TTA /
+SAVi-DNO. Selected the two published, in-setting noise-optimization methods:
+  - DNO — Karunratanakul et al., "Optimizing Diffusion Noise Can Serve As
+    Universal Motion Priors", CVPR 2024 (arXiv:2312.11994), ~100 Scholar cites.
+    Signature = decorrelation regularizer (keep optimized noise white/Gaussian).
+  - Direct Noise Optimization — Tang et al., "Inference-Time Alignment of
+    Diffusion Models with Direct Noise Optimization", ICML 2025 (arXiv:2405.18881).
+    Signature = probability / "Gaussian-shell" regularizer (||z||^2 ~ d) to avoid
+    out-of-distribution reward hacking.
+
+Implementation: both reuse the existing differentiable SAVi-DNO LongCat Euler
+sampler via a pluggable `--method {savi_dno,dno,direct_noise_opt}` flag; they
+differ ONLY in the in-distribution regularizer (SAVi-DNO uses fresh-noise
+interpolation p; DNO/Direct use explicit reg terms with noise_interp off). The
+default `savi_dno` is byte-identical to prior behaviour (regularizer=none,
+reg_weight=0, noise_interp=on) so existing SAVi-DNO results are unaffected.
+
+Fairness note: DNO / Direct-Noise-Opt were designed to optimize noise against a
+reward on the sample being generated; video prediction has no test-time future
+reward, so we adopt SAVi-DNO's leakage-free protocol (adapt eps on an OBSERVED
+history segment, then apply it to the UNSEEN scored future). This is the only
+deployable, fair way to bring these reward-driven methods into prediction and
+keeps them matched to AdaSteer.
+
+Status: code only; GPU jobs not yet run. Submit via
+comparison_methods/sbatch/run_noise_opt_baselines.sh on the 1000v preview pool
+(requires that pool's video dataset dir + the shared preview GT cache for a
+matched FVD/PSNR comparison).

@@ -29,8 +29,12 @@ echo "Rollout steps: ${SAVI_ROLLOUT_STEPS:-10}"
 echo "Max grad norm: ${SAVI_MAX_GRAD_NORM:-1.0}"
 echo "No-optimize: ${SAVI_NO_OPTIMIZE:-}"
 echo "Oracle-leak: ${SAVI_ORACLE_LEAK:-0} (1=leaky oracle upper bound; default 0=fair leakage-free)"
+echo "Method: ${NOISE_OPT_METHOD:-savi_dno} (savi_dno=default; dno=Karunratanakul CVPR24; direct_noise_opt=Tang ICML25)"
+echo "Reg weight: ${NOISE_OPT_REG_WEIGHT:--1} (<0 = method default)"
 echo "Geometry: cond=${SAVI_NUM_COND_FRAMES:-14} total=${SAVI_NUM_FRAMES:-28} gen_start=${SAVI_GEN_START_FRAME:-48}"
 echo "=============================================================================="
+
+NOISE_OPT_METHOD="${NOISE_OPT_METHOD:-savi_dno}"
 
 SCRATCH_BASE="/scratch/wc3013"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
@@ -45,7 +49,14 @@ if [ "${SAVI_NO_OPTIMIZE:-}" = "1" ]; then
 elif [ "${SAVI_ORACLE_LEAK:-}" = "1" ]; then
     _SAVI_VARIANT="_oracle"
 fi
-OUTPUT_DIR="${SAVI_LC_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/savi_dno_longcat_s${SAVI_EULER_STEPS:-10}${_SAVI_VARIANT}}"
+# Output dir is also keyed on the noise-opt method so dno / direct_noise_opt
+# never collide with savi_dno. Default (savi_dno) keeps the original path.
+case "${NOISE_OPT_METHOD}" in
+    dno)              _METHOD_BASE="dno_longcat" ;;
+    direct_noise_opt) _METHOD_BASE="direct_noise_opt_longcat" ;;
+    *)                _METHOD_BASE="savi_dno_longcat" ;;
+esac
+OUTPUT_DIR="${SAVI_LC_OUTPUT_DIR:-${PROJECT_ROOT}/comparison_methods/results/${_METHOD_BASE}_s${SAVI_EULER_STEPS:-10}${_SAVI_VARIANT}}"
 MAX_VIDEOS="${SAVI_LC_MAX_VIDEOS:-1000}"
 
 # ============================================================================
@@ -141,6 +152,8 @@ echo "VBench       : ${VBENCH_FLAG:-OFF}"
     --num-cond-frames "${SAVI_NUM_COND_FRAMES:-14}" \
     --num-frames "${SAVI_NUM_FRAMES:-28}" \
     --gen-start-frame "${SAVI_GEN_START_FRAME:-48}" \
+    --method "${NOISE_OPT_METHOD}" \
+    --reg-weight "${NOISE_OPT_REG_WEIGHT:--1}" \
     --seed 42 \
     ${NO_OPT_FLAG} \
     ${LOSS_FLAG} \
