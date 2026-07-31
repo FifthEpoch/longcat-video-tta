@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=256GB
 #SBATCH --time=48:00:00
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=comparison_methods/slurm_log/savi_dno_longcat_%j.out
 #SBATCH --error=comparison_methods/slurm_log/savi_dno_longcat_%j.err
 

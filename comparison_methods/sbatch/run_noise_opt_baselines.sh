@@ -43,6 +43,7 @@ NUM_GPUS="${NUM_GPUS:-2}"
 ROLLOUT_STEPS="${ROLLOUT_STEPS:-10}"
 
 SBATCH="comparison_methods/sbatch/run_savi_dno_longcat.sbatch"
+ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 mkdir -p comparison_methods/slurm_log
 
 if [ ! -d "${DATA_DIR}" ]; then
@@ -70,7 +71,7 @@ for METHOD in dno direct_noise_opt; do
   SAVI_EULER_STEPS="${EULER_STEPS}" \
   NUM_GPUS="${NUM_GPUS}" \
   SAVI_ROLLOUT_STEPS="${ROLLOUT_STEPS}" \
-  sbatch "${SBATCH}"
+  sbatch --account="${ACCOUNT}" "${SBATCH}"
 done
 
 echo ""
