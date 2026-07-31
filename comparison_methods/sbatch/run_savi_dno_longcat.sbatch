@@ -1,12 +1,21 @@
 #!/bin/bash
 #SBATCH --job-name=savi_dno_lc
-#SBATCH --gres=gpu:h200:2
+# ONE H200 by default.  The old 2-GPU naive pipeline split (blocks 0-23 on
+# cuda:0, 24-47 on cuda:1) leaves each GPU idle ~half the time (~50% util),
+# which trips Torch's aggressive Low-GPU-Utilization policy on gh* nodes
+# (auto-cancel below 60%) -> that is what killed jobs 15044153/54 at ~2h, NOT
+# the 48h wall clock.  A single GPU runs all blocks sequentially at ~100% util
+# and (since the pipeline was not microbatched) is not slower.  A LongCat DiT
+# forward with gradient checkpointing fits well within one H200's 140 GiB.
+#SBATCH --gres=gpu:h200:1
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=256GB
 #SBATCH --time=48:00:00
 #SBATCH --account=torch_pr_36_mren
+#SBATCH --requeue
+#SBATCH --comment="preemption=yes;requeue=true"
 #SBATCH --output=comparison_methods/slurm_log/savi_dno_longcat_%j.out
 #SBATCH --error=comparison_methods/slurm_log/savi_dno_longcat_%j.err
 
@@ -20,7 +29,7 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "Start time: $(date)"
 echo "Euler steps: ${SAVI_EULER_STEPS:-10}"
-echo "Num GPUs: ${NUM_GPUS:-2}"
+echo "Num GPUs: ${NUM_GPUS:-1}"
 echo "LR: ${SAVI_LR:-1e-4}"
 echo "Lambda: ${SAVI_LAM:-0.0012}"
 echo "p: ${SAVI_P:-0.7}"
@@ -143,7 +152,7 @@ echo "VBench       : ${VBENCH_FLAG:-OFF}"
     --output-dir "${OUTPUT_DIR}" \
     --max-videos "${MAX_VIDEOS}" \
     --num-inference-steps "${SAVI_EULER_STEPS:-10}" \
-    --num-gpus "${NUM_GPUS:-2}" \
+    --num-gpus "${NUM_GPUS:-1}" \
     --guidance-scale "${SAVI_GUIDANCE:-4.0}" \
     --lr "${SAVI_LR:-1e-4}" \
     --lam "${SAVI_LAM:-0.0012}" \

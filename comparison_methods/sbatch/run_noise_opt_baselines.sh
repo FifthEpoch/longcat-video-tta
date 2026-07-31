@@ -20,11 +20,21 @@
 # AdaSteer 1000v preview pool (panda_ood_budget_1000v_preview) and GT_CACHE must
 # be that pool's cache, or the FVD/PSNR are not comparable to the AdaSteer rows.
 #
+# SCHEDULING NOTE (why the first attempt, jobs 15044153/54, died at ~2h):
+#   They ran 2 GPUs with a naive pipeline split, so each H200 sat at ~50% util
+#   and Torch's aggressive Low-GPU-Utilization policy (auto-cancel below 60% on
+#   gh* nodes) killed them -- it was NOT the 48h wall clock. This script now
+#   defaults to ONE GPU (keeps it ~100% busy) and the run checkpoints after
+#   every video, so a cancelled/preempted job can be resubmitted (same
+#   OUTPUT_DIR) and resumes exactly where it stopped without corrupting the
+#   pooled FVD/FID. At ~413 s/video a single 48h window covers ~400 videos; for
+#   the full 1000 just resubmit the same command 2-3x (it will skip done ones).
+#
 # Usage:
 #   cd /scratch/wc3013/longcat-video-tta
 #   bash comparison_methods/sbatch/run_noise_opt_baselines.sh
 #   # optional overrides:
-#   DATA_DIR=... GT_CACHE=... MAX_VIDEOS=1000 EULER_STEPS=10 \
+#   DATA_DIR=... GT_CACHE=... MAX_VIDEOS=1000 EULER_STEPS=10 NUM_GPUS=1 \
 #     bash comparison_methods/sbatch/run_noise_opt_baselines.sh
 # ============================================================================
 set -euo pipefail
@@ -38,8 +48,9 @@ cd "${PROJECT_ROOT}"
 DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/datasets/panda_ood_budget_1000v_preview_480p}"
 GT_CACHE="${GT_CACHE:-${PROJECT_ROOT}/gt_caches/panda_ood_budget_1000v_preview_longcat.npz}"
 MAX_VIDEOS="${MAX_VIDEOS:-1000}"
+# ONE GPU by default -> ~100% util -> not killed by the Low-GPU-Util policy.
 EULER_STEPS="${EULER_STEPS:-10}"
-NUM_GPUS="${NUM_GPUS:-2}"
+NUM_GPUS="${NUM_GPUS:-1}"
 ROLLOUT_STEPS="${ROLLOUT_STEPS:-10}"
 
 SBATCH="comparison_methods/sbatch/run_savi_dno_longcat.sbatch"

@@ -876,6 +876,15 @@ def main():
                              "mp4s so SAVi-DNO has the same metric set as AdaSteer. "
                              "Requires saved videos (--save-videos or --save-only-list).")
     parser.add_argument("--gt-features-cache", type=str, default=None)
+    parser.add_argument("--no-resume", action="store_true",
+                        help="Disable checkpoint/resume. By default the run "
+                             "persists FVD/FID sufficient-statistics, running "
+                             "metric totals, per-video results and a next-index "
+                             "cursor to <output_dir>/resume_state.npz after every "
+                             "video, and on restart skips already-processed videos "
+                             "and resumes the accumulators exactly. This makes the "
+                             "job safe to requeue after a low-GPU-util / preemption "
+                             "cancellation without corrupting the pooled FVD/FID.")
     parser.add_argument("--rollout-steps", type=int, default=10,
                         help="Number of noise optimization (Adam) steps taken on the "
                              "OBSERVED history segment before predicting the future")
@@ -1072,13 +1081,89 @@ def main():
     n_ok = 0
     gpu_peak_per_video = []
 
+    # ------------------------------------------------------------------
+    # Checkpoint / resume.  We persist the pooled FVD/FID sufficient
+    # statistics (sum + outer-product covariance), running PSNR/SSIM/LPIPS
+    # totals, per-video results and a next-index cursor after EVERY video.
+    # On restart we skip already-done videos and restore the accumulators
+    # exactly, so a job cancelled by the low-GPU-util policy / preemption
+    # can be requeued and finish the pooled metrics without double-counting.
+    # video_list is metadata.csv order sliced by max_videos -> deterministic,
+    # so resume-by-index is safe as long as (method, max_videos) match.
+    # ------------------------------------------------------------------
+    resume_state_path = output_dir / "resume_state.npz"
+    start_idx = 0
+
+    def _save_resume_state(next_idx):
+        tmp = str(resume_state_path) + ".tmp.npz"
+        np.savez(
+            tmp,
+            gen_fvd_sum=gen_fvd_sum, gen_fvd_cov=gen_fvd_cov,
+            gen_fid_sum=gen_fid_sum, gen_fid_cov=gen_fid_cov,
+            ref_fvd_sum=ref_fvd_sum, ref_fvd_cov=ref_fvd_cov,
+            ref_fid_sum=ref_fid_sum, ref_fid_cov=ref_fid_cov,
+            counts=np.array([next_idx, fvd_count, fid_gen_frames,
+                             ref_fvd_count, fid_ref_frames, n_ok],
+                            dtype=np.int64),
+            totals=np.array([total_psnr, total_ssim, total_lpips],
+                            dtype=np.float64),
+            results=np.array(results, dtype=object),
+            meta=np.array([str(method_name), str(int(args.max_videos)),
+                           str(int(args.seed))], dtype=object),
+        )
+        os.replace(tmp, str(resume_state_path))
+
+    if (not args.no_resume) and resume_state_path.exists():
+        try:
+            st = np.load(str(resume_state_path), allow_pickle=True)
+            meta = list(st["meta"])
+            same_run = (meta[0] == str(method_name)
+                        and meta[1] == str(int(args.max_videos)))
+            if not same_run:
+                print("  [resume] state at %s is for a DIFFERENT run "
+                      "(method/max_videos mismatch: %s) -> ignoring, "
+                      "starting fresh." % (resume_state_path, meta))
+            else:
+                counts = st["counts"]
+                start_idx = int(counts[0])
+                fvd_count = int(counts[1]); fid_gen_frames = int(counts[2])
+                n_ok = int(counts[5])
+                gen_fvd_sum = st["gen_fvd_sum"].astype(np.float64)
+                gen_fvd_cov = st["gen_fvd_cov"].astype(np.float64)
+                gen_fid_sum = st["gen_fid_sum"].astype(np.float64)
+                gen_fid_cov = st["gen_fid_cov"].astype(np.float64)
+                tot = st["totals"]
+                total_psnr = float(tot[0]); total_ssim = float(tot[1])
+                total_lpips = float(tot[2])
+                results = list(st["results"])
+                # Only restore the reference accumulators when they are being
+                # built online (no GT cache). With a GT cache the reference is
+                # static and already loaded above -> do NOT overwrite it.
+                if not gt_cached:
+                    ref_fvd_sum = st["ref_fvd_sum"].astype(np.float64)
+                    ref_fvd_cov = st["ref_fvd_cov"].astype(np.float64)
+                    ref_fid_sum = st["ref_fid_sum"].astype(np.float64)
+                    ref_fid_cov = st["ref_fid_cov"].astype(np.float64)
+                    ref_fvd_count = int(counts[3]); fid_ref_frames = int(counts[4])
+                print("  [resume] restored state from %s: skipping first %d "
+                      "videos (n_ok=%d, fvd_count=%d)."
+                      % (resume_state_path, start_idx, n_ok, fvd_count))
+        except Exception as _e:
+            print("  [resume] failed to load %s (%s) -> starting fresh."
+                  % (resume_state_path, _e))
+            start_idx = 0
+
     for idx, entry in enumerate(tqdm(video_list, desc=method_name)):
+        if idx < start_idx:
+            continue
         video_name = entry.get("video_name", entry.get("filename", ""))
         video_filename = entry.get("filename", video_name)
         video_path = os.path.join(args.data_dir, "videos", video_filename)
 
         if not os.path.exists(video_path):
             results.append({"video": video_name, "success": False, "error": "not_found"})
+            if not args.no_resume:
+                _save_resume_state(idx + 1)
             continue
 
         try:
@@ -1284,6 +1369,12 @@ def main():
             import traceback
             traceback.print_exc()
             results.append({"video": video_name, "success": False, "error": str(e)})
+
+        # Persist resume state after every video so a low-GPU-util / preemption
+        # cancellation can be requeued without losing progress or corrupting the
+        # pooled FVD/FID sufficient statistics.
+        if not args.no_resume:
+            _save_resume_state(idx + 1)
 
     # --- Compute FVD/FID ---
     fvd_val = None
