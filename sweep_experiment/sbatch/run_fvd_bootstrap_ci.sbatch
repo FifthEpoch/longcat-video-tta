@@ -26,8 +26,11 @@
 #   cd /scratch/wc3013/longcat-video-tta
 #   sbatch sweep_experiment/sbatch/run_fvd_bootstrap_ci.sbatch
 #
-# Add the trained routers too (after run_router_fvd.sbatch has built them):
-#   EXTRA_POLICIES="psnr_router12:sweep_experiment/reports/budget_oracle_fvd_1000v_preview/routers/psnr_A+B+C_act12/videos" \
+# To also test the DEPLOYABLE trained routers, use the dedicated orchestrator
+# run_router_fvd_bootstrap_ci.sbatch (it builds the router dirs first). Or, if
+# they already exist, append them here (note the real dir naming
+# router_{metric}_ABC_{n}act from build_router_fvd_dirs.py):
+#   EXTRA_POLICIES="router_psnr_ABC_12act:sweep_experiment/reports/budget_oracle_fvd_1000v_preview/routers/router_psnr_ABC_12act/videos" \
 #     sbatch sweep_experiment/sbatch/run_fvd_bootstrap_ci.sbatch
 # ============================================================================
 set -euo pipefail
