@@ -1394,3 +1394,19 @@ also definitively closes the earlier "TTA doubles FVD" scare (fixed=216 in the
 de-duplicated data fixed FVD ~ NO-TTA. Caveat: absolute bootstrap FVD (~152) is
 inflated by with-replacement duplication of clips (covariance bias); trust the
 paired ΔFVD CI and the point FVD levels, not the absolute bootstrap mean.
+
+## 2026-07-31 — Deployable routers are ALSO FVD-null (paired bootstrap CI)
+
+**Tags:** fvd, confidence-interval, null-result, router, deployable
+**Refs:** scripts/build_router_fvd_dirs.py; sweep_experiment/scripts/fvd_bootstrap_ci.py;
+paper_tables/2026-07-31_router_fvd_bootstrap_ci_1000v.md
+
+Extended the FVD bootstrap CI (job 15076548, matched N=898, B=2000, paired vs
+always_notta) to the four DEPLOYABLE trained routers (PSNR/VBench x 12/13 act,
+block A+B+C, leakage-free OOF ridge; VBench routers on gen-only scores). All four
+ΔFVD-vs-NO-TTA CIs include 0: psnr_12 +0.27 [-7.70,+6.37]; psnr_13 -1.14
+[-6.86,+3.06]; vbench_12 +0.75 [-9.56,+9.89]; vbench_13 +0.78 [-4.18,+4.45]. So
+every deployable policy (fixed config + all routers) is FVD-null vs NO-TTA,
+matching the PSNR/VBench nulls. Only the non-deployable PSNR-oracle moves FVD
+(-10.37 [-21.79,-2.04]), consistent with the max-over-noise / unroutable finding.
+Conclusion: no deployable FVD win from AdaSteer on the 1000v preview.
