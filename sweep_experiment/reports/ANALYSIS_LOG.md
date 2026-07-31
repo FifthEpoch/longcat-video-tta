@@ -1376,3 +1376,21 @@ Verdict distinguishes real+routable / real-but-unroutable / no-headroom.
 
 Next: run the prototype, then decide whether a stronger (model-likelihood)
 selector is needed if headroom is real but the cheap signals don't route it.
+
+## 2026-07-31 — FVD is also null for deployable TTA (paired bootstrap CI)
+
+**Tags:** fvd, confidence-interval, null-result, duplication-bug, oracle
+**Refs:** sweep_experiment/scripts/fvd_bootstrap_ci.py;
+paper_tables/2026-07-31_fvd_bootstrap_ci_1000v.md
+
+Ran the FVD bootstrap CI (job 15044183, matched N=898, B=2000, gen-only window,
+paired resample vs always_notta). Point FVD: notta 81.2, fixed 84.8, oracle 72.3.
+Paired ΔFVD vs NO-TTA: fixed +3.15 [-5.79, +12.19] = NULL (CI spans 0); oracle
+(best-PSNR/video) -10.37 [-21.79, -2.04] = improves but NON-DEPLOYABLE
+(max-over-noise per the router significance analysis). So FVD is null for the
+deployable fixed config, consistent with PSNR (+0.02 dB) and VBench nulls. This
+also definitively closes the earlier "TTA doubles FVD" scare (fixed=216 in the
+2026-07-27 matched run) as the _index_grid_videos symlink-duplication bug; on
+de-duplicated data fixed FVD ~ NO-TTA. Caveat: absolute bootstrap FVD (~152) is
+inflated by with-replacement duplication of clips (covariance bias); trust the
+paired ΔFVD CI and the point FVD levels, not the absolute bootstrap mean.
