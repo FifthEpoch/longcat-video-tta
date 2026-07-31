@@ -1347,3 +1347,32 @@ Direct-Noise-Opt comparison at the population level (does any method move
 PSNR/FVD/VBench vs NO-TTA more than AdaSteer's ~+0.02 dB fixed config?), not as
 "router beats X." Consistent with the earlier routability diagnostic
 (OOF R^2(gain) <= 0, corr(NO-TTA, config) ~ 0).
+
+## 2026-07-31 — New direction beyond AdaSteer: best-of-k seed selection
+
+**Tags:** direction, best-of-k, seed-selection, noise-space, headroom, routability
+**Refs:** bestofk_experiment/scripts/run_bestofk_seeds.py;
+scripts/analyze_bestofk_headroom.py; bestofk_experiment/sbatch/*
+
+Rationale: the significance analysis showed parameter-delta TTA (AdaSteer grid)
+produces near-identical videos, so its oracle headroom is max-over-noise and
+unroutable. The lever with *demonstrated real* headroom in the literature
+(SAVi-DNO, CVPR'24) is the INITIAL NOISE/seed: different seeds give genuinely
+different continuations with a real quality spread. So we pivot to best-of-k
+seed selection on the frozen model.
+
+Built (offline/GPU, no model changes): (1) run_bestofk_seeds.py — generates K
+continuations per video from K distinct seeds (candidate 0 == deployed
+reference), records per-candidate PSNR/SSIM/LPIPS (gen-only window, no leakage)
++ cheap GT-free selector signals (seam continuity, motion, sharpness); reuses
+common.py's generation+metric path so geometry matches the 1000v preview pool.
+(2) analyze_bestofk_headroom.py — same CI/null machinery as the router
+significance probe: (A) oracle best-of-k headroom vs seed0 and vs mean random
+seed with bootstrap CI + sign-flip p; (B) routability via within-video
+Spearman(signal, PSNR) and a leakage-free OOF ridge selector (fold by video)
+with bootstrap CI, shuffle-picks null, random-seed null, and match% vs 1/k.
+Verdict distinguishes real+routable / real-but-unroutable / no-headroom.
+(3) sbatch runner + chunked submitter (prototype: first 200 videos, K=8).
+
+Next: run the prototype, then decide whether a stronger (model-likelihood)
+selector is needed if headroom is real but the cheap signals don't route it.
