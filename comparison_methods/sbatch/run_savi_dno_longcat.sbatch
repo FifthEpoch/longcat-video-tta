@@ -21,6 +21,10 @@
 
 set -euo pipefail
 export PYTHONNOUSERSITE=1
+# Single-GPU differentiable DiT backprop runs right at the H200's 140 GiB edge;
+# reduce allocator fragmentation so the last ~hundreds of MiB don't OOM. Paired
+# with the in-script T5-offload-to-CPU (frees ~20 GiB during the sampler).
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
 echo "=============================================================================="
 echo "SAVi-DNO Evaluation (Noise Optimization on LongCat Backbone)"

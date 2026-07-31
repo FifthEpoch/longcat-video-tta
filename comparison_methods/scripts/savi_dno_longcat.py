@@ -994,6 +994,20 @@ def main():
         split_dit_across_gpus(dit, split_block=24,
                               device0="cuda:0", device1="cuda:1")
 
+    # Single-GPU memory relief: the differentiable DiT backprop needs almost the
+    # whole H200 (~137 GiB), and the earlier 1-GPU run OOM'd by only ~200 MiB.
+    # The large T5 text encoder (~20 GiB) is only needed to encode the prompt
+    # ONCE per video and is dead weight on the GPU during the DiT sampler (where
+    # the OOM occurs). So in single-GPU mode we keep T5 on CPU and page it to the
+    # GPU only for the brief per-video prompt encode -> frees ~20 GiB, far more
+    # than the deficit, at ~a few seconds/video (negligible vs ~413 s/video).
+    offload_text_encoder = (args.num_gpus < 2)
+    if offload_text_encoder:
+        text_encoder.to("cpu")
+        torch.cuda.empty_cache()
+        print("[mem] single-GPU: T5 text encoder offloaded to CPU (paged to GPU "
+              "only during prompt encoding) to free ~20 GiB for the DiT sampler.")
+
     # Feature model only needed for pixel-loss mode
     feature_model = None
     if not args.no_optimize and not use_latent_loss and args.lam > 0:
@@ -1084,17 +1098,21 @@ def main():
     # ------------------------------------------------------------------
     # Checkpoint / resume.  We persist the pooled FVD/FID sufficient
     # statistics (sum + outer-product covariance), running PSNR/SSIM/LPIPS
-    # totals, per-video results and a next-index cursor after EVERY video.
-    # On restart we skip already-done videos and restore the accumulators
-    # exactly, so a job cancelled by the low-GPU-util policy / preemption
-    # can be requeued and finish the pooled metrics without double-counting.
-    # video_list is metadata.csv order sliced by max_videos -> deterministic,
-    # so resume-by-index is safe as long as (method, max_videos) match.
+    # totals and per-video results after EVERY video, and restore them exactly
+    # on restart so a job cancelled by the low-GPU-util policy / preemption can
+    # be requeued and finish the pooled metrics without double-counting.
+    #
+    # Resume is SUCCESS-based: we skip only videos already recorded as
+    # successful, and re-attempt failures (OOM/transient). Failure entries are
+    # dropped on reload so they line up with the accumulators (which only ever
+    # counted successes) and are retried cleanly. This is what lets you simply
+    # resubmit after the memory fix -- the earlier all-OOM run recorded 0
+    # successes, so nothing is skipped.
     # ------------------------------------------------------------------
     resume_state_path = output_dir / "resume_state.npz"
-    start_idx = 0
+    done_ids: set = set()
 
-    def _save_resume_state(next_idx):
+    def _save_resume_state():
         tmp = str(resume_state_path) + ".tmp.npz"
         np.savez(
             tmp,
@@ -1102,7 +1120,7 @@ def main():
             gen_fid_sum=gen_fid_sum, gen_fid_cov=gen_fid_cov,
             ref_fvd_sum=ref_fvd_sum, ref_fvd_cov=ref_fvd_cov,
             ref_fid_sum=ref_fid_sum, ref_fid_cov=ref_fid_cov,
-            counts=np.array([next_idx, fvd_count, fid_gen_frames,
+            counts=np.array([len(done_ids), fvd_count, fid_gen_frames,
                              ref_fvd_count, fid_ref_frames, n_ok],
                             dtype=np.int64),
             totals=np.array([total_psnr, total_ssim, total_lpips],
@@ -1125,7 +1143,6 @@ def main():
                       "starting fresh." % (resume_state_path, meta))
             else:
                 counts = st["counts"]
-                start_idx = int(counts[0])
                 fvd_count = int(counts[1]); fid_gen_frames = int(counts[2])
                 n_ok = int(counts[5])
                 gen_fvd_sum = st["gen_fvd_sum"].astype(np.float64)
@@ -1135,7 +1152,9 @@ def main():
                 tot = st["totals"]
                 total_psnr = float(tot[0]); total_ssim = float(tot[1])
                 total_lpips = float(tot[2])
-                results = list(st["results"])
+                # Keep only SUCCESS entries; failures are dropped and retried.
+                results = [r for r in list(st["results"]) if r.get("success")]
+                done_ids = {r["video"] for r in results}
                 # Only restore the reference accumulators when they are being
                 # built online (no GT cache). With a GT cache the reference is
                 # static and already loaded above -> do NOT overwrite it.
@@ -1145,25 +1164,26 @@ def main():
                     ref_fid_sum = st["ref_fid_sum"].astype(np.float64)
                     ref_fid_cov = st["ref_fid_cov"].astype(np.float64)
                     ref_fvd_count = int(counts[3]); fid_ref_frames = int(counts[4])
-                print("  [resume] restored state from %s: skipping first %d "
-                      "videos (n_ok=%d, fvd_count=%d)."
-                      % (resume_state_path, start_idx, n_ok, fvd_count))
+                print("  [resume] restored state from %s: %d videos already "
+                      "succeeded (n_ok=%d, fvd_count=%d) -> skipping those, "
+                      "retrying the rest."
+                      % (resume_state_path, len(done_ids), n_ok, fvd_count))
         except Exception as _e:
             print("  [resume] failed to load %s (%s) -> starting fresh."
                   % (resume_state_path, _e))
-            start_idx = 0
+            done_ids = set()
 
     for idx, entry in enumerate(tqdm(video_list, desc=method_name)):
-        if idx < start_idx:
-            continue
         video_name = entry.get("video_name", entry.get("filename", ""))
+        if video_name in done_ids:
+            continue
         video_filename = entry.get("filename", video_name)
         video_path = os.path.join(args.data_dir, "videos", video_filename)
 
         if not os.path.exists(video_path):
             results.append({"video": video_name, "success": False, "error": "not_found"})
             if not args.no_resume:
-                _save_resume_state(idx + 1)
+                _save_resume_state()
             continue
 
         try:
@@ -1171,11 +1191,18 @@ def main():
             savi.reset()
             t_start = time.time()
 
-            # Encode text prompt once per video
+            # Encode text prompt once per video. In single-GPU mode page the T5
+            # encoder onto the GPU only for this call, then evict it so it does
+            # not occupy ~20 GiB during the differentiable DiT sampler.
+            if offload_text_encoder:
+                text_encoder.to(device)
             prompt_embeds, prompt_mask = encode_prompt(
                 tokenizer, text_encoder,
                 prompt=caption, device=device, dtype=torch.bfloat16,
             )
+            if offload_text_encoder:
+                text_encoder.to("cpu")
+                torch.cuda.empty_cache()
 
             # ----------------------------------------------------------------
             # Frame windows (leakage-free fair protocol):
@@ -1357,6 +1384,7 @@ def main():
             total_ssim += ssim
             total_lpips += lpips_val if lpips_val == lpips_val else 0.0
             n_ok += 1
+            done_ids.add(video_name)
 
             # Free memory
             del pred_pixels, pixel_cond, pixel_gt, gt_01, cond_latents
@@ -1374,7 +1402,7 @@ def main():
         # cancellation can be requeued without losing progress or corrupting the
         # pooled FVD/FID sufficient statistics.
         if not args.no_resume:
-            _save_resume_state(idx + 1)
+            _save_resume_state()
 
     # --- Compute FVD/FID ---
     fvd_val = None
