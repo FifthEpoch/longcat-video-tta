@@ -429,6 +429,106 @@ def split_dit_across_gpus(dit, split_block=24, device0="cuda:0", device1="cuda:1
     return dit
 
 
+def enable_single_gpu_block_checkpointing(dit, device="cuda:0"):
+    """Monkey-patch the DiT forward to checkpoint EACH transformer block on one GPU.
+
+    The stock LongCat DiT forward runs its 48-block loop without checkpointing,
+    so a single differentiable pass materialises every block's activations at
+    once (~139 GiB) and OOMs one H200 by ~200 MiB (confirmed: memory-in-use is
+    the same with or without the T5 encoder offloaded, i.e. it is the DiT, not
+    T5). Wrapping each block in torch.utils.checkpoint caps the live activation
+    at ~one block (~tens of GiB), so it fits one H200 with large headroom, at
+    the cost of one recompute per block in backward. Mirrors the embedder /
+    masking / final-layer logic of ``split_dit_across_gpus`` but keeps
+    everything on one device. Pair with SAViDNO.gradient_checkpointing=False so
+    we do single-level (per-block) checkpointing, not nested step+block.
+    """
+    import types
+    _dev = device
+
+    def _forward_1gpu_ckpt(
+        self,
+        hidden_states,
+        timestep,
+        encoder_hidden_states,
+        encoder_attention_mask=None,
+        num_cond_latents=0,
+        **kwargs,
+    ):
+        hidden_states = hidden_states.to(_dev)
+        timestep = timestep.to(_dev)
+        encoder_hidden_states = encoder_hidden_states.to(_dev)
+        if encoder_attention_mask is not None:
+            encoder_attention_mask = encoder_attention_mask.to(_dev)
+
+        B, _, T, H, W = hidden_states.shape
+        N_t = T // self.patch_size[0]
+        N_h = H // self.patch_size[1]
+        N_w = W // self.patch_size[2]
+
+        if len(timestep.shape) == 1:
+            timestep = timestep.unsqueeze(1).expand(-1, N_t)
+
+        dtype = self.x_embedder.proj.weight.dtype
+        hidden_states = hidden_states.to(dtype)
+        timestep = timestep.to(dtype)
+        encoder_hidden_states = encoder_hidden_states.to(dtype)
+
+        hidden_states = self.x_embedder(hidden_states)
+
+        with torch.amp.autocast("cuda", dtype=torch.float32):
+            t = self.t_embedder(
+                timestep.float().flatten(), dtype=torch.float32
+            ).reshape(B, N_t, -1)
+
+        encoder_hidden_states = self.y_embedder(encoder_hidden_states)
+
+        if self.text_tokens_zero_pad and encoder_attention_mask is not None:
+            encoder_hidden_states = (
+                encoder_hidden_states * encoder_attention_mask[:, None, :, None]
+            )
+            encoder_attention_mask = (
+                (encoder_attention_mask * 0 + 1).to(encoder_attention_mask.dtype)
+            )
+
+        if encoder_attention_mask is not None:
+            encoder_attention_mask = encoder_attention_mask.squeeze(1).squeeze(1)
+            encoder_hidden_states = (
+                encoder_hidden_states.squeeze(1)
+                .masked_select(encoder_attention_mask.unsqueeze(-1) != 0)
+                .view(1, -1, hidden_states.shape[-1])
+            )
+            y_seqlens = encoder_attention_mask.sum(dim=1).tolist()
+        else:
+            y_seqlens = [encoder_hidden_states.shape[2]] * encoder_hidden_states.shape[0]
+            encoder_hidden_states = encoder_hidden_states.squeeze(1).view(
+                1, -1, hidden_states.shape[-1]
+            )
+
+        latent_shape = (N_t, N_h, N_w)
+
+        for block in self.blocks:
+            if torch.is_grad_enabled():
+                hidden_states = ckpt_fn(
+                    block, hidden_states, encoder_hidden_states, t,
+                    y_seqlens, latent_shape, num_cond_latents,
+                    use_reentrant=False,
+                )
+            else:
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, t,
+                    y_seqlens, latent_shape, num_cond_latents,
+                )
+
+        hidden_states = self.final_layer(hidden_states, t, latent_shape)
+        hidden_states = self.unpatchify(hidden_states, N_t, N_h, N_w)
+        hidden_states = hidden_states.to(torch.float32)
+        return hidden_states
+
+    dit.forward = types.MethodType(_forward_1gpu_ckpt, dit)
+    return dit
+
+
 # ============================================================================
 # SAViDNO_LongCat — core class
 # ============================================================================
@@ -989,24 +1089,22 @@ def main():
     vae.eval()
     text_encoder.eval()
 
-    # 2-GPU model parallelism: split DiT blocks across devices
-    if args.num_gpus >= 2 and torch.cuda.device_count() >= 2:
+    # Memory strategy by GPU count:
+    #   2 GPUs -> split the DiT blocks across devices (halves per-GPU activation)
+    #   1 GPU  -> per-block gradient checkpointing so a single differentiable DiT
+    #             pass keeps only ~one block live instead of all 48 (~139 GiB ->
+    #             OOMs one H200 by ~200 MiB). Confirmed the DiT (not T5) is the
+    #             cost: memory-in-use was identical with T5 offloaded. Block
+    #             checkpointing fits one H200 with headroom (extra recompute in
+    #             backward -> slower, but ~100% util and no OOM).
+    single_gpu = (args.num_gpus < 2 or torch.cuda.device_count() < 2)
+    if not single_gpu:
         split_dit_across_gpus(dit, split_block=24,
                               device0="cuda:0", device1="cuda:1")
-
-    # Single-GPU memory relief: the differentiable DiT backprop needs almost the
-    # whole H200 (~137 GiB), and the earlier 1-GPU run OOM'd by only ~200 MiB.
-    # The large T5 text encoder (~20 GiB) is only needed to encode the prompt
-    # ONCE per video and is dead weight on the GPU during the DiT sampler (where
-    # the OOM occurs). So in single-GPU mode we keep T5 on CPU and page it to the
-    # GPU only for the brief per-video prompt encode -> frees ~20 GiB, far more
-    # than the deficit, at ~a few seconds/video (negligible vs ~413 s/video).
-    offload_text_encoder = (args.num_gpus < 2)
-    if offload_text_encoder:
-        text_encoder.to("cpu")
-        torch.cuda.empty_cache()
-        print("[mem] single-GPU: T5 text encoder offloaded to CPU (paged to GPU "
-              "only during prompt encoding) to free ~20 GiB for the DiT sampler.")
+    else:
+        enable_single_gpu_block_checkpointing(dit, device=str(device))
+        print("[mem] single-GPU: enabled per-block gradient checkpointing in the "
+              "DiT forward (caps live activation at ~1 block) to fit one H200.")
 
     # Feature model only needed for pixel-loss mode
     feature_model = None
@@ -1029,6 +1127,12 @@ def main():
         reg_weight=reg_weight,
         noise_interp=_noise_interp,
     )
+
+    # Single GPU already checkpoints at the block level inside the DiT forward,
+    # so turn OFF the Euler-step-level checkpoint to avoid nested (step x block)
+    # double recompute. On 2 GPUs we keep step-level checkpointing as before.
+    if single_gpu:
+        savi.gradient_checkpointing = False
 
     # --- Load metric models ---
     print("Loading metric models (LPIPS, I3D, InceptionV3)...")
@@ -1191,18 +1295,11 @@ def main():
             savi.reset()
             t_start = time.time()
 
-            # Encode text prompt once per video. In single-GPU mode page the T5
-            # encoder onto the GPU only for this call, then evict it so it does
-            # not occupy ~20 GiB during the differentiable DiT sampler.
-            if offload_text_encoder:
-                text_encoder.to(device)
+            # Encode text prompt once per video.
             prompt_embeds, prompt_mask = encode_prompt(
                 tokenizer, text_encoder,
                 prompt=caption, device=device, dtype=torch.bfloat16,
             )
-            if offload_text_encoder:
-                text_encoder.to("cpu")
-                torch.cuda.empty_cache()
 
             # ----------------------------------------------------------------
             # Frame windows (leakage-free fair protocol):
