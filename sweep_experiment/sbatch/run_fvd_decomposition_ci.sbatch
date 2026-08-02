@@ -7,8 +7,17 @@
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:h200:1
 #SBATCH --account=torch_pr_36_mren
+#SBATCH --requeue
+#SBATCH --comment="preemption=yes;requeue=true"
 #SBATCH --output=sweep_experiment/slurm_log/fvd_decomp_ci_%j.out
 #SBATCH --error=sweep_experiment/slurm_log/fvd_decomp_ci_%j.err
+
+# NOTE (job 15139360 was CANCELLED at 02:10:47, ExitCode 0:0): this is Torch's
+# ~2h low-GPU-utilization auto-cancel, NOT the 8h wall clock. Extracting I3D
+# features for 14 policies x ~898 clips is DECODE-bound, so the GPU idles and
+# trips the <60% util policy. fvd_bootstrap_ci.py now caches per-policy features
+# under <output>/feat_cache, so just RESUBMIT this same sbatch: it reloads the
+# policies already done and continues. 2-3 resubmits will finish it.
 
 # ============================================================================
 # DECOMPOSE the real oracle FVD headroom (ΔFVD ~ -10 vs NO-TTA, CI excludes 0).

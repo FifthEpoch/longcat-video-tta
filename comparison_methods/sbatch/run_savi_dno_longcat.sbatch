@@ -21,9 +21,11 @@
 
 set -euo pipefail
 export PYTHONNOUSERSITE=1
-# Single-GPU differentiable DiT backprop runs right at the H200's 140 GiB edge;
-# reduce allocator fragmentation so the last ~hundreds of MiB don't OOM. Paired
-# with the in-script T5-offload-to-CPU (frees ~20 GiB during the sampler).
+# Single-GPU differentiable DiT backprop used to OOM by ~200 MiB because the
+# stock DiT forward ran its 48-block loop un-checkpointed (~139 GiB live). The
+# script now enables PER-BLOCK gradient checkpointing on 1 GPU (caps live
+# activation at ~1 block), so it fits one H200 with large headroom. Keep
+# expandable_segments to further reduce allocator fragmentation.
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
 echo "=============================================================================="

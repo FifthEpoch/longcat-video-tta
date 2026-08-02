@@ -125,6 +125,11 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", type=str, default="cuda")
     ap.add_argument("--output-dir", type=Path, required=True)
+    ap.add_argument(
+        "--feature-cache-dir", type=Path, default=None,
+        help="Where to cache per-policy I3D features for resume. "
+             "Default: <output-dir>/feat_cache. Delete to force re-extraction.",
+    )
     args = ap.parse_args()
 
     policies: List[Tuple[str, Path]] = []
@@ -149,14 +154,38 @@ def main() -> int:
     print("Loading I3D...", file=sys.stderr)
     i3d = _load_i3d(args.device)
 
+    # Per-policy feature cache so a job killed mid-extraction (e.g. Torch's ~2h
+    # low-GPU-util auto-cancel — this job is decode-bound, so the GPU idles and
+    # trips the policy) can be RESUBMITTED and skip already-extracted policies
+    # instead of re-doing everything from scratch (otherwise it can never finish
+    # on a 2h-cancel partition). Each policy is ~10 min, well within the window.
+    feat_cache_dir = args.feature_cache_dir or (args.output_dir / "feat_cache")
+    feat_cache_dir.mkdir(parents=True, exist_ok=True)
+
     feats_by_policy: Dict[str, Dict[str, np.ndarray]] = {}
     for name, vdir in policies:
+        cache_path = feat_cache_dir / f"{name}.npz"
+        if cache_path.exists():
+            d = np.load(cache_path, allow_pickle=True)
+            vids = [str(v) for v in d["vids"]]
+            feat = d["feats"]
+            feats_by_policy[name] = {v: feat[i] for i, v in enumerate(vids)}
+            print(f"[cache] {name}: {len(feats_by_policy[name])} clips "
+                  f"(loaded {cache_path})", file=sys.stderr)
+            continue
         print(f"Extracting I3D features: {name} <- {vdir}", file=sys.stderr)
         feats_by_policy[name] = _extract_policy_features(
             vdir, i3d, device=args.device, batch_size=args.batch_size,
             num_cond_frames=args.num_cond_frames, num_gen_frames=args.num_gen_frames,
         )
-        print(f"  {name}: {len(feats_by_policy[name])} clips", file=sys.stderr)
+        # atomic write so a cancel mid-save can't leave a corrupt cache
+        vids = list(feats_by_policy[name].keys())
+        feat = np.stack([feats_by_policy[name][v] for v in vids], axis=0)
+        tmp = cache_path.with_suffix(".npz.tmp")
+        np.savez(tmp, vids=np.array(vids, dtype=object), feats=feat)
+        tmp.rename(cache_path)
+        print(f"  {name}: {len(vids)} clips (extracted, cached -> {cache_path})",
+              file=sys.stderr)
 
     # matched set = ids present in every policy
     matched = set(feats_by_policy[names[0]])
