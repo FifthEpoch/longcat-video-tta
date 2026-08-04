@@ -565,6 +565,7 @@ class SAViDNO_LongCat:
         noise_interp: bool = True,
         generation_use_cfg: bool = False,
         generation_steps: Optional[int] = None,
+        generation_enhance_hf: bool = True,
     ):
         self.device = device
         self.dtype = dtype
@@ -583,6 +584,9 @@ class SAViDNO_LongCat:
         # optimization inner loop still uses num_inference_steps to stay cheap.
         self.generation_use_cfg = bool(generation_use_cfg)
         self.generation_steps = int(generation_steps) if generation_steps else int(num_inference_steps)
+        # generate_vc's enhance_hf reshapes the low-noise tail (uniform 500->0)
+        # for sharper high-frequency detail; on for the prediction passes.
+        self.generation_enhance_hf = bool(generation_enhance_hf)
         self.lr = lr
         self.lam = lam
         self.p = p
@@ -625,7 +629,7 @@ class SAViDNO_LongCat:
             )
         return self._null_embeds, self._null_mask
 
-    def _build_sigmas(self, n_steps: Optional[int] = None):
+    def _build_sigmas(self, n_steps: Optional[int] = None, enhance_hf: bool = False):
         """Build LongCat's flow-matching sigma schedule (from ~1.0 to 0.0).
 
         Matches pipeline_longcat_video.generate_vc: an EXPLICIT
@@ -639,6 +643,21 @@ class SAViDNO_LongCat:
         steps = int(n_steps) if n_steps else self.num_inference_steps
         sigmas = torch.linspace(1, 0.001, steps).to(torch.float32)
         self.scheduler.set_timesteps(steps, sigmas=sigmas, device=self.device)
+        if not enhance_hf:
+            return self.scheduler.sigmas
+        # enhance_hf (generate_vc): keep timesteps > 500 from the linspace, then
+        # append 10 uniform steps 500 -> 50 (np.linspace(500,0,10,endpoint=False)),
+        # then terminal sigma 0. Reshapes the low-noise tail for sharper detail.
+        timesteps = self.scheduler.timesteps
+        tail = (500.0 - 50.0 * torch.arange(
+            10, device=timesteps.device, dtype=torch.float32
+        ))  # [500, 450, ..., 50]
+        filtered = timesteps[timesteps > 500].to(torch.float32)
+        new_ts = torch.cat([filtered, tail])
+        self.scheduler.timesteps = new_ts
+        self.scheduler.sigmas = torch.cat(
+            [new_ts / 1000.0, torch.zeros(1, device=new_ts.device, dtype=torch.float32)]
+        )
         return self.scheduler.sigmas
 
     def _dit_forward_step(
@@ -699,7 +718,15 @@ class SAViDNO_LongCat:
             x_t, cond_latents, t_value, null_embeds, null_mask,
         )
 
-        return v_uncond + self.guidance_scale * (v_cond - v_uncond)
+        # Adaptive projected guidance (matches generate_vc's optimized_scale):
+        # rescale the uncond branch by its projection onto the cond branch before
+        # the guidance push, which avoids the over-saturation of vanilla CFG.
+        B = v_cond.shape[0]
+        pos = v_cond.reshape(B, -1).float()
+        neg = v_uncond.reshape(B, -1).float()
+        st = (pos * neg).sum(dim=1) / (neg.pow(2).sum(dim=1) + 1e-8)
+        st = st.view(B, *([1] * (v_cond.dim() - 1))).to(v_cond.dtype)
+        return v_uncond * st + self.guidance_scale * (v_cond - v_uncond * st)
 
     def _flow_euler_sample_differentiable(
         self,
@@ -709,6 +736,7 @@ class SAViDNO_LongCat:
         prompt_mask: torch.Tensor,
         use_cfg: bool = False,
         n_steps: Optional[int] = None,
+        enhance_hf: bool = False,
     ) -> torch.Tensor:
         """Euler flow-matching sampling with gradient flow to eps_init.
 
@@ -720,7 +748,7 @@ class SAViDNO_LongCat:
         inference." For a LongCat backbone pass use_cfg=True + n_steps=50 to
         match LongCat's real inference.
         """
-        sigmas = self._build_sigmas(n_steps)
+        sigmas = self._build_sigmas(n_steps, enhance_hf=enhance_hf)
         x_t = eps_init
 
         step_fn = self._dit_forward_step_cfg if use_cfg else self._dit_forward_step
@@ -906,6 +934,7 @@ class SAViDNO_LongCat:
             z_pred = self._flow_euler_sample_differentiable(
                 cond_latents, eps, prompt_embeds, prompt_mask,
                 use_cfg=self.generation_use_cfg, n_steps=self.generation_steps,
+                enhance_hf=self.generation_enhance_hf,
             )
             pred_pixels = decode_latents(self.vae, z_pred, denorm=True)
         return pred_pixels
@@ -944,6 +973,7 @@ class SAViDNO_LongCat:
             z_pred = self._flow_euler_sample_differentiable(
                 cond_latents, eps, prompt_embeds, prompt_mask,
                 use_cfg=self.generation_use_cfg, n_steps=self.generation_steps,
+                enhance_hf=self.generation_enhance_hf,
             )
             pred_pixels = decode_latents(self.vae, z_pred, denorm=True)
         return pred_pixels
@@ -1045,6 +1075,10 @@ def main():
                              "Defaults to --num-inference-steps. Decoupled from the differentiable "
                              "optimization inner loop, which stays at --num-inference-steps to keep "
                              "backprop memory/time bounded.")
+    parser.add_argument("--no-generation-enhance-hf", action="store_true",
+                        help="Disable generate_vc's enhance_hf tail (uniform 500->0 low-noise steps) "
+                             "in the prediction passes. enhance_hf is ON by default to match LongCat's "
+                             "real inference (sharper high-frequency detail).")
     args = parser.parse_args()
 
     # Resolve the noise-opt method into (regularizer, noise_interp, reg_weight).
@@ -1166,6 +1200,7 @@ def main():
         noise_interp=_noise_interp,
         generation_use_cfg=args.generation_cfg,
         generation_steps=args.generation_steps,
+        generation_enhance_hf=not args.no_generation_enhance_hf,
     )
 
     # Single GPU already checkpoints at the block level inside the DiT forward,
