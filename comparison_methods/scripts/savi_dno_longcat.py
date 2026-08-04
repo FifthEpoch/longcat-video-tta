@@ -626,13 +626,19 @@ class SAViDNO_LongCat:
         return self._null_embeds, self._null_mask
 
     def _build_sigmas(self, n_steps: Optional[int] = None):
-        """Build flow-matching sigma schedule from ~1.0 to 0.0.
+        """Build LongCat's flow-matching sigma schedule (from ~1.0 to 0.0).
+
+        Matches pipeline_longcat_video.generate_vc: an EXPLICIT
+        linspace(1, 0.001, steps) schedule passed to the scheduler, NOT the
+        scheduler's DEFAULT (resolution-shifted) sigmas. Using the default
+        sigmas gave the DiT the wrong per-token timestep conditioning.
 
         Returns scheduler.sigmas (N+1 values including terminal 0.0),
         NOT scheduler.timesteps (which are sigma*1000).
         """
         steps = int(n_steps) if n_steps else self.num_inference_steps
-        self.scheduler.set_timesteps(steps, device=self.device)
+        sigmas = torch.linspace(1, 0.001, steps).to(torch.float32)
+        self.scheduler.set_timesteps(steps, sigmas=sigmas, device=self.device)
         return self.scheduler.sigmas
 
     def _dit_forward_step(
@@ -735,7 +741,14 @@ class SAViDNO_LongCat:
                     x_t, cond_latents, t_curr, prompt_embeds, prompt_mask,
                 )
 
-            x_t = x_t + dt * v_pred.to(x_t.dtype)
+            # LongCat's real sampler NEGATES the DiT output before the Euler
+            # step (pipeline_longcat_video.generate_vc: `noise_pred = -noise_pred`
+            # then scheduler.step -> `sample + (sigma_next - sigma)*noise_pred`).
+            # Our previous `x_t += dt*v` had the WRONG SIGN, so it stepped away
+            # from clean and never denoised (output ~ decoded initial noise ->
+            # PSNR ~9 / SSIM ~0.05, identical regardless of CFG/steps). Negate to
+            # match: x_{i+1} = x_i + (sigma_next - sigma_cur)*(-v).
+            x_t = x_t - dt * v_pred.to(x_t.dtype)
 
         return x_t
 
