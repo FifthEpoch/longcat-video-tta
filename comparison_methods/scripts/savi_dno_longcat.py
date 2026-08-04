@@ -563,6 +563,8 @@ class SAViDNO_LongCat:
         regularizer: str = "none",
         reg_weight: float = 0.0,
         noise_interp: bool = True,
+        generation_use_cfg: bool = False,
+        generation_steps: Optional[int] = None,
     ):
         self.device = device
         self.dtype = dtype
@@ -574,6 +576,13 @@ class SAViDNO_LongCat:
 
         self.num_inference_steps = num_inference_steps
         self.guidance_scale = guidance_scale
+        # LongCat's real inference (generate_vc, ~19 dB) uses CFG on (guidance
+        # 4.0) and 50 Euler steps; the SAVi-DNO PVDM recipe used no-CFG / 10
+        # steps, which on a LongCat backbone yields near-garbage (SSIM~0.05).
+        # These control the (no-grad) PREDICTION passes only; the differentiable
+        # optimization inner loop still uses num_inference_steps to stay cheap.
+        self.generation_use_cfg = bool(generation_use_cfg)
+        self.generation_steps = int(generation_steps) if generation_steps else int(num_inference_steps)
         self.lr = lr
         self.lam = lam
         self.p = p
@@ -616,13 +625,14 @@ class SAViDNO_LongCat:
             )
         return self._null_embeds, self._null_mask
 
-    def _build_sigmas(self):
+    def _build_sigmas(self, n_steps: Optional[int] = None):
         """Build flow-matching sigma schedule from ~1.0 to 0.0.
 
         Returns scheduler.sigmas (N+1 values including terminal 0.0),
         NOT scheduler.timesteps (which are sigma*1000).
         """
-        self.scheduler.set_timesteps(self.num_inference_steps, device=self.device)
+        steps = int(n_steps) if n_steps else self.num_inference_steps
+        self.scheduler.set_timesteps(steps, device=self.device)
         return self.scheduler.sigmas
 
     def _dit_forward_step(
@@ -692,6 +702,7 @@ class SAViDNO_LongCat:
         prompt_embeds: torch.Tensor,
         prompt_mask: torch.Tensor,
         use_cfg: bool = False,
+        n_steps: Optional[int] = None,
     ) -> torch.Tensor:
         """Euler flow-matching sampling with gradient flow to eps_init.
 
@@ -700,9 +711,10 @@ class SAViDNO_LongCat:
 
         PVDM-style (default): single DiT pass per step, no CFG.
         Matches SAVi-DNO paper: "For PVDM, we do not use guidance during
-        inference."
+        inference." For a LongCat backbone pass use_cfg=True + n_steps=50 to
+        match LongCat's real inference.
         """
-        sigmas = self._build_sigmas()
+        sigmas = self._build_sigmas(n_steps)
         x_t = eps_init
 
         step_fn = self._dit_forward_step_cfg if use_cfg else self._dit_forward_step
@@ -880,6 +892,7 @@ class SAViDNO_LongCat:
             eps = torch.randn(target_latent_shape, device=self.device, dtype=torch.float32)
             z_pred = self._flow_euler_sample_differentiable(
                 cond_latents, eps, prompt_embeds, prompt_mask,
+                use_cfg=self.generation_use_cfg, n_steps=self.generation_steps,
             )
             pred_pixels = decode_latents(self.vae, z_pred, denorm=True)
         return pred_pixels
@@ -917,6 +930,7 @@ class SAViDNO_LongCat:
                 )
             z_pred = self._flow_euler_sample_differentiable(
                 cond_latents, eps, prompt_embeds, prompt_mask,
+                use_cfg=self.generation_use_cfg, n_steps=self.generation_steps,
             )
             pred_pixels = decode_latents(self.vae, z_pred, denorm=True)
         return pred_pixels
@@ -1007,6 +1021,17 @@ def main():
                         help="Weight of the in-distribution regularizer for --method dno / "
                              "direct_noise_opt. <0 (default) uses the method's built-in default "
                              "(dno=1.0, direct_noise_opt=0.01). Ignored for --method savi_dno.")
+    parser.add_argument("--generation-cfg", action="store_true",
+                        help="Use classifier-free guidance in the (no-grad) PREDICTION passes "
+                             "(predict_no_optimize / generate_with_optimized_eps). LongCat's real "
+                             "inference uses CFG; the SAVi-DNO PVDM recipe did not, which on a "
+                             "LongCat backbone produces near-garbage (SSIM~0.05). ON for a faithful "
+                             "LongCat baseline; does NOT touch the differentiable optimization loop.")
+    parser.add_argument("--generation-steps", type=int, default=None,
+                        help="Euler steps for the (no-grad) PREDICTION passes (LongCat real uses 50). "
+                             "Defaults to --num-inference-steps. Decoupled from the differentiable "
+                             "optimization inner loop, which stays at --num-inference-steps to keep "
+                             "backprop memory/time bounded.")
     args = parser.parse_args()
 
     # Resolve the noise-opt method into (regularizer, noise_interp, reg_weight).
@@ -1126,6 +1151,8 @@ def main():
         regularizer=_reg_key,
         reg_weight=reg_weight,
         noise_interp=_noise_interp,
+        generation_use_cfg=args.generation_cfg,
+        generation_steps=args.generation_steps,
     )
 
     # Single GPU already checkpoints at the block level inside the DiT forward,

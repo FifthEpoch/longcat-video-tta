@@ -149,6 +149,21 @@ fi
 echo "Save videos  : ${SAVE_FLAG:-NO (metrics only)}"
 echo "VBench       : ${VBENCH_FLAG:-OFF}"
 
+# LongCat's real inference uses CFG + 50 Euler steps; the SAVi-DNO PVDM recipe
+# (no CFG, 10 steps) yields near-garbage (SSIM~0.05) on a LongCat backbone.
+# Set SAVI_GENERATION_CFG=1 and SAVI_GENERATION_STEPS=50 for a faithful LongCat
+# prediction. These affect only the no-grad prediction passes, not the
+# differentiable optimization loop (which stays at SAVI_EULER_STEPS).
+GEN_CFG_FLAG=""
+if [ "${SAVI_GENERATION_CFG:-0}" = "1" ]; then
+    GEN_CFG_FLAG="--generation-cfg"
+fi
+GEN_STEPS_FLAG=""
+if [ -n "${SAVI_GENERATION_STEPS:-}" ]; then
+    GEN_STEPS_FLAG="--generation-steps ${SAVI_GENERATION_STEPS}"
+fi
+echo "Gen CFG      : ${GEN_CFG_FLAG:-OFF}   Gen steps: ${SAVI_GENERATION_STEPS:-<same as euler>}"
+
 # ============================================================================
 # Run SAVi-DNO with LongCat backbone
 # ============================================================================
@@ -171,6 +186,8 @@ echo "VBench       : ${VBENCH_FLAG:-OFF}"
     --method "${NOISE_OPT_METHOD}" \
     --reg-weight "${NOISE_OPT_REG_WEIGHT:--1}" \
     --seed 42 \
+    ${GEN_CFG_FLAG} \
+    ${GEN_STEPS_FLAG} \
     ${NO_OPT_FLAG} \
     ${LOSS_FLAG} \
     ${ORACLE_FLAG} \
