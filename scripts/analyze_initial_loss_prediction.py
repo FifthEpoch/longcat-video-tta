@@ -321,7 +321,11 @@ def main() -> int:
     grid_metric = np.full((len(video_ids), len(grid_runs)), NAN)
     for j, rid in enumerate(grid_runs):
         grid_metric[:, j] = [_f(grid_recs[rid][v].get(args.metric)) for v in video_ids]
-    oracle12 = np.nanmax(grid_metric, axis=1) if higher_better else np.nanmin(grid_metric, axis=1)
+    has_any = np.isfinite(grid_metric).any(axis=1)
+    oracle12 = np.full(len(video_ids), NAN)
+    with np.errstate(all="ignore"):
+        oracle12[has_any] = (np.nanmax(grid_metric[has_any], axis=1) if higher_better
+                             else np.nanmin(grid_metric[has_any], axis=1))
     oracle12_gain = (oracle12 - notta_metric) if higher_better else (notta_metric - oracle12)
 
     m = np.isfinite(fixed_gain)
@@ -354,15 +358,24 @@ def main() -> int:
     c2, c2l, c2h = boot_ci_stat(lambda a: a.mean(), relu_neg, n_boot=args.n_boot)
     fg_mean, fgl, fgh = boot_ci_stat(lambda a: a.mean(), fg, n_boot=args.n_boot)
     frac_help = float((fg > 0).mean())
+    # MAX-OVER-NOISE decomposition. E[relu(-g)] = (E|g| - E[g]) / 2. When the
+    # population effect E[g] ~ 0 (its CI includes 0), the "perfect-gate-vs-fixed"
+    # ceiling collapses to E|g|/2 = pure measurement noise, i.e. the apparent
+    # headroom is manufactured by maxing over noisy per-video draws, not signal.
+    noise_floor = float(np.mean(np.abs(fg)) / 2.0)
+    pop_effect_null = (fgl < 0 < fgh)
     print(f"fraction of videos where fixed > no-TTA : {frac_help:.1%}")
-    print(f"always-fixed gain vs no-TTA             : {fg_mean:+.4f} [{fgl:+.4f},{fgh:+.4f}] dB")
-    print(f"PERFECT-gate headroom vs always-no-TTA  : {c1:+.4f} [{c1l:+.4f},{c1h:+.4f}] dB "
-          f"({'REAL' if c1l > 0 else 'null'})")
-    print(f"PERFECT-gate headroom vs always-fixed   : {c2:+.4f} [{c2l:+.4f},{c2h:+.4f}] dB "
-          f"({'REAL' if c2l > 0 else 'null'})")
+    print(f"always-fixed gain vs no-TTA (pop effect): {fg_mean:+.4f} [{fgl:+.4f},{fgh:+.4f}] dB "
+          f"({'~0 (null)' if pop_effect_null else 'nonzero'})")
+    print(f"PERFECT-gate headroom vs always-no-TTA  : {c1:+.4f} [{c1l:+.4f},{c1h:+.4f}] dB")
+    print(f"PERFECT-gate headroom vs always-fixed   : {c2:+.4f} [{c2l:+.4f},{c2h:+.4f}] dB")
+    print(f"noise-floor E|gain|/2 (pure max-o-noise): {noise_floor:+.4f} dB")
+    ceiling_is_artifact = pop_effect_null and abs(c2 - noise_floor) < max(0.01, 0.15 * noise_floor)
+    print(f"  -> ceiling {'≈' if ceiling_is_artifact else 'vs'} noise-floor => "
+          f"{'MAX-OVER-NOISE ARTIFACT (no real per-video signal)' if ceiling_is_artifact else 'may contain real signal'}")
     o12, o12l, o12h = boot_ci_stat(lambda a: a.mean(), oracle12_gain[np.isfinite(oracle12_gain)],
                                    n_boot=args.n_boot)
-    print(f"[ref] 12-config oracle (max-over-noise) : {o12:+.4f} [{o12l:+.4f},{o12h:+.4f}] dB")
+    print(f"[ref] 12-config oracle (more noise draws): {o12:+.4f} [{o12l:+.4f},{o12h:+.4f}] dB")
 
     labels = (fg > 0).astype(float)
     # predictability: AUC of each probe feature + OOF ridge-probe
@@ -394,8 +407,8 @@ def main() -> int:
     else:
         verdict.append("Q1: NO probe feature shows a CI-significant link to per-video gain.")
     verdict.append(
-        f"Q2 ceiling: perfect gate {'CAN' if c1l > 0 else 'CANNOT'} beat no-TTA and "
-        f"{'CAN' if c2l > 0 else 'CANNOT'} beat always-fixed (CI vs 0)."
+        f"Q2 ceiling: perfect-gate-vs-fixed headroom {c2:+.4f} dB "
+        f"{'≈ noise floor E|g|/2=' + format(noise_floor, '+.4f') + ' => MAX-OVER-NOISE ARTIFACT (population effect ~0)' if ceiling_is_artifact else 'exceeds noise floor => may be real signal'}."
     )
     verdict.append(
         f"Q2 deployable: OOF gate {'beats' if pgl > 0 else 'does NOT beat'} no-TTA; "
@@ -422,6 +435,8 @@ def main() -> int:
             "q2_always_fixed_gain": {"mean": fg_mean, "ci": [fgl, fgh]},
             "q2_perfect_gate_vs_notta": {"mean": c1, "ci": [c1l, c1h]},
             "q2_perfect_gate_vs_fixed": {"mean": c2, "ci": [c2l, c2h]},
+            "q2_noise_floor_abs_g_over_2": noise_floor,
+            "q2_ceiling_is_maxovernoise_artifact": bool(ceiling_is_artifact),
             "q2_oracle12_gain": {"mean": o12, "ci": [o12l, o12h]},
             "q2_gate_auc_oof": auc_oof,
             "q2_oof_gate_vs_notta": {"mean": pg, "ci": [pgl, pgh]},
