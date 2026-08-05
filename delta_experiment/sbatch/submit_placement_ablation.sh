@@ -24,6 +24,7 @@ set -euo pipefail
 SCRATCH_BASE="/scratch/${USER}"
 PROJECT_ROOT="${PROJECT_ROOT:-${SCRATCH_BASE}/longcat-video-tta}"
 SBATCH="${PROJECT_ROOT}/sweep_experiment/sbatch/run_sweep.sbatch"
+ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"   # Torch HPC project account (required)
 
 # --- shared config (held fixed across arms) --------------------------------
 SERIES_NAME="${SERIES_NAME:-placement_ablation_panda}"
@@ -50,6 +51,7 @@ RESID_MID_BLOCKS="${RESID_MID_BLOCKS:-}"   # set e.g. "20" to add a single-block
 
 echo "============================================================"
 echo "EXP2 placement ablation"
+echo "  account     : ${ACCOUNT}"
 echo "  series      : ${SERIES_NAME}"
 echo "  data_dir    : ${DATA_DIR}"
 echo "  max_videos  : ${MAX_VIDEOS}   seed=${SEED}"
@@ -73,9 +75,10 @@ submit_arm () {
   )
   echo "-> arm ${run_id}: placement=${placement} residual_blocks=${residual_blocks:-<auto>}"
   if [ "${DRY_RUN:-0}" = "1" ]; then
-    echo "   DRY: ${envs[*]} sbatch --job-name=exp2_${run_id} ${SBATCH}"
+    echo "   DRY: ${envs[*]} sbatch --account=${ACCOUNT} --job-name=exp2_${run_id} ${SBATCH}"
   else
-    sbatch --export=ALL,"$(IFS=,; echo "${envs[*]}")" \
+    sbatch --account="${ACCOUNT}" \
+           --export=ALL,"$(IFS=,; echo "${envs[*]}")" \
            --job-name="exp2_${run_id}" "${SBATCH}"
   fi
 }

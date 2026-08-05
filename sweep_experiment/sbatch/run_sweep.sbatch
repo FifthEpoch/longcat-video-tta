@@ -6,6 +6,7 @@
 #SBATCH --time=08:00:00
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:h200:1
+#SBATCH --account=torch_pr_36_mren
 #SBATCH --output=sweep_experiment/slurm_log/%x_%j.out
 #SBATCH --error=sweep_experiment/slurm_log/%x_%j.err
 # Allow preemptible H200 GPUs; cancelled jobs will be requeued (per cluster IT guidance)
