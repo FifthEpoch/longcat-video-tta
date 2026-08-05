@@ -44,10 +44,6 @@ _METHOD_DIRS = {
     "LORA_R8_TTA": "LORA_R8_TTA",
 }
 
-_METHOD_SUFFIX = {
-    "LORA_R8_TTA": "_lora",
-}
-
 
 def _numeric_id(video_name: str) -> Optional[int]:
     """``panda_0867`` -> 867 (matches post-rename ``867_*_<method>.mp4``)."""
@@ -71,49 +67,89 @@ def _load_chunk_summary_order(summary: dict) -> Dict[str, int]:
     return out
 
 
+_METHOD_SUFFIXES = (
+    "_lora.mp4",
+    "_full.mp4",
+    "_no-TTA.mp4",
+    "_adasteer.mp4",
+    "_delta_a.mp4",
+    "_tinylora.mp4",
+)
+
+
 def find_mp4(
     videos_dir: Path,
     video_name: str,
     idx_by_name: Dict[str, int],
-    *,
-    prefer_suffix: Optional[str] = None,
 ) -> Optional[Path]:
     """Locate generated mp4 for ``video_name`` (handles post-rename outputs).
 
-    Mirrors ``scripts/build_cover_image_filmstrips.py`` — NOTTA/AdaSteer
-    runs rename outputs to ``<idx>_<caption-slug>_..._<method>.mp4`` while
-    LoRA keeps ``<video_name>_lora.mp4``.
-
-    When ``prefer_suffix`` is set (e.g. ``"_lora"`` for LORA_R8_TTA), that
-    variant is tried before the bare ``<video_name>.mp4`` so a stray GT copy
-    named ``panda_XXXX.mp4`` cannot shadow ``panda_XXXX_lora.mp4``.
+    Chunk ``videos/`` dirs often contain bare ``panda_XXXX.mp4`` GT source
+    copies alongside generated outputs.  Always prefer method-specific
+    suffixes (``_full.mp4``, ``_delta_a.mp4``, ``_lora.mp4``) and post-rename
+    ``<idx>_*.mp4`` files before the bare GT name — otherwise offline FVD
+    scores the wrong temporal region and inflates ~60 pts vs headline.
     """
     if not videos_dir.is_dir():
         return None
-    if prefer_suffix:
-        pref = videos_dir / f"{video_name}{prefer_suffix}.mp4"
-        if pref.exists():
-            return pref
-    direct = videos_dir / f"{video_name}.mp4"
-    if direct.exists():
-        return direct
-    pre = sorted(videos_dir.glob(f"{video_name}*.mp4"))
-    if pre:
-        return pre[0]
+
+    for suffix in _METHOD_SUFFIXES:
+        p = videos_dir / f"{video_name}{suffix}"
+        if p.exists():
+            return p
+
     nid = _numeric_id(video_name)
     if nid is not None:
         num_glob = sorted(videos_dir.glob(f"{nid}_*.mp4"))
         if num_glob:
             return num_glob[0]
+
     idx = idx_by_name.get(video_name)
     if idx is not None:
         post = sorted(videos_dir.glob(f"{idx}_*.mp4"))
         if post:
             return post[0]
-    sub = list(videos_dir.glob(f"*{video_name}*.mp4"))
-    if len(sub) == 1:
-        return sub[0]
+
+    pre = sorted(
+        p for p in videos_dir.glob(f"{video_name}*.mp4")
+        if p.name != f"{video_name}.mp4"
+    )
+    if pre:
+        return pre[0]
+
+    # Never fall back to bare ``panda_XXXX.mp4`` in chunk dirs — those are
+    # almost always GT source copies and inflate offline FVD ~60 pts.
     return None
+
+
+def _mp4_readable(path: Path, *, min_frames: int = 28) -> bool:
+    """Return True if PyAV can open and decode at least *min_frames* frames.
+
+    Oracle FVD scores frames [14:28] (14 cond + 14 gen).  Truncated outputs
+    (``moov atom not found``) fail here so eval_fvd does not silently drop
+    pairs and shrink ``num_valid_pairs``.
+    """
+    try:
+        import av
+    except ImportError:
+        return True  # defer to eval_fvd when av unavailable at build time
+
+    try:
+        container = av.open(str(path))
+    except Exception:
+        return False
+
+    n = 0
+    try:
+        for _ in container.decode(video=0):
+            n += 1
+            if n >= min_frames:
+                break
+    except Exception:
+        return False
+    finally:
+        container.close()
+    return n >= min_frames
 
 
 def _is_under_dir(path: Path, parent: Optional[Path]) -> bool:
@@ -167,21 +203,19 @@ def index_method_videos(
 
             candidates: List[Path] = []
             # Prefer the exact per-record output_path first: it is authoritative
-            # and 1:1, avoiding find_mp4's fuzzy-glob collisions (e.g. the EXP2
-            # placement arms, where {nid}_*/{idx}_* globs collapse many records
-            # onto the same file). Guarded by .exists(), so runs that renamed
-            # their outputs post-summary (1000v NOTTA/AdaSteer) fall back to
-            # find_mp4 exactly as before — no regression.
+            # and 1:1, avoiding find_mp4's glob heuristics collapsing multiple
+            # records onto the same file (e.g. the EXP2 placement arms, where
+            # {idx}_*/{name}* globs collided 80 records onto 42 files and tripped
+            # the FVD scorer's non-bijective guard). Guarded by .exists(), so any
+            # run whose output_path no longer resolves falls back to find_mp4
+            # exactly as before — no regression for existing callers.
             op = rec.get("output_path")
             if op and videos_dir.is_dir():
                 p = Path(op).resolve()
                 if p.exists() and p.suffix.lower() == ".mp4" and _is_under_dir(p, videos_dir):
                     candidates.append(p)
 
-            mp4 = find_mp4(
-                videos_dir, vname, idx_by_name,
-                prefer_suffix=_METHOD_SUFFIX.get(method),
-            )
+            mp4 = find_mp4(videos_dir, vname, idx_by_name)
             if mp4 is not None:
                 candidates.append(mp4.resolve())
 
@@ -313,6 +347,13 @@ def build_policy_dir(
                 continue
             except ValueError:
                 pass
+        if not _mp4_readable(src):
+            missing.append(f"{vid}->UNREADABLE({src.name})")
+            print(
+                f"  SKIP unreadable mp4: {vid} <- {src}",
+                file=sys.stderr,
+            )
+            continue
         dst = out_dir / f"{vid}.mp4"
         if dst.exists() or dst.is_symlink():
             dst.unlink()
