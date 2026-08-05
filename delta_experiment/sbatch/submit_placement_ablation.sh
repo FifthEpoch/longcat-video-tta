@@ -60,6 +60,8 @@ echo "  delta       : steps=${DELTA_STEPS} lr=${DELTA_LR}"
 echo "  vbench=${COMPUTE_VBENCH} fvd=${COMPUTE_FVD} save_videos=$([ "${NO_SAVE_VIDEOS}" = 1 ] && echo no || echo yes)"
 echo "============================================================"
 
+GEN_JOB_IDS=()   # collected for the afterok eval dependency
+
 submit_arm () {
   local run_id="$1" placement="$2" residual_blocks="$3"
   local -a envs=(
@@ -77,9 +79,12 @@ submit_arm () {
   if [ "${DRY_RUN:-0}" = "1" ]; then
     echo "   DRY: ${envs[*]} sbatch --account=${ACCOUNT} --job-name=exp2_${run_id} ${SBATCH}"
   else
-    sbatch --account="${ACCOUNT}" \
+    local jid
+    jid=$(sbatch --parsable --account="${ACCOUNT}" \
            --export=ALL,"$(IFS=,; echo "${envs[*]}")" \
-           --job-name="exp2_${run_id}" "${SBATCH}"
+           --job-name="exp2_${run_id}" "${SBATCH}")
+    echo "   job ${jid}"
+    GEN_JOB_IDS+=("${jid}")
   fi
 }
 
@@ -89,10 +94,31 @@ if [ -n "${RESID_MID_BLOCKS}" ]; then
   submit_arm "ADA_RESID_MID" "residual" "${RESID_MID_BLOCKS}"
 fi
 
+# --- ALWAYS evaluate on ALL metrics: auto-chain FVD + 7-dim gen-only VBench ---
+# (afterok on both generation arms). Set AUTO_EVAL=0 to skip.
+AUTO_EVAL="${AUTO_EVAL:-1}"
+FVD_SBATCH="${PROJECT_ROOT}/sweep_experiment/sbatch/run_placement_arms_fvd.sbatch"
+VBENCH_SBATCH="${PROJECT_ROOT}/sweep_experiment/sbatch/run_placement_arms_vbench_geneval.sbatch"
+
+if [ "${AUTO_EVAL}" = "1" ] && [ "${DRY_RUN:-0}" != "1" ] && [ ${#GEN_JOB_IDS[@]} -gt 0 ]; then
+  DEP="afterok:$(IFS=:; echo "${GEN_JOB_IDS[*]}")"
+  echo ""
+  echo "Auto-eval (dependency=${DEP}):"
+  jid_vb=$(sbatch --parsable --account="${ACCOUNT}" --dependency="${DEP}" \
+      --export="ALL,SERIES=sweep_experiment/results/${SERIES_NAME},NUM_COND_FRAMES=${NUM_COND_FRAMES}" \
+      "${VBENCH_SBATCH}")
+  echo "  VBench(7-dim gen-only) job ${jid_vb}"
+  jid_fvd=$(sbatch --parsable --account="${ACCOUNT}" --dependency="${DEP}" \
+      --export="ALL,PLACEMENT_SERIES=sweep_experiment/results/${SERIES_NAME}" \
+      "${FVD_SBATCH}")
+  echo "  FVD(matched-N) job ${jid_fvd}"
+fi
+
 echo ""
-echo "Submitted. After completion, compare per-video ΔTTA-NOTTA between arms:"
-echo "  python3 scripts/analyze_population_effect.py \\"
+echo "After ALL jobs finish, all-metric per-video comparison (pixel + 7-dim VBench):"
+echo "  VBENCH_SUBDIR=vbench_results_geneval python3 scripts/analyze_population_effect.py \\"
 echo "    --series-root sweep_experiment/results/${SERIES_NAME} \\"
-echo "    --notta-run NOTTA --tta-run ADA_RESID \\"
-echo "    --out sweep_experiment/reports/per_video_analysis/popeffect_placement_resid.json"
-echo "  (repeat with --tta-run ADA_ADALN; NOTTA must be present/symlinked in the series)"
+echo "    --notta-run ADA_ADALN --tta-run ADA_RESID \\"
+echo "    --out sweep_experiment/reports/per_video_analysis/popeffect_resid_vs_adaln_allmetrics.json"
+echo "FVD table:"
+echo "  cat sweep_experiment/reports/budget_oracle_fvd_1000v_preview/placement_arms/placement_arms_fvd_summary.md"
