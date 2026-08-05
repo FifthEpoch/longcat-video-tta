@@ -162,6 +162,47 @@ def _is_under_dir(path: Path, parent: Optional[Path]) -> bool:
         return False
 
 
+_FINGERPRINT_RE = re.compile(
+    r"_PSNR-(-?\d+\.\d{3})_SSIM-(-?\d+\.\d{3})_LPIPS-(-?\d+\.\d{3})_"
+)
+
+
+def _build_metric_fingerprint_index(
+    videos_dir: Path,
+) -> Dict[Tuple[str, str, str], Optional[Path]]:
+    """Map ``(psnr, ssim, lpips)`` 3-decimal fingerprint -> mp4.
+
+    ``rename_videos.py`` rewrites saved clips to
+    ``<idx>_<slug>_..._PSNR-x.xxx_SSIM-x.xxx_LPIPS-x.xxx_..._<method>.mp4`` where
+    ``<idx>`` is the trailing digits of ``video_name``. For ``ytid_segN`` pools
+    (e.g. the EXP2 placement arms) that trailing number is the *seg index*, which
+    is NOT unique, so glob-by-index collapses many records onto one file. The
+    embedded metric fingerprint IS a unique per-video key, so we resolve by it.
+    Colliding fingerprints map to ``None`` so we never mis-resolve.
+    """
+    idx: Dict[Tuple[str, str, str], Optional[Path]] = {}
+    if not videos_dir.is_dir():
+        return idx
+    for p in videos_dir.glob("*.mp4"):
+        m = _FINGERPRINT_RE.search(p.name)
+        if not m:
+            continue
+        key = (m.group(1), m.group(2), m.group(3))
+        idx[key] = None if key in idx else p
+    return idx
+
+
+def _record_fingerprint_key(rec: dict) -> Optional[Tuple[str, str, str]]:
+    """Build the ``(psnr, ssim, lpips)`` 3-decimal key from a summary record."""
+    psnr, ssim, lpips_ = rec.get("psnr"), rec.get("ssim"), rec.get("lpips")
+    if psnr is None or ssim is None or lpips_ is None:
+        return None
+    try:
+        return (f"{float(psnr):.3f}", f"{float(ssim):.3f}", f"{float(lpips_):.3f}")
+    except (TypeError, ValueError):
+        return None
+
+
 def index_method_videos(
     series_root: Path,
     method: str,
@@ -192,6 +233,7 @@ def index_method_videos(
         with summary_path.open(encoding="utf-8") as f:
             summary = json.load(f)
         idx_by_name = _load_chunk_summary_order(summary)
+        fp_index = _build_metric_fingerprint_index(videos_dir)
 
         for rec in summary.get("results", []):
             if not rec.get("success", False):
@@ -202,19 +244,26 @@ def index_method_videos(
                 continue
 
             candidates: List[Path] = []
-            # Prefer the exact per-record output_path first: it is authoritative
-            # and 1:1, avoiding find_mp4's glob heuristics collapsing multiple
-            # records onto the same file (e.g. the EXP2 placement arms, where
-            # {idx}_*/{name}* globs collided 80 records onto 42 files and tripped
-            # the FVD scorer's non-bijective guard). Guarded by .exists(), so any
-            # run whose output_path no longer resolves falls back to find_mp4
-            # exactly as before — no regression for existing callers.
+            # 1) Exact per-record output_path (authoritative, 1:1). Guarded by
+            #    .exists(): runs that renamed their outputs post-summary (all the
+            #    metric-fingerprint renames) fall through to (2)/(3).
             op = rec.get("output_path")
             if op and videos_dir.is_dir():
                 p = Path(op).resolve()
                 if p.exists() and p.suffix.lower() == ".mp4" and _is_under_dir(p, videos_dir):
                     candidates.append(p)
 
+            # 2) Metric-fingerprint match for rename_videos.py outputs. Robust
+            #    where find_mp4's {idx}_* glob collides — e.g. ytid_segN pools
+            #    (EXP2 placement arms) whose trailing "index" is a non-unique seg
+            #    number. The (psnr,ssim,lpips) triple is a unique per-video key.
+            fp_key = _record_fingerprint_key(rec)
+            if fp_key is not None:
+                fp_hit = fp_index.get(fp_key)
+                if fp_hit is not None:
+                    candidates.append(fp_hit.resolve())
+
+            # 3) Legacy glob heuristics (bare panda_XXXX naming, etc.).
             mp4 = find_mp4(videos_dir, vname, idx_by_name)
             if mp4 is not None:
                 candidates.append(mp4.resolve())
