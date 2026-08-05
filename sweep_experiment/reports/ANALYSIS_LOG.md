@@ -1544,3 +1544,35 @@ single delta smeared across the band — objective-specific appearance/motion mu
 same-objective multi-vector is low-value since single delta already reaches only neutral;
 a real EXP2b needs OBJECTIVE-SPECIFIC losses (content vs motion), not just more vectors.
 Higher-EV pivots remain EXP1 (better gate signal) and EXP3 (TANGO noise-guidance FVD lever).
+
+---
+
+## 2026-08-05 — EXP2 placement ablation: ALL-METRIC close-out (null on target metrics)
+**Tags:** exp2, placement, adasteer, fvd, vbench, null-result
+**Refs:** sweep_experiment/reports/paper_tables/2026-08-05_placement_ablation_exp2.md;
+2026-08-04_literature_v2v_tta_directions.md; commit 61becb2
+
+Completed the full metric set for the AdaSteer vector-placement ablation (adaln vs
+mid-late residual, N=80 OOD-stratified preview, identical hp except --delta-placement).
+
+- PSNR/SSIM: RESID > ADALN is REAL (+0.0485 dB p=0.013; +0.0012 SSIM p=0.041) but the
+  effect is that global-AdaLN δ mildly HURTS (−0.04 dB vs no-TTA) and residual placement
+  only RECOVERS to no-TTA (RESID−NOTTA null). Neither beats no-TTA.
+- VBench++ 7-dim (gen-only, vbench_results_geneval): NO dimension moves (all CIs include
+  0). Online 3-dim values were conditioning-contaminated (subject_consistency 0.941→0.955
+  after gen-only recompute) — gen-only supersedes.
+- FVD (matched-N=80, preview GT cache, 14/14 window): NOTTA 814.60; ADALN 807.92 (−6.68);
+  RESID 808.87 (−5.73). Both <1% of baseline, no CI, and RANK-INCONSISTENT with pixel
+  (ADALN edges RESID on FVD, opposite of PSNR/SSIM) → treated as null/noise.
+
+VERDICT: placement is NOT the unlock. It is a real-but-negligible pixel lever and moves
+neither VBench nor FVD trustworthily. Continue with EXP3 (TANGO noise-gaussianity FVD
+guidance) and EXP1 (better per-video gate probe); deprioritize further placement work
+except the untested objective-specific multi-vector design (EXP2b).
+
+Tooling note: the placement arms' clips were metric-fingerprint renamed by
+rename_videos.py to <segidx>_<slug>_PSNR-.._SSIM-.._LPIPS-.._adasteer.mp4; for ytid_segN
+pools the <segidx> is a NON-unique seg number, which collided find_mp4's glob (80->42,
+non-bijective FVD crash). Fixed in build_oracle_policy_dirs.py (commit 61becb2) by
+resolving clips via the unique (psnr,ssim,lpips) fingerprint, with output_path/find_mp4
+fallbacks (no regression for panda_XXXX runs).
