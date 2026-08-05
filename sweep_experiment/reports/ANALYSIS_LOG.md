@@ -1511,3 +1511,36 @@ Deep review of V2V/continuation TTA to unblock the null AdaSteer story. Three fi
 DECISION: ranked next experiments in the memo — (1) re-probe gate with right signal,
 (2) vector-placement ablation [highest upside], (3) TANGO noise-guidance FVD lever,
 (4) streaming evolving-bias, (5) best-of-k -> FVD/VBench w/ multi-verifier.
+
+---
+
+## 2026-08-05 — EXP2 placement ablation: residual > adaln (REAL) but neither beats no-TTA
+tags: [placement, adasteer, residual-stream, exp2, negative-result, real-but-tiny]
+refs: sweep_experiment/reports/paper_tables/2026-08-05_placement_ablation_exp2.md;
+per_video_analysis/popeffect_resid_vs_adaln.json; popeffect_resid_vs_notta.json;
+popeffect_adaln_vs_notta.json; delta_experiment/scripts/run_delta_a.py (--delta-placement)
+
+Series placement_ablation_panda, N=80 OOD-stratified preview, delta_a S10, identical
+config across arms except injection site. Paired per-video Delta (better=+), bootstrap
+CI + sign-flip p:
+
+  RESID - ADALN (isolates placement): psnr +0.0485 [+0.0097,+0.0981] p=.013 REAL;
+    ssim +0.0012 [+0.0001,+0.0026] p=.041 REAL; lpips +0.0022 p=.105 null.
+  RESID - NOTTA: psnr +0.008 [-0.004,+0.022] p=.21 null; all null.
+  ADALN - NOTTA: psnr -0.040 [-0.090,-0.002] p=.076 null (mildly hurts); all null.
+  Means: RESID 19.305 ~= NOTTA 19.296 > ADALN 19.256.
+
+Reading: placement IS a real lever (residual beats the global-AdaLN delta, p=.013), but
+the whole effect is that the AdaLN delta mildly DEGRADES psnr and residual placement
+REMOVES that harm, landing back at no-TTA. Residual does NOT beat no-TTA. The 2026-08-04
+hypothesis (AdaLN = bad insertion site) is PARTIALLY confirmed: AdaLN is measurably worse
+than the mid-late residual band, but fixing placement only recovers to neutral, it does
+not unlock a gain. Methodological win: analyzer detected a real +0.05 dB effect at N=80
+(p=.013), so the vs-NOTTA nulls are TRUE nulls, not underpowering.
+
+Caveats: N=80; effect tiny (~0.05 dB); FVD NOT scored for arms (COMPUTE_FVD=0, NOTTA=157.05);
+single delta smeared across the band — objective-specific appearance/motion multi-vector
+(EXP2b) untested. DECISION: (a) score arms on FVD (cheap, clips saved); (b) a single-delta
+same-objective multi-vector is low-value since single delta already reaches only neutral;
+a real EXP2b needs OBJECTIVE-SPECIFIC losses (content vs motion), not just more vectors.
+Higher-EV pivots remain EXP1 (better gate signal) and EXP3 (TANGO noise-guidance FVD lever).
