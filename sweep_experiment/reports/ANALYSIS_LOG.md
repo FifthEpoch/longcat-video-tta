@@ -1477,3 +1477,37 @@ DECISION: long-horizon does not rescue AdaSteer for FVD/VBench. Pivot weight to 
 seed selection (real headroom from genuinely different videos; jobs 15284148-155 running).
 Still closing the user's router question by scoring the literal binary {best-config, NO-TTA}
 gate on FVD (build_router_fvd_dirs.py --actions 2).
+
+---
+
+## 2026-08-04 — Literature review: gate signal, vector placement, streaming (directions memo)
+tags: [literature, tta-gating, steering-vector-placement, streaming, long-horizon, directions]
+refs: sweep_experiment/reports/2026-08-04_literature_v2v_tta_directions.md
+
+Deep review of V2V/continuation TTA to unblock the null AdaSteer story. Three findings:
+
+1) Per-video "when to adapt" gates in the literature are NOT the final self-sup loss
+   (which we proved unpredictive). They read cheaper GT-free signals DURING generation:
+   intermediate-denoising decoded preview + quality critic (Early Failure Detection,
+   2603.14320), next-frame surprise / Anticipative Head (Forget-Anticipate-Adapt,
+   2606.26515), and predicted-noise gaussianity (TANGO, 2607.15849, which reports
+   -28.3% FVD in AR video gen). => we probed the wrong signal; re-probe with these.
+
+2) BIG architectural finding: our AdaSteer (DeltaAWrapper) injects ONE global delta into
+   the timestep/AdaLN embedding, broadcast identically to every block. The steering
+   literature (2512.24143 + LLM work) says the concept-rich, controllable region is the
+   MID-LATE RESIDUAL STREAM (~60-75% depth), that single-early/single-late is ineffective,
+   and residual stream >> other submodules; video-customization work (CustomTTT AAAI'25,
+   Follow-Your-Motion, B-LoRA) localizes appearance vs motion to distinct layers/heads.
+   Our global-AdaLN delta is close to the WORST insertion point => strongest mechanistic
+   reason AdaSteer is null. Actionable: residual-stream delta on a mid-late band +
+   appearance/motion split, ablated vs current global-AdaLN.
+
+3) Streaming (user's "evolve bias one chunk at a time") is well supported: Self-Forcing
+   (NeurIPS'25), LongLive (2509.22622), Rolling Forcing, Stream-T1 (2026, training-free
+   chunkwise noise-propagation + reward pruning + memory sink). Frame evolving-AdaSteer
+   as chunkwise local re-fit + first-chunk sink, triggered by noise-gaussianity.
+
+DECISION: ranked next experiments in the memo — (1) re-probe gate with right signal,
+(2) vector-placement ablation [highest upside], (3) TANGO noise-guidance FVD lever,
+(4) streaming evolving-bias, (5) best-of-k -> FVD/VBench w/ multi-verifier.
