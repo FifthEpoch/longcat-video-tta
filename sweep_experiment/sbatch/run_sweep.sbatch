@@ -130,6 +130,11 @@ RETRIEVAL_POOL_DIR="${RETRIEVAL_POOL_DIR:-}"
 DELTA_STEPS="${DELTA_STEPS:-20}"
 DELTA_LR="${DELTA_LR:-1e-3}"
 TTA_GRAD_ACCUM="${TTA_GRAD_ACCUM:-1}"
+
+# Delta-A vector placement (EXP2 ablation; see 2026-08-04 literature memo).
+# adaln (default, original global AdaSteer) | residual (mid-late residual band).
+DELTA_PLACEMENT="${DELTA_PLACEMENT:-adaln}"
+RESIDUAL_BLOCKS="${RESIDUAL_BLOCKS:-}"
 INITIAL_DELTA_DIR="${INITIAL_DELTA_DIR:-}"
 SAVE_DELTA_DIR="${SAVE_DELTA_DIR:-}"
 ANCHOR_REG_WEIGHT="${ANCHOR_REG_WEIGHT:-0.0}"
@@ -634,11 +639,17 @@ case "${METHOD}" in
     echo "  Anchor gate    : mode=${ANCHOR_GATE_MODE}, threshold=${ANCHOR_GATE_THRESHOLD}, soft_scale=${ANCHOR_GATE_SOFT_SCALE}"
     echo "  Anchor reg     : weight=${ANCHOR_REG_WEIGHT}, sigmas=${ANCHOR_REG_SIGMAS}, draws=${ANCHOR_REG_NOISE_DRAWS}"
     echo "  Anchor-x0 wt   : ${ANCHOR_X0_WEIGHT}"
+    echo "  Placement      : ${DELTA_PLACEMENT}  residual_blocks=${RESIDUAL_BLOCKS:-<auto 55-80%>}"
     echo "=============================================================================="
 
     POOL_FLAGS=""
     if [ -n "${RETRIEVAL_POOL_DIR}" ]; then
         POOL_FLAGS="--retrieval-pool-dir ${RETRIEVAL_POOL_DIR}"
+    fi
+
+    PLACEMENT_FLAGS="--delta-placement ${DELTA_PLACEMENT}"
+    if [ -n "${RESIDUAL_BLOCKS}" ]; then
+        PLACEMENT_FLAGS="${PLACEMENT_FLAGS} --residual-blocks ${RESIDUAL_BLOCKS}"
     fi
 
     DELTA_RESUME_FLAGS=""
@@ -667,6 +678,7 @@ case "${METHOD}" in
         --anchor-reg-weight "${ANCHOR_REG_WEIGHT}" \
         --anchor-reg-sigmas "${ANCHOR_REG_SIGMAS}" \
         --anchor-reg-noise-draws "${ANCHOR_REG_NOISE_DRAWS}" \
+        ${PLACEMENT_FLAGS} \
         ${POOL_FLAGS} \
         ${DELTA_RESUME_FLAGS} \
         --num-cond-frames "${NUM_COND_FRAMES}" \

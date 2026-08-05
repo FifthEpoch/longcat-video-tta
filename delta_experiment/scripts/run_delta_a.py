@@ -91,25 +91,67 @@ from early_stopping import (
 # ============================================================================
 
 class DeltaAWrapper(nn.Module):
-    """Wraps a LongCatVideoTransformer3DModel to inject δ into the
-    timestep embedding before it reaches the transformer blocks.
+    """Wraps a LongCatVideoTransformer3DModel to inject a learned δ.
 
-    The delta vector is added to the timestep embedding `t` which has
-    shape [B, T, C_t] (output of t_embedder).
+    Two placements (ablation motivated by the 2026-08-04 literature memo,
+    ``sweep_experiment/reports/2026-08-04_literature_v2v_tta_directions.md``):
+
+      * ``"adaln"``    — add δ to the timestep/AdaLN embedding (``t_embedder``
+        output), broadcast identically to *every* block via AdaLN modulation.
+        This is the ORIGINAL AdaSteer behaviour (δ dim = ``adaln_tembed_dim``).
+      * ``"residual"`` — add δ to the *residual stream* (``hidden_states``) at
+        the output of a contiguous band of transformer blocks. The steering
+        literature (masked-diffusion-LM 2512.24143 + LLM work) finds the
+        controllable, concept-rich region is the **mid-to-late residual stream
+        (~55–80 % depth)**; a single early/late layer is ineffective. Here δ has
+        dim = model hidden size ``C`` and is added after each block in the band.
+
+    Default is ``"adaln"`` so existing runs are byte-identical.
     """
 
-    def __init__(self, dit: nn.Module, adaln_tembed_dim: int = 512):
+    def __init__(self, dit: nn.Module, adaln_tembed_dim: int = 512,
+                 placement: str = "adaln", residual_blocks=None):
         super().__init__()
         self.dit = dit
         # Freeze all DiT parameters
         for p in self.dit.parameters():
             p.requires_grad = False
 
-        # Learnable delta vector
-        self.delta = nn.Parameter(torch.zeros(adaln_tembed_dim))
+        self.placement = placement
+        self._gen_hooks = []          # residual placement: list of handles
+        self._gen_hook = None         # adaln placement: single handle (back-compat)
 
-        # Generation hooks (installed/removed around pipeline calls)
-        self._gen_hook = None
+        if placement == "adaln":
+            self.inject_dim = int(adaln_tembed_dim)
+            self._residual_block_set = set()
+            self.n_blocks = len(dit.blocks)
+        elif placement == "residual":
+            proj = getattr(dit.x_embedder, "proj", None)
+            C = None
+            if proj is not None:
+                C = getattr(proj, "out_channels", None) or getattr(proj, "out_features", None)
+            if C is None:
+                raise RuntimeError(
+                    "DeltaAWrapper(residual): could not infer hidden dim C "
+                    "from dit.x_embedder.proj"
+                )
+            self.inject_dim = int(C)
+            self.n_blocks = len(dit.blocks)
+            if residual_blocks is None:
+                lo = int(round(0.55 * self.n_blocks))
+                hi = int(round(0.80 * self.n_blocks))
+                residual_blocks = list(range(lo, max(lo + 1, hi)))
+            self._residual_block_set = {int(b) for b in residual_blocks}
+            if not self._residual_block_set or max(self._residual_block_set) >= self.n_blocks:
+                raise ValueError(
+                    f"residual_blocks {sorted(self._residual_block_set)} out of "
+                    f"range for {self.n_blocks} blocks"
+                )
+        else:
+            raise ValueError(f"unknown delta placement: {placement}")
+
+        # Learnable delta vector (dim depends on placement)
+        self.delta = nn.Parameter(torch.zeros(self.inject_dim))
 
     @property
     def config(self):
@@ -120,21 +162,36 @@ class DeltaAWrapper(nn.Module):
     # Hook-based injection for pipeline generation
     # ------------------------------------------------------------------
     def apply_to_dit(self):
-        """Install a forward hook on t_embedder so the pipeline's full
-        forward path (KV-cache, BSA, etc.) sees the delta."""
+        """Install forward hook(s) so the pipeline's full forward path
+        (KV-cache, BSA, etc.) sees the delta."""
         delta = self.delta
+        if self.placement == "adaln":
+            def _hook(_module, _input, output):
+                # t_embedder output: [B*T, C_t] — add delta broadcast
+                return output + delta.unsqueeze(0).to(output.dtype)
 
-        def _hook(_module, _input, output):
-            # t_embedder output: [B*T, C_t] — add delta broadcast
-            return output + delta.unsqueeze(0).to(output.dtype)
+            self._gen_hook = self.dit.t_embedder.register_forward_hook(_hook)
+            self._gen_hooks = [self._gen_hook]
+        else:
+            def _mk(d):
+                def _h(_module, _input, out):
+                    # block output is the residual-stream tensor [B, N, C]
+                    if isinstance(out, tuple):
+                        return (out[0] + d.to(out[0].dtype),) + tuple(out[1:])
+                    return out + d.to(out.dtype)
+                return _h
 
-        self._gen_hook = self.dit.t_embedder.register_forward_hook(_hook)
+            self._gen_hooks = [
+                self.dit.blocks[bi].register_forward_hook(_mk(delta))
+                for bi in sorted(self._residual_block_set)
+            ]
 
     def remove_from_dit(self):
-        """Remove the generation hook."""
-        if self._gen_hook is not None:
-            self._gen_hook.remove()
-            self._gen_hook = None
+        """Remove all generation hooks."""
+        for h in self._gen_hooks:
+            h.remove()
+        self._gen_hooks = []
+        self._gen_hook = None
 
     def forward(
         self,
@@ -169,8 +226,9 @@ class DeltaAWrapper(nn.Module):
                 timestep.float().flatten(), dtype=torch.float32
             ).reshape(B, N_t, -1)  # [B, T, C_t]
 
-        # ── Delta injection ──
-        t = t + self.delta.unsqueeze(0).unsqueeze(0)  # broadcast [1, 1, C_t]
+        # ── Delta injection (adaln placement only) ──
+        if self.placement == "adaln":
+            t = t + self.delta.unsqueeze(0).unsqueeze(0)  # broadcast [1, 1, C_t]
 
         encoder_hidden_states = dit.y_embedder(encoder_hidden_states)
 
@@ -201,7 +259,8 @@ class DeltaAWrapper(nn.Module):
         from torch.utils.checkpoint import checkpoint as _ckpt_fn
         _ckpt = _ft.partial(_ckpt_fn, use_reentrant=False)
 
-        for block in dit.blocks:
+        inject_residual = self.placement == "residual"
+        for bi, block in enumerate(dit.blocks):
             if torch.is_grad_enabled():
                 hidden_states = _ckpt(
                     block, hidden_states, encoder_hidden_states, t,
@@ -214,6 +273,10 @@ class DeltaAWrapper(nn.Module):
                     y_seqlens, (N_t, N_h, N_w),
                     num_cond_latents=num_cond_latents,
                 )
+            # ── Delta injection (residual placement): add δ to the residual
+            # stream at the output of each block in the mid-late band ──
+            if inject_residual and bi in self._residual_block_set:
+                hidden_states = hidden_states + self.delta.to(hidden_states.dtype)
 
         hidden_states = dit.final_layer(hidden_states, t, (N_t, N_h, N_w))
         hidden_states = dit.unpatchify(hidden_states, N_t, N_h, N_w)
@@ -619,6 +682,16 @@ def main():
                              "(rectified-flow recovery; Modification 1 of "
                              "sweep_experiment/reports/LITERATURE_tta_recipe_modifications_2026-06-12.md). "
                              "Default 0.0 = byte-identical to pre-patch behaviour.")
+    parser.add_argument("--delta-placement", type=str, default="adaln",
+                        choices=["adaln", "residual"],
+                        help="Where to inject the learned delta. 'adaln' = global "
+                             "timestep/AdaLN embedding (ORIGINAL AdaSteer). "
+                             "'residual' = mid-late residual-stream band "
+                             "(see 2026-08-04 literature memo).")
+    parser.add_argument("--residual-blocks", type=str, default=None,
+                        help="Comma-separated block indices for --delta-placement "
+                             "residual (e.g. '18,19,20,21'). Default = contiguous "
+                             "~55-80%% depth band inferred from block count.")
     add_early_stopping_args(parser)
     add_augmentation_args(parser)
     add_tta_frame_args(parser)
@@ -944,7 +1017,14 @@ def main():
                     ).to(args.device, torch.bfloat16).cpu()
 
                 # ── Create fresh delta ──
-                wrapper = DeltaAWrapper(dit, adaln_tembed_dim=adaln_dim).to(args.device)
+                _res_blocks = None
+                if args.residual_blocks:
+                    _res_blocks = [int(x) for x in args.residual_blocks.split(",")
+                                   if x.strip() != ""]
+                wrapper = DeltaAWrapper(
+                    dit, adaln_tembed_dim=adaln_dim,
+                    placement=args.delta_placement, residual_blocks=_res_blocks,
+                ).to(args.device)
 
                 if args.initial_delta_dir:
                     init_path = os.path.join(
