@@ -1446,3 +1446,34 @@ DECISION: rule out the binary TTA/no-TTA gate (and initial-loss probes generally
 in-domain Panda. Reinforces the single-fixed-config recommendation. Open: (a) OOD/long-horizon
 regimes where a real population effect may exist (E[g] != 0 would make the gate meaningful);
 (b) seed-space best-of-k, where headroom comes from genuinely different videos, not noise.
+
+---
+
+## 2026-08-04 — Long-horizon population effect: TTA real but negligible; FVD worse
+tags: [population-effect, long-horizon, drift, fvd, vbench, ssim, negative-result, gate]
+refs: scripts/analyze_population_effect.py;
+per_video_analysis/popeffect_panda_longctx.json; popeffect_ucf_longhorizon.json;
+popeffect_panda_std.json
+
+Paired per-video delta (TTA - NOTTA) bootstrap CI + sign-flip, PSNR/SSIM/LPIPS + 7 VBench
+dims, across regimes (ADA/ADA_S10 vs NOTTA):
+
+panda_longctx_1000v (N=999): REAL effects on SSIM +0.0019 [+0.0006,+0.0032] p=.003,
+  LPIPS +0.0033 [+0.0020,+0.0048] p<.001, subject_consistency +0.0010 [+0.0003,+0.0018]
+  p=.011. PSNR null (+0.018, CI incl 0). FVD 278.71 -> 284.14 = +5.43 (TTA WORSE, point).
+ucf101_683v_longhorizon (N=683): NO real effect on any metric (subj -0.0003 p=.052 border,
+  wrong sign). FVD 181.59 -> 183.52 = +1.94 worse.
+panda_1000v_standard (N=999, contrast): all null (as predicted). FVD 154.74 -> 153.36 = -1.38.
+
+Reading: the "AdaSteer preserves subject-consistency in the drift regime" story is
+statistically real (n=999 power) but PRACTICALLY NEGLIGIBLE (+0.001 subj, +0.002 SSIM,
+~0.1-0.3%) and does NOT extend to FVD, which gets WORSE under TTA in every long-horizon
+regime. So AdaSteer parameter-TTA is not an FVD lever in any regime we have. The binary
+gate is flagged "meaningful" only in the E[delta]!=0 sense; effect sizes are too small to
+build on. CAVEAT: long-ctx VBench is full-clip (pre window-bug-fix) so subj is directional;
+SSIM/LPIPS/FVD are clean and agree.
+
+DECISION: long-horizon does not rescue AdaSteer for FVD/VBench. Pivot weight to best-of-k
+seed selection (real headroom from genuinely different videos; jobs 15284148-155 running).
+Still closing the user's router question by scoring the literal binary {best-config, NO-TTA}
+gate on FVD (build_router_fvd_dirs.py --actions 2).

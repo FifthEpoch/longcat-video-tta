@@ -86,7 +86,18 @@ def build_one(
     k = Ym.shape[1]
 
     X, nfeat = _subset_X(feature_date, vids_pool, bundle, BLOCKS[block])
-    Y_use = np.column_stack([Ym, nottam]) if actions == 13 else Ym
+    best_run = None
+    if actions == 2:
+        # Binary TTA/no-TTA gate (the user's simplified router): choose per video
+        # between the SINGLE best fixed config (best population-mean metric on this
+        # pool) and NO-TTA (skip). 2-column OOF argmax = deployable gate. Target
+        # metric = the FVD-winning router's objective (PSNR by default).
+        col_means = np.nanmean(Ym, axis=0)
+        best_col = int(np.nanargmax(col_means))
+        best_run = grid_runs[best_col]
+        Y_use = np.column_stack([Ym[:, best_col], nottam])
+    else:
+        Y_use = np.column_stack([Ym, nottam]) if actions == 13 else Ym
     pick, _, lam = _oof_config_predict(X, Y_use, n_folds, seed)
 
     # resolve per-video source clip from the router's chosen action
@@ -96,7 +107,14 @@ def build_one(
     n_missing_src = 0
     for i, vid in enumerate(vids_pool):
         j = int(pick[i])
-        if actions == 13 and j == k:
+        if actions == 2:
+            if j == 0:
+                chosen_run = best_run
+                src = grid_index_cache.get(best_run, {}).get(vid)
+            else:
+                chosen_run = NOTTA_RUN_ID
+                src = notta_index.get(vid)
+        elif actions == 13 and j == k:
             chosen_run = NOTTA_RUN_ID
             src = notta_index.get(vid)
         elif 0 <= j < k:
@@ -115,7 +133,8 @@ def build_one(
         picks.append({"video_id": vid, "chosen_run": chosen_run})
 
     block_tag = block.replace("+", "")
-    pol_name = f"router_{metric}_{block_tag}_{actions}act"
+    pol_name = (f"router_binary_{metric}_{block_tag}_gate" if actions == 2
+                else f"router_{metric}_{block_tag}_{actions}act")
     ordered_ids = sorted(src_by_vid.keys())
     linked, missing = symlink_policy_dir(
         policy=pol_name,
@@ -143,6 +162,7 @@ def build_one(
                 "metric": metric,
                 "block": block,
                 "actions": actions,
+                "best_run": best_run,
                 "n_feat": int(nfeat),
                 "lambda": float(lam),
                 "linked": linked,
@@ -201,7 +221,9 @@ def main() -> int:
     ap.add_argument("--blocks", nargs="+", default=["A+B+C"],
                     choices=list(BLOCKS.keys()))
     ap.add_argument("--actions", nargs="+", type=int, default=[12, 13],
-                    choices=(12, 13))
+                    choices=(2, 12, 13),
+                    help="2 = binary gate {best fixed config, NO-TTA}; "
+                         "12 = configs only; 13 = configs + skip.")
     ap.add_argument("--n-folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", type=str, default="cuda")
