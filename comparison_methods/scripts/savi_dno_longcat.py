@@ -565,7 +565,8 @@ class SAViDNO_LongCat:
         noise_interp: bool = True,
         generation_use_cfg: bool = False,
         generation_steps: Optional[int] = None,
-        generation_enhance_hf: bool = True,
+        generation_enhance_hf: bool = False,
+        generation_apg: bool = False,
     ):
         self.device = device
         self.dtype = dtype
@@ -585,8 +586,12 @@ class SAViDNO_LongCat:
         self.generation_use_cfg = bool(generation_use_cfg)
         self.generation_steps = int(generation_steps) if generation_steps else int(num_inference_steps)
         # generate_vc's enhance_hf reshapes the low-noise tail (uniform 500->0)
-        # for sharper high-frequency detail; on for the prediction passes.
+        # and optimized_scale/APG rescales guidance. Both are OPT-IN: on the 2-video
+        # diagnostic they net-HURT this reimplementation (enhance_hf tanked the
+        # near-static video1 20.2 -> 15.0 dB), so the plain sampler (~20-23 dB) is
+        # the default. Flags kept to A/B each one independently.
         self.generation_enhance_hf = bool(generation_enhance_hf)
+        self.generation_apg = bool(generation_apg)
         self.lr = lr
         self.lam = lam
         self.p = p
@@ -718,7 +723,12 @@ class SAViDNO_LongCat:
             x_t, cond_latents, t_value, null_embeds, null_mask,
         )
 
-        # Adaptive projected guidance (matches generate_vc's optimized_scale):
+        if not self.generation_apg:
+            # Vanilla CFG (default): on the 2-video diagnostic this + plain schedule
+            # gave the best faithful reimpl (~20-23 dB).
+            return v_uncond + self.guidance_scale * (v_cond - v_uncond)
+
+        # Adaptive projected guidance (opt-in, matches generate_vc's optimized_scale):
         # rescale the uncond branch by its projection onto the cond branch before
         # the guidance push, which avoids the over-saturation of vanilla CFG.
         B = v_cond.shape[0]
@@ -1075,10 +1085,13 @@ def main():
                              "Defaults to --num-inference-steps. Decoupled from the differentiable "
                              "optimization inner loop, which stays at --num-inference-steps to keep "
                              "backprop memory/time bounded.")
-    parser.add_argument("--no-generation-enhance-hf", action="store_true",
-                        help="Disable generate_vc's enhance_hf tail (uniform 500->0 low-noise steps) "
-                             "in the prediction passes. enhance_hf is ON by default to match LongCat's "
-                             "real inference (sharper high-frequency detail).")
+    parser.add_argument("--generation-enhance-hf", action="store_true",
+                        help="OPT-IN: enable generate_vc's enhance_hf tail (uniform 500->50 low-noise "
+                             "steps) in the prediction passes. Default OFF: on the 2-video diagnostic it "
+                             "net-hurt this reimpl (near-static video 20.2->15.0 dB).")
+    parser.add_argument("--generation-apg", action="store_true",
+                        help="OPT-IN: use optimized_scale/APG guidance (rescale uncond branch by its "
+                             "projection onto cond) instead of vanilla CFG. Default OFF.")
     args = parser.parse_args()
 
     # Resolve the noise-opt method into (regularizer, noise_interp, reg_weight).
@@ -1200,7 +1213,8 @@ def main():
         noise_interp=_noise_interp,
         generation_use_cfg=args.generation_cfg,
         generation_steps=args.generation_steps,
-        generation_enhance_hf=not args.no_generation_enhance_hf,
+        generation_enhance_hf=args.generation_enhance_hf,
+        generation_apg=args.generation_apg,
     )
 
     # Single GPU already checkpoints at the block level inside the DiT forward,
