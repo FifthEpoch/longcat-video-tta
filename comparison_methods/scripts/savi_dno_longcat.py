@@ -567,6 +567,11 @@ class SAViDNO_LongCat:
         generation_steps: Optional[int] = None,
         generation_enhance_hf: bool = False,
         generation_apg: bool = False,
+        tango_guidance: bool = False,
+        tango_lambda: float = 0.0,
+        tango_sigma_hi: float = 0.9,
+        tango_sigma_lo: float = 0.0,
+        tango_kurtosis: float = 0.0,
     ):
         self.device = device
         self.dtype = dtype
@@ -592,6 +597,26 @@ class SAViDNO_LongCat:
         # the default. Flags kept to A/B each one independently.
         self.generation_enhance_hf = bool(generation_enhance_hf)
         self.generation_apg = bool(generation_apg)
+
+        # --- EXP3: TANGO-style predicted-noise-gaussianity guidance ------------
+        # Per-step, training-free intervention applied DURING sampling (targets
+        # FVD, the distribution-level metric, unlike AdaSteer's per-video delta).
+        # In LongCat's rectified flow the code's DiT output v_pred = x0 - eps
+        # (the -dt*v_pred Euler update negates the raw velocity), so at sigma the
+        # implied clean/noise estimates are:
+        #     x0_hat  = x_t + sigma      * v_pred
+        #     eps_hat = x_t - (1 - sigma)* v_pred
+        # TANGO nudges the trajectory so eps_hat stays close to N(0, I) (zero
+        # mean / unit variance, optional low excess-kurtosis). Moving eps_hat by
+        # -lambda*grad(G) is equivalent to  v_pred += lambda*grad(G)  (since
+        # eps_hat = x_t - (1-sigma)v_pred), so no extra DiT backward is needed
+        # (cf. TTC's per-step velocity rewrite). Applied only for sigma in
+        # [sigma_lo, sigma_hi] to avoid the 1/(1-sigma) blow-up near pure noise.
+        self.tango_guidance = bool(tango_guidance)
+        self.tango_lambda = float(tango_lambda)
+        self.tango_sigma_hi = float(tango_sigma_hi)
+        self.tango_sigma_lo = float(tango_sigma_lo)
+        self.tango_kurtosis = float(tango_kurtosis)
         self.lr = lr
         self.lam = lam
         self.p = p
@@ -779,6 +804,11 @@ class SAViDNO_LongCat:
                     x_t, cond_latents, t_curr, prompt_embeds, prompt_mask,
                 )
 
+            # EXP3: TANGO predicted-noise-gaussianity guidance (no-op unless
+            # enabled). Adjusts v_pred so the implied eps_hat stays ~ N(0, I).
+            if self.tango_guidance:
+                v_pred = self._apply_tango_guidance(x_t, v_pred, t_curr)
+
             # LongCat's real sampler NEGATES the DiT output before the Euler
             # step (pipeline_longcat_video.generate_vc: `noise_pred = -noise_pred`
             # then scheduler.step -> `sample + (sigma_next - sigma)*noise_pred`).
@@ -789,6 +819,44 @@ class SAViDNO_LongCat:
             x_t = x_t - dt * v_pred.to(x_t.dtype)
 
         return x_t
+
+    def _apply_tango_guidance(self, x_t, v_pred, sigma):
+        """TANGO gaussianity guidance on the per-step predicted noise.
+
+        Recovers eps_hat = x_t - (1-sigma)*v_pred (rectified-flow identity for
+        this codebase's v_pred = x0 - eps convention), then nudges the velocity
+        so eps_hat's empirical moments approach N(0, I). The gaussianity penalty
+        (per batch element, over all latent dims) is
+            G = mean(eps_hat)^2 + (std(eps_hat) - 1)^2 [+ w_k * excess_kurt^2].
+        Analytic grad wrt eps_hat is cheap (no DiT backward). Since
+        d eps_hat/d v_pred = -(1-sigma), a step  eps_hat -= lambda*grad  maps to
+        v_pred += lambda*grad. Returns the adjusted velocity.
+        """
+        if not self.tango_guidance or self.tango_lambda == 0.0:
+            return v_pred
+        if sigma > self.tango_sigma_hi or sigma < self.tango_sigma_lo:
+            return v_pred
+        one_minus = 1.0 - float(sigma)
+        if one_minus < 1e-3:
+            return v_pred
+
+        e = (x_t - one_minus * v_pred).float()
+        dims = tuple(range(1, e.dim()))
+        n = float(e[0].numel())
+        mu = e.mean(dim=dims, keepdim=True)
+        ec = e - mu
+        var = (ec * ec).mean(dim=dims, keepdim=True)
+        std = (var + 1e-8).sqrt()
+
+        # grad(G) wrt eps_hat: mean term + variance/std term.
+        grad = (2.0 * mu / n) + (2.0 * (std - 1.0) * ec / (n * std))
+        if self.tango_kurtosis > 0.0:
+            z = ec / std
+            kurt = (z ** 4).mean(dim=dims, keepdim=True) - 3.0
+            grad = grad + self.tango_kurtosis * (2.0 * kurt * (4.0 * (z ** 3)) / (n * std))
+
+        v_new = v_pred + self.tango_lambda * grad.to(v_pred.dtype)
+        return v_new
 
     def _noise_interpolation(self, eps_opt, eps_fresh):
         """h(p, eps_s, eps) = (p*eps_s + (1-p)*eps) / sqrt(p^2 + (1-p)^2)"""
@@ -1092,6 +1160,23 @@ def main():
     parser.add_argument("--generation-apg", action="store_true",
                         help="OPT-IN: use optimized_scale/APG guidance (rescale uncond branch by its "
                              "projection onto cond) instead of vanilla CFG. Default OFF.")
+    # --- EXP3: TANGO predicted-noise-gaussianity guidance ---
+    parser.add_argument("--tango-guidance", action="store_true",
+                        help="EXP3: enable per-step TANGO gaussianity guidance during sampling. "
+                             "Training-free, distribution-level FVD lever. Pair with --no-optimize "
+                             "to isolate it from noise-opt (control = --no-optimize alone).")
+    parser.add_argument("--tango-lambda", type=float, default=0.0,
+                        help="TANGO guidance strength (v_pred += lambda*grad(gaussianity)). "
+                             "0 = no-op. Try 0.02-0.1; too large will over-smooth / tank PSNR.")
+    parser.add_argument("--tango-sigma-hi", type=float, default=0.9,
+                        help="Apply TANGO only when sigma <= this (avoid 1/(1-sigma) blow-up near "
+                             "pure noise). Default 0.9.")
+    parser.add_argument("--tango-sigma-lo", type=float, default=0.0,
+                        help="Apply TANGO only when sigma >= this (skip the final near-clean steps). "
+                             "Default 0.0 (apply through the end).")
+    parser.add_argument("--tango-kurtosis", type=float, default=0.0,
+                        help="Optional weight on the excess-kurtosis term of the gaussianity penalty. "
+                             "0 = mean/variance whitening only.")
     args = parser.parse_args()
 
     # Resolve the noise-opt method into (regularizer, noise_interp, reg_weight).
@@ -1148,6 +1233,12 @@ def main():
     print("  Rollout steps: %d" % args.rollout_steps)
     print("  Max grad norm: %g" % args.max_grad_norm)
     print("  No-optimize  : %s" % args.no_optimize)
+    if args.tango_guidance:
+        print("  TANGO guide  : ON  lambda=%g sigma=[%.2f,%.2f] kurt=%g" % (
+            args.tango_lambda, args.tango_sigma_lo, args.tango_sigma_hi,
+            args.tango_kurtosis))
+    else:
+        print("  TANGO guide  : off")
     print("  Grad ckpt    : %s" % (not args.no_gradient_checkpointing))
     print("  Num GPUs     : %d" % args.num_gpus)
     print("=" * 70)
@@ -1215,6 +1306,11 @@ def main():
         generation_steps=args.generation_steps,
         generation_enhance_hf=args.generation_enhance_hf,
         generation_apg=args.generation_apg,
+        tango_guidance=args.tango_guidance,
+        tango_lambda=args.tango_lambda,
+        tango_sigma_hi=args.tango_sigma_hi,
+        tango_sigma_lo=args.tango_sigma_lo,
+        tango_kurtosis=args.tango_kurtosis,
     )
 
     # Single GPU already checkpoints at the block level inside the DiT forward,
@@ -1237,7 +1333,7 @@ def main():
         video_list = video_list[:args.max_videos]
 
     if args.no_optimize:
-        method_name = "longcat_baseline"
+        method_name = "longcat_baseline_tango" if args.tango_guidance else "longcat_baseline"
     elif args.oracle_leak:
         method_name = "%s_oracle" % _method_out_name
     else:

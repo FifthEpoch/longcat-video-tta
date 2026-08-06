@@ -164,6 +164,17 @@ if [ -n "${SAVI_GENERATION_STEPS:-}" ]; then
 fi
 echo "Gen CFG      : ${GEN_CFG_FLAG:-OFF}   Gen steps: ${SAVI_GENERATION_STEPS:-<same as euler>}"
 
+# EXP3: TANGO predicted-noise-gaussianity guidance during sampling. Pair with
+# SAVI_NO_OPTIMIZE=1 to isolate the guidance (control = no-opt, no TANGO).
+TANGO_FLAGS=""
+if [ "${SAVI_TANGO_GUIDANCE:-0}" = "1" ]; then
+    TANGO_FLAGS="--tango-guidance --tango-lambda ${SAVI_TANGO_LAMBDA:-0.05}"
+    TANGO_FLAGS="${TANGO_FLAGS} --tango-sigma-hi ${SAVI_TANGO_SIGMA_HI:-0.9}"
+    TANGO_FLAGS="${TANGO_FLAGS} --tango-sigma-lo ${SAVI_TANGO_SIGMA_LO:-0.0}"
+    TANGO_FLAGS="${TANGO_FLAGS} --tango-kurtosis ${SAVI_TANGO_KURTOSIS:-0.0}"
+fi
+echo "TANGO guide  : ${TANGO_FLAGS:-OFF}"
+
 # ============================================================================
 # Run SAVi-DNO with LongCat backbone
 # ============================================================================
@@ -194,7 +205,8 @@ echo "Gen CFG      : ${GEN_CFG_FLAG:-OFF}   Gen steps: ${SAVI_GENERATION_STEPS:-
     ${SAVE_FLAG} \
     ${VBENCH_FLAG} \
     ${GT_CACHE_FLAG} \
-    ${SAVE_LIST_FLAG}
+    ${SAVE_LIST_FLAG} \
+    ${TANGO_FLAGS}
 
 echo ""
 echo "=============================================================================="

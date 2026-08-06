@@ -1576,3 +1576,35 @@ pools the <segidx> is a NON-unique seg number, which collided find_mp4's glob (8
 non-bijective FVD crash). Fixed in build_oracle_policy_dirs.py (commit 61becb2) by
 resolving clips via the unique (psnr,ssim,lpips) fingerprint, with output_path/find_mp4
 fallbacks (no regression for panda_XXXX runs).
+
+## 2026-08-05 — EXP3 scaffold: TANGO predicted-noise-gaussianity guidance (FVD lever)
+**Tags:** exp3, tango, fvd, sampling-guidance, savi_dno
+**Refs:** comparison_methods/scripts/savi_dno_longcat.py; comparison_methods/sbatch/submit_exp3_tango.sh; comparison_methods/sbatch/run_savi_dno_longcat.sbatch; 2026-08-04_literature_v2v_tta_directions.md
+
+Implemented a training-free, per-step TANGO-style gaussianity guidance inside the SAVi-DNO
+differentiable Euler sampler. Rationale: AdaSteer's per-video delta does NOT move FVD (EXP2
+null on FVD + all 7 VBench dims), so we need a DISTRIBUTION-level lever. TANGO nudges the
+sampling trajectory so the per-step predicted noise stays ~ N(0, I).
+
+Sign-convention derivation (CRITICAL — this codebase differs from textbook rectified flow):
+the Euler update is `x_t -= dt*v_pred` with `dt = sigma_next - sigma_curr < 0`, and LongCat
+NEGATES the raw DiT output before stepping, so the code's `v_pred = x0 - eps`. Solving the
+interpolation `x_sigma = (1-sigma)*x0 + sigma*eps` gives:
+  x0_hat  = x_t + sigma      * v_pred
+  eps_hat = x_t - (1-sigma)  * v_pred
+Guidance penalty G = mean(eps_hat)^2 + (std(eps_hat)-1)^2 [+ w_k*excess_kurt^2], analytic grad
+wrt eps_hat (no DiT backward). Since d eps_hat/d v_pred = -(1-sigma), the descent step
+`eps_hat -= lambda*grad` maps EXACTLY to `v_pred += lambda*grad`. Applied only for sigma in
+[sigma_lo, sigma_hi] (default [0,0.9]) to avoid the 1/(1-sigma) blow-up near pure noise.
+
+Isolation design: every arm uses the SAME sampler with `--no-optimize` + faithful LongCat
+prediction (CFG on, 50 steps; the PVDM no-CFG/10-step recipe is garbage on this backbone). The
+ONLY difference is the guidance, so control-vs-TANGO cleanly isolates it. Launcher
+submit_exp3_tango.sh submits control + lambda in {0.02,0.05,0.1} at N=80 on the OOD preview pool
+(cond=14/frames=28/gsf=48, seed=42 — lines up with AdaSteer/placement). N=80 is a STABILITY +
+pixel/VBench-direction screen only (N=80 FVD is unreliable, cf. placement 814@N80 vs 157@N900);
+re-run the best lambda at EXP3_N=512 for a trustworthy control-vs-TANGO FVD.
+
+STATUS: code compiles + pushed; pilot not yet launched. Also this turn: chunk-aware placement
+submitter (commit 38bd190) to scale EXP2 FVD to N=512 and settle whether residual placement
+moves FVD out of the small-N noise band.
