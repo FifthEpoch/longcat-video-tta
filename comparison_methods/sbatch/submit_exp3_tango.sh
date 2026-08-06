@@ -108,8 +108,14 @@ submit () {
   fi
 }
 
-# control arm (no guidance) — the sampler's own FVD baseline
-submit "control" 0 0.0
+# control arm (no guidance) — the sampler's own FVD baseline. Skip with
+# EXP3_CONTROL=0 when re-running only the guided arms (control is unaffected
+# by TANGO-code changes, so no need to regenerate it).
+if [ "${EXP3_CONTROL:-1}" = "1" ]; then
+  submit "control" 0 0.0
+else
+  echo "-> control: SKIPPED (EXP3_CONTROL=0)"
+fi
 
 # TANGO lambda sweep
 for lam in ${EXP3_LAMBDAS}; do

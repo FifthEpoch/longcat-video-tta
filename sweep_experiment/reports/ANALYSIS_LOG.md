@@ -1608,3 +1608,26 @@ re-run the best lambda at EXP3_N=512 for a trustworthy control-vs-TANGO FVD.
 STATUS: code compiles + pushed; pilot not yet launched. Also this turn: chunk-aware placement
 submitter (commit 38bd190) to scale EXP2 FVD to N=512 and settle whether residual placement
 moves FVD out of the small-N noise band.
+
+## 2026-08-06 — EXP2 CLOSED (reliable-N FVD): AdaSteer TTA degrades FVD; EXP3 TANGO bf16 no-op fixed
+**Tags:** exp2, exp3, fvd, placement, tango, reliable-N, negative-result, bugfix
+**Refs:** paper_tables/2026-08-06_placement_fvd_n500.md; experiment_outputs/2026-08-06.md
+
+EXP2 reliable-N FVD (N=500, series placement_ablation_panda_512v, jobs 15410043-55):
+NOTTA 139.914 / ADA_ADALN 149.825 (+9.910) / ADA_RESID 152.636 (+12.722). NOTTA 814->140 as N
+80->500 confirms the N=80 FVD was small-N covariance rank-deficiency; 140 ~ headline 157@N900.
+At reliable N BOTH AdaSteer placements DEGRADE FVD, monotone NOTTA<ADALN<RESID in BOTH the
+mean-shift and the dominant trace (covariance) term. Residual is the WORST, not a rescue =>
+"does residual placement help FVD" = NO. Supersedes the N=80 FVD "null" section of the
+2026-08-05 table (the true sign is the OPPOSITE of the N=80 point estimate). EXP2 is now CLOSED
+as a negative across ALL metrics (pixel: RESID>ADALN but neither beats NOTTA; VBench 7-dim: no
+dim moves; FVD: TTA hurts, residual worst).
+
+EXP3 TANGO pilot (N=80) returned byte-identical metrics across control + lambda{0.02,0.05,0.1}.
+Logs proved the flag reached the sampler (tango_guidance=True, control OFF). Root cause: the
+guidance magnitude was a bf16 NO-OP — the gaussianity gradient carries a 1/n factor (n~4e5), so
+raw grad ~1e-6, x lambda(0.02) ~1e-7, which rounds to exactly 0 in bf16 (rel eps ~4e-3). FIX
+(savi_dno_longcat.py _apply_tango_guidance): use only the gradient DIRECTION, rescaled to
+lambda * per-sample ||v_pred|| (n-independent, bf16-safe); lambda is now a clean fractional
+velocity perturbation toward N(0,I). Added EXP3_CONTROL=0 to submit_exp3_tango.sh to re-run only
+the guided arms. Pilot re-run pending.

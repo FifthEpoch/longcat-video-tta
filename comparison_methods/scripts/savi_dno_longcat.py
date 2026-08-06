@@ -829,8 +829,11 @@ class SAViDNO_LongCat:
         (per batch element, over all latent dims) is
             G = mean(eps_hat)^2 + (std(eps_hat) - 1)^2 [+ w_k * excess_kurt^2].
         Analytic grad wrt eps_hat is cheap (no DiT backward). Since
-        d eps_hat/d v_pred = -(1-sigma), a step  eps_hat -= lambda*grad  maps to
-        v_pred += lambda*grad. Returns the adjusted velocity.
+        d eps_hat/d v_pred = -(1-sigma), descending G in eps_hat is achieved by
+        moving v_pred ALONG +grad. The step magnitude is set to lambda * the
+        per-sample velocity norm (see below) so it is n-independent and survives
+        bf16 (a raw lambda*grad step is ~1e-7 and rounds to a no-op in bf16).
+        Returns the adjusted velocity.
         """
         if not self.tango_guidance or self.tango_lambda == 0.0:
             return v_pred
@@ -848,14 +851,28 @@ class SAViDNO_LongCat:
         var = (ec * ec).mean(dim=dims, keepdim=True)
         std = (var + 1e-8).sqrt()
 
-        # grad(G) wrt eps_hat: mean term + variance/std term.
+        # grad(G) wrt eps_hat: mean term + variance/std term. The 1/n factors
+        # (n = numel per sample ~ 4e5) make the raw gradient ~1e-6 per element;
+        # we only use its DIRECTION and rescale below, so the exact 1/n scale is
+        # irrelevant (kept for a correct relative mean-vs-std weighting).
         grad = (2.0 * mu / n) + (2.0 * (std - 1.0) * ec / (n * std))
         if self.tango_kurtosis > 0.0:
             z = ec / std
             kurt = (z ** 4).mean(dim=dims, keepdim=True) - 3.0
             grad = grad + self.tango_kurtosis * (2.0 * kurt * (4.0 * (z ** 3)) / (n * std))
 
-        v_new = v_pred + self.tango_lambda * grad.to(v_pred.dtype)
+        # Rescale the guidance to a fraction lambda of the per-sample velocity
+        # NORM: v_new = v_pred + lambda * (||v_pred|| / ||grad||) * grad. This is
+        # n-independent and bf16-safe. The previous v_pred + lambda*grad was a
+        # NO-OP: raw grad ~1e-6, x lambda(0.02) ~1e-7, which rounds to exactly 0
+        # in bf16 (rel eps ~4e-3) -> byte-identical output across all lambdas.
+        # Now lambda is a clean "fractional velocity perturbation toward N(0,I)".
+        vf = v_pred.float().flatten(1)
+        gf = grad.flatten(1)
+        v_norm = vf.norm(dim=1)
+        g_norm = gf.norm(dim=1).clamp_min(1e-12)
+        scale = (self.tango_lambda * v_norm / g_norm).view((-1,) + (1,) * (e.dim() - 1))
+        v_new = v_pred + (scale * grad).to(v_pred.dtype)
         return v_new
 
     def _noise_interpolation(self, eps_opt, eps_fresh):
