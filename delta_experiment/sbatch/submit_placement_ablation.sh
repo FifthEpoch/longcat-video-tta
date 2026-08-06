@@ -30,8 +30,12 @@ ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"   # Torch HPC project account (required)
 SERIES_NAME="${SERIES_NAME:-placement_ablation_panda}"
 DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/datasets/panda_ood_budget_1000v_preview_480p}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
-MAX_VIDEOS="${MAX_VIDEOS:-80}"        # small OOD-stratified subset (first N = stratified)
+MAX_VIDEOS="${MAX_VIDEOS:-80}"        # OOD-stratified subset (first N = stratified)
 SEED="${SEED:-42}"
+# CHUNK>0 splits each arm into parallel per-chunk jobs writing to chunk_XXXX/ dirs
+# (needed to fit the 8h walltime when scaling N for a reliable, out-of-small-N-bias
+# FVD, e.g. MAX_VIDEOS=512 CHUNK=128 -> 4 jobs/arm). CHUNK=0 = single job (default).
+CHUNK="${CHUNK:-0}"
 
 # geometry — MUST match the budget preview series (cond=14, frames=28, gsf=48)
 NUM_COND_FRAMES="${NUM_COND_FRAMES:-14}"
@@ -62,29 +66,51 @@ echo "============================================================"
 
 GEN_JOB_IDS=()   # collected for the afterok eval dependency
 
-submit_arm () {
-  local run_id="$1" placement="$2" residual_blocks="$3"
+_submit_one () {
+  # $1=job_name  $2..=extra "K=V" env entries appended to the shared set
+  local job_name="$1"; shift
   local -a envs=(
-    "METHOD=delta_a" "SERIES_NAME=${SERIES_NAME}" "RUN_ID=${run_id}"
+    "METHOD=delta_a" "SERIES_NAME=${SERIES_NAME}"
     "DATA_DIR=${DATA_DIR}" "CHECKPOINT_DIR=${CHECKPOINT_DIR}"
     "MAX_VIDEOS=${MAX_VIDEOS}" "SEED=${SEED}"
     "NUM_COND_FRAMES=${NUM_COND_FRAMES}" "NUM_FRAMES=${NUM_FRAMES}"
     "GEN_START_FRAME=${GEN_START_FRAME}"
     "DELTA_STEPS=${DELTA_STEPS}" "DELTA_LR=${DELTA_LR}"
-    "DELTA_PLACEMENT=${placement}" "RESIDUAL_BLOCKS=${residual_blocks}"
     "COMPUTE_VBENCH=${COMPUTE_VBENCH}" "COMPUTE_FVD=${COMPUTE_FVD}"
     "NO_SAVE_VIDEOS=${NO_SAVE_VIDEOS}"
+    "$@"
   )
-  echo "-> arm ${run_id}: placement=${placement} residual_blocks=${residual_blocks:-<auto>}"
   if [ "${DRY_RUN:-0}" = "1" ]; then
-    echo "   DRY: ${envs[*]} sbatch --account=${ACCOUNT} --job-name=exp2_${run_id} ${SBATCH}"
+    echo "   DRY[${job_name}]: ${envs[*]}"
   else
     local jid
     jid=$(sbatch --parsable --account="${ACCOUNT}" \
            --export=ALL,"$(IFS=,; echo "${envs[*]}")" \
-           --job-name="exp2_${run_id}" "${SBATCH}")
-    echo "   job ${jid}"
+           --job-name="${job_name}" "${SBATCH}")
+    echo "   job ${jid}  (${job_name})"
     GEN_JOB_IDS+=("${jid}")
+  fi
+}
+
+submit_arm () {
+  local run_id="$1" placement="$2" residual_blocks="$3"
+  echo "-> arm ${run_id}: placement=${placement} residual_blocks=${residual_blocks:-<auto>} chunk=${CHUNK}"
+  if [ "${CHUNK}" -gt 0 ]; then
+    # Parallel per-chunk jobs -> results/<series>/<run_id>/chunk_XXXX/ (indexer globs chunk_*/).
+    local start=0 cdir out
+    while [ "${start}" -lt "${MAX_VIDEOS}" ]; do
+      cdir=$(printf "chunk_%04d" "${start}")
+      out="${PROJECT_ROOT}/sweep_experiment/results/${SERIES_NAME}/${run_id}/${cdir}"
+      _submit_one "exp2_${run_id}_${cdir}" \
+        "RUN_ID=${run_id}" "OUTPUT_DIR=${out}" \
+        "START_VIDEO_IDX=${start}" "CHUNK_SIZE=${CHUNK}" \
+        "DELTA_PLACEMENT=${placement}" "RESIDUAL_BLOCKS=${residual_blocks}"
+      start=$((start + CHUNK))
+    done
+  else
+    _submit_one "exp2_${run_id}" \
+      "RUN_ID=${run_id}" \
+      "DELTA_PLACEMENT=${placement}" "RESIDUAL_BLOCKS=${residual_blocks}"
   fi
 }
 
@@ -108,17 +134,20 @@ if [ "${AUTO_EVAL}" = "1" ] && [ "${DRY_RUN:-0}" != "1" ] && [ ${#GEN_JOB_IDS[@]
       --export="ALL,SERIES=sweep_experiment/results/${SERIES_NAME},NUM_COND_FRAMES=${NUM_COND_FRAMES}" \
       "${VBENCH_SBATCH}")
   echo "  VBench(7-dim gen-only) job ${jid_vb}"
+  FVD_OUT="sweep_experiment/reports/budget_oracle_fvd_1000v_preview/placement_arms_${SERIES_NAME}"
   jid_fvd=$(sbatch --parsable --account="${ACCOUNT}" --dependency="${DEP}" \
-      --export="ALL,PLACEMENT_SERIES=sweep_experiment/results/${SERIES_NAME}" \
+      --export="ALL,PLACEMENT_SERIES=sweep_experiment/results/${SERIES_NAME},OUTPUT_ROOT=${FVD_OUT}" \
       "${FVD_SBATCH}")
-  echo "  FVD(matched-N) job ${jid_fvd}"
+  echo "  FVD(matched-N) job ${jid_fvd}  -> ${FVD_OUT}/placement_arms_fvd_summary.md"
 fi
 
+echo ""
+echo "Jobs submitted: ${#GEN_JOB_IDS[@]} generation$([ "${CHUNK}" -gt 0 ] && echo " (chunked @ ${CHUNK})") + auto-eval."
 echo ""
 echo "After ALL jobs finish, all-metric per-video comparison (pixel + 7-dim VBench):"
 echo "  VBENCH_SUBDIR=vbench_results_geneval python3 scripts/analyze_population_effect.py \\"
 echo "    --series-root sweep_experiment/results/${SERIES_NAME} \\"
 echo "    --notta-run ADA_ADALN --tta-run ADA_RESID \\"
-echo "    --out sweep_experiment/reports/per_video_analysis/popeffect_resid_vs_adaln_allmetrics.json"
-echo "FVD table:"
+echo "    --out sweep_experiment/reports/per_video_analysis/popeffect_resid_vs_adaln_${SERIES_NAME}.json"
+echo "FVD table (reliable when MAX_VIDEOS>=~512: RESID/ADALN vs NOTTA on the common set):"
 echo "  cat sweep_experiment/reports/budget_oracle_fvd_1000v_preview/placement_arms/placement_arms_fvd_summary.md"
