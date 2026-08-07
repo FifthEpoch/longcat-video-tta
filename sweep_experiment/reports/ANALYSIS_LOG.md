@@ -1687,3 +1687,28 @@ for this framing and we should switch base model (Wan2.1-1.3B / CogVideoX-5B). N
 the audit: our existing "long-context" path (comparison_methods/scripts/ttc_longcat.py, 93 frames)
 is SINGLE-SHOT (one diffusion call), NOT autoregressive chaining, so it never exercises
 exposure-bias accumulation; this new diagnostic is the first path that does.
+
+## 2026-08-07 — EXP3 TANGO bf16 fix VERIFIED (arms diverge); EXP2 all-metric N=500 confirms closed-negative
+**Tags:** exp3, tango, fvd, bf16, exp2, placement, all-metric, reliable-N, sign-flip-caveat
+**Refs:** experiment_outputs/2026-08-07.md; paper_tables/2026-08-06_placement_allmetric_matchedN.md; comparison_methods/results/exp3_tango_panda_preview/
+
+EXP3 TANGO post-fix N=80 screen (jobs 15444775-77): arms now DIVERGE (pre-fix byte-identical),
+confirming the bf16 rescale fix works. FVD monotone in lambda: control 554.79 / l002 557.30
+(+2.51) / l005 548.20 (-6.59) / l01 534.58 (-20.21, -3.6%). Larger lambda -> lower FVD, no
+blow-up => gaussianity guidance is a real FVD DIRECTION. TWO HARD CAVEATS: (1) N=80 FVD is exactly
+the small-N regime that gave the WRONG SIGN for placement (N=80 -6/-5 flipped to N=500 +10/+13),
+so the -20 @N80 is a DIRECTION HINT ONLY, not trustworthy; (2) PSNR/SSIM/LPIPS all nan (savi
+--no-optimize path skipped pixel eval) => quality preservation UNVERIFIED. Before any TANGO claim:
+re-run best lambda (~0.1, +maybe 0.15) at N=512 WITH pixel+VBench enabled to confirm the FVD sign
+AND that fidelity is not tanked.
+
+EXP2 consolidated all-metric matched-N=500 table (job 15445271, build_placement_allmetric_table.py):
+NOTTA best on ALL fidelity/distribution metrics — PSNR 19.6145 (ADALN -0.2564, RESID -0.2566:
+now TIED; the +0.05dB RESID>ADALN edge from N=80 washed out), SSIM, LPIPS, FVD (139.914; ADALN
++9.910, RESID +12.722 worst). 7 VBench dims flat (largest imaging_quality +0.24 on 0-100 =
+negligible; vbench_overall tied ~0.811, RESID +0.0001). EXP2 (placement ablation) CONFIRMED CLOSED
+as a clean negative across pixel + FVD + VBench at reliable N. Consolidates the 2026-08-05 and
+2026-08-06 per-metric placement tables.
+
+Drift diagnostic (job 15497180, diag_longhorizon_drift.py) running on gh128: model loaded, 24
+videos selected, generating [1/24] chunk 1 — healthy start, verdict pending completion.
