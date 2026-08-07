@@ -90,3 +90,18 @@ Run: `bash delta_experiment/sbatch/submit_longhorizon_drift.sh` (defaults N=24, 
 cond=14/frames=28/gsf=48, same geometry as the AdaSteer/placement/EXP3 runs so the drift curve is
 directly comparable). Read the drift verdict in `summary.json`: **degradation over chunk index =>
 headroom found**; **flat => switch base model.**
+
+## 6. Status update — 2026-08-07: diagnostic built
+
+The `diag_longhorizon_drift` build named in §5 now exists and is pushed:
+- `delta_experiment/scripts/diag_longhorizon_drift.py` — NOTTA true-autoregressive rollout;
+  per-chunk GT-free drift signals (sharpness / colorfulness / temporal_motion / seam ratio) +
+  PSNR/SSIM/LPIPS where GT overlaps; per-signal slope + %-change verdict in `summary.json`.
+- `delta_experiment/sbatch/run_longhorizon_drift.sbatch` + `submit_longhorizon_drift.sh` —
+  H200, account `torch_pr_36_mren`, chunkable (`START_VIDEO_IDX`/`CHUNK_SIZE`).
+- `scripts/plot_drift_curves.py` — `summary.json` -> per-metric + headline drift-curve PNGs.
+
+Run: `bash delta_experiment/sbatch/submit_longhorizon_drift.sh` (defaults N=24, chunks=8,
+cond=14/frames=28/gsf=48, same geometry as the AdaSteer/placement/EXP3 runs so the drift curve is
+directly comparable). Read the drift verdict in `summary.json`: **degradation over chunk index =>
+headroom found**; **flat => switch base model.**
