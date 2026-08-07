@@ -1631,3 +1631,31 @@ raw grad ~1e-6, x lambda(0.02) ~1e-7, which rounds to exactly 0 in bf16 (rel eps
 lambda * per-sample ||v_pred|| (n-independent, bf16-safe); lambda is now a clean fractional
 velocity perturbation toward N(0,I). Added EXP3_CONTROL=0 to submit_exp3_tango.sh to re-run only
 the guided arms. Pilot re-run pending.
+
+## 2026-08-07 — Problem-difficulty pivot: built long-horizon NOTTA drift diagnostic
+**Tags:** problem-difficulty, long-horizon, drift, diagnostic, notta, pivot, tooling
+**Refs:** paper_tables/2026-08-06_problem_difficulty_field_geometry.md; delta_experiment/scripts/diag_longhorizon_drift.py; delta_experiment/sbatch/run_longhorizon_drift.sbatch; delta_experiment/sbatch/submit_longhorizon_drift.sh; scripts/plot_drift_curves.py
+
+Confirmed (lit review + our own prior data) that the repeated null effects (AdaSteer, placement
+EXP2, TANGO EXP3) are consistent with LongCat-Video (13.6B, RLHF, continuation-PRETRAINED) being
+too strong for our SHORT single-chunk 14->14 in-domain continuation: headroom is small by
+construction. The field's headroom lives elsewhere — long-horizon autoregressive rollout (Rolling
+Forcing 2509.25161, Pathwise TTC 2602.05871, BAgger 2512.12080, Self-Forcing 2506.08009,
+Meta-ARVDM 2503.10704 all target error accumulation over 30s–minutes), weaker base models (STAS
+steers Wan2.1-1.3B for only +0.37 VBench), or harder/OOD dynamics (DFoT = 64-frame Kinetics-600
+rollout; AID = SSv2/Epic). STAS also shows effects DILUTE under video-level averaging (they live
+at cross-chunk seams) — exactly our reporting practice. DECISION: before any new intervention,
+relocate evaluation to where headroom exists. Built the decisive cheap first step: a NOTTA
+true-autoregressive-rollout drift diagnostic (diag_longhorizon_drift.py) that CHAINS K chunks
+with IDENTICAL per-chunk geometry to the AdaSteer/placement/EXP3 runs (cond=14 / frames=28 /
+gsf=48 / seed=42 / 50 steps / CFG=4.0) and records per-chunk GT-FREE drift signatures
+(sharpness=Laplacian-var for over-smoothing; colorfulness=Hasler-Susstrunk for over-saturation;
+temporal_motion=mean|Δframe| for motion collapse; cross-chunk seam_jump/seam_ratio) PLUS
+PSNR/SSIM/LPIPS wherever GT still overlaps the rollout. A slope + last/first %-change verdict is
+computed per signal. Run via submit_longhorizon_drift.sh (defaults N=24, chunks=8) then
+scripts/plot_drift_curves.py -> per-metric + headline PNGs. READ: degradation with chunk index =>
+headroom found (every steering/correction idea gets room) — flat curves => LongCat is too strong
+for this framing and we should switch base model (Wan2.1-1.3B / CogVideoX-5B). NOTE discovered in
+the audit: our existing "long-context" path (comparison_methods/scripts/ttc_longcat.py, 93 frames)
+is SINGLE-SHOT (one diffusion call), NOT autoregressive chaining, so it never exercises
+exposure-bias accumulation; this new diagnostic is the first path that does.
