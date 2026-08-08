@@ -98,15 +98,41 @@ model breaks in a way we can fix."**
 
 ---
 
-## Slide 7 — Why this matters / what's next
+## Slide 7 — Follow-through control #1: a FIXED delta does NOT flatten the drift
 
-- **Why it matters:** the drift regime gives our interventions room to show an
-  effect for the first time, and the mode (HF/over-saturation) points at a
-  concrete fix (whiteness/spectral steering = TANGO++; re-anchoring corrections).
-- **In flight (controls — do not over-claim yet):**
-  1. **Native-geometry control** (13-cond/93-frame window): proves the drift is
-     *inherent*, not an artifact of our short-window re-conditioning.
-  2. **Intervention test:** hold a fixed AdaSteer delta across the rollout — does
-     it flatten the curve, or decay (→ motivates a *streaming* per-chunk delta)?
-- **Ask of the deck:** frame drift as the enabling discovery; the interventions
-  are the paper's contribution once the controls land.
+**Result (EXP-B, `delta_reencode`, N=24, reencode geometry, paired seeds vs
+NOTTA; mean `delta_norm`=0.139 so the delta really trained):** holding a single
+AdaSteer delta (trained once on the chunk-0 context) fixed across the rollout
+leaves the curves **essentially parallel to NOTTA** — the degradation slope is
+unchanged.
+
+![NOTTA vs fixed delta](../paper_figures/2026-08-08_longhorizon_drift/drift_intervention_notta_vs_delta.png)
+
+| Signal (chunk 1 → 8) | NOTTA | Fixed delta | Read |
+|---|--:|--:|---|
+| Sharpness / HF artifacts | +258% | +276% | slightly **worse** (adds HF) |
+| Colorfulness (saturation) | +58.2% | +47.5% | marginally better |
+| Contrast | +13.4% | +12.5% | tied |
+| Temporal motion | −12.0% | +4.4% | marginally better |
+| PSNR | −48.4% (→9.82) | −47.1% (→10.06) | +0.24 dB late (noise) |
+| LPIPS | +200.9% | +197.5% | tied |
+
+- **Takeaway:** a context-0 delta goes **stale** as the rollout leaves the trained
+  distribution — exactly the predicted failure. This is a clean motivation slide,
+  not a loss: it sets up the fix.
+
+---
+
+## Slide 8 — What's next
+
+- **Immediate:** re-run the **native-geometry control** (13-cond/93-frame). The
+  first attempt (job 15504259) hit the 12 h wall before writing its summary; a
+  lighter budget (fewer videos/chunks) will finish and confirm the drift is
+  *inherent*, not an artifact of our short-window re-conditioning.
+- **The fix (EXP4 — streaming delta):** re-fit / update the steering vector
+  **per chunk** instead of once, so it tracks the drifting distribution. The
+  fixed-delta null above is the direct motivation.
+- **Complementary (TANGO++):** a whiteness/spectral steering term targeting the
+  rising HF (non-white) residual — the dominant, monotone drift mode here.
+- **Ask of the deck:** drift = the enabling discovery; the streaming delta (and
+  TANGO++) are the paper's contribution.

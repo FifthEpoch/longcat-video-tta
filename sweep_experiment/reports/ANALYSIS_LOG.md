@@ -1778,3 +1778,30 @@ the trained distribution -> would motivate a streaming / per-chunk re-fit delta 
 Decision: default arms = notta_native (vs existing notta_reencode) and delta_reencode (vs
 existing notta_reencode, paired). Native arm uses lighter N/chunks (16 vids x 6 chunks) to
 fit the 12h budget. Code pushed; jobs to be submitted on cluster. NO RESULTS YET.
+
+## 2026-08-08 — Long-horizon controls: fixed delta does NOT flatten drift (EXP-B); native control timed out (EXP-A)
+
+**Tags:** long-horizon, drift, adasteer-delta, intervention, streaming-delta, exp-controls
+**Refs:** sweep_experiment/results/diag_longhorizon_drift_delta_reencode/summary.json; prior 2026-08-07 drift entry (job 15497180); scripts/make_drift_intervention_figs.py; paper_figures/2026-08-08_longhorizon_drift/drift_intervention_notta_vs_delta.png
+
+EXP-B (intervention-in-rollout): a FIXED AdaSteer delta, trained once on the chunk-0
+observed frames (exact run_delta_a recipe, adaln placement, 10 steps, lr 1e-3; mean
+delta_norm=0.139 => it really trained) and held across the 8-chunk reencode rollout,
+does NOT flatten the drift. Paired seeds vs the NOTTA reencode reference (job 15497180).
+Verdict chunk1->8 (NOTTA vs DELTA): sharpness +258% vs +276% (delta slightly WORSE, adds
+HF); colorfulness +58.2% vs +47.5% (marginally better); contrast +13.4% vs +12.5% (tied);
+temporal_motion -12% vs +4.4% (marginally better); PSNR -48.4% (->9.82) vs -47.1%
+(->10.06) (+0.24 dB late, within noise); LPIPS +201% vs +197% (tied). Curves stay
+PARALLEL to NOTTA -- the degradation slope is unchanged. Interpretation: a context-0
+delta goes stale as the rollout leaves the trained distribution. This is a clean NULL
+that MOTIVATES a streaming / per-chunk re-fit delta (EXP4) and/or a whiteness/spectral
+term (TANGO++) targeting the dominant monotone HF-artifact mode.
+
+EXP-A (native-geometry control, notta_native, 13-cond/93-frame): DID NOT COMPLETE --
+summary.json missing (job 15504259 ran ~11.5h and hit the 12h wall before writing the
+final summary; native 93-frame windows are ~6-8x heavier per chunk). Must re-run with a
+lighter budget (fewer videos/chunks) to confirm the drift is inherent (not a short-window
+re-conditioning artifact). The script has success-based resume (checkpoint.json), so a
+resubmit continues; but reduce NAT_NUM_CHUNKS / NAT_NUM_VIDEOS to fit 12h.
+
+Deck narrative updated (Slides 7-8) with the EXP-B null + the native-control TODO.
