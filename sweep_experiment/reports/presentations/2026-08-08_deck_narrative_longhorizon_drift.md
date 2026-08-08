@@ -8,9 +8,16 @@ seed=42). Figures live in `../paper_figures/2026-08-08_longhorizon_drift/` and a
 regenerable via `scripts/make_drift_presentation_figs.py`. Full data + verdict
 table: `../paper_tables/2026-08-08_longhorizon_drift_presentation.md`.
 
-**Status caveat for the room:** this is a NOTTA-baseline *discovery*. Two controls
-are still running (native-geometry + fixed-delta intervention) — flag them as the
-immediate follow-through so we don't over-claim.
+**Status (2026-08-08 update — READ FIRST):** both controls are now in and they
+**materially reframe the headline**. The dramatic reencode drift is *largely a
+short-window measurement artifact* — under LongCat's native 13-cond/80-gen
+protocol the model is far more robust (Slide 5b). Real but **moderate** headroom
+survives natively (LPIPS ~2×, SSIM −40%, PSNR −21% over ~480 frames), concentrated
+in perceptual fidelity — NOT over-saturation/motion-collapse. A fixed AdaSteer
+delta does not flatten it (Slide 7). Present drift as *apparent → controlled →
+moderate real headroom*, not as "LongCat drifts hard." Native control is
+PRELIMINARY (N=12/16; arm hit the 12 h wall) — finishing to N=16 + matched-horizon
+confirm is the open item.
 
 ---
 
@@ -53,6 +60,9 @@ model breaks in a way we can fix."**
 - Short-horizon saturation does **not** survive chaining.
 - Over-saturation: colorfulness **+58%**. HF-artifact accumulation: sharpness
   **+258%**. Contrast **+13%**. All monotone.
+- ⚠️ **Present these as *apparent* drift.** The control (Slide 5b) shows most of
+  this magnitude is our short-window eval protocol, not the model. Build the
+  suspense: show the alarming curve, then reveal the control.
 
 ---
 
@@ -77,6 +87,40 @@ model breaks in a way we can fix."**
 - Caveat we state up front: lead with the GT-free signals, because PSNR partly
   reflects *legitimate* divergence from a single GT path (continuation is
   multimodal), and GT coverage shrinks (n = 24 → 13) as the clip runs out.
+
+---
+
+## Slide 5b — CONTROL (the pivot): most of that "drift" was our measurement protocol
+
+**The honest reveal.** We re-ran NOTTA under LongCat's **native** window
+(13-cond / 80-gen, its idiomatic long-gen geometry) instead of our short 14/14
+window. `generate_vc` has no KV-cache carryover across windows, so native
+long-horizon *is* this same external tail-chaining — the only thing that changed
+is the **geometry**. Result: drift shrinks dramatically, **even though 6 native
+chunks cover 480 generated frames vs 84 for reencode (5.7× longer horizon)**.
+
+![Native vs reencode control](../paper_figures/2026-08-08_longhorizon_drift/drift_geometry_control_native_vs_reencode.png)
+
+| Signal (chunk 1 → 6) | Reencode 14/14 (N=24) | Native 13/80 (N=12) |
+|---|--:|--:|
+| Sharpness / HF artifacts | +186% | **+28%** |
+| Colorfulness (saturation) | +27% | **+4%** |
+| Contrast | +10% | +3% |
+| Temporal motion | −9% | +8% |
+| PSNR | −44% | **−21%** |
+| SSIM | −51% | −40% |
+| LPIPS | +179% | **+96%** |
+
+- **Take:** the over-saturation and HF-artifact "explosion" were **short-window
+  re-conditioning artifacts** (frequent re-anchoring, 14-frame windows, pixel
+  re-encode). Under the native protocol LongCat is much more robust.
+- **But headroom is not zero:** natively, over a long rollout LongCat still loses
+  real perceptual fidelity — **LPIPS ~2× (+96%), SSIM −40%, PSNR −21%, sharpness
+  +28%**. The real target is *perceptual-fidelity decay*, not saturation.
+- **Caveat (state it):** native is **preliminary N=12** (arm hit the 12 h wall at
+  12/16 videos), 6 chunks, different video subset — directional, not paired.
+  Finishing to N=16 + a matched-horizon (x = generated-frame count) comparison is
+  the open confirm.
 
 ---
 
@@ -120,19 +164,29 @@ unchanged.
 - **Takeaway:** a context-0 delta goes **stale** as the rollout leaves the trained
   distribution — exactly the predicted failure. This is a clean motivation slide,
   not a loss: it sets up the fix.
+- **Caveat:** this was measured at the *reencode* (inflated-drift) geometry, so it
+  must be re-run at native geometry against the milder real target. The null is
+  informative either way — a fixed delta is the wrong tool for a moving target.
 
 ---
 
 ## Slide 8 — What's next
 
-- **Immediate:** re-run the **native-geometry control** (13-cond/93-frame). The
-  first attempt (job 15504259) hit the 12 h wall before writing its summary; a
-  lighter budget (fewer videos/chunks) will finish and confirm the drift is
-  *inherent*, not an artifact of our short-window re-conditioning.
+- **Finish the native control (immediate):** resume `notta_native` to complete
+  N=16 (only 4 videos left, ~4 h), then do a **matched-horizon** comparison
+  (x = cumulative generated frames, not chunk index) so native-vs-reencode is
+  airtight. This locks Slide 5b.
+- **Reframed target:** the real, native headroom is **perceptual-fidelity decay**
+  (LPIPS ~2×, SSIM −40%) over long rollouts — *not* over-saturation or motion
+  collapse. Interventions must be evaluated at **native geometry** against this
+  milder target, and probably need **longer rollouts** to open a visible gap.
 - **The fix (EXP4 — streaming delta):** re-fit / update the steering vector
-  **per chunk** instead of once, so it tracks the drifting distribution. The
-  fixed-delta null above is the direct motivation.
-- **Complementary (TANGO++):** a whiteness/spectral steering term targeting the
-  rising HF (non-white) residual — the dominant, monotone drift mode here.
-- **Ask of the deck:** drift = the enabling discovery; the streaming delta (and
-  TANGO++) are the paper's contribution.
+  **per chunk** so it tracks the moving distribution; the fixed-delta null
+  motivates it. Must be tested natively.
+- **TANGO++ (de-prioritized):** the whiteness/HF motivation is *weakened* — HF
+  and saturation are mostly flat natively. Keep it as a secondary lever, not the
+  headline.
+- **Honest ask of the deck:** lead with a *methodological* contribution — "naïve
+  short-window rollout eval massively overstates drift; here's the corrected,
+  native measurement" — then present the moderate real headroom and our
+  streaming-delta plan to address it.

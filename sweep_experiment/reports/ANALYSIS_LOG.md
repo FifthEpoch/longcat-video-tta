@@ -1805,3 +1805,36 @@ re-conditioning artifact). The script has success-based resume (checkpoint.json)
 resubmit continues; but reduce NAT_NUM_CHUNKS / NAT_NUM_VIDEOS to fit 12h.
 
 Deck narrative updated (Slides 7-8) with the EXP-B null + the native-control TODO.
+
+## 2026-08-08 — NATIVE CONTROL REFRAMES DRIFT: most reencode drift was a short-window artifact (EXP-A preliminary)
+
+**Tags:** long-horizon, drift, native-protocol, control, methodology, reframe, headroom
+**Refs:** sweep_experiment/results/diag_longhorizon_drift_notta_native/checkpoint.json (job 15504259, N=12/16, timed out); prior 2026-08-07 drift entry (job 15497180, reencode N=24); scripts/make_drift_geometry_control_fig.py; paper_figures/2026-08-08_longhorizon_drift/drift_geometry_control_native_vs_reencode.png
+
+The native-geometry control (13-cond/80-gen, LongCat's idiomatic long-gen window; same
+external tail-chaining since generate_vc has no KV carryover) shows DRAMATICALLY milder
+drift than our reencode 14/14 window -- even though 6 native chunks = 480 generated frames
+vs 84 for reencode (5.7x longer horizon). Matched at 6 chunks (chunk1->6 %change),
+reencode(N=24) vs native(N=12): sharpness +186% vs +28%; colorfulness +27% vs +4%;
+contrast +10% vs +3%; motion -9% vs +8%; PSNR -44% vs -21%; SSIM -51% vs -40%;
+LPIPS +179% vs +96%.
+
+CONCLUSION: most of the headline reencode drift (esp. over-saturation +58% and the +258%
+HF-artifact "explosion") was a SHORT-WINDOW RE-CONDITIONING ARTIFACT (frequent re-anchoring,
+14-frame windows, pixel re-encode each chunk) -- NOT inherent LongCat degradation. Under the
+native protocol LongCat is much more robust. HOWEVER, real but MODERATE headroom survives
+natively, concentrated in PERCEPTUAL FIDELITY: LPIPS ~2x (+96%), SSIM -40%, PSNR -21%,
+sharpness +28% over ~480 frames. Over-saturation/motion-collapse are NOT the native mode.
+
+IMPLICATIONS: (1) soften the deck headline -> present drift as apparent -> controlled ->
+moderate real headroom; lead with the METHODOLOGICAL correction (naive short-window rollout
+eval overstates drift ~6x). (2) TANGO++ whiteness motivation is WEAKENED (HF/saturation ~flat
+natively); de-prioritize. (3) EXP-B fixed-delta null was at the inflated reencode geometry;
+re-test interventions at NATIVE geometry against the milder perceptual target, likely with
+LONGER rollouts. (4) streaming per-chunk delta (EXP4) still the main idea but must be
+evaluated natively.
+
+CAVEATS: native is PRELIMINARY N=12/16 (arm hit 12h wall; native chunk = 56 steps x ~9.9 s/it
+~= 9.3 min, so 16x6 ~= 15h > 12h), 6 chunks, DIFFERENT video subset than reencode -> directional,
+not paired. Open confirm: resume to N=16 + matched-horizon (x = cumulative generated frames)
+comparison. Deck narrative updated (new Slide 5b + Status + Slides 7-8).
