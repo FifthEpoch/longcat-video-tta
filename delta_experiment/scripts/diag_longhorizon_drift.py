@@ -42,24 +42,43 @@ usual GT metrics (PSNR/SSIM/LPIPS) wherever GT still overlaps the rollout:
 
 GEOMETRY
 --------
-Per-chunk geometry is IDENTICAL to the AdaSteer / placement / EXP3 runs
-(cond=14, num_frames=28 -> num_gen=14, gen_start=48, seed=42, 50 steps, CFG=4.0)
-so a drift curve here is directly comparable to those experiments. We simply
-CHAIN K chunks instead of stopping at one. The rollout re-conditioning is copied
-verbatim from ``run_delta_a.py`` (tail = prev_gen[num_gen:]) so this is the same
-autoregressive path the deployable code would use -- just NOTTA and with richer
-per-chunk logging.
+Default (``--rollout-mode reencode``) per-chunk geometry is IDENTICAL to the
+AdaSteer / placement / EXP3 runs (cond=14, num_frames=28 -> num_gen=14,
+gen_start=48, seed=42, 50 steps, CFG=4.0) so a drift curve here is directly
+comparable to those experiments. We simply CHAIN K chunks instead of stopping
+at one. The rollout re-conditioning is copied verbatim from ``run_delta_a.py``
+(tail = prev_gen[num_gen:]) so this is the same autoregressive path the
+deployable code would use.
 
-This script trains NOTHING (NOTTA): it runs the plain pipeline, no delta wrapper.
+TWO CONTROLS ADDED (2026-08-07)
+-------------------------------
+1. ``--rollout-mode native``: LongCat's ``generate_vc`` is single-window and has
+   NO KV-cache carryover across windows -- its native long-horizon IS this
+   external-rollout re-conditioning. The only off-native knob is GEOMETRY: our
+   short 14-cond/14-gen window creates many re-anchoring seams per unit of
+   generated time, which could inflate apparent drift. ``native`` runs the SAME
+   chaining at LongCat's idiomatic 13-cond/93-frame (80-gen) window so we can
+   distinguish inherent long-horizon drift from a short-window re-conditioning
+   artifact. If drift persists under ``native`` -> it is real.
+
+2. ``--method delta``: train an AdaSteer delta ONCE on the observed frames
+   (identical recipe to ``run_delta_a.py``: same TTA window, latent split,
+   VAE/text-encoder offload, optimizer call) and hold it FIXED across the whole
+   rollout. Question: does a fixed context-0 delta flatten the drift curves, or
+   does it go stale as the rollout leaves the trained distribution (which would
+   motivate a streaming / per-chunk re-fit delta)? NOTTA and delta share seeds
+   per chunk, so the comparison is paired.
 
 Usage
 -----
-    python diag_longhorizon_drift.py \
+    # NOTTA control at native geometry
+    python diag_longhorizon_drift.py --rollout-mode native --method notta ...
+    # AdaSteer delta held fixed across the rollout (reencode geometry)
+    python diag_longhorizon_drift.py --method delta ...
         --checkpoint-dir /scratch/wc3013/longcat-video-checkpoints \
         --data-dir /scratch/.../panda_ood_budget_1000v_preview_480p \
         --output-dir sweep_experiment/results/diag_longhorizon_drift \
-        --max-videos 24 --num-chunks 8 \
-        --num-cond-frames 14 --num-frames 28 --gen-start-frame 48
+        --max-videos 24 --num-chunks 8
 """
 
 import argparse
@@ -85,6 +104,9 @@ from common import (  # noqa: E402
     load_checkpoint,
     save_checkpoint,
     torch_gc,
+    encode_video,
+    encode_prompt,
+    split_tta_latents,
 )
 
 
@@ -233,6 +255,90 @@ def build_drift_curves(results: List[Dict], num_chunks: int) -> Dict:
 
 
 # ============================================================================
+# Intervention: AdaSteer delta (trained once on observed frames, held fixed
+# across the whole rollout -- identical recipe to run_delta_a.py)
+# ============================================================================
+
+def train_delta_for_video(
+    components: Dict,
+    video_path: str,
+    caption: str,
+    *,
+    gen_start_frame: int,
+    tta_total_frames: int,
+    tta_context_frames: int,
+    delta_steps: int,
+    delta_lr: float,
+    placement: str,
+    device: str,
+):
+    """Train an AdaSteer delta on the OBSERVED frames before ``gen_start_frame``.
+
+    Returns ``(wrapper, delta_norm)``. The wrapper is NOT yet applied; caller
+    must ``wrapper.apply_to_dit()`` before the rollout and ``remove_from_dit()``
+    after. This mirrors ``run_delta_a.py`` exactly (same window, same latent
+    split, same VAE/text-encoder offload dance, same optimizer call) so the
+    delta arm is apples-to-apples with the standard AdaSteer runs -- the only
+    difference is that here the trained delta is held fixed across a K-chunk
+    autoregressive rollout instead of a single chunk.
+    """
+    # Lazy import so the NOTTA arm never pulls in run_delta_a.
+    from run_delta_a import DeltaAWrapper, optimize_delta_a  # noqa: E402
+
+    dtype = torch.bfloat16
+    vae = components["vae"]
+    text_encoder = components["text_encoder"]
+    tokenizer = components["tokenizer"]
+    dit = components["dit"]
+    adaln_dim = getattr(dit.config, "adaln_tembed_dim", 512)
+
+    tta_start = gen_start_frame - tta_total_frames
+    pixel_frames = load_video_frames(
+        video_path, tta_total_frames, height=480, width=832,
+        start_frame=max(0, tta_start),
+    ).to(device, dtype)
+    all_latents = encode_video(vae, pixel_frames, normalize=True)
+
+    vae_t_scale = 4
+    num_ctx_lat = 1 + (tta_context_frames - 1) // vae_t_scale
+    # holdout=0.0 -> no val split, no early stopping (plain fixed-step delta).
+    cond_latents, train_latents, _ = split_tta_latents(
+        all_latents, num_ctx_lat, holdout_fraction=0.0,
+    )
+    prompt_embeds, prompt_mask = encode_prompt(
+        tokenizer, text_encoder, caption, device=device, dtype=dtype,
+    )
+
+    wrapper = DeltaAWrapper(
+        dit, adaln_tembed_dim=adaln_dim, placement=placement,
+    ).to(device)
+
+    # Offload VAE + text encoder to CPU during training (frees VRAM for the
+    # DiT+delta optimisation), then restore them for generation.
+    vae.to("cpu")
+    text_encoder.to("cpu")
+    torch.cuda.empty_cache()
+    try:
+        opt_result = optimize_delta_a(
+            wrapper=wrapper,
+            cond_latents=cond_latents.to(device),
+            train_latents=train_latents.to(device),
+            prompt_embeds=prompt_embeds.to(device),
+            prompt_mask=prompt_mask.to(device) if prompt_mask is not None else None,
+            num_steps=delta_steps,
+            lr=delta_lr,
+            device=device,
+            dtype=dtype,
+        )
+    finally:
+        vae.to(device)
+        text_encoder.to(device)
+        torch.cuda.empty_cache()
+
+    return wrapper, float(opt_result.get("delta_norm", float("nan")))
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -258,12 +364,56 @@ def main() -> int:
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--no-save-videos", action="store_true",
                    help="Do not write the stitched rollout mp4 per video.")
+    # --- Rollout protocol -------------------------------------------------
+    # LongCat's generate_vc is single-window; it has NO KV-cache carryover
+    # across windows. Native long-horizon == external rollout re-conditioned on
+    # the last num_cond_frames GENERATED frames (which this script already
+    # does). The only "off-native" knob is GEOMETRY: our short 14-cond/14-gen
+    # window creates many re-anchoring seams per unit time, which could inflate
+    # apparent drift. --rollout-mode native runs the SAME chaining at LongCat's
+    # idiomatic 13-cond/93-frame (80-gen) window so we can tell inherent drift
+    # from a short-window re-conditioning artifact.
+    p.add_argument("--rollout-mode", type=str, default="reencode",
+                   choices=["reencode", "native"],
+                   help="reencode=short 14/28 window (default, comparable to "
+                        "EXP2/EXP3); native=LongCat idiomatic 13-cond/93-frame "
+                        "window. 'native' sets cond=13/frames=93 UNLESS you "
+                        "explicitly override --num-cond-frames/--num-frames.")
+    # --- Intervention -----------------------------------------------------
+    p.add_argument("--method", type=str, default="notta",
+                   choices=["notta", "delta"],
+                   help="notta=plain pipeline; delta=train an AdaSteer delta "
+                        "on the observed frames once and hold it fixed across "
+                        "the whole rollout (does a fixed context-0 delta flatten "
+                        "the drift, or does it go stale as the rollout leaves "
+                        "the trained distribution?).")
+    p.add_argument("--delta-steps", type=int, default=10)
+    p.add_argument("--delta-lr", type=float, default=1e-3)
+    p.add_argument("--delta-placement", type=str, default="adaln",
+                   choices=["adaln", "residual"])
+    p.add_argument("--tta-total-frames", type=int, default=0,
+                   help="Frames before gen_start used for TTA (0=use gen_start).")
+    p.add_argument("--tta-context-frames", type=int, default=0,
+                   help="Context frames within the TTA window (0=num_cond_frames).")
     args = p.parse_args()
+
+    # Native protocol: apply LongCat's idiomatic window geometry unless the
+    # user explicitly set the geometry flags (argparse can't tell default from
+    # an explicit equal value, so we compare against the reencode defaults).
+    if args.rollout_mode == "native":
+        if args.num_cond_frames == 14:
+            args.num_cond_frames = 13
+        if args.num_frames == 28:
+            args.num_frames = 93
 
     num_gen = args.num_frames - args.num_cond_frames
     if num_gen <= 0:
         print("ERROR: num_frames must exceed num_cond_frames", file=sys.stderr)
         return 2
+
+    # TTA window defaults (mirror run_delta_a.py).
+    tta_total_frames = args.tta_total_frames or args.gen_start_frame
+    tta_context_frames = args.tta_context_frames or args.num_cond_frames
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -274,14 +424,21 @@ def main() -> int:
         os.makedirs(videos_dir, exist_ok=True)
 
     print("=" * 70)
-    print("Long-horizon NOTTA drift diagnostic for LongCat-Video")
+    print("Long-horizon drift diagnostic for LongCat-Video")
     print("=" * 70)
     print(f"Checkpoint : {args.checkpoint_dir}")
     print(f"Data dir   : {args.data_dir}")
     print(f"Output dir : {args.output_dir}")
+    print(f"Method     : {args.method}" + (
+        f" (steps={args.delta_steps} lr={args.delta_lr} "
+        f"placement={args.delta_placement}, held fixed across rollout)"
+        if args.method == "delta" else ""))
+    print(f"Roll mode  : {args.rollout_mode}")
     print(f"Geometry   : cond={args.num_cond_frames} frames={args.num_frames} "
           f"num_gen={num_gen} gen_start={args.gen_start_frame}")
-    print(f"Rollout    : {args.num_chunks} chunks (autoregressive, NOTTA)")
+    if args.method == "delta":
+        print(f"TTA window : total={tta_total_frames} context={tta_context_frames}")
+    print(f"Rollout    : {args.num_chunks} chunks (autoregressive)")
     print(f"Sampler    : steps={args.num_inference_steps} cfg={args.guidance_scale} "
           f"seed={args.seed}")
     print("=" * 70)
@@ -338,69 +495,99 @@ def main() -> int:
             # seed the stitched clip with the true conditioning frames
             stitched.append(np.stack([np.asarray(im) / 255.0 for im in cond_images], axis=0))
 
+            # Intervention: train an AdaSteer delta on the observed frames and
+            # hold it fixed across the entire rollout (hook installed once,
+            # removed in finally so it can never leak into the next video).
+            wrapper = None
+            delta_norm = None
+            if args.method == "delta":
+                _td = time.time()
+                wrapper, delta_norm = train_delta_for_video(
+                    components, entry["video_path"], entry["caption"],
+                    gen_start_frame=args.gen_start_frame,
+                    tta_total_frames=tta_total_frames,
+                    tta_context_frames=tta_context_frames,
+                    delta_steps=args.delta_steps,
+                    delta_lr=args.delta_lr,
+                    placement=args.delta_placement,
+                    device=args.device,
+                )
+                wrapper.apply_to_dit()
+                print(f"  delta trained: norm={delta_norm:.4f} "
+                      f"({time.time()-_td:.1f}s)")
+
             prev_gen = None
             gen_time = 0.0
-            for step_i in range(args.num_chunks):
-                if step_i > 0:
-                    tail = prev_gen[num_gen:]
-                    cond_images = [
-                        Image.fromarray((np.clip(tail[t], 0, 1) * 255).astype(np.uint8))
-                        for t in range(tail.shape[0])
-                    ]
+            try:
+                for step_i in range(args.num_chunks):
+                    if step_i > 0:
+                        tail = prev_gen[num_gen:]
+                        cond_images = [
+                            Image.fromarray((np.clip(tail[t], 0, 1) * 255).astype(np.uint8))
+                            for t in range(tail.shape[0])
+                        ]
 
-                last_cond_frame = np.asarray(cond_images[-1]).astype(np.float32) / 255.0
+                    last_cond_frame = np.asarray(cond_images[-1]).astype(np.float32) / 255.0
 
-                t0 = time.time()
-                gen_frames = generate_video_continuation(
-                    pipe=pipe,
-                    video_frames=cond_images,
-                    prompt=entry["caption"],
-                    num_cond_frames=args.num_cond_frames,
-                    num_frames=args.num_frames,
-                    num_inference_steps=args.num_inference_steps,
-                    guidance_scale=args.guidance_scale,
-                    seed=args.seed + v_idx + step_i,
-                    resolution=args.resolution,
-                    device=args.device,
-                )
-                gen_time += time.time() - t0
+                    t0 = time.time()
+                    gen_frames = generate_video_continuation(
+                        pipe=pipe,
+                        video_frames=cond_images,
+                        prompt=entry["caption"],
+                        num_cond_frames=args.num_cond_frames,
+                        num_frames=args.num_frames,
+                        num_inference_steps=args.num_inference_steps,
+                        guidance_scale=args.guidance_scale,
+                        seed=args.seed + v_idx + step_i,
+                        resolution=args.resolution,
+                        device=args.device,
+                    )
+                    gen_time += time.time() - t0
 
-                gen_only = gen_frames[args.num_cond_frames:args.num_cond_frames + num_gen]
+                    gen_only = gen_frames[args.num_cond_frames:args.num_cond_frames + num_gen]
 
-                # GT metrics where the source clip still overlaps the rollout.
-                step_gen_start = args.gen_start_frame + step_i * num_gen
-                gt_metrics = evaluate_generation_metrics(
-                    gen_output=gen_frames,
-                    video_path=entry["video_path"],
-                    num_cond_frames=args.num_cond_frames,
-                    num_gen_frames=num_gen,
-                    gen_start_frame=step_gen_start,
-                    device=args.device,
-                    return_gt_frames=False,
-                )
-                free = gen_free_signals(gen_only, last_cond_frame)
+                    # GT metrics where the source clip still overlaps the rollout.
+                    step_gen_start = args.gen_start_frame + step_i * num_gen
+                    gt_metrics = evaluate_generation_metrics(
+                        gen_output=gen_frames,
+                        video_path=entry["video_path"],
+                        num_cond_frames=args.num_cond_frames,
+                        num_gen_frames=num_gen,
+                        gen_start_frame=step_gen_start,
+                        device=args.device,
+                        return_gt_frames=False,
+                    )
+                    free = gen_free_signals(gen_only, last_cond_frame)
 
-                rec = {"chunk": step_i + 1, "gen_start_frame": step_gen_start,
-                       "gt_available": gt_metrics.get("psnr") == gt_metrics.get("psnr")}
-                rec.update({k: gt_metrics.get(k) for k in _GT_KEYS})
-                rec.update(free)
-                chunk_records.append(rec)
-                stitched.append(np.clip(gen_only.astype(np.float32), 0, 1))
+                    rec = {"chunk": step_i + 1, "gen_start_frame": step_gen_start,
+                           "gt_available": gt_metrics.get("psnr") == gt_metrics.get("psnr")}
+                    rec.update({k: gt_metrics.get(k) for k in _GT_KEYS})
+                    rec.update(free)
+                    chunk_records.append(rec)
+                    stitched.append(np.clip(gen_only.astype(np.float32), 0, 1))
 
-                print(
-                    f"  chunk {step_i+1:2d}: sharp={free['sharpness']:.4f} "
-                    f"motion={free['temporal_motion']:.4f} "
-                    f"colorful={free['colorfulness']:.4f} "
-                    f"seam_ratio={free['seam_ratio']:.2f} "
-                    f"psnr={rec['psnr'] if rec['psnr'] == rec['psnr'] else float('nan'):.2f}"
-                    + ("" if rec["gt_available"] else " (no GT)")
-                )
-                prev_gen = gen_frames
+                    print(
+                        f"  chunk {step_i+1:2d}: sharp={free['sharpness']:.4f} "
+                        f"motion={free['temporal_motion']:.4f} "
+                        f"colorful={free['colorfulness']:.4f} "
+                        f"seam_ratio={free['seam_ratio']:.2f} "
+                        f"psnr={rec['psnr'] if rec['psnr'] == rec['psnr'] else float('nan'):.2f}"
+                        + ("" if rec["gt_available"] else " (no GT)")
+                    )
+                    prev_gen = gen_frames
+            finally:
+                if wrapper is not None:
+                    wrapper.remove_from_dit()
+                    del wrapper
+                    torch_gc()
 
             record = {
                 "video_name": eval_name,
                 "video_path": entry["video_path"],
                 "caption": entry["caption"],
+                "method": args.method,
+                "rollout_mode": args.rollout_mode,
+                "delta_norm": delta_norm,
                 "num_chunks": args.num_chunks,
                 "num_gen_per_chunk": num_gen,
                 "gen_time": gen_time,
@@ -432,7 +619,14 @@ def main() -> int:
     successful = [r for r in all_results if r.get("success")]
     drift = build_drift_curves(successful, args.num_chunks)
     summary = {
-        "method": "notta_longhorizon_drift",
+        "method": args.method,
+        "diagnostic": "longhorizon_drift",
+        "rollout_mode": args.rollout_mode,
+        "delta_steps": args.delta_steps if args.method == "delta" else None,
+        "delta_lr": args.delta_lr if args.method == "delta" else None,
+        "delta_placement": args.delta_placement if args.method == "delta" else None,
+        "tta_total_frames": tta_total_frames if args.method == "delta" else None,
+        "tta_context_frames": tta_context_frames if args.method == "delta" else None,
         "num_chunks": args.num_chunks,
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,

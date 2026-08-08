@@ -35,6 +35,14 @@ RESOLUTION="${RESOLUTION:-480p}"
 SEED="${SEED:-42}"
 START_VIDEO_IDX="${START_VIDEO_IDX:-0}"
 CHUNK_SIZE="${CHUNK_SIZE:-0}"
+# rollout protocol + intervention
+METHOD="${METHOD:-notta}"                 # notta | delta
+ROLLOUT_MODE="${ROLLOUT_MODE:-reencode}"  # reencode | native
+DELTA_STEPS="${DELTA_STEPS:-10}"
+DELTA_LR="${DELTA_LR:-1e-3}"
+DELTA_PLACEMENT="${DELTA_PLACEMENT:-adaln}"
+TTA_TOTAL_FRAMES="${TTA_TOTAL_FRAMES:-0}"
+TTA_CONTEXT_FRAMES="${TTA_CONTEXT_FRAMES:-0}"
 
 # ---- paths ----------------------------------------------------------------
 SCRATCH_BASE="/scratch/wc3013"
@@ -44,10 +52,12 @@ DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/datasets/panda_ood_budget_1000v_preview_48
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/sweep_experiment/results/diag_longhorizon_drift}"
 
 echo "=============================================================================="
-echo "Long-horizon NOTTA drift diagnostic"
+echo "Long-horizon drift diagnostic"
 echo "  Job ID     : ${SLURM_JOB_ID:-<local>}   Node: $(hostname)   $(date)"
+echo "  Method     : ${METHOD}   rollout-mode=${ROLLOUT_MODE}"
 echo "  Videos     : ${NUM_VIDEOS}   chunks=${NUM_CHUNKS}"
 echo "  Geometry   : cond=${NUM_COND_FRAMES} frames=${NUM_FRAMES} gsf=${GEN_START_FRAME}"
+echo "  Delta      : steps=${DELTA_STEPS} lr=${DELTA_LR} placement=${DELTA_PLACEMENT}"
 echo "  Sampler    : steps=${NUM_INFERENCE_STEPS} cfg=${GUIDANCE_SCALE} seed=${SEED}"
 echo "  Data dir   : ${DATA_DIR}"
 echo "  Output dir : ${OUTPUT_DIR}"
@@ -92,7 +102,14 @@ python delta_experiment/scripts/diag_longhorizon_drift.py \
     --resolution "${RESOLUTION}" \
     --seed "${SEED}" \
     --start-video-idx "${START_VIDEO_IDX}" \
-    --chunk-size "${CHUNK_SIZE}"
+    --chunk-size "${CHUNK_SIZE}" \
+    --method "${METHOD}" \
+    --rollout-mode "${ROLLOUT_MODE}" \
+    --delta-steps "${DELTA_STEPS}" \
+    --delta-lr "${DELTA_LR}" \
+    --delta-placement "${DELTA_PLACEMENT}" \
+    --tta-total-frames "${TTA_TOTAL_FRAMES}" \
+    --tta-context-frames "${TTA_CONTEXT_FRAMES}"
 
 echo ""
 echo "=============================================================================="

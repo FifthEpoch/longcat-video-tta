@@ -1743,3 +1743,38 @@ rollout test — re-run the SAME 8-chunk rollout with AdaSteer delta (run_delta_
 --rollout-steps), TTC appearance re-anchoring, and TANGO++, measuring whether they FLATTEN the
 colorfulness/contrast/sharpness drift and slow the PSNR/LPIPS collapse. That flattening is the
 paper result.
+
+## 2026-08-07 — Long-horizon drift: two controls built (native geometry + delta-in-rollout)
+
+**Tags:** long-horizon, drift, native-protocol, adasteer-delta, exp-controls, longcat-api
+**Refs:** delta_experiment/scripts/diag_longhorizon_drift.py; delta_experiment/sbatch/{run,submit}_longhorizon_drift.{sbatch,sh}; prior 2026-08-07 drift entry
+
+Context: the 2026-08-07 NOTTA reencode (14-cond/14-gen) drift run showed monotonic
+degradation over an 8-chunk autoregressive rollout (colorfulness +58%, contrast +13%,
+Laplacian sharpness / HF-artifacts +258%). Two confounds remained; built both controls.
+
+LongCat API fact (verified against every call site; the pipeline is an external dep, NOT
+vendored in this repo): `pipe.generate_vc(...)` is SINGLE-WINDOW and exposes only
+`use_kv_cache`/`offload_kv_cache` (per single call). There is NO `num_segments`/`overlap`
+kwarg and NO KV-cache carryover across windows. LongCat's own long-horizon is an EXTERNAL
+rollout re-conditioned on the last `num_cond_frames` GENERATED frames (tail =
+prev_gen[num_gen:]) with a pixel round-trip through PIL — which is exactly what our
+diagnostic already does. So "native protocol" is NOT KV carryover; the only off-native
+axis is GEOMETRY.
+
+EXP-A (native-geometry control) — `--rollout-mode native`: rerun the SAME external
+chaining at LongCat's idiomatic 13-cond/93-frame (80-gen) window. Our short 14/14 window
+creates ~5.7x more re-anchoring seams per generated frame, which could inflate apparent
+drift. Drift persists at native geometry => inherent; drift vanishes => short-window
+re-conditioning artifact.
+
+EXP-B (intervention-in-rollout) — `--method delta`: train an AdaSteer delta ONCE on the
+observed frames (identical run_delta_a recipe: same TTA window, split_tta_latents,
+VAE/text-encoder offload, optimize_delta_a call, adaln placement) and hold it FIXED across
+the rollout. Seeds are shared per chunk with NOTTA => paired per-video comparison.
+Hypothesis: a fixed context-0 delta may help early chunks then decay as the rollout leaves
+the trained distribution -> would motivate a streaming / per-chunk re-fit delta (EXP4).
+
+Decision: default arms = notta_native (vs existing notta_reencode) and delta_reencode (vs
+existing notta_reencode, paired). Native arm uses lighter N/chunks (16 vids x 6 chunks) to
+fit the 12h budget. Code pushed; jobs to be submitted on cluster. NO RESULTS YET.
