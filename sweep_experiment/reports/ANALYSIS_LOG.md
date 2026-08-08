@@ -1712,3 +1712,34 @@ as a clean negative across pixel + FVD + VBench at reliable N. Consolidates the 
 
 Drift diagnostic (job 15497180, diag_longhorizon_drift.py) running on gh128: model loaded, 24
 videos selected, generating [1/24] chunk 1 — healthy start, verdict pending completion.
+
+## 2026-08-07 — DRIFT FOUND: LongCat degrades hard over 8-chunk autoregressive rollout (headroom regime identified)
+**Tags:** drift, long-horizon, headroom, diagnostic, notta, regime-pivot, confound, tango++
+**Refs:** experiment_outputs/2026-08-07.md; sweep_experiment/results/diag_longhorizon_drift/summary.json; paper_tables/2026-08-06_problem_difficulty_field_geometry.md
+
+Drift diagnostic (job 15497180, COMPLETED; 24 videos x 8 chunks, NOTTA autoregressive rollout,
+cond=14 / gen=14 / gsf=48 — same per-chunk geometry as AdaSteer/placement/EXP3). LongCat DEGRADES
+strongly and MONOTONICALLY over the rollout; the short-horizon saturation does NOT hold once we
+chain. Clean GT-free (path-independent) signals: colorfulness 0.149->0.235 (+58%, monotone),
+contrast 0.236->0.267 (+13%, monotone), sharpness=Laplacian-var 0.0070->0.0251 (+258%, monotone).
+=> drift MODE = progressive OVER-SATURATION + HIGH-FREQUENCY ARTIFACT accumulation (NOT the
+over-smoothing I hypothesized; rising Laplacian-var = excess HF power = NON-WHITE residual, which
+aligns with the proposed TANGO++ whiteness/spectral term). temporal_motion ~flat/noisy (-12%,
+non-monotone) => motion-collapse is NOT the mode. GT metrics collapse: PSNR 19.02->9.82
+(-1.12 dB/chunk), SSIM 0.71->0.31, LPIPS 0.25->0.75 (+201%); front-loaded (PSNR 19->12.5 by
+chunk 3). CAVEAT: PSNR/LPIPS fall partly from legitimate divergence from the single GT
+continuation path (continuation is multimodal), so LEAD with the GT-free monotone evidence.
+
+STRATEGIC: resolves the option-1 fork — headroom EXISTS in long-horizon rollout, so the
+delta-vector must NOT be abandoned on saturated short-horizon evidence. This is the regime to
+evaluate all interventions in.
+
+CONFOUND to rule out before claiming "LongCat *inherently* drifts": our rollout is OFF-NATIVE — it
+re-encodes pixels every chunk (decode -> uint8 PIL -> re-encode), conditions on only 14 frames,
+and uses NO KV-cache / NO native 13-overlap segment chaining. Degradation may be partly
+protocol-induced (VAE round-trip + context loss). NEXT: (1) native-protocol drift CONTROL
+(KV-cache + overlap-13 native chaining) to test whether drift is inherent; (2) intervention-in-
+rollout test — re-run the SAME 8-chunk rollout with AdaSteer delta (run_delta_a already supports
+--rollout-steps), TTC appearance re-anchoring, and TANGO++, measuring whether they FLATTEN the
+colorfulness/contrast/sharpness drift and slow the PSNR/LPIPS collapse. That flattening is the
+paper result.
