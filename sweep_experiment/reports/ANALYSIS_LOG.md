@@ -1090,3 +1090,37 @@ at long horizon (GT overlap runs out). NEXT: run scripts/compare_drift_paired.py
 CI + sign-flip permutation on |drift| reduction). If CI excludes 0 on sharpness/colorfulness ->
 promote to headline, widen N, sweep lambda (0.3/0.5/0.7) + refit_steps, and add FVD/VBench-Long on
 the saved stitched mp4s. If null under the test -> report as promising-but-underpowered.
+
+---
+
+## 2026-08-09 (REBUTS the entry above) — EXP4 paired per-video test: NULL, not positive
+tags: [long-horizon, streaming-delta, exp4, paired-test, negative-result, correction, self-supervised-flaw]
+refs: scripts/compare_drift_paired.py;
+sweep_experiment/results/longhorizon_sweep_delta_stream_native_12ch/paired/paired_stats.json;
+sweep_experiment/reports/experiment_outputs/2026-08-09.md
+
+The "FIRST POSITIVE" entry above judged EXP4 on POPULATION mean-curve endpoints. The correct
+per-video paired test (bootstrap CI + sign-flip permutation on |drift|=|chunk12-chunk1|, N=8) says
+it is NULL:
+  signal            reduction(NOTTA-delta)   95% CI                p
+  sharpness         -0.0015                  [-0.0038,+0.0007]     0.26
+  temporal_motion   +0.0008                  [-0.0061,+0.0074]     0.88
+  colorfulness      -0.0078                  [-0.0199,+0.0051]     0.32
+  contrast          -0.0029                  [-0.0148,+0.0081]     0.66
+No CI excludes 0; point estimates lean the WRONG way (delta drifts MORE per video) on 3/4 GT-free
+signals. The population "flattening" was CANCELLATION: delta's mean-curve sharpness change (0.0016)
+vs per-video mean |drift| (0.0074) = 4.6x gap (NOTTA 1.9x) -> delta raised per-video volatility that
+averages flat. A flat mean curve here == added instability, not stability.
+
+ROOT CAUSE: delta_stream re-fits each chunk by flow-matching to the model's OWN generated window, so
+when generation drifts the refit target is the drifted frames -> the update partly REPRODUCES drift.
+Only the lambda=0.5 delta0 anchor (trained on real chunk-0 frames) is a clean signal.
+
+DECISION: EXP4 as built (lambda=0.5, refit_steps=5) is a clean negative under paired testing. Do NOT
+sweep lambda upward (lambda->1 == the EXP-B fixed-delta null). Two live paths: (1) redesign the
+per-chunk update to anchor to CLEAN chunk-0 context statistics / appearance (Pathwise-TTC-style
+re-anchoring) instead of self-supervising on drifted output -- one real technical shot; (2) if that
+also fails paired testing, consolidate the honest narrative: corrected native drift measurement +
+"drift compounds with horizon" + a controlled catalogue of interventions (fixed delta, streaming
+delta) that do not beat NOTTA per-video. Consistent with the project-wide pattern (PSNR router,
+placement, TANGO): population movements that vanish under per-video paired tests.

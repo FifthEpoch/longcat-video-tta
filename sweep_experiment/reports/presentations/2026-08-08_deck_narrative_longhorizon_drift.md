@@ -16,10 +16,15 @@ largely a short-window measurement artifact — natively the model is far more r
 drift **compounds**: sharpness +48% (vs +28% at 30s), temporal_motion +45% (vs +8%),
 contrast −16% (vs +3%) — Slide 5c. So the "moderate" 30s read *understated* it; drift
 grows with length. (3) A fixed AdaSteer delta does not flatten it (Slide 7) →
-motivates the streaming per-chunk delta (**EXP4, launched 2026-08-09**, jobs
-15551946–49, paired seeds vs the 60s NOTTA run). Present drift as *apparent →
-controlled → real, horizon-compounding headroom → our streaming fix*. Both native
-runs are gating N (N=8–12); widen N once EXP4 shows signal.
+motivated the streaming per-chunk delta (**EXP4**). **UPDATE (2026-08-09 eve):
+EXP4 is NULL under the paired per-video test** (Slide 8) — the population
+"flattening" was mean-curve cancellation (the delta raised per-video volatility,
+which averages flat), and per-video |drift| actually favors NOTTA on 3/4 GT-free
+signals (no CI excludes 0; p ≥ 0.26). So the story is *apparent → controlled →
+real horizon-compounding headroom → interventions so far (fixed delta AND
+streaming delta) do NOT beat NOTTA per-video*. Honest headline = **measurement +
+a controlled negative-results catalogue**; one live technical shot remains
+(clean-anchored re-fit, Slide 8). Native runs are gating N (N=8–12).
 
 ---
 
@@ -205,15 +210,22 @@ unchanged.
 
 ## Slide 8 — What's next
 
-- **EXP4 streaming delta — LAUNCHED (2026-08-09, jobs 15551946–49):** re-fit the
-  steering vector **per chunk** on the most recent generated window, re-anchored
-  toward the real-data chunk-0 delta (`--stream-blend 0.5`) so it tracks the moving
-  distribution without chasing its own artifacts. Runs at the **same native 60 s
-  geometry + seed** as the NOTTA run, so it's **paired** per-video. This is the
-  direct answer to the fixed-delta null (Slide 7).
-  - **Read when it lands:** do the GT-free curves (sharpness, temporal_motion,
-    contrast) **flatten** vs the NOTTA verdict? If the delta *amplifies* the rising
-    sharpness/motion, escalate the anchor (λ → 0.6–0.7).
+- **EXP4 streaming delta — DONE, NULL (2026-08-09):** re-fit the steering vector
+  per chunk on the most recent generated window, re-anchored to the chunk-0 delta
+  (`--stream-blend 0.5`), paired vs NOTTA (native 60 s, N=8). **Population
+  mean-curves looked flatter, but the per-video paired test (bootstrap CI +
+  sign-flip permutation on |drift|) is NULL:** no CI excludes 0, all p ≥ 0.26, and
+  point estimates favor NOTTA on sharpness (−0.0015), colorfulness (−0.0078),
+  contrast (−0.0029). The mean-curve "flattening" was **cancellation** — the delta
+  raised per-video volatility (sharpness mean-curve change 0.0016 vs per-video
+  |drift| 0.0074 = 4.6× gap vs NOTTA's 1.9×). **Root cause:** the re-fit
+  self-supervises on the model's OWN drifted output, so it partly reproduces drift.
+- **One live technical shot — clean-anchored re-fit:** instead of flow-matching on
+  the drifted generated tail, anchor the per-chunk update to **clean chunk-0
+  context statistics / appearance** (Pathwise-TTC-style re-anchoring). If this also
+  fails the paired test → the intervention line is a clean negative and we lead with
+  measurement + negative results. Do NOT sweep λ upward (λ→1 == the EXP-B fixed
+  delta, already null).
 - **Horizon length is itself a lever (Slide 5c):** drift compounds with rollout
   length, so the gap an intervention can open should **widen** at longer horizons —
   strengthens the case for evaluating natively at ≥1 min, not at 30 s.
