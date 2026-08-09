@@ -1060,3 +1060,33 @@ DECISION: launch EXP4 delta_stream at the SAME geometry/seed (paired vs these 8 
 per-chunk seeds). --stream-blend 0.5 anchor to the real-data delta0 guards against the per-chunk
 re-fit chasing the rising sharpness/motion artifacts; escalate anchor to 0.6-0.7 if the delta
 amplifies drift. This is the target the EXP-B fixed-delta null pointed to.
+
+---
+
+## 2026-08-09 — EXP4 streaming anchored delta: FIRST POSITIVE intervention (native ~60s, N=8)
+tags: [long-horizon, streaming-delta, exp4, drift, native-geometry, positive-result, paired]
+refs: sweep_experiment/results/longhorizon_sweep_delta_stream_native_12ch/merged_summary.json;
+scripts/compare_drift_paired.py; sweep_experiment/reports/experiment_outputs/2026-08-09.md
+
+delta_stream (refit_steps=5, blend/anchor=0.5) re-fits the AdaSteer delta each chunk on the most
+recent generated window and re-anchors toward the real-data chunk-0 delta. Run at the SAME native
+60s geometry + seed as the NOTTA gating run => paired per-video (chunk-1 baselines match to ~0.001).
+
+Drift verdict (chunk1 -> chunk12), NOTTA vs stream-delta:
+  sharpness (leading)  +48.0% (->0.0096)  ->  +24.8% (->0.0080)   ~HALVED
+  colorfulness         +5.7%              ->  +0.4%               FLATTENED
+  contrast (fade)      -16.4%             ->  -11.5%              ~30% less fade
+  temporal_motion      +45.1% (->0.0341)  ->  +40.8% (->0.0341)   ~unchanged
+  psnr/ssim/lpips      -14.7/-14.3/-4.6%  ->  -14.5/-14.2/-4.8%   tied (GT spans ~1-2 chunks; not LH signal)
+
+READING: the anchored streaming delta shrinks the leading long-horizon drift mode (HF-artifact
+accumulation) by ~half and flattens over-saturation, reduces contrast fade, WITHOUT amplifying
+artifacts (lambda=0.5 anchor guard worked -> no drift-chasing). Motion instability is the one mode
+it does not fix. This is the FIRST positive intervention result in the project; it directly answers
+the EXP-B fixed-delta null (a moving target needs a moving correction).
+
+CAVEATS: N=8 is gating; endpoint means are not a significance test. GT pixel metrics uninformative
+at long horizon (GT overlap runs out). NEXT: run scripts/compare_drift_paired.py (per-video bootstrap
+CI + sign-flip permutation on |drift| reduction). If CI excludes 0 on sharpness/colorfulness ->
+promote to headline, widen N, sweep lambda (0.3/0.5/0.7) + refit_steps, and add FVD/VBench-Long on
+the saved stitched mp4s. If null under the test -> report as promising-but-underpowered.
