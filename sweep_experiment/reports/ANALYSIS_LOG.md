@@ -1035,3 +1035,28 @@ STATUS: code built, byte-compiled, submitter dry-run verified. Runs pending. Nex
 gating sweep (does mild native drift compound to a decisive effect at ~1 min?), then delta_stream at
 the same geometry with paired seeds to test whether streaming re-anchoring flattens it where the
 EXP-B fixed delta went stale.
+
+---
+
+## 2026-08-09 — GATING RESULT: native drift COMPOUNDS with horizon at ~60s (12 chunks, N=8)
+tags: [long-horizon, drift, native-geometry, gating, notta, positive-result]
+refs: sweep_experiment/results/longhorizon_sweep_notta_native_12ch/merged_summary.json;
+sweep_experiment/reports/experiment_outputs/2026-08-09.md; scripts/merge_drift_shards.py
+
+Merged 4 shards (N=8 videos x 12 native chunks = 960 gen frames ~= 60s @16fps, seed=42). GT-free
+drift verdict (chunk1 -> chunk12), with the 30s/6-chunk native prelim (2026-08-08) for contrast:
+  sharpness        +48%  (was +28% @ 6ch)   temporal_motion +45%  (was +8%)
+  contrast         -16%  (was +2.8%)        colorfulness    +5.7% (was +4%)
+All slopes consistent-signed + monotonic. => At a GENUINELY long horizon (~1 min, ~50% of the field
+ceiling) native LongCat degrades meaningfully and MORE than at 30s: drift compounds. This is the
+decisive long-horizon headroom that was ABSENT at short/native-6ch geometry.
+
+CAVEAT: psnr/ssim/lpips "chunk1->last" spans only the first ~1-2 chunks (GT overlap runs out on the
+short source clips), so their steep slopes (psnr -2.56/chunk over 2 points) are NOT the long-horizon
+signal. Judge long-horizon drift by the GT-free curves only. N=8 is a gating sample; widen N once a
+method shows signal.
+
+DECISION: launch EXP4 delta_stream at the SAME geometry/seed (paired vs these 8 videos, same
+per-chunk seeds). --stream-blend 0.5 anchor to the real-data delta0 guards against the per-chunk
+re-fit chasing the rising sharpness/motion artifacts; escalate anchor to 0.6-0.7 if the delta
+amplifies drift. This is the target the EXP-B fixed-delta null pointed to.
