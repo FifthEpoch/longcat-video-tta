@@ -1124,3 +1124,29 @@ also fails paired testing, consolidate the honest narrative: corrected native dr
 "drift compounds with horizon" + a controlled catalogue of interventions (fixed delta, streaming
 delta) that do not beat NOTTA per-video. Consistent with the project-wide pattern (PSNR router,
 placement, TANGO): population movements that vanish under per-video paired tests.
+
+---
+
+## 2026-08-09 — Built: clean-anchored streaming re-fit (`--stream-target clean`) + length-extend knob
+tags: [long-horizon, streaming-delta, exp4, clean-anchor, build, pathwise-ttc]
+refs: delta_experiment/scripts/diag_longhorizon_drift.py;
+delta_experiment/sbatch/submit_longhorizon_sweep.sh; delta_experiment/sbatch/run_longhorizon_drift.sbatch
+
+Direct fix for the EXP4 root cause (self-supervising on the model's own drifted output). New
+`delta_stream --stream-target clean`: at each chunk, CONDITION on the current drifted context (the
+tail that will condition the next chunk) but FLOW-MATCH the delta toward the CLEAN chunk-0 real-frame
+latents (cached from delta0 training, reused with no re-encode). The low-capacity bias thus learns
+"from where you've drifted, steer back toward the clean distribution" -- a Pathwise-TTC-style
+re-anchoring expressed through the AdaSteer delta rather than sampling-space guidance. Geometry
+matches chunk-0 (cond=4 drifted latents + train=8 clean latents = 12). `--stream-blend` still
+re-anchors the result toward delta0. Old behaviour preserved as `--stream-target generated` (the
+null). Series name encodes the target (…_delta_stream_clean_native_12ch) so runs never collide.
+
+Also exposed the length-extend fallback the user requested if clean-anchor fails: NUM_CHUNKS knob
+(18=~72s, 24=~96s) with SHARD_SIZE=1 to stay in the 12h wall (~9.3 min/native chunk).
+
+PLAN: run clean-anchored delta_stream at the SAME native 60s geometry/seed as the NOTTA + generated
+runs (paired), then compare_drift_paired.py. Decision gate: CI excludes 0 on sharpness/colorfulness
+=> real re-anchoring effect (widen N, sweep lambda/refit, add FVD/VBench-Long); null => extend
+horizon (NUM_CHUNKS 18/24) to see if a bigger drift gap makes the correction detectable, else
+consolidate the measurement + negative-results narrative.

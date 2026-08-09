@@ -47,10 +47,19 @@ DELTA_PLACEMENT="${DELTA_PLACEMENT:-adaln}"
 STREAM_REFIT_STEPS="${STREAM_REFIT_STEPS:-5}"
 STREAM_REFIT_LR="${STREAM_REFIT_LR:-0}"
 STREAM_BLEND="${STREAM_BLEND:-0.5}"
+# 'clean' (default) = clean-anchored re-fit: condition on the drifted context but
+# flow-match toward the CLEAN chunk-0 real latents (removes the train-on-own-drift
+# flaw that made STREAM_TARGET=generated null on 2026-08-09). 'generated' = old.
+STREAM_TARGET="${STREAM_TARGET:-clean}"
 
 DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/datasets/panda_ood_budget_1000v_preview_480p}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
-SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
+# encode the stream target in the series name so clean vs generated never collide.
+if [ "${METHOD}" = "delta_stream" ]; then
+  SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${STREAM_TARGET}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
+else
+  SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
+fi
 BASE="${PROJECT_ROOT}/sweep_experiment/results/${SERIES}"
 
 NSHARDS=$(( (POOL_N + SHARD_SIZE - 1) / SHARD_SIZE ))
@@ -65,7 +74,7 @@ echo "  geometry: cond=${NUM_COND_FRAMES} frames=${NUM_FRAMES} steps=${NUM_INFER
 echo "  pool    : N=${POOL_N}  shard_size=${SHARD_SIZE}  -> ${NSHARDS} jobs"
 echo "  series  : ${SERIES}"
 if [ "${METHOD}" = "delta_stream" ]; then
-  echo "  stream  : refit_steps=${STREAM_REFIT_STEPS} refit_lr=${STREAM_REFIT_LR} blend(anchor)=${STREAM_BLEND}"
+  echo "  stream  : target=${STREAM_TARGET} refit_steps=${STREAM_REFIT_STEPS} refit_lr=${STREAM_REFIT_LR} blend(anchor)=${STREAM_BLEND}"
 fi
 echo "============================================================"
 
@@ -79,7 +88,7 @@ for (( s=0; s<NSHARDS; s++ )); do
     continue
   fi
   jid=$(sbatch --parsable --account="${ACCOUNT}" \
-    --export=ALL,"METHOD=${METHOD},ROLLOUT_MODE=${ROLLOUT_MODE},NUM_VIDEOS=${POOL_N},START_VIDEO_IDX=${start},CHUNK_SIZE=${SHARD_SIZE},NUM_CHUNKS=${NUM_CHUNKS},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},SEED=${SEED},DELTA_STEPS=${DELTA_STEPS},DELTA_LR=${DELTA_LR},DELTA_PLACEMENT=${DELTA_PLACEMENT},STREAM_REFIT_STEPS=${STREAM_REFIT_STEPS},STREAM_REFIT_LR=${STREAM_REFIT_LR},STREAM_BLEND=${STREAM_BLEND},DATA_DIR=${DATA_DIR},CHECKPOINT_DIR=${CHECKPOINT_DIR},OUTPUT_DIR=${outdir}" \
+    --export=ALL,"METHOD=${METHOD},ROLLOUT_MODE=${ROLLOUT_MODE},NUM_VIDEOS=${POOL_N},START_VIDEO_IDX=${start},CHUNK_SIZE=${SHARD_SIZE},NUM_CHUNKS=${NUM_CHUNKS},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},SEED=${SEED},DELTA_STEPS=${DELTA_STEPS},DELTA_LR=${DELTA_LR},DELTA_PLACEMENT=${DELTA_PLACEMENT},STREAM_REFIT_STEPS=${STREAM_REFIT_STEPS},STREAM_REFIT_LR=${STREAM_REFIT_LR},STREAM_BLEND=${STREAM_BLEND},STREAM_TARGET=${STREAM_TARGET},DATA_DIR=${DATA_DIR},CHECKPOINT_DIR=${CHECKPOINT_DIR},OUTPUT_DIR=${outdir}" \
     "${SBATCH}")
   echo "   job ${jid}"
   jids+=("${jid}")
@@ -92,5 +101,16 @@ echo "After ALL shards finish, merge + verdict + plots:"
 echo "  python scripts/merge_drift_shards.py --shards-root ${BASE}"
 echo "  python scripts/plot_drift_curves.py --summary ${BASE}/merged_summary.json --out-dir ${BASE}/plots"
 echo ""
+echo "Then paired test vs the NOTTA run at the same geometry:"
+echo "  python scripts/compare_drift_paired.py \\"
+echo "    --notta ${PROJECT_ROOT}/sweep_experiment/results/longhorizon_sweep_notta_${ROLLOUT_MODE}_${NUM_CHUNKS}ch/merged_summary.json \\"
+echo "    --delta ${BASE}/merged_summary.json --out-dir ${BASE}/paired --label-b ${METHOD}-${STREAM_TARGET}"
+echo ""
 echo "Note: all shards share NUM_VIDEOS=${POOL_N} + SEED=${SEED} so the video"
 echo "list ordering is identical; each shard slices [start, start+shard_size)."
+echo ""
+echo "FALLBACK (extend horizon even more): re-launch NOTTA + this arm with a"
+echo "longer rollout, e.g. NUM_CHUNKS=18 (~72s) or 24 (~96s). Cost scales ~linearly"
+echo "(~9.3 min/native chunk); drop SHARD_SIZE to 1 to stay in the 12h wall, e.g.:"
+echo "  NUM_CHUNKS=24 SHARD_SIZE=1 bash delta_experiment/sbatch/submit_longhorizon_sweep.sh   # NOTTA"
+echo "  NUM_CHUNKS=24 SHARD_SIZE=1 METHOD=delta_stream bash delta_experiment/sbatch/submit_longhorizon_sweep.sh"

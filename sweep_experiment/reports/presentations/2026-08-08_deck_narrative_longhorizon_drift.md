@@ -220,10 +220,14 @@ unchanged.
   raised per-video volatility (sharpness mean-curve change 0.0016 vs per-video
   |drift| 0.0074 = 4.6× gap vs NOTTA's 1.9×). **Root cause:** the re-fit
   self-supervises on the model's OWN drifted output, so it partly reproduces drift.
-- **One live technical shot — clean-anchored re-fit:** instead of flow-matching on
-  the drifted generated tail, anchor the per-chunk update to **clean chunk-0
-  context statistics / appearance** (Pathwise-TTC-style re-anchoring). If this also
-  fails the paired test → the intervention line is a clean negative and we lead with
+- **One live technical shot — clean-anchored re-fit (BUILT, running):** implemented
+  as `delta_stream --stream-target clean` — condition on the drifted context but
+  flow-match the per-chunk update toward the **clean chunk-0 real-frame latents**
+  (Pathwise-TTC-style re-anchoring through the AdaSteer bias). Runs paired vs NOTTA
+  at the native 60 s geometry. Decision gate: paired-test CI excludes 0 on
+  sharpness/colorfulness → real effect; null → **extend the horizon further**
+  (NUM_CHUNKS 18/24, ~72–96 s) to see if a bigger drift gap makes the correction
+  detectable, else the intervention line is a clean negative and we lead with
   measurement + negative results. Do NOT sweep λ upward (λ→1 == the EXP-B fixed
   delta, already null).
 - **Horizon length is itself a lever (Slide 5c):** drift compounds with rollout

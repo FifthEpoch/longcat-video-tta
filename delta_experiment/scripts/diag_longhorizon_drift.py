@@ -274,13 +274,15 @@ def train_delta_for_video(
 ):
     """Train an AdaSteer delta on the OBSERVED frames before ``gen_start_frame``.
 
-    Returns ``(wrapper, delta_norm)``. The wrapper is NOT yet applied; caller
-    must ``wrapper.apply_to_dit()`` before the rollout and ``remove_from_dit()``
-    after. This mirrors ``run_delta_a.py`` exactly (same window, same latent
-    split, same VAE/text-encoder offload dance, same optimizer call) so the
-    delta arm is apples-to-apples with the standard AdaSteer runs -- the only
-    difference is that here the trained delta is held fixed across a K-chunk
-    autoregressive rollout instead of a single chunk.
+    Returns ``(wrapper, delta_norm, clean_bundle)``. ``clean_bundle`` holds the
+    CLEAN chunk-0 latents + prompt embeds (on CPU) so a clean-anchored streaming
+    re-fit can reuse the real-frame target without re-encoding the source video.
+    The wrapper is NOT yet applied; caller must ``wrapper.apply_to_dit()`` before
+    the rollout and ``remove_from_dit()`` after. This mirrors ``run_delta_a.py``
+    exactly (same window, same latent split, same VAE/text-encoder offload dance,
+    same optimizer call) so the delta arm is apples-to-apples with the standard
+    AdaSteer runs -- the only difference is that here the trained delta is held
+    fixed (or streamed) across a K-chunk autoregressive rollout.
     """
     # Lazy import so the NOTTA arm never pulls in run_delta_a.
     from run_delta_a import DeltaAWrapper, optimize_delta_a  # noqa: E402
@@ -335,7 +337,12 @@ def train_delta_for_video(
         text_encoder.to(device)
         torch.cuda.empty_cache()
 
-    return wrapper, float(opt_result.get("delta_norm", float("nan")))
+    clean_bundle = {
+        "train_latents": train_latents.detach().to("cpu"),
+        "prompt_embeds": prompt_embeds.detach().to("cpu"),
+        "prompt_mask": prompt_mask.detach().to("cpu") if prompt_mask is not None else None,
+    }
+    return wrapper, float(opt_result.get("delta_norm", float("nan"))), clean_bundle
 
 
 def refit_delta_on_window(
@@ -349,11 +356,23 @@ def refit_delta_on_window(
     refit_steps: int,
     refit_lr: float,
     device: str,
+    clean_target_latents=None,
+    clean_prompt_embeds=None,
+    clean_prompt_mask=None,
 ):
-    """Streaming re-fit (EXP4): adapt the delta to the MOST RECENT generated
-    window, initialised from ``delta_init``. ``window_np`` is [T,H,W,3] float[0,1]
-    (the previous chunk's full [cond|gen] window). Returns the re-fit delta
-    tensor (caller blends it toward the anchored chunk-0 delta).
+    """Streaming re-fit (EXP4): adapt the delta using the CURRENT (drifted)
+    context, initialised from ``delta_init``. ``window_np`` is [T,H,W,3] float[0,1].
+
+    Two target modes:
+      * ``clean_target_latents is None`` (GENERATED target): flow-match the delta
+        to the window's own tail -> self-supervised on the model's drifted output
+        (the 2026-08-09 null: it partly REPRODUCES drift).
+      * ``clean_target_latents`` provided (CLEAN target): condition on the drifted
+        context but flow-match toward the CLEAN chunk-0 real-frame latents, i.e.
+        teach the low-capacity bias "from where you've drifted, steer back to the
+        clean distribution." This removes the train-on-own-drift flaw.
+
+    Returns the re-fit delta tensor (caller blends it toward the chunk-0 delta).
 
     IMPORTANT: the caller must have REMOVED the generation hooks before calling
     (optimize_delta_a runs the wrapper.forward training path, which adds the
@@ -370,15 +389,27 @@ def refit_delta_on_window(
     x = torch.from_numpy(np.clip(window_np, 0.0, 1.0).astype(np.float32))
     x = x.permute(3, 0, 1, 2).unsqueeze(0)          # [1,3,T,H,W]
     x = (x * 2.0 - 1.0).to(device, dtype)            # [-1,1], VAE convention
-    all_latents = encode_video(vae, x, normalize=True)
+    ctx_latents = encode_video(vae, x, normalize=True)
 
     num_ctx_lat = 1 + (tta_context_frames - 1) // 4
-    cond_latents, train_latents, _ = split_tta_latents(
-        all_latents, num_ctx_lat, holdout_fraction=0.0,
-    )
-    prompt_embeds, prompt_mask = encode_prompt(
-        tokenizer, text_encoder, caption, device=device, dtype=dtype,
-    )
+    if clean_target_latents is None:
+        # generated target: split the window into cond + its own continuation.
+        cond_latents, train_latents, _ = split_tta_latents(
+            ctx_latents, num_ctx_lat, holdout_fraction=0.0,
+        )
+    else:
+        # clean target: the passed window IS the context (its first num_ctx_lat
+        # latents condition the next chunk); target = clean chunk-0 latents.
+        cond_latents = ctx_latents[:, :, :num_ctx_lat]
+        train_latents = clean_target_latents.to(device, dtype)
+
+    if clean_prompt_embeds is not None:
+        prompt_embeds = clean_prompt_embeds.to(device, dtype)
+        prompt_mask = clean_prompt_mask.to(device) if clean_prompt_mask is not None else None
+    else:
+        prompt_embeds, prompt_mask = encode_prompt(
+            tokenizer, text_encoder, caption, device=device, dtype=dtype,
+        )
     wrapper.delta.data.copy_(delta_init.to(device, wrapper.delta.dtype))
 
     vae.to("cpu")
@@ -471,6 +502,13 @@ def main() -> int:
                         "(1-lambda)*refit + lambda*delta0. Higher=more anchored to "
                         "the real-data chunk-0 delta (guards against adapting to "
                         "the model's own drift).")
+    p.add_argument("--stream-target", type=str, default="generated",
+                   choices=["generated", "clean"],
+                   help="delta_stream target: 'generated' flow-matches to the "
+                        "drifted window's own tail (self-supervised on drift; the "
+                        "2026-08-09 null); 'clean' conditions on the drifted "
+                        "context but flow-matches toward the CLEAN chunk-0 real "
+                        "latents (steer-back-to-clean; removes the flaw).")
     args = p.parse_args()
 
     # Native protocol: apply LongCat's idiomatic window geometry unless the
@@ -511,7 +549,8 @@ def main() -> int:
         f" (steps={args.delta_steps} lr={args.delta_lr} "
         f"placement={args.delta_placement})" if uses_delta else ""))
     if args.method == "delta_stream":
-        print(f"Stream     : refit_steps={args.stream_refit_steps} "
+        print(f"Stream     : target={args.stream_target} "
+              f"refit_steps={args.stream_refit_steps} "
               f"refit_lr={stream_refit_lr} blend(anchor)={args.stream_blend}")
     print(f"Roll mode  : {args.rollout_mode}")
     print(f"Geometry   : cond={args.num_cond_frames} frames={args.num_frames} "
@@ -584,10 +623,11 @@ def main() -> int:
             wrapper = None
             delta_norm = None
             delta0 = None
+            clean_bundle = None
             stream_norms = []
             if uses_delta:
                 _td = time.time()
-                wrapper, delta_norm = train_delta_for_video(
+                wrapper, delta_norm, clean_bundle = train_delta_for_video(
                     components, entry["video_path"], entry["caption"],
                     gen_start_frame=args.gen_start_frame,
                     tta_total_frames=tta_total_frames,
@@ -619,23 +659,40 @@ def main() -> int:
                         if args.method == "delta_stream":
                             _ts = time.time()
                             wrapper.remove_from_dit()
-                            refit = refit_delta_on_window(
-                                components, wrapper,
-                                wrapper.delta.detach().clone(),
-                                prev_gen, entry["caption"],
-                                tta_context_frames=tta_context_frames,
-                                refit_steps=args.stream_refit_steps,
-                                refit_lr=stream_refit_lr,
-                                device=args.device,
-                            )
+                            if args.stream_target == "clean":
+                                # condition on the drifted tail (what conditions
+                                # the next chunk); target = CLEAN chunk-0 latents.
+                                refit = refit_delta_on_window(
+                                    components, wrapper,
+                                    wrapper.delta.detach().clone(),
+                                    tail, entry["caption"],
+                                    tta_context_frames=tta_context_frames,
+                                    refit_steps=args.stream_refit_steps,
+                                    refit_lr=stream_refit_lr,
+                                    device=args.device,
+                                    clean_target_latents=clean_bundle["train_latents"],
+                                    clean_prompt_embeds=clean_bundle["prompt_embeds"],
+                                    clean_prompt_mask=clean_bundle["prompt_mask"],
+                                )
+                            else:
+                                refit = refit_delta_on_window(
+                                    components, wrapper,
+                                    wrapper.delta.detach().clone(),
+                                    prev_gen, entry["caption"],
+                                    tta_context_frames=tta_context_frames,
+                                    refit_steps=args.stream_refit_steps,
+                                    refit_lr=stream_refit_lr,
+                                    device=args.device,
+                                )
                             blended = (1.0 - args.stream_blend) * refit \
                                 + args.stream_blend * delta0
                             wrapper.delta.data.copy_(blended)
                             wrapper.apply_to_dit()
                             snorm = float(wrapper.delta.detach().norm().item())
                             stream_norms.append(snorm)
-                            print(f"    stream re-fit chunk {step_i+1}: "
-                                  f"norm={snorm:.4f} ({time.time()-_ts:.1f}s)")
+                            print(f"    stream re-fit chunk {step_i+1} "
+                                  f"[{args.stream_target}]: norm={snorm:.4f} "
+                                  f"({time.time()-_ts:.1f}s)")
 
                     last_cond_frame = np.asarray(cond_images[-1]).astype(np.float32) / 255.0
 
@@ -741,6 +798,7 @@ def main() -> int:
         "stream_refit_steps": args.stream_refit_steps if args.method == "delta_stream" else None,
         "stream_refit_lr": stream_refit_lr if args.method == "delta_stream" else None,
         "stream_blend": args.stream_blend if args.method == "delta_stream" else None,
+        "stream_target": args.stream_target if args.method == "delta_stream" else None,
         "num_chunks": args.num_chunks,
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,

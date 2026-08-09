@@ -46,6 +46,7 @@ TTA_CONTEXT_FRAMES="${TTA_CONTEXT_FRAMES:-0}"
 STREAM_REFIT_STEPS="${STREAM_REFIT_STEPS:-5}"
 STREAM_REFIT_LR="${STREAM_REFIT_LR:-0}"
 STREAM_BLEND="${STREAM_BLEND:-0.5}"
+STREAM_TARGET="${STREAM_TARGET:-generated}"   # generated | clean
 
 # ---- paths ----------------------------------------------------------------
 SCRATCH_BASE="/scratch/wc3013"
@@ -115,7 +116,8 @@ python delta_experiment/scripts/diag_longhorizon_drift.py \
     --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
     --stream-refit-steps "${STREAM_REFIT_STEPS}" \
     --stream-refit-lr "${STREAM_REFIT_LR}" \
-    --stream-blend "${STREAM_BLEND}"
+    --stream-blend "${STREAM_BLEND}" \
+    --stream-target "${STREAM_TARGET}"
 
 echo ""
 echo "=============================================================================="
