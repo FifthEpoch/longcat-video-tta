@@ -8,16 +8,18 @@ seed=42). Figures live in `../paper_figures/2026-08-08_longhorizon_drift/` and a
 regenerable via `scripts/make_drift_presentation_figs.py`. Full data + verdict
 table: `../paper_tables/2026-08-08_longhorizon_drift_presentation.md`.
 
-**Status (2026-08-08 update — READ FIRST):** both controls are now in and they
-**materially reframe the headline**. The dramatic reencode drift is *largely a
-short-window measurement artifact* — under LongCat's native 13-cond/80-gen
-protocol the model is far more robust (Slide 5b). Real but **moderate** headroom
-survives natively (LPIPS ~2×, SSIM −40%, PSNR −21% over ~480 frames), concentrated
-in perceptual fidelity — NOT over-saturation/motion-collapse. A fixed AdaSteer
-delta does not flatten it (Slide 7). Present drift as *apparent → controlled →
-moderate real headroom*, not as "LongCat drifts hard." Native control is
-PRELIMINARY (N=12/16; arm hit the 12 h wall) — finishing to N=16 + matched-horizon
-confirm is the open item.
+**Status (2026-08-09 update — READ FIRST):** the story is now *apparent → controlled
+→ real headroom that COMPOUNDS with horizon*. (1) The dramatic reencode drift is
+largely a short-window measurement artifact — natively the model is far more robust
+(Slide 5b). (2) BUT when we push the native rollout to a **genuinely long horizon
+(~60s, 12 chunks = 960 gen frames, ~50% of the field's 2-min ceiling)**, the GT-free
+drift **compounds**: sharpness +48% (vs +28% at 30s), temporal_motion +45% (vs +8%),
+contrast −16% (vs +3%) — Slide 5c. So the "moderate" 30s read *understated* it; drift
+grows with length. (3) A fixed AdaSteer delta does not flatten it (Slide 7) →
+motivates the streaming per-chunk delta (**EXP4, launched 2026-08-09**, jobs
+15551946–49, paired seeds vs the 60s NOTTA run). Present drift as *apparent →
+controlled → real, horizon-compounding headroom → our streaming fix*. Both native
+runs are gating N (N=8–12); widen N once EXP4 shows signal.
 
 ---
 
@@ -124,6 +126,37 @@ chunks cover 480 generated frames vs 84 for reencode (5.7× longer horizon)**.
 
 ---
 
+## Slide 5c — Push to ~1 minute: native drift COMPOUNDS with horizon
+
+**The re-elevation.** The native control above ran only 6 chunks (~30 s, 480 gen
+frames) — the *low end* of "long-horizon." Reviewers of long-horizon continuation
+expect 30 s–2 min+ (StreamingT2V ~2 min/1200 f; Rolling Forcing multi-minute;
+LongCat's own design point ~1 min). So we extended the native rollout to **12
+chunks = 960 generated frames ≈ 60 s @16 fps** (~50 % of the 2-min field ceiling),
+sharded across 4 jobs, N=8, seed=42, native 13-cond/80-gen.
+
+| GT-free signal (chunk 1 → last) | Native 30 s (6 ch, N=12) | **Native 60 s (12 ch, N=8)** | reading |
+|---|--:|--:|---|
+| Sharpness / HF artifacts | +28% | **+48%** | artifacts accumulate faster the longer you roll |
+| Temporal motion | +8% | **+45%** | spurious motion / instability injected over time |
+| Contrast | +3% | **−16%** | a fade sets in only at long horizon |
+| Colorfulness (saturation) | +4% | +5.7% | still mild — NOT the driver |
+
+- **Take:** the 30 s "moderate" picture *understated* the problem. At a genuinely
+  long horizon the GT-free drift **grows monotonically with rollout length** — this
+  is the decisive headroom that was absent at short/6-chunk geometry, and it exists
+  under the corrected native protocol (not just the inflated reencode one).
+- **Refines Slide 4:** motion isn't *collapsing* — at long horizon it **inflates
+  (+45 %)**, i.e. the rollout injects unstable/spurious motion. The drift mode is
+  *HF-artifact accumulation + motion instability + contrast fade*.
+- **Caveats (state them):** N=8 is a **gating** sample, not a paper number.
+  PSNR/SSIM/LPIPS are **not** the long-horizon signal here — GT overlap runs out
+  after ~1–2 chunks (short source clips), so their "chunk1→last" spans a tiny window
+  (that's why the reported PSNR slope is a steep −2.56/chunk over 2 points). Judge
+  long-horizon drift by the **GT-free** curves only.
+
+---
+
 ## Slide 6 — Data appendix (per-chunk, mean over N=24)
 
 | Chunk | Sharpness | Motion | Colorfulness | Contrast | PSNR | SSIM | LPIPS | GT n |
@@ -172,21 +205,25 @@ unchanged.
 
 ## Slide 8 — What's next
 
-- **Finish the native control (immediate):** resume `notta_native` to complete
-  N=16 (only 4 videos left, ~4 h), then do a **matched-horizon** comparison
-  (x = cumulative generated frames, not chunk index) so native-vs-reencode is
-  airtight. This locks Slide 5b.
-- **Reframed target:** the real, native headroom is **perceptual-fidelity decay**
-  (LPIPS ~2×, SSIM −40%) over long rollouts — *not* over-saturation or motion
-  collapse. Interventions must be evaluated at **native geometry** against this
-  milder target, and probably need **longer rollouts** to open a visible gap.
-- **The fix (EXP4 — streaming delta):** re-fit / update the steering vector
-  **per chunk** so it tracks the moving distribution; the fixed-delta null
-  motivates it. Must be tested natively.
-- **TANGO++ (de-prioritized):** the whiteness/HF motivation is *weakened* — HF
-  and saturation are mostly flat natively. Keep it as a secondary lever, not the
-  headline.
-- **Honest ask of the deck:** lead with a *methodological* contribution — "naïve
-  short-window rollout eval massively overstates drift; here's the corrected,
-  native measurement" — then present the moderate real headroom and our
-  streaming-delta plan to address it.
+- **EXP4 streaming delta — LAUNCHED (2026-08-09, jobs 15551946–49):** re-fit the
+  steering vector **per chunk** on the most recent generated window, re-anchored
+  toward the real-data chunk-0 delta (`--stream-blend 0.5`) so it tracks the moving
+  distribution without chasing its own artifacts. Runs at the **same native 60 s
+  geometry + seed** as the NOTTA run, so it's **paired** per-video. This is the
+  direct answer to the fixed-delta null (Slide 7).
+  - **Read when it lands:** do the GT-free curves (sharpness, temporal_motion,
+    contrast) **flatten** vs the NOTTA verdict? If the delta *amplifies* the rising
+    sharpness/motion, escalate the anchor (λ → 0.6–0.7).
+- **Horizon length is itself a lever (Slide 5c):** drift compounds with rollout
+  length, so the gap an intervention can open should **widen** at longer horizons —
+  strengthens the case for evaluating natively at ≥1 min, not at 30 s.
+- **Widen N + matched-horizon:** native runs are gating N (8–12). Once EXP4 shows
+  signal, scale N and add the matched-horizon (x = cumulative generated frames)
+  native-vs-reencode plot to lock Slide 5b.
+- **TANGO++ (re-weighted UP slightly):** HF-artifact accumulation is now the
+  *leading* native drift mode at 60 s (sharpness +48 %), so a whiteness/spectral
+  term regains motivation — keep as a secondary lever behind the streaming delta.
+- **Honest ask of the deck:** lead with the *methodological* contribution — "naïve
+  short-window rollout eval massively overstates drift; here's the corrected native
+  measurement" — then reveal that at a genuinely long horizon **real drift
+  compounds**, and present our streaming-delta fix (running now) to address it.
