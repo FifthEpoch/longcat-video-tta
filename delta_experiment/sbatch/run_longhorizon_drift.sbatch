@@ -36,13 +36,16 @@ SEED="${SEED:-42}"
 START_VIDEO_IDX="${START_VIDEO_IDX:-0}"
 CHUNK_SIZE="${CHUNK_SIZE:-0}"
 # rollout protocol + intervention
-METHOD="${METHOD:-notta}"                 # notta | delta
+METHOD="${METHOD:-notta}"                 # notta | delta | delta_stream
 ROLLOUT_MODE="${ROLLOUT_MODE:-reencode}"  # reencode | native
 DELTA_STEPS="${DELTA_STEPS:-10}"
 DELTA_LR="${DELTA_LR:-1e-3}"
 DELTA_PLACEMENT="${DELTA_PLACEMENT:-adaln}"
 TTA_TOTAL_FRAMES="${TTA_TOTAL_FRAMES:-0}"
 TTA_CONTEXT_FRAMES="${TTA_CONTEXT_FRAMES:-0}"
+STREAM_REFIT_STEPS="${STREAM_REFIT_STEPS:-5}"
+STREAM_REFIT_LR="${STREAM_REFIT_LR:-0}"
+STREAM_BLEND="${STREAM_BLEND:-0.5}"
 
 # ---- paths ----------------------------------------------------------------
 SCRATCH_BASE="/scratch/wc3013"
@@ -109,7 +112,10 @@ python delta_experiment/scripts/diag_longhorizon_drift.py \
     --delta-lr "${DELTA_LR}" \
     --delta-placement "${DELTA_PLACEMENT}" \
     --tta-total-frames "${TTA_TOTAL_FRAMES}" \
-    --tta-context-frames "${TTA_CONTEXT_FRAMES}"
+    --tta-context-frames "${TTA_CONTEXT_FRAMES}" \
+    --stream-refit-steps "${STREAM_REFIT_STEPS}" \
+    --stream-refit-lr "${STREAM_REFIT_LR}" \
+    --stream-blend "${STREAM_BLEND}"
 
 echo ""
 echo "=============================================================================="

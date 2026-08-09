@@ -338,6 +338,72 @@ def train_delta_for_video(
     return wrapper, float(opt_result.get("delta_norm", float("nan")))
 
 
+def refit_delta_on_window(
+    components: Dict,
+    wrapper,
+    delta_init,
+    window_np: np.ndarray,
+    caption: str,
+    *,
+    tta_context_frames: int,
+    refit_steps: int,
+    refit_lr: float,
+    device: str,
+):
+    """Streaming re-fit (EXP4): adapt the delta to the MOST RECENT generated
+    window, initialised from ``delta_init``. ``window_np`` is [T,H,W,3] float[0,1]
+    (the previous chunk's full [cond|gen] window). Returns the re-fit delta
+    tensor (caller blends it toward the anchored chunk-0 delta).
+
+    IMPORTANT: the caller must have REMOVED the generation hooks before calling
+    (optimize_delta_a runs the wrapper.forward training path, which adds the
+    delta via forward args; if the hooks were still installed the delta would be
+    double-applied). Caller re-applies hooks afterwards.
+    """
+    from run_delta_a import optimize_delta_a  # noqa: E402
+
+    dtype = torch.bfloat16
+    vae = components["vae"]
+    text_encoder = components["text_encoder"]
+    tokenizer = components["tokenizer"]
+
+    x = torch.from_numpy(np.clip(window_np, 0.0, 1.0).astype(np.float32))
+    x = x.permute(3, 0, 1, 2).unsqueeze(0)          # [1,3,T,H,W]
+    x = (x * 2.0 - 1.0).to(device, dtype)            # [-1,1], VAE convention
+    all_latents = encode_video(vae, x, normalize=True)
+
+    num_ctx_lat = 1 + (tta_context_frames - 1) // 4
+    cond_latents, train_latents, _ = split_tta_latents(
+        all_latents, num_ctx_lat, holdout_fraction=0.0,
+    )
+    prompt_embeds, prompt_mask = encode_prompt(
+        tokenizer, text_encoder, caption, device=device, dtype=dtype,
+    )
+    wrapper.delta.data.copy_(delta_init.to(device, wrapper.delta.dtype))
+
+    vae.to("cpu")
+    text_encoder.to("cpu")
+    torch.cuda.empty_cache()
+    try:
+        optimize_delta_a(
+            wrapper=wrapper,
+            cond_latents=cond_latents.to(device),
+            train_latents=train_latents.to(device),
+            prompt_embeds=prompt_embeds.to(device),
+            prompt_mask=prompt_mask.to(device) if prompt_mask is not None else None,
+            num_steps=refit_steps,
+            lr=refit_lr,
+            device=device,
+            dtype=dtype,
+        )
+    finally:
+        vae.to(device)
+        text_encoder.to(device)
+        torch.cuda.empty_cache()
+
+    return wrapper.delta.detach().clone()
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -381,12 +447,12 @@ def main() -> int:
                         "explicitly override --num-cond-frames/--num-frames.")
     # --- Intervention -----------------------------------------------------
     p.add_argument("--method", type=str, default="notta",
-                   choices=["notta", "delta"],
-                   help="notta=plain pipeline; delta=train an AdaSteer delta "
-                        "on the observed frames once and hold it fixed across "
-                        "the whole rollout (does a fixed context-0 delta flatten "
-                        "the drift, or does it go stale as the rollout leaves "
-                        "the trained distribution?).")
+                   choices=["notta", "delta", "delta_stream"],
+                   help="notta=plain pipeline; delta=train an AdaSteer delta on "
+                        "the observed frames once and hold it FIXED across the "
+                        "rollout; delta_stream=EXP4, re-fit the delta each chunk "
+                        "on the most recent generated window (anchored toward the "
+                        "chunk-0 delta) so it tracks the drifting distribution.")
     p.add_argument("--delta-steps", type=int, default=10)
     p.add_argument("--delta-lr", type=float, default=1e-3)
     p.add_argument("--delta-placement", type=str, default="adaln",
@@ -395,6 +461,16 @@ def main() -> int:
                    help="Frames before gen_start used for TTA (0=use gen_start).")
     p.add_argument("--tta-context-frames", type=int, default=0,
                    help="Context frames within the TTA window (0=num_cond_frames).")
+    # --- Streaming delta (EXP4) knobs ------------------------------------
+    p.add_argument("--stream-refit-steps", type=int, default=5,
+                   help="delta_stream: optimizer steps for each per-chunk re-fit.")
+    p.add_argument("--stream-refit-lr", type=float, default=0.0,
+                   help="delta_stream: re-fit LR (0=use --delta-lr).")
+    p.add_argument("--stream-blend", type=float, default=0.5,
+                   help="delta_stream: anchor weight lambda. applied delta = "
+                        "(1-lambda)*refit + lambda*delta0. Higher=more anchored to "
+                        "the real-data chunk-0 delta (guards against adapting to "
+                        "the model's own drift).")
     args = p.parse_args()
 
     # Native protocol: apply LongCat's idiomatic window geometry unless the
@@ -414,6 +490,8 @@ def main() -> int:
     # TTA window defaults (mirror run_delta_a.py).
     tta_total_frames = args.tta_total_frames or args.gen_start_frame
     tta_context_frames = args.tta_context_frames or args.num_cond_frames
+    stream_refit_lr = args.stream_refit_lr or args.delta_lr
+    uses_delta = args.method in ("delta", "delta_stream")
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -431,12 +509,14 @@ def main() -> int:
     print(f"Output dir : {args.output_dir}")
     print(f"Method     : {args.method}" + (
         f" (steps={args.delta_steps} lr={args.delta_lr} "
-        f"placement={args.delta_placement}, held fixed across rollout)"
-        if args.method == "delta" else ""))
+        f"placement={args.delta_placement})" if uses_delta else ""))
+    if args.method == "delta_stream":
+        print(f"Stream     : refit_steps={args.stream_refit_steps} "
+              f"refit_lr={stream_refit_lr} blend(anchor)={args.stream_blend}")
     print(f"Roll mode  : {args.rollout_mode}")
     print(f"Geometry   : cond={args.num_cond_frames} frames={args.num_frames} "
           f"num_gen={num_gen} gen_start={args.gen_start_frame}")
-    if args.method == "delta":
+    if uses_delta:
         print(f"TTA window : total={tta_total_frames} context={tta_context_frames}")
     print(f"Rollout    : {args.num_chunks} chunks (autoregressive)")
     print(f"Sampler    : steps={args.num_inference_steps} cfg={args.guidance_scale} "
@@ -495,12 +575,17 @@ def main() -> int:
             # seed the stitched clip with the true conditioning frames
             stitched.append(np.stack([np.asarray(im) / 255.0 for im in cond_images], axis=0))
 
-            # Intervention: train an AdaSteer delta on the observed frames and
-            # hold it fixed across the entire rollout (hook installed once,
-            # removed in finally so it can never leak into the next video).
+            # Intervention: train an AdaSteer delta on the observed frames.
+            # delta         -> held FIXED across the rollout.
+            # delta_stream  -> re-fit each chunk on the most recent generated
+            #                  window, anchored toward this chunk-0 delta (delta0).
+            # Hook installed once, removed in finally so it can never leak into
+            # the next video.
             wrapper = None
             delta_norm = None
-            if args.method == "delta":
+            delta0 = None
+            stream_norms = []
+            if uses_delta:
                 _td = time.time()
                 wrapper, delta_norm = train_delta_for_video(
                     components, entry["video_path"], entry["caption"],
@@ -512,8 +597,9 @@ def main() -> int:
                     placement=args.delta_placement,
                     device=args.device,
                 )
+                delta0 = wrapper.delta.detach().clone()
                 wrapper.apply_to_dit()
-                print(f"  delta trained: norm={delta_norm:.4f} "
+                print(f"  delta0 trained: norm={delta_norm:.4f} "
                       f"({time.time()-_td:.1f}s)")
 
             prev_gen = None
@@ -526,6 +612,30 @@ def main() -> int:
                             Image.fromarray((np.clip(tail[t], 0, 1) * 255).astype(np.uint8))
                             for t in range(tail.shape[0])
                         ]
+                        # Streaming re-fit: adapt delta to the previous full
+                        # window, then re-anchor toward delta0. Hooks OFF during
+                        # the training forward (else delta double-applies), back
+                        # ON for generation.
+                        if args.method == "delta_stream":
+                            _ts = time.time()
+                            wrapper.remove_from_dit()
+                            refit = refit_delta_on_window(
+                                components, wrapper,
+                                wrapper.delta.detach().clone(),
+                                prev_gen, entry["caption"],
+                                tta_context_frames=tta_context_frames,
+                                refit_steps=args.stream_refit_steps,
+                                refit_lr=stream_refit_lr,
+                                device=args.device,
+                            )
+                            blended = (1.0 - args.stream_blend) * refit \
+                                + args.stream_blend * delta0
+                            wrapper.delta.data.copy_(blended)
+                            wrapper.apply_to_dit()
+                            snorm = float(wrapper.delta.detach().norm().item())
+                            stream_norms.append(snorm)
+                            print(f"    stream re-fit chunk {step_i+1}: "
+                                  f"norm={snorm:.4f} ({time.time()-_ts:.1f}s)")
 
                     last_cond_frame = np.asarray(cond_images[-1]).astype(np.float32) / 255.0
 
@@ -588,6 +698,7 @@ def main() -> int:
                 "method": args.method,
                 "rollout_mode": args.rollout_mode,
                 "delta_norm": delta_norm,
+                "stream_delta_norms": stream_norms if args.method == "delta_stream" else None,
                 "num_chunks": args.num_chunks,
                 "num_gen_per_chunk": num_gen,
                 "gen_time": gen_time,
@@ -622,11 +733,14 @@ def main() -> int:
         "method": args.method,
         "diagnostic": "longhorizon_drift",
         "rollout_mode": args.rollout_mode,
-        "delta_steps": args.delta_steps if args.method == "delta" else None,
-        "delta_lr": args.delta_lr if args.method == "delta" else None,
-        "delta_placement": args.delta_placement if args.method == "delta" else None,
-        "tta_total_frames": tta_total_frames if args.method == "delta" else None,
-        "tta_context_frames": tta_context_frames if args.method == "delta" else None,
+        "delta_steps": args.delta_steps if uses_delta else None,
+        "delta_lr": args.delta_lr if uses_delta else None,
+        "delta_placement": args.delta_placement if uses_delta else None,
+        "tta_total_frames": tta_total_frames if uses_delta else None,
+        "tta_context_frames": tta_context_frames if uses_delta else None,
+        "stream_refit_steps": args.stream_refit_steps if args.method == "delta_stream" else None,
+        "stream_refit_lr": stream_refit_lr if args.method == "delta_stream" else None,
+        "stream_blend": args.stream_blend if args.method == "delta_stream" else None,
         "num_chunks": args.num_chunks,
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,
