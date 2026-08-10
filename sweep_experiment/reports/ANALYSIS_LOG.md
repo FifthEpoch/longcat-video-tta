@@ -1150,3 +1150,38 @@ runs (paired), then compare_drift_paired.py. Decision gate: CI excludes 0 on sha
 => real re-anchoring effect (widen N, sweep lambda/refit, add FVD/VBench-Long); null => extend
 horizon (NUM_CHUNKS 18/24) to see if a bigger drift gap makes the correction detectable, else
 consolidate the measurement + negative-results narrative.
+
+---
+
+## 2026-08-10 — Clean-anchored streaming delta: ALSO NULL (3rd delta variant to fail paired test)
+tags: [long-horizon, streaming-delta, exp4, clean-anchor, negative-result, paired-test, mechanism-limit]
+refs: sweep_experiment/results/longhorizon_sweep_delta_stream_clean_native_12ch/paired/paired_stats.json;
+scripts/compare_drift_paired.py; sweep_experiment/reports/experiment_outputs/2026-08-10.md
+
+delta_stream --stream-target clean (native 60s, N=8, paired vs NOTTA). Paired |drift| reduction:
+  sharpness        -0.0014  [-0.0051,+0.0028]  p=0.53   (still favors NOTTA)
+  temporal_motion  +0.0010  [-0.0077,+0.0087]  p=0.83
+  colorfulness     +0.0015  [-0.0107,+0.0158]  p=0.84
+  contrast         -0.0177  [-0.0659,+0.0164]  p=0.70   (WORSE: more fade)
+  ssim (n=3)       -0.0006  [-0.0011,-0.0002]  p=0.25   * <- FALSE ALARM (n=3 degenerate CI; neg; p ns)
+No GT-free CI excludes 0. Patched compare_drift_paired.py to suppress the "*" for n<5 so the ssim
+artifact can't mislead.
+
+WHAT CLEAN-ANCHORING DID: pushed saturation the intended direction (colorfulness pop +5.7% -> -8.5%,
+paired point estimate flipped from -0.0078 in v1 to +0.0015) and flattened motion at POPULATION
+(+45% -> +5.7%), but per-video |drift| barely moves (cancellation), and it OVERSHOT into more
+contrast fade (paired -0.0177; pop contrast -20.9% vs NOTTA -16.4%). Net per-video: null.
+
+CONCLUSION: three delta recipes now fail the per-video paired test at native 60s -- fixed
+(2026-08-08 EXP-B), streaming-generated (2026-08-09), streaming-clean (this entry). A single global
+AdaSteer bias vector can shift population-level color/motion statistics but cannot CONSISTENTLY
+reduce per-video drift; it trades one axis (saturation) for another (contrast fade). This is a
+mechanism/capacity limit, not an anchoring-recipe problem -- consistent with the project-wide
+pattern (PSNR router, placement, TANGO, all deltas): population movements that vanish per-video.
+
+DECISION: per the pre-committed fallback, extend the horizon (NUM_CHUNKS=18 ~90s / 24 ~120s field
+ceiling) for BOTH NOTTA and clean-anchor (SHARD_SIZE=1) -- a bigger drift gap gives a real correction
+more room and is easier to detect above N=8 noise, and strengthens the measurement story regardless.
+If null again, commit to the measurement + honest-negative-results narrative (corrected native drift
+measurement + drift compounds with horizon + a controlled catalogue of interventions that do not beat
+NOTTA per-video). Do NOT keep permuting delta recipes.

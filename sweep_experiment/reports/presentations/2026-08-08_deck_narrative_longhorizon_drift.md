@@ -220,16 +220,26 @@ unchanged.
   raised per-video volatility (sharpness mean-curve change 0.0016 vs per-video
   |drift| 0.0074 = 4.6× gap vs NOTTA's 1.9×). **Root cause:** the re-fit
   self-supervises on the model's OWN drifted output, so it partly reproduces drift.
-- **One live technical shot — clean-anchored re-fit (BUILT, running):** implemented
-  as `delta_stream --stream-target clean` — condition on the drifted context but
-  flow-match the per-chunk update toward the **clean chunk-0 real-frame latents**
-  (Pathwise-TTC-style re-anchoring through the AdaSteer bias). Runs paired vs NOTTA
-  at the native 60 s geometry. Decision gate: paired-test CI excludes 0 on
-  sharpness/colorfulness → real effect; null → **extend the horizon further**
-  (NUM_CHUNKS 18/24, ~72–96 s) to see if a bigger drift gap makes the correction
-  detectable, else the intervention line is a clean negative and we lead with
-  measurement + negative results. Do NOT sweep λ upward (λ→1 == the EXP-B fixed
-  delta, already null).
+- **Clean-anchored re-fit — DONE, ALSO NULL (2026-08-10):** `delta_stream
+  --stream-target clean` (condition on drifted context, flow-match toward clean
+  chunk-0 latents) at native 60 s, paired vs NOTTA. It *did* push saturation the
+  right way (colorfulness pop +5.7%→−8.5%) but **overshot into more contrast fade**
+  (−20.9% vs −16.4%) and left sharpness slightly worse; **no GT-free CI excludes 0**
+  (all p ≥ 0.53). This is the **third delta recipe to fail** the per-video test
+  (fixed, streaming-generated, streaming-clean) → a single global bias vector can
+  shift population statistics but can't reduce per-video drift; it trades one axis
+  for another. **Mechanism/capacity limit, not a recipe problem.**
+- **Now running — extend the horizon (the pre-committed fallback):** re-run NOTTA +
+  clean-anchor at **NUM_CHUNKS=18 (~90 s)** / **24 (~120 s = the ~2-min field
+  ceiling)**. Rationale: drift compounds with length, so a bigger gap gives any real
+  correction more room *and* is easier to detect above N=8 noise; it also strengthens
+  the measurement story regardless of the intervention outcome.
+- **If the extended horizon is also null → lead with the honest result:** a
+  **measurement contribution** (corrected native drift eval; naïve short-window
+  rollout massively overstates drift; drift compounds with horizon) + a **controlled
+  negative-results catalogue** (fixed / streaming / clean-anchored deltas, placement,
+  TANGO all fail per-video). Do NOT keep permuting delta recipes or sweep λ (λ→1 ==
+  the EXP-B fixed delta, already null).
 - **Horizon length is itself a lever (Slide 5c):** drift compounds with rollout
   length, so the gap an intervention can open should **widen** at longer horizons —
   strengthens the case for evaluating natively at ≥1 min, not at 30 s.

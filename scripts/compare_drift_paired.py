@@ -116,7 +116,10 @@ def main():
         mred = float(np.mean(red))
         lo, hi = boot_ci(red)
         p = signflip_p(red)
-        flag = "  *" if (lo > 0 or hi < 0) else ""
+        # Only trust the CI star when there are enough paired videos: with n<5 the
+        # sign-flip null has <=16 permutations and the bootstrap CI is degenerate,
+        # so a "significant" flag is an artifact (e.g. GT metrics at n=3).
+        flag = "  *" if (len(common) >= 5 and (lo > 0 or hi < 0)) else ""
         print(f"{key:16s} {len(common):>3d} {a.mean():>10.4f} {b.mean():>10.4f} "
               f"{mred:>+10.4f} [{lo:>+8.4f},{hi:>+8.4f}] {p:>12.4f}{flag}")
         rows.append({
@@ -127,8 +130,9 @@ def main():
         })
 
     print("\n  reduction > 0 => intervention shrinks per-video drift.")
-    print("  * = bootstrap 95% CI excludes 0. Judge GT-free signals; GT metrics")
-    print("    (psnr/ssim/lpips) span only ~1-2 chunks here (GT runs out).")
+    print("  * = bootstrap 95% CI excludes 0 AND n>=5 (n<5 stars suppressed as")
+    print("    artifacts). Judge GT-free signals; GT metrics (psnr/ssim/lpips)")
+    print("    span only ~1-2 chunks here (GT runs out) so their n is tiny.")
 
     with open(os.path.join(out_dir, "paired_stats.json"), "w") as f:
         json.dump({"label_a": args.label_a, "label_b": args.label_b,
