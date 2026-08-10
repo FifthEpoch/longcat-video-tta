@@ -229,17 +229,24 @@ unchanged.
   (fixed, streaming-generated, streaming-clean) → a single global bias vector can
   shift population statistics but can't reduce per-video drift; it trades one axis
   for another. **Mechanism/capacity limit, not a recipe problem.**
-- **Now running — extend the horizon (the pre-committed fallback):** re-run NOTTA +
-  clean-anchor at **NUM_CHUNKS=18 (~90 s)** / **24 (~120 s = the ~2-min field
-  ceiling)**. Rationale: drift compounds with length, so a bigger gap gives any real
-  correction more room *and* is easier to detect above N=8 noise; it also strengthens
-  the measurement story regardless of the intervention outcome.
-- **If the extended horizon is also null → lead with the honest result:** a
-  **measurement contribution** (corrected native drift eval; naïve short-window
-  rollout massively overstates drift; drift compounds with horizon) + a **controlled
-  negative-results catalogue** (fixed / streaming / clean-anchored deltas, placement,
-  TANGO all fail per-video). Do NOT keep permuting delta recipes or sweep λ (λ→1 ==
-  the EXP-B fixed delta, already null).
+- **Per-video routing — RULED OUT (2026-08-10):** the per-video breakdown looked
+  heterogeneous (no-TTA best on 4/8; a 23–39 % per-video *oracle* gap), tempting a
+  router. The heterogeneity gate kills it: **cross-signal consistency p = 0.71**
+  (the best arm for a video doesn't even agree across that video's own signals),
+  and the oracle gap is **≤ the min-over-noise floor** on every signal. So the
+  heterogeneity is a **noise ceiling** — same trap as the PSNR router — not a
+  routable signal.
+- **Verdict on the intervention line: clean, controlled NEGATIVE.** Fixed /
+  streaming / clean-anchored deltas all null per-video; the per-video variation is
+  noise. Stop permuting recipes.
+- **Lead with the honest, well-supported result:** a **measurement contribution**
+  (naïve short-window rollout massively overstates drift; corrected native drift is
+  real and **compounds with horizon**) + a **controlled negative-results catalogue**
+  (fixed/streaming/clean deltas, placement, TANGO all fail per-video; per-video
+  routing is a noise ceiling).
+- **Measurement capstone (running):** push **NOTTA to ~90–120 s** (field-standard
+  range) for a reviewer-proof drift curve, plus one delta arm at that horizon to
+  close "did you test long enough?" — framed as measurement, not a delta rescue.
 - **Horizon length is itself a lever (Slide 5c):** drift compounds with rollout
   length, so the gap an intervention can open should **widen** at longer horizons —
   strengthens the case for evaluating natively at ≥1 min, not at 30 s.

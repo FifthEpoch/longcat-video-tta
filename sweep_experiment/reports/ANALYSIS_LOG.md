@@ -1185,3 +1185,34 @@ more room and is easier to detect above N=8 noise, and strengthens the measureme
 If null again, commit to the measurement + honest-negative-results narrative (corrected native drift
 measurement + drift compounds with horizon + a controlled catalogue of interventions that do not beat
 NOTTA per-video). Do NOT keep permuting delta recipes.
+
+---
+
+## 2026-08-10 — Per-video heterogeneity is a NOISE ceiling: routing thread CLOSED
+tags: [long-horizon, routing, heterogeneity, oracle-noise, negative-result, pivot, measurement]
+refs: scripts/analyze_drift_heterogeneity.py; scripts/analyze_drift_per_video.py;
+sweep_experiment/results/longhorizon_sweep_delta_stream_clean_native_12ch/per_video/heterogeneity.json
+
+The per-video breakdown (2026-08-10 18:51) showed the intervention is heterogeneous (no-TTA best on
+4/8 videos; delta net-harmful on sharpness) with a 23-39% per-video ORACLE gap -- tempting a router.
+The heterogeneity gate kills it:
+  cross-signal consistency: observed 0.312 vs shuffled-null 0.343 [0.229,0.500], p=0.71 (observed
+    is BELOW the null mean) -> the best arm for a video does NOT agree across that video's own
+    signals beyond chance. Not a video property; not routable.
+  oracle vs best_fixed vs random: on every GT-free signal the perfect-router gain over the best
+    fixed arm (sharpness +0.00202, motion +0.00536, colorful +0.00639, contrast +0.01357) is <= the
+    noise-only min gain (0.00300 / 0.00577 / 0.00999 / 0.02043). The oracle gap is fully explained
+    by min-over-3-noisy-arms selection -- identical to the 2026-08-04 PSNR-router noise-floor finding.
+
+CONCLUSION: the AdaSteer-delta intervention line is a clean, well-controlled NEGATIVE at native
+long-horizon: (a) fixed / streaming-generated / streaming-clean deltas all null under the paired
+per-video test; (b) the per-video heterogeneity that could have justified a router is a noise ceiling
+(consistency p=0.71), not realizable signal. Matches the project-wide pattern across PSNR router,
+placement, TANGO.
+
+DECISION: STOP permuting delta recipes / chasing a router. Pivot to the measurement + honest
+negative-results paper: (1) corrected native drift measurement (naive short-window rollout massively
+overstates drift; 2026-08-08 control) + drift compounds with horizon (2026-08-09); (2) a controlled
+catalogue of interventions that do not beat NOTTA per-video. Re-purpose the horizon extension as the
+MEASUREMENT CAPSTONE: NOTTA to ~90-120s (field-standard) for a reviewer-proof drift curve, + one
+delta arm at that horizon to close "did you test long enough?". Not a delta rescue.
