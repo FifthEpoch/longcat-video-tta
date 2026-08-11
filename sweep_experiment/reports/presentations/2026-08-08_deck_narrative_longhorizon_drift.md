@@ -236,9 +236,14 @@ unchanged.
   and the oracle gap is **≤ the min-over-noise floor** on every signal. So the
   heterogeneity is a **noise ceiling** — same trap as the PSNR router — not a
   routable signal.
-- **Verdict on the intervention line: clean, controlled NEGATIVE.** Fixed /
-  streaming / clean-anchored deltas all null per-video; the per-video variation is
-  noise. Stop permuting recipes.
+- **Time-scheduled (ramped) delta — RULED OUT by data, not just untested.** Chunk-
+  interaction gate: the constant-delta's per-video effect does *not* cross over
+  (hurt-early / help-late); where it's significant it HURTS, and on sharpness/
+  contrast the harm *grows* with horizon (anti-crossover) — so a ramp would amplify
+  damage where the model is worst.
+- **Verdict on the intervention line: clean, controlled NEGATIVE.** Four distinct
+  delta axes (fixed, streaming-generated, streaming-clean, time-scheduled) all null/
+  harmful per-video; the per-video variation is a noise ceiling. Stop permuting recipes.
 - **Lead with the honest, well-supported result:** a **measurement contribution**
   (naïve short-window rollout massively overstates drift; corrected native drift is
   real and **compounds with horizon**) + a **controlled negative-results catalogue**

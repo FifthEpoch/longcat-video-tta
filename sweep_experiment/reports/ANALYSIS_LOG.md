@@ -1216,3 +1216,27 @@ overstates drift; 2026-08-08 control) + drift compounds with horizon (2026-08-09
 catalogue of interventions that do not beat NOTTA per-video. Re-purpose the horizon extension as the
 MEASUREMENT CAPSTONE: NOTTA to ~90-120s (field-standard) for a reviewer-proof drift curve, + one
 delta arm at that horizon to close "did you test long enough?". Not a delta rescue.
+
+---
+
+## 2026-08-10 — Time-scheduled (ramped) delta is CONTRAINDICATED; NOTTA-only capstone
+tags: [long-horizon, delta, schedule, ramp, chunk-interaction, negative-result, pivot]
+refs: scripts/analyze_delta_chunk_interaction.py;
+sweep_experiment/results/longhorizon_sweep_delta_stream_clean_native_12ch/chunk_interaction/
+
+Before spending a GPU-day on a ramped-gain delta (gamma_t small early -> large late), gated its
+PREMISE on existing 12-chunk paired data: does the constant-delta's per-video paired effect cross
+over (hurt early on near-clean content, help late on degraded content)? Result across 8 signal x arm
+cells (N=8):
+  - CROSSOVER in exactly 1 cell (gen/temporal_motion), but all per-chunk CIs straddle 0 and rel_eff
+    is unstable (-94..-167) => noise.
+  - Every SIGNIFICANT per-chunk cell (CI excludes 0) is NEGATIVE: the delta significantly HURTS
+    (gen/sharpness ch4,6,7,9; clean/temporal ch7,8; clean/contrast ch5,6). No significant positives.
+  - ANTI-crossover (effect worsens late) in 4/8 cells (sharpness both arms, clean/contrast,
+    gen/colorfulness): a ramp raising gamma_t late would AMPLIFY harm where the model is worst.
+So a schedule has no signal to exploit and is pointed against by the data. This is the 4th distinct
+delta axis to fail (constant-fixed, streaming-generated, streaming-clean, time-scheduled) + routing
+is a noise ceiling. The AdaSteer-delta intervention line is definitively CLOSED.
+
+DECISION: run the NOTTA-ONLY measurement capstone (18ch ~90s native); do not build the ramped arm.
+Commit fully to the measurement + negative-results narrative.
