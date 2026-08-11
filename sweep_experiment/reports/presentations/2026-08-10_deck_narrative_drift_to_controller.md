@@ -58,8 +58,42 @@ model breaks in a way sampling-space correction is designed to fix."**
     rollout, even after the source clip's ground truth runs out.
   - **GT-referenced:** PSNR / SSIM / LPIPS, where the source clip still overlaps.
 - **Why this matters later:** the GT-free family is exactly the signal our
-  controller uses as a **verifier and a gate** — it needs no ground truth, so it
+  controller uses as   a **verifier and a gate** — it needs no ground truth, so it
   is *deployable* at inference.
+
+---
+
+## Slide 2b — Which metrics even work at long horizon (and why VBench++ is the *right* eval, not an impossible one)
+
+**Three metric families, three fates as the rollout gets long:**
+
+| Family | Examples | Needs | Fate at long horizon |
+|---|---|---|---|
+| **Pixel / GT-referenced** | PSNR, SSIM, LPIPS | frame-aligned **ground truth** | **Breaks.** The source clip runs out after ~1–2 native chunks, so coverage collapses (n→small, spans a tiny window). Also, continuation is legitimately *multimodal* — divergence from one GT path ≠ failure. |
+| **Distribution-level** | FVD, FID | a **reference set** of many clips | Population-level only; content-biased (Ge et al. CVPR'24, `ge2024contentdebiasedFVD`). Good for a final headline, **no per-chunk drift curve**. |
+| **GT-free per-video** | (a) our hand-crafted signals; (b) **VBench++** dims | **nothing but the generated video** | **Works at any length.** This is the only family that gives a per-chunk drift curve on the full rollout. |
+
+**Key point (state this to the audience):** it is **NOT** that VBench++ can't
+score long videos — the opposite. VBench++'s continuation-relevant dimensions are
+**all GT-free** and run on generated video alone: **subject/background consistency,
+motion smoothness, temporal flickering, aesthetic quality, imaging quality**
+(`sweep_experiment/scripts/eval_vbench.py`; Huang et al. CVPR'24,
+`huang2024vbench`). They are exactly what we *should* report on the rollouts.
+
+**So why the hand-crafted signals (sharpness/colorfulness/contrast/motion/seam)?**
+Two reasons, both about *role*, not capability:
+1. **In-loop cost.** The verifier must score **k candidates × 12 chunks × N videos
+   inside the generation loop**. Our signals are pure NumPy (sub-ms/frame); VBench++
+   loads several pretrained nets and is far too slow to call that many times.
+2. **Mechanistic interpretability.** They map 1:1 to the *drift mode* we measured
+   (HF-artifact accumulation, saturation, contrast fade, motion instability), so we
+   can say *what* drifts — VBench dims are more holistic.
+
+**Action (added to roadmap):** the hand-crafted signals stay the **in-loop
+verifier/gate**; **VBench++ (5 GT-free dims) is added as the field-standard
+EVALUATION layer** on the final NOTTA / bestof / ttc rollouts (the harness already
+saves a stitched `*_rollout.mp4` per video). PSNR/SSIM/LPIPS are reported only over
+their valid early-chunk window, with the coverage caveat shown.
 
 ---
 
@@ -195,6 +229,75 @@ per chunk t:
 
 ---
 
+## Slide 8b — The GT-free drift verifier, step by step
+
+**What it is:** a single scalar per candidate continuation, **LOWER = more
+stable**, computed from pixels only (no ground truth). It powers *both* the search
+verifier and the gate.
+
+**Setup (once per video).** From the initial **real** conditioning frames compute a
+fixed *reference* of four statistics (they are the deployable "what healthy looks
+like" anchor):
+
+**Per candidate continuation (T generated frames):**
+
+1. **Sharpness** = mean over frames of the **Laplacian variance** (focus measure).
+   AR drift blurs → this *falls*; HF artifacts → this *spikes*.
+2. **Colorfulness** = **Hasler–Süsstrunk (2003)** metric. Over-saturation → *rises*.
+3. **Contrast** = mean per-frame grayscale std. Long-horizon *fade* → *falls*.
+4. **Temporal motion** = mean |frame_t − frame_{t−1}|. Collapse → *falls*;
+   instability → *rises*.
+5. **Seam jump** = mean |last real conditioning frame − first generated frame| — a
+   visible cut / re-anchoring discontinuity at the chunk boundary.
+
+**Score:**
+```
+score = Σ_k  |cand_k − ref_k| / (|ref_k| + ε)        # k ∈ {sharp, colorful, contrast, motion}
+        + seam_weight · seam_jump / (ref_motion + ε)  # cross-chunk continuity
+```
+- **Two-sided** deviation (|·|), *not* "minimize each signal": a pure-minimize
+  verifier would reward a **frozen, still frame** (zero motion, zero artifacts). We
+  want the candidate that stays *closest to the real reference level*, so it can't
+  win by collapsing.
+- **ε** avoids divide-by-zero; each term is a **relative** deviation so the four
+  signals (different units) are comparable.
+- **Gate variant** uses the same first four terms on the *incoming context* with
+  `seam_weight = 0`; if that deviation ≤ threshold the chunk is "healthy" → skip.
+
+**Selection:** pick `argmin score`. **Candidate 0 = the NOTTA seed**, so the search
+can only tie or beat NOTTA. Every candidate's score is logged → post-hoc oracle.
+
+**Why we expect this to work (literature, with the specific insight):**
+- **Test-time scaling / search with a verifier improves generation without
+  retraining** — Video-T1 (Liu et al., ICCV'25, `liu2025videoT1`, arXiv:2503.18942):
+  reframes generation as search over noise/paths guided by a verifier. Our method
+  *is* this, with a drift-specific verifier.
+- **A cheap, GT-free critic read *during* generation predicts final quality** — Early
+  Failure Detection & Intervention in Video Diffusion (arXiv:2603.14320, 2026): a
+  fast intermediate preview + quality score forecasts the final outcome. Validates
+  that a GT-free score can be a reliable selector.
+- **Adapt/correct only on high-"surprise" steps** — Forget, Anticipate and Adapt:
+  TTT for Long Videos (arXiv:2606.26515, 2026): next-frame surprise gate, adapt only
+  when it exceeds a threshold. This is the direct precedent for **our per-chunk
+  drift gate** (why we don't correct healthy chunks).
+- **Preserving proximity to the earliest clean context tames AR drift** — Pathwise
+  Test-Time Correction (arXiv:2602.05871, 2026): training-free re-anchor to the
+  earliest-frame context, extends stable AR generation to >30 s. Motivates both the
+  real-frame *reference* here and the anchored-correction actuator (Slide 10).
+- **Reward-pruning candidate chunks stabilizes long rollouts** — Stream-T1 (2026):
+  prune candidate chunks by a reward with dynamic weighting (early favors frame
+  quality, late favors history consistency). Our per-chunk best-of-N is this pruning.
+- **Robust selection wants multiple verifiers / reliability weighting** — VDS-TTT
+  (arXiv:2505.19475) / SAFER (arXiv:2606.22351): consensus is that a *single* metric
+  is fragile. **Honest limitation:** our verifier is one hand-crafted composite; the
+  random-pick + oracle gates (Slide 11) test whether it already has signal, and
+  multi-verifier reliability weighting is the obvious upgrade if it's marginal.
+
+*(Full refs in `../2026-08-04_literature_v2v_tta_directions.md`; entries not yet in
+`paper/refs.bib` are flagged there for backfill.)*
+
+---
+
 ## Slide 9 — Actuator A: best-of-N test-time search (built + LAUNCHED)
 
 - Per chunk, generate **k candidate continuations**; **candidate 0 reuses the NOTTA
@@ -262,6 +365,10 @@ Every positive claim must clear:
   paired to `ttc-w0`.
 - **Then:** whichever actuator clears the three gates → scale N, add the
   matched-horizon plot, and the deck's headline becomes a **positive method**.
+- **Evaluation upgrade (field-standard):** run **VBench++** (subject/background
+  consistency, motion smoothness, temporal flickering, aesthetic/imaging quality —
+  all GT-free) on the NOTTA / bestof / ttc `*_rollout.mp4`s and report those as the
+  headline quality numbers alongside the GT-free drift curves (Slide 2b).
 
 ---
 
