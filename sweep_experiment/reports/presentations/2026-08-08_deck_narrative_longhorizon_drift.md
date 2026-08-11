@@ -1,5 +1,10 @@
 # Presentation deck — narrative start: "LongCat drifts under long-horizon rollout"
 
+> **SUPERSEDED (2026-08-10):** the current full deck is
+> `2026-08-10_deck_narrative_drift_to_controller.md`, which folds in everything
+> here AND reframes it around the switch to a sampling-space drift-gated
+> controller. This file is retained unchanged for the audit trail.
+
 **Purpose:** This is the OPENING NARRATIVE for the next presentation deck. It is
 organized slide-by-slide. All numbers are from the completed drift run
 (`diag_longhorizon_drift.py`, SLURM job **15497180**, NOTTA, N=24 videos × 8
