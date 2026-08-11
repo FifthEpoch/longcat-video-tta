@@ -1343,3 +1343,45 @@ native_12ch. Both ttc arms and the ttc-w0 baseline share the reencode conditioni
 test (compare_drift_paired.py) isolates the correction effect. Series: longhorizon_sweep_ttc_w<W>_* and
 _ttcgated_w<W>_g<G>_*. Threaded TTC_* env through sbatch + submitter. All four files syntax-checked.
 NEXT: after the bestof gate results land, sweep ttc-weight {0, 0.05, 0.1, 0.2} + ttc_gated, paired to w0.
+
+---
+
+## 2026-08-11 — best-of-N (k=4) FULL N=8: FIRST arm to PASS the credibility gate (verifier tracks true quality)
+tags: [long-horizon, best-of-N, test-time-search, verifier, positive-result, credibility-gate, native-geometry, underpowered]
+refs: sweep_experiment/results/longhorizon_sweep_bestof_k4_native_12ch/{merged_partial.json,search_analysis_partial/search_analysis.json,paired_partial/paired_stats.json};
+scripts/analyze_bestof_search.py; scripts/compare_drift_paired.py;
+sweep_experiment/reports/experiment_outputs/2026-08-11.md
+
+best-of-4 GT-free drift verifier, native 13/80, 12 autoregressive chunks, seed=42, N=8 (all 8 shards
+done), candidate 0 = NOTTA seed (strict superset). Two independent reads:
+
+1. THE SELECTION MECHANISM WORKS (passes the gate routing FAILED). Search active: verifier picks a
+   non-NOTTA candidate in 72/96 chunks (75%). On its own composite, chosen (14.69) beats random-pick
+   (16.78) by +2.09 (vs cand0 17.04). CREDIBILITY TEST on the 11 GT-overlapping chunks (metric the
+   verifier does NOT optimize): chosen PSNR 17.24 vs random 16.41 vs cand0 16.39 vs oracle-by-PSNR
+   17.44 -> chosen-random = +0.833 dB, capturing 81% of the oracle-over-random gain (+1.028). LPIPS
+   chosen-random = -0.0318 (oracle 0.278, chosen 0.283). Since random ~= cand0, this is REAL selection
+   signal, not max-over-noise -- exactly the opposite of the PSNR-router (2026-08-04) and per-video
+   routing (2026-08-10) threads, where chosen ~= random (noise ceiling). Per-signal oracle capture:
+   sharpness 96% (+1.597/+1.664), temporal_motion 76% (+0.441/+0.581), contrast 29% (+0.014/+0.049),
+   colorfulness 10% (+0.018/+0.177). The verifier is strong on the DOMINANT native-60s drift modes
+   (sharpness, motion) and weak on the entangled one (color) -- consistent with every prior color result.
+
+2. THE END-TO-END EFFECT IS DIRECTIONALLY-RIGHT BUT UNDERPOWERED. Paired |drift| reduction vs NOTTA
+   (N=8, sign-flip): sharpness +0.0009 (p=0.62), temporal_motion +0.0046 (p=0.53) -- both lean the right
+   way on the verifier's strong modes but no CI excludes 0; colorfulness -0.0013 (p=0.91); contrast
+   -0.0125 (p=0.56, leans WRONG -- BoN does not fix the fade). GT metrics all lean right (psnr +0.10 dB,
+   ssim +0.0127, lpips +0.0178; n=3, tiny). So per-chunk selection quality is demonstrated, but its
+   conversion to a significant endpoint |drift|=|chunk12-chunk1| reduction is a POWER problem at N=8
+   (2-point endpoint metric, high per-video variance, diluted by the weak color/contrast modes).
+
+CONTRAST WITH THE CLOSED LINES: deltas failed BOTH the credibility check (no independent-metric gain)
+AND the paired test; routing was a pure noise ceiling. best-of-N is the FIRST arm where the mechanism
+provably lifts a held-out metric above the random-pick floor. That earns more compute.
+
+DECISION: (1) SCALE N (the paired endpoint test is underpowered; the per-chunk gate already passes).
+(2) Consider reweighting the verifier toward sharpness/motion (where it captures ~76-96% of oracle) or
+adding an anchor-similarity term for color/contrast. (3) Efficiency + next actuator: latent-space
+verifier (decode only the chosen candidate -> save (k-1)/k decodes) and the drift-gated TTC actuator.
+This is NOT a paper number yet -- N=8 gating, GT chunks n=11 -- but it is the first credible positive
+and reframes the controller narrative from "diagnosis of nulls" to "a working GT-free selection gate."

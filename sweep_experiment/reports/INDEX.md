@@ -36,6 +36,23 @@ for audit trail.
 
 ---
 
+## Long-horizon drift + test-time control (2026-08 — current headline thread)
+
+Native LongCat window (13-cond/80-gen), true autoregressive rollout (feed the
+model's own generated tail back). Judge by GT-free per-chunk drift + per-video
+paired sign-flip test (`compare_drift_paired.py`); GT pixel metrics span only
+~1-2 chunks (source clips short) so they are gating, not paper numbers. All N=8
+here is a GATING sample.
+
+| Series | N | Chunks / horizon | Method | Status | Cluster path | Key finding |
+|---|---|---|---|---|---|---|
+| `longhorizon_sweep_notta_native_12ch` | 8 | 12 / ~60 s | NOTTA baseline | DONE 2026-08-09 | `sweep_experiment/results/longhorizon_sweep_notta_native_12ch/` | Native drift COMPOUNDS with horizon: sharpness +48%, motion +45%, contrast −16% (vs +28/+8/+3 at 6ch/30 s). Headroom is real at ~1 min. |
+| `longhorizon_sweep_delta_stream_native_12ch` | 8 | 12 / ~60 s | AdaSteer δ re-fit each chunk on generated window | DONE 2026-08-09 | same root | NULL under paired test (p≥0.26); population "flattening" was cancellation (raised per-video volatility). |
+| `longhorizon_sweep_delta_stream_clean_native_12ch` | 8 | 12 / ~60 s | δ re-fit toward clean chunk-0 latents | DONE 2026-08-10 | same root | NULL (p≥0.53); fixes saturation, overshoots contrast fade. 3rd delta recipe to fail; delta line CLOSED (+ ramp contraindicated, routing = noise ceiling). |
+| `longhorizon_sweep_bestof_k4_native_12ch` | 8 | 12 / ~60 s | best-of-4 GT-free drift verifier (cand0 = NOTTA seed) | DONE 2026-08-11 | `sweep_experiment/results/longhorizon_sweep_bestof_k4_native_12ch/` | **FIRST credible positive.** Verifier picks non-NOTTA 75%; on 11 GT chunks chosen beats RANDOM by **+0.833 dB PSNR** (81% of by-PSNR oracle), −0.032 LPIPS — passes the credibility gate routing failed. Per-signal oracle capture: sharpness 96%, motion 76%, contrast 29%, color 10%. BUT end-to-end paired |drift| vs NOTTA not yet significant at N=8 (sharpness/motion lean right, contrast wrong). Worth SCALING. |
+
+---
+
 ## Missing / not-yet-run experiments (paper-blocking or paper-relevant)
 
 | Series | Why it's needed | Cluster status | Decision |
