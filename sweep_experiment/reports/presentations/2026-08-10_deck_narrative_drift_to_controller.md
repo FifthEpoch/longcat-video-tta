@@ -114,7 +114,7 @@ model breaks in a way sampling-space correction is designed to fix."**
 own generated tail back and roll out. The headroom that was **absent** at short
 horizon (Slide 1a) **appears and compounds** natively:
 
-![Normalized GT-free drift over the rollout](../paper_figures/2026-08-08_longhorizon_drift/drift_gtfree_normalized.png)
+![Native drift grows with horizon, 30 s vs 60 s](../paper_figures/2026-08-08_longhorizon_drift/drift_native_horizon_growth.png)
 
 | GT-free signal (chunk 1 → last) | Short (1 chunk) | Native 30 s (6 ch) | **Native 60 s (12 ch)** |
 |---|--:|--:|--:|
@@ -137,8 +137,8 @@ improves at 60 s." Judge long-horizon drift by the GT-free rows above.
 - This is the pivot point: Slide 1a proves there's nothing to fix short-horizon;
   this proves there *is* long-horizon. Full drift detail + the reencode-vs-native
   measurement correction are on Slides 2b–3.
-- *(Source: job 15497180 + native runs; figure regenerable via
-  `scripts/make_drift_presentation_figs.py`.)*
+- *(Source: `longhorizon_sweep_notta_native_{6,12}ch` (2026-08-09); figure
+  regenerable via `scripts/make_drift_horizon_growth_fig.py`.)*
 
 ---
 
