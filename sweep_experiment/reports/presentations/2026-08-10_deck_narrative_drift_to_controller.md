@@ -47,6 +47,86 @@ model breaks in a way sampling-space correction is designed to fix."**
 
 ---
 
+## Slide 1a — Evidence for claim #1: every short-horizon intervention was null
+
+**In-domain Panda, single-chunk continuation. "Δ vs NOTTA" — positive = better
+(except LPIPS/FVD where lower is better). Verdicts from the cited tables.**
+
+| Intervention | What it does | N | Key result vs NOTTA | Verdict |
+|---|---|--:|---|---|
+| **AdaSteer δ** (global AdaLN bias) | one learned bias on the timestep/AdaLN embedding, broadcast to every block | **999** | PSNR 17.93→17.94; FVD 154.7→153.4; all 7 VBench dims flat | **null** (matches NOTTA on every metric) |
+| **Placement ablation** (δ on AdaLN vs mid-late residual stream) | move the δ to the "concept-rich" band | **500** | PSNR **−0.26 dB** (both arms); FVD **+9.9 / +12.7** (worse); 7 VBench flat | **null** (NOTTA best on every fidelity/dist metric; the N=80 p=.013 edge washed out at N=500) |
+| **TinyLoRA** (TL_BARE_R2 / TL_TIED_R2) | rank-2 test-time LoRA | **999** | PSNR/SSIM/LPIPS/FVD all ≈ NOTTA | **null** |
+| **LoRA-R8 TTA** | rank-8 test-time LoRA | **999** | Aes **+0.047**, Dyn +0.031, but IQ **−0.034**, Subj −0.005; PSNR/FVD ≈ NOTTA | **trade, not a win** (moves along the quality frontier) |
+| **Batch retrieval** (K5/K10 × SIM/RAND) | retrieve neighbours as extra context | **932** | all variants indistinguishable (SIM≈RAND) | **inconclusive** (UCF class-block artifact; Panda retrieval never run) |
+| **Binary TTA/no-TTA gate + initial-loss router** | route per-video whether to adapt | **900** | always-fixed **−0.003 dB [−0.025, +0.019]**; perfect-gate headroom **+0.069 dB = the noise floor**; probe AUC ≈ 0.50 | **ruled out** (oracle only recovers max-over-noise; probe at chance) |
+| **TANGO EXP3** (predicted-noise gaussianity guidance) | distribution-level sampling guidance for FVD | **80** | pixel metrics NaN (eval bug, pending); FVD 534–557 across λ, no confirmed win | **inconclusive / weak** |
+
+- **Read:** on the easy task, no lever — parameter-space (δ, LoRA), data-space
+  (retrieval), routing, or sampling-guidance (TANGO) — beats NOTTA at reliable N.
+- **The routing row is the key tell:** even a *perfect* per-video oracle gains only
+  **+0.069 dB, exactly the E|g|/2 noise floor** → the apparent per-video headroom is
+  manufactured by maxing over noise, not signal.
+- *(Sources: `paper_tables/2026-06-08_headline_1000v.md` (N=999, `build_paper_tables.py`);
+  `2026-08-06_placement_allmetric_matchedN.md` (job 15445271, N=500);
+  `2026-08-04_binary_gate_initial_loss_1000v.md` (N=900);
+  `experiment_outputs/2026-08-07.md` (TANGO jobs 15444775–77, N=80). Long-horizon
+  delta axes are a separate null family — Slide 4.)*
+
+---
+
+## Slide 1b — Evidence for claim #2: the task was too easy (problem-difficulty audit, 2026-08-06)
+
+**What we did:** tabulated base model + frame geometry + eval for the field vs. ours.
+
+| | Base model | Task geometry | Eval |
+|---|---|---|---|
+| **The field** | Wan2.1-**1.3B**, CogVideoX-5B, distilled AR DiTs | **long-horizon rollout 30 s–minutes**, OOD / high-motion, 49–81+ frames | per-chunk drift, cross-chunk seams |
+| **Ours (then)** | **LongCat-Video 13.6B, RLHF, continuation-pretrained** | **single 14→14 chunk (~0.5–1 s), in-domain Panda** | one short clip, video-level mean |
+
+- **Two independent reasons it saturates:** (a) we picked the model *built* to make
+  continuation trivial — LongCat's headline is *"minutes-long video without color
+  drift or quality degradation"* — and gave it the **easiest slice of its home
+  task**; (b) we removed every difficulty knob the field's headroom comes from
+  (length, OOD, weaker model, localized metrics). STAS steers a **1.3B** model and
+  still gets only **+0.37 VBench**; on a saturated 13.6B RLHF model, expect less.
+- **The bug we caught in the audit:** our "long-context" path generated all 79 gen
+  frames in a **single diffusion call** — *not* autoregressive chaining. So the
+  cross-chunk exposure-bias accumulation the whole long-video literature studies
+  **never occurred in our pipeline**. Every prior "null" was measured where there
+  was nothing to fix.
+- **Outcome / decision:** relocate to **true autoregressive rollout** and let the
+  data decide — degradation ⇒ headroom found; none ⇒ switch base model.
+- *(Source: `paper_tables/2026-08-06_problem_difficulty_field_geometry.md`.)*
+
+---
+
+## Slide 1c — Evidence for claim #3: the headroom is real (long-horizon drift, concrete)
+
+**We ran that decisive diagnostic** (`diag_longhorizon_drift.py`): feed LongCat its
+own generated tail back and roll out. The headroom that was **absent** at short
+horizon (Slide 1a) **appears and compounds** natively:
+
+![Normalized GT-free drift over the rollout](../paper_figures/2026-08-08_longhorizon_drift/drift_gtfree_normalized.png)
+
+| GT-free signal (chunk 1 → last) | Short (1 chunk) | Native 30 s (6 ch) | **Native 60 s (12 ch)** |
+|---|--:|--:|--:|
+| Sharpness / HF artifacts | ~0 | +28% | **+48%** |
+| Temporal motion | ~0 | +8% | **+45%** |
+| Contrast | ~0 | +3% | **−16%** |
+| Perceptual (LPIPS, 30 s) | ~0 | **+96%** | — |
+
+- **Concrete headroom:** from *no measurable degradation* on one chunk to **LPIPS
+  ~2×, sharpness +48%, motion +45%** over a 60 s native rollout — and it **grows
+  monotonically with length**, so a correction has *more* room the longer you roll.
+- This is the pivot point: Slide 1a proves there's nothing to fix short-horizon;
+  this proves there *is* long-horizon. Full drift detail + the reencode-vs-native
+  measurement correction are on Slides 2b–3.
+- *(Source: job 15497180 + native runs; figure regenerable via
+  `scripts/make_drift_presentation_figs.py`.)*
+
+---
+
 ## Slide 2 — Setup: chained rollout, two metric families
 
 - Identical per-chunk geometry to all prior runs; we **feed the model's own
