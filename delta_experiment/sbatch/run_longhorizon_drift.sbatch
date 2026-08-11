@@ -50,6 +50,12 @@ STREAM_TARGET="${STREAM_TARGET:-generated}"   # generated | clean
 # best-of-N test-time search (only used when METHOD=bestof)
 SEARCH_K="${SEARCH_K:-4}"
 SEARCH_SEAM_WEIGHT="${SEARCH_SEAM_WEIGHT:-1.0}"
+# TTC anchored correction (only used when METHOD=ttc|ttc_gated)
+TTC_SIGMA_THRESHOLD="${TTC_SIGMA_THRESHOLD:-0.3}"
+TTC_CADENCE="${TTC_CADENCE:-1}"
+TTC_WEIGHT="${TTC_WEIGHT:-0.1}"
+TTC_FULL_LATENT="${TTC_FULL_LATENT:-0}"          # 1 => --ttc-full-latent
+TTC_GATE_THRESHOLD="${TTC_GATE_THRESHOLD:-0.15}"
 
 # ---- paths ----------------------------------------------------------------
 SCRATCH_BASE="/scratch/wc3013"
@@ -122,7 +128,12 @@ python delta_experiment/scripts/diag_longhorizon_drift.py \
     --stream-blend "${STREAM_BLEND}" \
     --stream-target "${STREAM_TARGET}" \
     --search-k "${SEARCH_K}" \
-    --search-seam-weight "${SEARCH_SEAM_WEIGHT}"
+    --search-seam-weight "${SEARCH_SEAM_WEIGHT}" \
+    --ttc-sigma-threshold "${TTC_SIGMA_THRESHOLD}" \
+    --ttc-cadence "${TTC_CADENCE}" \
+    --ttc-weight "${TTC_WEIGHT}" \
+    --ttc-gate-threshold "${TTC_GATE_THRESHOLD}" \
+    $( [ "${TTC_FULL_LATENT}" = "1" ] && echo "--ttc-full-latent" )
 
 echo ""
 echo "=============================================================================="

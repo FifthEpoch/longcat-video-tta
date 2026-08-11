@@ -106,6 +106,7 @@ from common import (  # noqa: E402
     torch_gc,
     encode_video,
     encode_prompt,
+    decode_latents,
     split_tta_latents,
 )
 
@@ -523,7 +524,7 @@ def main() -> int:
                         "explicitly override --num-cond-frames/--num-frames.")
     # --- Intervention -----------------------------------------------------
     p.add_argument("--method", type=str, default="notta",
-                   choices=["notta", "delta", "delta_stream", "bestof"],
+                   choices=["notta", "delta", "delta_stream", "bestof", "ttc", "ttc_gated"],
                    help="notta=plain pipeline; delta=train an AdaSteer delta on "
                         "the observed frames once and hold it FIXED across the "
                         "rollout; delta_stream=EXP4, re-fit the delta each chunk "
@@ -533,7 +534,15 @@ def main() -> int:
                         "candidate continuations per chunk (candidate 0 reuses "
                         "the NOTTA seed) and keep the one a GT-free drift verifier "
                         "judges most stable, so a bad chunk never poisons the "
-                        "context. Strict superset of NOTTA.")
+                        "context. Strict superset of NOTTA; "
+                        "ttc=Pathwise Test-Time Correction (sampling-space, frozen "
+                        "model): low-noise appearance re-anchor to the first frame "
+                        "every chunk (ungated baseline); ttc_gated=the CONTROLLER: "
+                        "apply the TTC correction ONLY on chunks whose incoming "
+                        "context has drifted past --ttc-gate-threshold (GT-free), "
+                        "else pass through uncorrected. ttc/ttc_gated share the "
+                        "SAViDNO engine so ttc --ttc-weight 0 is the engine-native "
+                        "NOTTA baseline for a clean paired comparison.")
     p.add_argument("--delta-steps", type=int, default=10)
     p.add_argument("--delta-lr", type=float, default=1e-3)
     p.add_argument("--delta-placement", type=str, default="adaln",
@@ -566,6 +575,22 @@ def main() -> int:
     p.add_argument("--search-seam-weight", type=float, default=1.0,
                    help="bestof: weight of the seam-continuity penalty in the "
                         "GT-free verifier score.")
+    # --- TTC (sampling-space anchored correction) knobs ------------------
+    p.add_argument("--ttc-sigma-threshold", type=float, default=0.3,
+                   help="ttc: apply correction only when sigma <= this (low-noise "
+                        "appearance-refinement band).")
+    p.add_argument("--ttc-cadence", type=int, default=1,
+                   help="ttc: apply correction every N low-noise steps.")
+    p.add_argument("--ttc-weight", type=float, default=0.1,
+                   help="ttc: correction strength toward the first-frame anchor "
+                        "(0=off => engine-native NOTTA baseline).")
+    p.add_argument("--ttc-full-latent", action="store_true",
+                   help="ttc: blend the full latent instead of appearance-only "
+                        "(per-frame spatial-mean) shift.")
+    p.add_argument("--ttc-gate-threshold", type=float, default=0.15,
+                   help="ttc_gated: apply correction on a chunk only if its "
+                        "INCOMING context's GT-free deviation from the real-frame "
+                        "reference exceeds this (else pass through uncorrected).")
     args = p.parse_args()
 
     # Native protocol: apply LongCat's idiomatic window geometry unless the
@@ -587,6 +612,8 @@ def main() -> int:
     tta_context_frames = args.tta_context_frames or args.num_cond_frames
     stream_refit_lr = args.stream_refit_lr or args.delta_lr
     uses_delta = args.method in ("delta", "delta_stream")
+    uses_ttc = args.method in ("ttc", "ttc_gated")
+    uses_ref = args.method in ("bestof", "ttc_gated")
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -612,6 +639,11 @@ def main() -> int:
     if args.method == "bestof":
         print(f"Search     : best-of-{args.search_k} (cand0=NOTTA seed) "
               f"GT-free drift verifier (seam_weight={args.search_seam_weight})")
+    if uses_ttc:
+        print(f"TTC        : sigma<={args.ttc_sigma_threshold} cadence={args.ttc_cadence} "
+              f"weight={args.ttc_weight} "
+              f"mode={'full_latent' if args.ttc_full_latent else 'appearance_only'}"
+              + (f" GATE>{args.ttc_gate_threshold}" if args.method == "ttc_gated" else ""))
     print(f"Roll mode  : {args.rollout_mode}")
     print(f"Geometry   : cond={args.num_cond_frames} frames={args.num_frames} "
           f"num_gen={num_gen} gen_start={args.gen_start_frame}")
@@ -633,6 +665,29 @@ def main() -> int:
         args.checkpoint_dir, device=args.device, dtype=torch.bfloat16
     )
     pipe = components["pipe"]
+
+    # TTC methods drive the DiT/scheduler directly via the SAViDNO engine
+    # (the real generate_vc exposes no per-step handles). ttc --ttc-weight 0 is
+    # the engine-native NOTTA baseline; ttc_gated only corrects drifted chunks.
+    ttc_sampler = None
+    if uses_ttc:
+        from comparison_methods.scripts.savi_dno_longcat import SAViDNO_LongCat  # noqa: E402
+        from comparison_methods.scripts.ttc_longcat import TTC_LongCat  # noqa: E402
+        for _m in (components["dit"], components["vae"], components["text_encoder"]):
+            for _prm in _m.parameters():
+                _prm.requires_grad = False
+        _engine = SAViDNO_LongCat(
+            dit=components["dit"], vae=components["vae"],
+            scheduler=components["scheduler"], tokenizer=components["tokenizer"],
+            text_encoder=components["text_encoder"], device=args.device,
+            dtype=torch.bfloat16, num_inference_steps=args.num_inference_steps,
+            guidance_scale=args.guidance_scale, gradient_checkpointing=False,
+        )
+        ttc_sampler = TTC_LongCat(
+            _engine, sigma_threshold=args.ttc_sigma_threshold,
+            cadence=args.ttc_cadence, weight=args.ttc_weight,
+            appearance_only=not args.ttc_full_latent, use_cfg=True,
+        )
 
     eval_videos = load_ucf101_video_list(
         args.data_dir, max_videos=args.max_videos, seed=args.seed,
@@ -674,10 +729,20 @@ def main() -> int:
             # seed the stitched clip with the true conditioning frames
             stitched.append(np.stack([np.asarray(im) / 255.0 for im in cond_images], axis=0))
 
-            # best-of-N verifier reference = the initial REAL conditioning frames
-            # (fixed across the rollout; the deployable ground-truth anchor).
+            # GT-free reference = the initial REAL conditioning frames (fixed
+            # across the rollout; the deployable ground-truth anchor). Used by the
+            # best-of-N verifier and the ttc_gated drift trigger.
             ref_sig = (reference_signals(stitched[0].astype(np.float32))
-                       if args.method == "bestof" else None)
+                       if uses_ref else None)
+
+            # TTC path needs prompt embeddings once per video (the engine drives
+            # the DiT directly rather than passing a caption to generate_vc).
+            ttc_prompt_embeds = ttc_prompt_mask = None
+            if uses_ttc:
+                ttc_prompt_embeds, ttc_prompt_mask = encode_prompt(
+                    components["tokenizer"], components["text_encoder"],
+                    entry["caption"], device=args.device, dtype=torch.bfloat16,
+                )
 
             # Intervention: train an AdaSteer delta on the observed frames.
             # delta         -> held FIXED across the rollout.
@@ -786,7 +851,50 @@ def main() -> int:
 
                     cand_log = None
                     chosen = 0
-                    if args.method == "bestof":
+                    ttc_info = None
+                    if uses_ttc:
+                        # Encode the in-memory conditioning tail -> cond_latents.
+                        cond_arr = np.stack(
+                            [np.asarray(im).astype(np.float32) / 255.0 for im in cond_images],
+                            axis=0)                                   # [T,H,W,3] in [0,1]
+                        cx = torch.from_numpy(cond_arr).permute(3, 0, 1, 2).unsqueeze(0)
+                        cx = (cx * 2.0 - 1.0).to(args.device, torch.bfloat16)  # [1,3,T,H,W]
+                        cond_latents = encode_video(components["vae"], cx, normalize=True)
+                        T_gen_lat = 1 + (num_gen - 1) // 4
+                        target_shape = (1, cond_latents.shape[1], T_gen_lat,
+                                        cond_latents.shape[3], cond_latents.shape[4])
+
+                        # GATE: correct only if the incoming context has drifted.
+                        eff_w = args.ttc_weight
+                        incoming_drift = None
+                        if args.method == "ttc_gated":
+                            csig = gen_free_signals(cond_arr, cond_arr[0])
+                            incoming_drift = verifier_score(csig, ref_sig, seam_weight=0.0)
+                            if incoming_drift <= args.ttc_gate_threshold:
+                                eff_w = 0.0
+                        ttc_sampler.weight = eff_w
+
+                        gen_gen = torch.Generator(device=args.device)
+                        gen_gen.manual_seed(base_seed)
+                        t0 = time.time()
+                        x_lat, n_corr = ttc_sampler.sample(
+                            cond_latents, target_shape, ttc_prompt_embeds,
+                            ttc_prompt_mask, generator=gen_gen, return_latents=True)
+                        # Decode the FULL [cond | gen] stack jointly to match the
+                        # pipeline's frame geometry (num_cond + num_gen frames).
+                        full = decode_latents(
+                            components["vae"],
+                            torch.cat([cond_latents, x_lat.to(cond_latents.dtype)], dim=2),
+                            denorm=True)
+                        gen_time += time.time() - t0
+                        gen_frames = np.clip(
+                            full.squeeze(0).float().cpu().numpy().transpose(1, 2, 3, 0), 0, 1)
+                        gen_only = gen_frames[args.num_cond_frames:args.num_cond_frames + num_gen]
+                        gt_metrics = _gt(gen_frames)
+                        free = gen_free_signals(gen_only, last_cond_frame)
+                        ttc_info = {"corrected": bool(eff_w > 0), "n_corr": int(n_corr),
+                                    "weight": float(eff_w), "incoming_drift": incoming_drift}
+                    elif args.method == "bestof":
                         # Generate --search-k candidates; candidate 0 reuses the
                         # NOTTA seed so best-of-N is a strict superset of NOTTA.
                         cands = []
@@ -826,10 +934,17 @@ def main() -> int:
                         rec["chosen_cand"] = int(chosen)
                         rec["search_k"] = len(cand_log)
                         rec["candidates"] = cand_log
+                    if uses_ttc and ttc_info is not None:
+                        rec["ttc"] = ttc_info
                     chunk_records.append(rec)
                     stitched.append(np.clip(gen_only.astype(np.float32), 0, 1))
 
                     pick = (f" pick={chosen}/{len(cand_log)}" if args.method == "bestof" else "")
+                    if uses_ttc and ttc_info is not None:
+                        pick = (f" corr={'Y' if ttc_info['corrected'] else 'n'}"
+                                f"(n={ttc_info['n_corr']}"
+                                + (f",d={ttc_info['incoming_drift']:.3f}"
+                                   if ttc_info['incoming_drift'] is not None else "") + ")")
                     print(
                         f"  chunk {step_i+1:2d}: sharp={free['sharpness']:.4f} "
                         f"motion={free['temporal_motion']:.4f} "
@@ -900,6 +1015,11 @@ def main() -> int:
         "stream_target": args.stream_target if args.method == "delta_stream" else None,
         "search_k": args.search_k if args.method == "bestof" else None,
         "search_seam_weight": args.search_seam_weight if args.method == "bestof" else None,
+        "ttc_sigma_threshold": args.ttc_sigma_threshold if uses_ttc else None,
+        "ttc_cadence": args.ttc_cadence if uses_ttc else None,
+        "ttc_weight": args.ttc_weight if uses_ttc else None,
+        "ttc_mode": ("full_latent" if args.ttc_full_latent else "appearance_only") if uses_ttc else None,
+        "ttc_gate_threshold": args.ttc_gate_threshold if args.method == "ttc_gated" else None,
         "num_chunks": args.num_chunks,
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,

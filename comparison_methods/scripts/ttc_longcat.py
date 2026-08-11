@@ -112,8 +112,13 @@ class TTC_LongCat:
 
     @torch.no_grad()
     def sample(self, cond_latents, target_shape, prompt_embeds, prompt_mask,
-               generator=None):
-        """Euler flow sampling with periodic low-noise appearance re-anchoring."""
+               generator=None, return_latents=False):
+        """Euler flow sampling with periodic low-noise appearance re-anchoring.
+
+        ``return_latents=True`` returns ``(x_t_latents, n_corr)`` WITHOUT decoding
+        so the caller can decode the FULL ``[cond | gen]`` latent stack jointly
+        (needed to match the pipeline's frame geometry in a chained rollout;
+        decoding the gen latents alone drops the shared VAE boundary frame)."""
         e = self.e
         sigmas = e._build_sigmas()
         eps = torch.randn(target_shape, device=e.device, dtype=torch.float32,
@@ -143,6 +148,8 @@ class TTC_LongCat:
 
             x_t = x_t + dt * v
 
+        if return_latents:
+            return x_t, n_corr
         pred_pixels = decode_latents(e.vae, x_t, denorm=True)
         return pred_pixels, n_corr
 

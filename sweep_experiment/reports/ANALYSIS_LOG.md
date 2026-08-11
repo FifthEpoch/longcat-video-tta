@@ -1310,3 +1310,36 @@ verifier composite chosen-vs-cand0, TRUE-quality check on GT chunks: does the GT
 PSNR/LPIPS and how much of the by-metric oracle it captures, per-signal oracle ceiling). Headline
 end-of-rollout drift reduction vs NOTTA = compare_drift_paired.py vs the native 12ch NOTTA run.
 NEXT: run bestof k=4 native 12ch N=8 (paired to longhorizon_sweep_notta_native_12ch), analyze.
+
+---
+
+## 2026-08-10 — Second actuator built: drift-GATED Pathwise-TTC (the controller, sampling-space)
+tags: #ttc #controller #gating #sampling-space #actuator #build
+refs: comparison_methods/scripts/{savi_dno_longcat.py,ttc_longcat.py},
+delta_experiment/scripts/diag_longhorizon_drift.py, delta_experiment/sbatch/{run_longhorizon_drift.sbatch,submit_longhorizon_sweep.sh}
+
+Recon (subagent) confirmed the shipped LongCatVideoPipeline exposes no per-step denoise handles, but the
+repo already contains a self-contained engine (SAViDNO_LongCat) and a working single-window ungated
+Pathwise-TTC sampler (TTC_LongCat). So the anchored-correction actuator did NOT need a from-scratch loop —
+it needed integration into the multi-chunk rollout harness + the drift GATE.
+
+Built into diag_longhorizon_drift.py: --method ttc (ungated appearance re-anchor to the clean first frame
+during low-noise steps, sigma<=0.3) and --method ttc_gated (THE CONTROLLER: correct a chunk ONLY if its
+INCOMING context's GT-free deviation from the real-frame reference exceeds --ttc-gate-threshold, else pass
+through uncorrected). This is the same GT-free drift signal used by the bestof verifier, now used as a
+per-chunk trigger — unifying both actuators (search + anchored-correction) under one gated controller, the
+framing confirmed with the user.
+
+Engineering correctness note (frame geometry): TTC_LongCat.sample decodes only the generated latents,
+which for an 80-frame chunk yields 77 pixels (the shared VAE boundary frame is lost). In a chained rollout
+that corrupts the conditioning tail size. FIX: added return_latents= to sample() and decode the FULL
+[cond|gen] latent stack JOINTLY in the harness (4 cond + 20 gen = 24 latents -> 93 frames = 13 cond + 80
+gen), exactly matching the pipeline geometry. Verified: prev_gen[num_gen:] = last 13 frames = num_cond.
+
+Fair-comparison caveat (LOGGED so we don't fool ourselves): the TTC path re-encodes the pixel conditioning
+tail each chunk (reencode-style), whereas the native NOTTA rollout uses KV-cache latent chaining. So the
+honest paired baseline for TTC is `ttc --ttc-weight 0` on the SAME engine, NOT longhorizon_sweep_notta_
+native_12ch. Both ttc arms and the ttc-w0 baseline share the reencode conditioning, so the paired sign-flip
+test (compare_drift_paired.py) isolates the correction effect. Series: longhorizon_sweep_ttc_w<W>_* and
+_ttcgated_w<W>_g<G>_*. Threaded TTC_* env through sbatch + submitter. All four files syntax-checked.
+NEXT: after the bestof gate results land, sweep ttc-weight {0, 0.05, 0.1, 0.2} + ttc_gated, paired to w0.

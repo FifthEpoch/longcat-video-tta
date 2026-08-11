@@ -60,6 +60,12 @@ STREAM_TARGET="${STREAM_TARGET:-clean}"
 # best-of-N test-time search (only used when METHOD=bestof)
 SEARCH_K="${SEARCH_K:-4}"
 SEARCH_SEAM_WEIGHT="${SEARCH_SEAM_WEIGHT:-1.0}"
+# TTC anchored correction (only used when METHOD=ttc|ttc_gated)
+TTC_SIGMA_THRESHOLD="${TTC_SIGMA_THRESHOLD:-0.3}"
+TTC_CADENCE="${TTC_CADENCE:-1}"
+TTC_WEIGHT="${TTC_WEIGHT:-0.1}"
+TTC_FULL_LATENT="${TTC_FULL_LATENT:-0}"
+TTC_GATE_THRESHOLD="${TTC_GATE_THRESHOLD:-0.15}"
 
 DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/datasets/panda_ood_budget_1000v_preview_480p}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
@@ -68,6 +74,10 @@ if [ "${METHOD}" = "delta_stream" ]; then
   SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${STREAM_TARGET}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
 elif [ "${METHOD}" = "bestof" ]; then
   SERIES="${SERIES:-longhorizon_sweep_bestof_k${SEARCH_K}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
+elif [ "${METHOD}" = "ttc" ]; then
+  SERIES="${SERIES:-longhorizon_sweep_ttc_w${TTC_WEIGHT}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
+elif [ "${METHOD}" = "ttc_gated" ]; then
+  SERIES="${SERIES:-longhorizon_sweep_ttcgated_w${TTC_WEIGHT}_g${TTC_GATE_THRESHOLD}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
 else
   SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
 fi
@@ -91,6 +101,11 @@ if [ "${METHOD}" = "bestof" ]; then
   echo "  search  : best-of-${SEARCH_K} (cand0=NOTTA seed) GT-free drift verifier, seam_w=${SEARCH_SEAM_WEIGHT}"
   echo "            per-video wall ~= ${SEARCH_K} x $((NUM_CHUNKS)) chunks x ~9.3min (native) -> SHARD_SIZE=${SHARD_SIZE}"
 fi
+if [ "${METHOD}" = "ttc" ] || [ "${METHOD}" = "ttc_gated" ]; then
+  echo "  ttc     : sigma<=${TTC_SIGMA_THRESHOLD} cadence=${TTC_CADENCE} weight=${TTC_WEIGHT} full_latent=${TTC_FULL_LATENT}"
+  [ "${METHOD}" = "ttc_gated" ] && echo "            drift GATE > ${TTC_GATE_THRESHOLD} (correct only drifted chunks)"
+  echo "            NOTE: ttc weight=0 is the engine-native NOTTA baseline for pairing"
+fi
 echo "============================================================"
 
 jids=()
@@ -103,7 +118,7 @@ for (( s=0; s<NSHARDS; s++ )); do
     continue
   fi
   jid=$(sbatch --parsable --account="${ACCOUNT}" \
-    --export=ALL,"METHOD=${METHOD},ROLLOUT_MODE=${ROLLOUT_MODE},NUM_VIDEOS=${POOL_N},START_VIDEO_IDX=${start},CHUNK_SIZE=${SHARD_SIZE},NUM_CHUNKS=${NUM_CHUNKS},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},SEED=${SEED},DELTA_STEPS=${DELTA_STEPS},DELTA_LR=${DELTA_LR},DELTA_PLACEMENT=${DELTA_PLACEMENT},STREAM_REFIT_STEPS=${STREAM_REFIT_STEPS},STREAM_REFIT_LR=${STREAM_REFIT_LR},STREAM_BLEND=${STREAM_BLEND},STREAM_TARGET=${STREAM_TARGET},SEARCH_K=${SEARCH_K},SEARCH_SEAM_WEIGHT=${SEARCH_SEAM_WEIGHT},DATA_DIR=${DATA_DIR},CHECKPOINT_DIR=${CHECKPOINT_DIR},OUTPUT_DIR=${outdir}" \
+    --export=ALL,"METHOD=${METHOD},ROLLOUT_MODE=${ROLLOUT_MODE},NUM_VIDEOS=${POOL_N},START_VIDEO_IDX=${start},CHUNK_SIZE=${SHARD_SIZE},NUM_CHUNKS=${NUM_CHUNKS},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},SEED=${SEED},DELTA_STEPS=${DELTA_STEPS},DELTA_LR=${DELTA_LR},DELTA_PLACEMENT=${DELTA_PLACEMENT},STREAM_REFIT_STEPS=${STREAM_REFIT_STEPS},STREAM_REFIT_LR=${STREAM_REFIT_LR},STREAM_BLEND=${STREAM_BLEND},STREAM_TARGET=${STREAM_TARGET},SEARCH_K=${SEARCH_K},SEARCH_SEAM_WEIGHT=${SEARCH_SEAM_WEIGHT},TTC_SIGMA_THRESHOLD=${TTC_SIGMA_THRESHOLD},TTC_CADENCE=${TTC_CADENCE},TTC_WEIGHT=${TTC_WEIGHT},TTC_FULL_LATENT=${TTC_FULL_LATENT},TTC_GATE_THRESHOLD=${TTC_GATE_THRESHOLD},DATA_DIR=${DATA_DIR},CHECKPOINT_DIR=${CHECKPOINT_DIR},OUTPUT_DIR=${outdir}" \
     "${SBATCH}")
   echo "   job ${jid}"
   jids+=("${jid}")
