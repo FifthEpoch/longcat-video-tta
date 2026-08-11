@@ -88,8 +88,14 @@ model breaks in a way sampling-space correction is designed to fix."**
   continuation trivial — LongCat's headline is *"minutes-long video without color
   drift or quality degradation"* — and gave it the **easiest slice of its home
   task**; (b) we removed every difficulty knob the field's headroom comes from
-  (length, OOD, weaker model, localized metrics). STAS steers a **1.3B** model and
-  still gets only **+0.37 VBench**; on a saturated 13.6B RLHF model, expect less.
+  (length, OOD, weaker model, localized metrics). **STAS** (Structured Activation
+  Steering; Cheng et al. 2026, arXiv:2603.17825 — a training-free activation-steer
+  of first-frame/boundary tokens) steers a **1.3B** model and still gets only
+  **+0.37 VBench** (81.39→81.76, a self-described "near-ceiling regime"); on a
+  saturated 13.6B RLHF model, expect less. STAS also reports its gains **concentrate
+  at cross-chunk (latent-boundary) transitions and dilute under video-level
+  averaging** — the exact reporting trap our per-video means fell into, and why our
+  GT-free suite includes a seam-continuity signal.
 - **The bug we caught in the audit:** our "long-context" path generated all 79 gen
   frames in a **single diffusion call** — *not* autoregressive chaining. So the
   cross-chunk exposure-bias accumulation the whole long-video literature studies
