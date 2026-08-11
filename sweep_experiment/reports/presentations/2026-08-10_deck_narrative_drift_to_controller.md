@@ -235,6 +235,15 @@ per-video paired test** (bootstrap CI + sign-flip permutation on |drift|):
 | **Streaming-clean** | re-fit toward *clean* chunk-0 latents | NULL; p ≥ 0.53; fixes saturation but overshoots contrast fade |
 | **Time-scheduled ramp** | more delta influence late | CONTRAINDICATED by chunk-interaction gate (no crossover; harm grows late) |
 
+![Delta recipes vs No-TTA at native 60 s — population means look reduced but per-video paired test is null](../paper_figures/2026-08-08_longhorizon_drift/delta_recipes_vs_notta_native60s.png)
+
+- **Read the figure:** Panel A (population endpoint drift) makes the streaming
+  deltas *look* helpful — sharpness 48→25/35%, motion 45→41/6%. Panel B is the
+  honest test: **per-video paired |drift| reduction vs No-TTA, every 95% CI crosses
+  0** (p = 0.26–0.88). The population "flattening" was **cancellation** of opposite
+  per-video effects, not stabilization. Only the two streaming recipes ran at native
+  60 s; **Fixed (EXP-B)** used the earlier reencode geometry and **the ramp was never
+  run** (contraindicated by the chunk-interaction gate).
 - **Per-video routing also ruled out:** heterogeneity looked routable (no-TTA best
   4/8; 23–39% oracle gap) but cross-signal consistency **p = 0.71** and the oracle
   gap **≤ the min-over-noise floor** → a **noise ceiling**, not signal.
