@@ -1275,6 +1275,33 @@ conditioning-frame reference + a seam-continuity penalty. Candidate 0 reuses the
 best-of-N is a STRICT SUPERSET of NOTTA (can only match/beat it), and every candidate is logged so a
 post-hoc ORACLE (best candidate) bounds achievable headroom vs what the GT-free verifier captures.
 
+EXTERNAL CONFIRMATION OF OUR DELTA NULL (Pathwise TTC 2602.05871, toy experiment sec 3.2 / Fig 4):
+TTC asks the same question (fix long-video drift purely at inference) and reports that TEST-TIME
+OPTIMIZATION FAILS. Two LoRA-at-test-time variants: (1) reconstruction reward on early frames ->
+suppresses motion (collapses toward copying early content); (2) distribution-anchoring reward toward
+the initial frames -> reward collapse into degenerate solutions violating the prior. Root causes they
+name: unstable/ill-defined reward (drift is coupled semantics+appearance+motion; low-level reward kills
+motion, high-level reward lacks frame-wise signal) + hypersensitivity of parameters to tiny test-time
+gradients. Pivot: parameter-space TTO -> sampling-space correction. THIS IS OUR DELTA NULL, peer-
+reviewed: our AdaSteer delta = parameter/activation-space optimization toward an anchor, same failure
+for the same reasons. Their stated open problem "reward design for error accumulation" is exactly the
+gap our GT-free drift verifier + per-chunk gate targets.
+
+NOVELTY CAVEAT (be honest): plain best-of-N is NOT novel (TTC uses BoN N=5 as a baseline; Video-T1
+built on it) and a straight TTC reimplementation is NOT novel. The novel contribution must be the
+CONTROLLER: a drift-GATED, GT-free test-time controller that decides per-video/per-chunk WHETHER to
+intervene (gate) and HOW (search actuator vs anchored-correction actuator), with the GT-free drift
+verifier answering TTC's open "reward design" problem. BoN + TTC-correction are actuators inside it;
+gating is the mechanism, not just a diagnostic. Pending user confirmation of this framing before
+committing compute to the anchored-correction actuator (needs cluster-side pipeline access; common.py
++ LongCat pipeline are dehydrated locally).
+
+GATING STILL APPLIES (statistical): the oracle-over-candidates in BoN is itself max-over-noise inflated
+(best of k noisy draws), same trap as the 2026-08-04 PSNR-router. analyze_bestof_search.py now reports
+verifier-pick vs RANDOM-pick vs oracle: the verifier has real signal only if chosen beats random; the
+oracle-vs-random gap is the noise floor. Headline drift reduction vs NOTTA remains gated by the paired
+sign-flip test (compare_drift_paired.py).
+
 BUILD (this turn): added method=bestof to diag_longhorizon_drift.py (+ --search-k, --search-seam-weight),
 threaded SEARCH_K/SEARCH_SEAM_WEIGHT through run_longhorizon_drift.sbatch + submit_longhorizon_sweep.sh
 (method-aware SHARD_SIZE default 1 for bestof since per-chunk cost x k; series
