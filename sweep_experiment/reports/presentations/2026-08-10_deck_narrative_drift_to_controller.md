@@ -121,10 +121,18 @@ horizon (Slide 1a) **appears and compounds** natively:
 | Sharpness / HF artifacts | ~0 | +28% | **+48%** |
 | Temporal motion | ~0 | +8% | **+45%** |
 | Contrast | ~0 | +3% | **−16%** |
-| Perceptual (LPIPS, 30 s) | ~0 | **+96%** | — |
+| Perceptual (LPIPS, GT window)† | ~0 | **+96%** | −5% (GT-limited)† |
 
-- **Concrete headroom:** from *no measurable degradation* on one chunk to **LPIPS
-  ~2×, sharpness +48%, motion +45%** over a 60 s native rollout — and it **grows
+† LPIPS/PSNR/SSIM need frame-aligned ground truth, which **runs out after ~1–2
+native chunks** (source clips are short). Both native LPIPS cells therefore
+measure only that early GT window, *not* the full rollout. The 60 s value
+(0.303→0.289, N=8) spans an even tinier window than the 30 s value (N=12), so it
+is a **gating sample, not a long-horizon signal** — do not read it as "fidelity
+improves at 60 s." Judge long-horizon drift by the GT-free rows above.
+
+- **Concrete headroom:** from *no measurable degradation* on one chunk to
+  **sharpness +48%, motion +45%, contrast −16%** over a 60 s native rollout (plus
+  **LPIPS ~2×** over the early GT window at 30 s) — and the GT-free drift **grows
   monotonically with length**, so a correction has *more* room the longer you roll.
 - This is the pivot point: Slide 1a proves there's nothing to fix short-horizon;
   this proves there *is* long-horizon. Full drift detail + the reencode-vs-native
