@@ -1240,3 +1240,46 @@ is a noise ceiling. The AdaSteer-delta intervention line is definitively CLOSED.
 
 DECISION: run the NOTTA-ONLY measurement capstone (18ch ~90s native); do not build the ramped arm.
 Commit fully to the measurement + negative-results narrative.
+
+---
+
+## 2026-08-10 — PIVOT: from steering-delta to TEST-TIME SEARCH (best-of-N drift verifier)
+tags: [pivot, test-time-search, best-of-N, verifier, exposure-bias, literature, positive-direction]
+refs: delta_experiment/scripts/diag_longhorizon_drift.py (method=bestof);
+scripts/analyze_bestof_search.py; Video-T1 (ICCV'25, 2503.18942); MCTS-TTS (ICLR'26 sub);
+Verifier Matters (BMVC'25); Pathwise TTC (2602.05871); History-Guided Video Diffusion / DFoT (ICLR'25);
+Rolling Forcing (2509.25161)
+
+DIRECTION CHANGE (user): stop framing toward a negative-results paper (no top venue publishes "method
+X doesn't work"); use the nulls as a DIAGNOSIS and build a method that works, grounded in current
+literature. The diagnosis: autoregressive drift is EXPOSURE BIAS (model conditions on its own degraded
+output, a regime unseen in training). An additive bias in ACTIVATION space (AdaSteer delta, all 4
+axes) cannot correct an INPUT-distribution shift -- which is exactly why every delta went stale/hurt.
+Independently corroborated: Pathwise TTC (Feb 2026) documents that test-time PARAMETER optimization
+"collapses" on long video and that the fix is sampling-space / conditioning-level correction -- our
+clean-anchored delta re-fit null is the same phenomenon.
+
+Literature scan (all training-free, fit our TTA framing):
+  * Test-time search + verifier: Video-T1 (ICCV'25), MCTS-TTS (ICLR'26 sub), Verifier Matters (BMVC'25)
+    -- reframe generation as search over noise; pick best candidate by a verifier.
+  * Anchored sampling-space correction: Pathwise TTC (2026) -- swap drifted context -> clean anchor at
+    low-noise refinement steps, re-noise, resume.
+  * History guidance (CFG over context): DFoT / History-Guided Video Diffusion (ICLR'25).
+  * Attention-sink anchoring: Rolling Forcing (2025).
+
+DECISION (user picked): build TEST-TIME SEARCH first -- best-of-N per chunk with a GT-FREE DRIFT
+VERIFIER (fastest to a positive number; reuses our validated monotonic drift signals + rollout infra).
+Our contribution is the verifier: a physically-grounded, deployable (no future frames) drift score =
+relative deviation of {sharpness, colorfulness, contrast, temporal_motion} from the initial REAL
+conditioning-frame reference + a seam-continuity penalty. Candidate 0 reuses the NOTTA seed so
+best-of-N is a STRICT SUPERSET of NOTTA (can only match/beat it), and every candidate is logged so a
+post-hoc ORACLE (best candidate) bounds achievable headroom vs what the GT-free verifier captures.
+
+BUILD (this turn): added method=bestof to diag_longhorizon_drift.py (+ --search-k, --search-seam-weight),
+threaded SEARCH_K/SEARCH_SEAM_WEIGHT through run_longhorizon_drift.sbatch + submit_longhorizon_sweep.sh
+(method-aware SHARD_SIZE default 1 for bestof since per-chunk cost x k; series
+longhorizon_sweep_bestof_k{K}_native_{C}ch). Added scripts/analyze_bestof_search.py (search activity,
+verifier composite chosen-vs-cand0, TRUE-quality check on GT chunks: does the GT-free pick lift
+PSNR/LPIPS and how much of the by-metric oracle it captures, per-signal oracle ceiling). Headline
+end-of-rollout drift reduction vs NOTTA = compare_drift_paired.py vs the native 12ch NOTTA run.
+NEXT: run bestof k=4 native 12ch N=8 (paired to longhorizon_sweep_notta_native_12ch), analyze.

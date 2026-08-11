@@ -36,7 +36,7 @@ SEED="${SEED:-42}"
 START_VIDEO_IDX="${START_VIDEO_IDX:-0}"
 CHUNK_SIZE="${CHUNK_SIZE:-0}"
 # rollout protocol + intervention
-METHOD="${METHOD:-notta}"                 # notta | delta | delta_stream
+METHOD="${METHOD:-notta}"                 # notta | delta | delta_stream | bestof
 ROLLOUT_MODE="${ROLLOUT_MODE:-reencode}"  # reencode | native
 DELTA_STEPS="${DELTA_STEPS:-10}"
 DELTA_LR="${DELTA_LR:-1e-3}"
@@ -47,6 +47,9 @@ STREAM_REFIT_STEPS="${STREAM_REFIT_STEPS:-5}"
 STREAM_REFIT_LR="${STREAM_REFIT_LR:-0}"
 STREAM_BLEND="${STREAM_BLEND:-0.5}"
 STREAM_TARGET="${STREAM_TARGET:-generated}"   # generated | clean
+# best-of-N test-time search (only used when METHOD=bestof)
+SEARCH_K="${SEARCH_K:-4}"
+SEARCH_SEAM_WEIGHT="${SEARCH_SEAM_WEIGHT:-1.0}"
 
 # ---- paths ----------------------------------------------------------------
 SCRATCH_BASE="/scratch/wc3013"
@@ -117,7 +120,9 @@ python delta_experiment/scripts/diag_longhorizon_drift.py \
     --stream-refit-steps "${STREAM_REFIT_STEPS}" \
     --stream-refit-lr "${STREAM_REFIT_LR}" \
     --stream-blend "${STREAM_BLEND}" \
-    --stream-target "${STREAM_TARGET}"
+    --stream-target "${STREAM_TARGET}" \
+    --search-k "${SEARCH_K}" \
+    --search-seam-weight "${SEARCH_SEAM_WEIGHT}"
 
 echo ""
 echo "=============================================================================="

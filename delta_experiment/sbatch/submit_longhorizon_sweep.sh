@@ -29,10 +29,16 @@ PROJECT_ROOT="${PROJECT_ROOT:-${SCRATCH_BASE}/longcat-video-tta}"
 SBATCH="${PROJECT_ROOT}/delta_experiment/sbatch/run_longhorizon_drift.sbatch"
 ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 
-METHOD="${METHOD:-notta}"                    # notta | delta | delta_stream
+METHOD="${METHOD:-notta}"                    # notta | delta | delta_stream | bestof
 ROLLOUT_MODE="${ROLLOUT_MODE:-native}"       # native geometry for a real horizon
 POOL_N="${POOL_N:-8}"                        # total videos across the sweep
-SHARD_SIZE="${SHARD_SIZE:-2}"                # videos per job (fits 12h wall)
+# best-of-N generates SEARCH_K candidates/chunk => ~k x the per-video wall, so
+# default to 1 video/job for bestof (else 2) to stay inside the 12h limit.
+if [ "${METHOD}" = "bestof" ]; then
+  SHARD_SIZE="${SHARD_SIZE:-1}"
+else
+  SHARD_SIZE="${SHARD_SIZE:-2}"
+fi
 NUM_CHUNKS="${NUM_CHUNKS:-12}"               # 12 x 80 = 960 gen frames ~= 60s
 NUM_COND_FRAMES="${NUM_COND_FRAMES:-13}"
 NUM_FRAMES="${NUM_FRAMES:-93}"
@@ -51,12 +57,17 @@ STREAM_BLEND="${STREAM_BLEND:-0.5}"
 # flow-match toward the CLEAN chunk-0 real latents (removes the train-on-own-drift
 # flaw that made STREAM_TARGET=generated null on 2026-08-09). 'generated' = old.
 STREAM_TARGET="${STREAM_TARGET:-clean}"
+# best-of-N test-time search (only used when METHOD=bestof)
+SEARCH_K="${SEARCH_K:-4}"
+SEARCH_SEAM_WEIGHT="${SEARCH_SEAM_WEIGHT:-1.0}"
 
 DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/datasets/panda_ood_budget_1000v_preview_480p}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${SCRATCH_BASE}/longcat-video-checkpoints}"
-# encode the stream target in the series name so clean vs generated never collide.
+# encode the method-specific knob in the series name so arms never collide.
 if [ "${METHOD}" = "delta_stream" ]; then
   SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${STREAM_TARGET}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
+elif [ "${METHOD}" = "bestof" ]; then
+  SERIES="${SERIES:-longhorizon_sweep_bestof_k${SEARCH_K}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
 else
   SERIES="${SERIES:-longhorizon_sweep_${METHOD}_${ROLLOUT_MODE}_${NUM_CHUNKS}ch}"
 fi
@@ -76,6 +87,10 @@ echo "  series  : ${SERIES}"
 if [ "${METHOD}" = "delta_stream" ]; then
   echo "  stream  : target=${STREAM_TARGET} refit_steps=${STREAM_REFIT_STEPS} refit_lr=${STREAM_REFIT_LR} blend(anchor)=${STREAM_BLEND}"
 fi
+if [ "${METHOD}" = "bestof" ]; then
+  echo "  search  : best-of-${SEARCH_K} (cand0=NOTTA seed) GT-free drift verifier, seam_w=${SEARCH_SEAM_WEIGHT}"
+  echo "            per-video wall ~= ${SEARCH_K} x $((NUM_CHUNKS)) chunks x ~9.3min (native) -> SHARD_SIZE=${SHARD_SIZE}"
+fi
 echo "============================================================"
 
 jids=()
@@ -88,7 +103,7 @@ for (( s=0; s<NSHARDS; s++ )); do
     continue
   fi
   jid=$(sbatch --parsable --account="${ACCOUNT}" \
-    --export=ALL,"METHOD=${METHOD},ROLLOUT_MODE=${ROLLOUT_MODE},NUM_VIDEOS=${POOL_N},START_VIDEO_IDX=${start},CHUNK_SIZE=${SHARD_SIZE},NUM_CHUNKS=${NUM_CHUNKS},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},SEED=${SEED},DELTA_STEPS=${DELTA_STEPS},DELTA_LR=${DELTA_LR},DELTA_PLACEMENT=${DELTA_PLACEMENT},STREAM_REFIT_STEPS=${STREAM_REFIT_STEPS},STREAM_REFIT_LR=${STREAM_REFIT_LR},STREAM_BLEND=${STREAM_BLEND},STREAM_TARGET=${STREAM_TARGET},DATA_DIR=${DATA_DIR},CHECKPOINT_DIR=${CHECKPOINT_DIR},OUTPUT_DIR=${outdir}" \
+    --export=ALL,"METHOD=${METHOD},ROLLOUT_MODE=${ROLLOUT_MODE},NUM_VIDEOS=${POOL_N},START_VIDEO_IDX=${start},CHUNK_SIZE=${SHARD_SIZE},NUM_CHUNKS=${NUM_CHUNKS},NUM_COND_FRAMES=${NUM_COND_FRAMES},NUM_FRAMES=${NUM_FRAMES},GEN_START_FRAME=${GEN_START_FRAME},NUM_INFERENCE_STEPS=${NUM_INFERENCE_STEPS},SEED=${SEED},DELTA_STEPS=${DELTA_STEPS},DELTA_LR=${DELTA_LR},DELTA_PLACEMENT=${DELTA_PLACEMENT},STREAM_REFIT_STEPS=${STREAM_REFIT_STEPS},STREAM_REFIT_LR=${STREAM_REFIT_LR},STREAM_BLEND=${STREAM_BLEND},STREAM_TARGET=${STREAM_TARGET},SEARCH_K=${SEARCH_K},SEARCH_SEAM_WEIGHT=${SEARCH_SEAM_WEIGHT},DATA_DIR=${DATA_DIR},CHECKPOINT_DIR=${CHECKPOINT_DIR},OUTPUT_DIR=${outdir}" \
     "${SBATCH}")
   echo "   job ${jid}"
   jids+=("${jid}")

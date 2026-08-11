@@ -195,6 +195,51 @@ def gen_free_signals(gen_only: np.ndarray, last_cond_frame: np.ndarray) -> Dict[
 
 
 # ============================================================================
+# GT-free drift verifier for best-of-N test-time search
+# ============================================================================
+# Test-time scaling (Video-T1, ICCV'25; MCTS-TTS, ICLR'26 sub; Verifier Matters,
+# BMVC'25) reframes generation as search over the noise space with a verifier.
+# Our contribution is the VERIFIER: a physically-grounded, GT-free drift score
+# for autoregressive continuation. Each candidate continuation is scored by how
+# far its GT-free statistics deviate from a FIXED real-frame reference (the
+# initial conditioning frames -- the only ground-truth-real, always-available
+# anchor in a deployable setting), plus a cross-chunk seam-continuity penalty.
+# LOWER = more stable = preferred. Because candidate 0 reuses the NOTTA seed,
+# best-of-N is a strict superset of NOTTA: it can only match or beat NOTTA when
+# the verifier is informative. We also log every candidate so a post-hoc oracle
+# (per-chunk best candidate) bounds the achievable headroom vs what the GT-free
+# verifier actually captures.
+
+_VERIFIER_SIGNALS = ["sharpness", "colorfulness", "contrast", "temporal_motion"]
+
+
+def reference_signals(frames_01: np.ndarray) -> Dict[str, float]:
+    """GT-free reference statistics from real frames [T,H,W,3] float[0,1]."""
+    return gen_free_signals(frames_01, frames_01[0])
+
+
+def verifier_score(free: Dict[str, float], ref: Dict[str, float],
+                   seam_weight: float = 1.0) -> float:
+    """Composite drift score (LOWER=better): sum of relative deviations of the
+    GT-free signals from the real-frame reference + a seam-continuity penalty
+    normalised by the reference motion scale. Two-sided deviation (not minimise)
+    so it preserves the reference motion level rather than collapsing to a
+    still frame."""
+    s = 0.0
+    for k in _VERIFIER_SIGNALS:
+        rv, cv = ref.get(k), free.get(k)
+        if rv is None or cv is None or rv != rv or cv != cv:
+            continue
+        s += abs(cv - rv) / (abs(rv) + 1e-6)
+    seam_jump = free.get("seam_jump")
+    ref_motion = ref.get("temporal_motion")
+    if (seam_jump is not None and seam_jump == seam_jump
+            and ref_motion is not None and ref_motion == ref_motion):
+        s += seam_weight * seam_jump / (ref_motion + 1e-6)
+    return float(s)
+
+
+# ============================================================================
 # Aggregation
 # ============================================================================
 
@@ -478,12 +523,17 @@ def main() -> int:
                         "explicitly override --num-cond-frames/--num-frames.")
     # --- Intervention -----------------------------------------------------
     p.add_argument("--method", type=str, default="notta",
-                   choices=["notta", "delta", "delta_stream"],
+                   choices=["notta", "delta", "delta_stream", "bestof"],
                    help="notta=plain pipeline; delta=train an AdaSteer delta on "
                         "the observed frames once and hold it FIXED across the "
                         "rollout; delta_stream=EXP4, re-fit the delta each chunk "
                         "on the most recent generated window (anchored toward the "
-                        "chunk-0 delta) so it tracks the drifting distribution.")
+                        "chunk-0 delta) so it tracks the drifting distribution; "
+                        "bestof=best-of-N test-time search: generate --search-k "
+                        "candidate continuations per chunk (candidate 0 reuses "
+                        "the NOTTA seed) and keep the one a GT-free drift verifier "
+                        "judges most stable, so a bad chunk never poisons the "
+                        "context. Strict superset of NOTTA.")
     p.add_argument("--delta-steps", type=int, default=10)
     p.add_argument("--delta-lr", type=float, default=1e-3)
     p.add_argument("--delta-placement", type=str, default="adaln",
@@ -509,6 +559,13 @@ def main() -> int:
                         "2026-08-09 null); 'clean' conditions on the drifted "
                         "context but flow-matches toward the CLEAN chunk-0 real "
                         "latents (steer-back-to-clean; removes the flaw).")
+    # --- Best-of-N test-time search knobs --------------------------------
+    p.add_argument("--search-k", type=int, default=4,
+                   help="bestof: candidate continuations per chunk (candidate 0 "
+                        "== the NOTTA seed, so k>=1). Per-chunk cost scales x k.")
+    p.add_argument("--search-seam-weight", type=float, default=1.0,
+                   help="bestof: weight of the seam-continuity penalty in the "
+                        "GT-free verifier score.")
     args = p.parse_args()
 
     # Native protocol: apply LongCat's idiomatic window geometry unless the
@@ -552,6 +609,9 @@ def main() -> int:
         print(f"Stream     : target={args.stream_target} "
               f"refit_steps={args.stream_refit_steps} "
               f"refit_lr={stream_refit_lr} blend(anchor)={args.stream_blend}")
+    if args.method == "bestof":
+        print(f"Search     : best-of-{args.search_k} (cand0=NOTTA seed) "
+              f"GT-free drift verifier (seam_weight={args.search_seam_weight})")
     print(f"Roll mode  : {args.rollout_mode}")
     print(f"Geometry   : cond={args.num_cond_frames} frames={args.num_frames} "
           f"num_gen={num_gen} gen_start={args.gen_start_frame}")
@@ -613,6 +673,11 @@ def main() -> int:
             stitched: List[np.ndarray] = []
             # seed the stitched clip with the true conditioning frames
             stitched.append(np.stack([np.asarray(im) / 255.0 for im in cond_images], axis=0))
+
+            # best-of-N verifier reference = the initial REAL conditioning frames
+            # (fixed across the rollout; the deployable ground-truth anchor).
+            ref_sig = (reference_signals(stitched[0].astype(np.float32))
+                       if args.method == "bestof" else None)
 
             # Intervention: train an AdaSteer delta on the observed frames.
             # delta         -> held FIXED across the rollout.
@@ -695,51 +760,83 @@ def main() -> int:
                                   f"({time.time()-_ts:.1f}s)")
 
                     last_cond_frame = np.asarray(cond_images[-1]).astype(np.float32) / 255.0
-
-                    t0 = time.time()
-                    gen_frames = generate_video_continuation(
-                        pipe=pipe,
-                        video_frames=cond_images,
-                        prompt=entry["caption"],
-                        num_cond_frames=args.num_cond_frames,
-                        num_frames=args.num_frames,
-                        num_inference_steps=args.num_inference_steps,
-                        guidance_scale=args.guidance_scale,
-                        seed=args.seed + v_idx + step_i,
-                        resolution=args.resolution,
-                        device=args.device,
-                    )
-                    gen_time += time.time() - t0
-
-                    gen_only = gen_frames[args.num_cond_frames:args.num_cond_frames + num_gen]
-
-                    # GT metrics where the source clip still overlaps the rollout.
                     step_gen_start = args.gen_start_frame + step_i * num_gen
-                    gt_metrics = evaluate_generation_metrics(
-                        gen_output=gen_frames,
-                        video_path=entry["video_path"],
-                        num_cond_frames=args.num_cond_frames,
-                        num_gen_frames=num_gen,
-                        gen_start_frame=step_gen_start,
-                        device=args.device,
-                        return_gt_frames=False,
-                    )
-                    free = gen_free_signals(gen_only, last_cond_frame)
+                    base_seed = args.seed + v_idx + step_i
+
+                    def _gen(seed):
+                        return generate_video_continuation(
+                            pipe=pipe, video_frames=cond_images,
+                            prompt=entry["caption"],
+                            num_cond_frames=args.num_cond_frames,
+                            num_frames=args.num_frames,
+                            num_inference_steps=args.num_inference_steps,
+                            guidance_scale=args.guidance_scale,
+                            seed=seed, resolution=args.resolution,
+                            device=args.device,
+                        )
+
+                    def _gt(gf):
+                        # GT metrics where the source clip still overlaps rollout.
+                        return evaluate_generation_metrics(
+                            gen_output=gf, video_path=entry["video_path"],
+                            num_cond_frames=args.num_cond_frames,
+                            num_gen_frames=num_gen, gen_start_frame=step_gen_start,
+                            device=args.device, return_gt_frames=False,
+                        )
+
+                    cand_log = None
+                    chosen = 0
+                    if args.method == "bestof":
+                        # Generate --search-k candidates; candidate 0 reuses the
+                        # NOTTA seed so best-of-N is a strict superset of NOTTA.
+                        cands = []
+                        for c in range(max(1, args.search_k)):
+                            cseed = base_seed if c == 0 else base_seed + c * 100003
+                            t0 = time.time()
+                            cg = _gen(cseed)
+                            gen_time += time.time() - t0
+                            cg_only = cg[args.num_cond_frames:args.num_cond_frames + num_gen]
+                            c_free = gen_free_signals(cg_only, last_cond_frame)
+                            c_gt = _gt(cg)
+                            c_score = verifier_score(c_free, ref_sig, args.search_seam_weight)
+                            cands.append({"cand": c, "seed": cseed, "score": c_score,
+                                          "gf": cg, "only": cg_only, "free": c_free, "gt": c_gt})
+                        chosen = min(range(len(cands)), key=lambda i: cands[i]["score"])
+                        best = cands[chosen]
+                        gen_frames, gen_only = best["gf"], best["only"]
+                        free, gt_metrics = best["free"], best["gt"]
+                        cand_log = [{"cand": c["cand"], "seed": c["seed"],
+                                     "score": c["score"], "chosen": c["cand"] == chosen,
+                                     **{k: c["free"].get(k) for k in _GEN_FREE_KEYS},
+                                     **{k: c["gt"].get(k) for k in _GT_KEYS}}
+                                    for c in cands]
+                    else:
+                        t0 = time.time()
+                        gen_frames = _gen(base_seed)
+                        gen_time += time.time() - t0
+                        gen_only = gen_frames[args.num_cond_frames:args.num_cond_frames + num_gen]
+                        gt_metrics = _gt(gen_frames)
+                        free = gen_free_signals(gen_only, last_cond_frame)
 
                     rec = {"chunk": step_i + 1, "gen_start_frame": step_gen_start,
                            "gt_available": gt_metrics.get("psnr") == gt_metrics.get("psnr")}
                     rec.update({k: gt_metrics.get(k) for k in _GT_KEYS})
                     rec.update(free)
+                    if args.method == "bestof":
+                        rec["chosen_cand"] = int(chosen)
+                        rec["search_k"] = len(cand_log)
+                        rec["candidates"] = cand_log
                     chunk_records.append(rec)
                     stitched.append(np.clip(gen_only.astype(np.float32), 0, 1))
 
+                    pick = (f" pick={chosen}/{len(cand_log)}" if args.method == "bestof" else "")
                     print(
                         f"  chunk {step_i+1:2d}: sharp={free['sharpness']:.4f} "
                         f"motion={free['temporal_motion']:.4f} "
                         f"colorful={free['colorfulness']:.4f} "
                         f"seam_ratio={free['seam_ratio']:.2f} "
                         f"psnr={rec['psnr'] if rec['psnr'] == rec['psnr'] else float('nan'):.2f}"
-                        + ("" if rec["gt_available"] else " (no GT)")
+                        + pick + ("" if rec["gt_available"] else " (no GT)")
                     )
                     prev_gen = gen_frames
             finally:
@@ -754,6 +851,8 @@ def main() -> int:
                 "caption": entry["caption"],
                 "method": args.method,
                 "rollout_mode": args.rollout_mode,
+                "ref_signals": ref_sig if args.method == "bestof" else None,
+                "search_k": args.search_k if args.method == "bestof" else None,
                 "delta_norm": delta_norm,
                 "stream_delta_norms": stream_norms if args.method == "delta_stream" else None,
                 "num_chunks": args.num_chunks,
@@ -799,6 +898,8 @@ def main() -> int:
         "stream_refit_lr": stream_refit_lr if args.method == "delta_stream" else None,
         "stream_blend": args.stream_blend if args.method == "delta_stream" else None,
         "stream_target": args.stream_target if args.method == "delta_stream" else None,
+        "search_k": args.search_k if args.method == "bestof" else None,
+        "search_seam_weight": args.search_seam_weight if args.method == "bestof" else None,
         "num_chunks": args.num_chunks,
         "num_cond_frames": args.num_cond_frames,
         "num_frames": args.num_frames,
