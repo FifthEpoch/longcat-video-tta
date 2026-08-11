@@ -88,8 +88,9 @@ model breaks in a way sampling-space correction is designed to fix."**
   continuation trivial — LongCat's headline is *"minutes-long video without color
   drift or quality degradation"* — and gave it the **easiest slice of its home
   task**; (b) we removed every difficulty knob the field's headroom comes from
-  (length, OOD, weaker model, localized metrics). **STAS** (Structured Activation
-  Steering; Cheng et al. 2026, arXiv:2603.17825 — a training-free activation-steer
+  (length, OOD, weaker model, localized metrics).   **STAS** (Structured Activation
+  Steering; Cheng et al., "Steering Video Diffusion Transformers with Massive
+  Activations," arXiv:2603.17825, 2026 — a training-free activation-steer
   of first-frame/boundary tokens) steers a **1.3B** model and still gets only
   **+0.37 VBench** (81.39→81.76, a self-described "near-ceiling regime"); on a
   saturated 13.6B RLHF model, expect less. STAS also reports its gains **concentrate

@@ -13,7 +13,7 @@ This memo tabulates what comparable teams actually do (base model + frame geomet
 
 | Work (venue) | Base model | Task | Cond frames | Generated horizon | Res / fps | Data | How they create difficulty / measure |
 |---|---|---|---|---|---|---|---|
-| **STAS** (2026, arXiv) | Wan2.1-1.3B; CogVideoX-5B; Wan2.2-TI2V-5B | **T2V from scratch** | 0 | **49–81 frames** | 480–704p | VBench prompts | VBench 16-dim × 5 seeds (4,700+ vids); +0.37 total; **explicitly notes gains dilute in video-level averages, concentrate at cross-chunk seams** |
+| **STAS**[^stas] | Wan2.1-1.3B; CogVideoX-5B; Wan2.2-TI2V-5B | **T2V from scratch** | 0 | **49–81 frames** | 480–704p | VBench prompts | VBench 16-dim × 5 seeds (4,700+ vids); +0.37 total (81.39→81.76 on Wan2.1-1.3B); **explicitly notes gains dilute in video-level averages, concentrate at cross-chunk seams** |
 | **History-Guided / DFoT** (ICML 2025, 2502.06764) | own DFoT (fine-tuned foundation) | prediction + rollout | flexible (variable history) | **64 frames, sliding-window rollout** | — | Kinetics-600, RE10K | "challenging setup that requires outstanding consistency to avoid blowing up"; OOD history; FVD best at small guidance ω=1.5 |
 | **AID** (ICCV 2025) | I2V diffusion adapted | instruction video prediction | 1–2 | multi-frame | — | SSv2, Bridge, Epic-100 | hard action dynamics; FVD/KVD (K400 I3D) over 2,048–9,342 samples |
 | Classic video prediction | MCVD / PVDM / VideoSDE / etc. | prediction | BAIR 1 · K600 5 | 11–15 | 64px | BAIR, K600, UCF-101 | random robot motion / diverse action; **FVD avg over 100 runs (noisy at small N)** |
@@ -76,32 +76,10 @@ No degradation ⇒ LongCat is too strong for this framing ⇒ switch base model.
 outcome resolves the question empirically. Diagnostic build: this same dated set
 (`diag_longhorizon_drift`).
 
-## 6. Status update — 2026-08-07: diagnostic built
-
-The `diag_longhorizon_drift` build named in §5 now exists and is pushed:
-- `delta_experiment/scripts/diag_longhorizon_drift.py` — NOTTA true-autoregressive rollout;
-  per-chunk GT-free drift signals (sharpness / colorfulness / temporal_motion / seam ratio) +
-  PSNR/SSIM/LPIPS where GT overlaps; per-signal slope + %-change verdict in `summary.json`.
-- `delta_experiment/sbatch/run_longhorizon_drift.sbatch` + `submit_longhorizon_drift.sh` —
-  H200, account `torch_pr_36_mren`, chunkable (`START_VIDEO_IDX`/`CHUNK_SIZE`).
-- `scripts/plot_drift_curves.py` — `summary.json` -> per-metric + headline drift-curve PNGs.
-
-Run: `bash delta_experiment/sbatch/submit_longhorizon_drift.sh` (defaults N=24, chunks=8,
-cond=14/frames=28/gsf=48, same geometry as the AdaSteer/placement/EXP3 runs so the drift curve is
-directly comparable). Read the drift verdict in `summary.json`: **degradation over chunk index =>
-headroom found**; **flat => switch base model.**
-
-## 6. Status update — 2026-08-07: diagnostic built
-
-The `diag_longhorizon_drift` build named in §5 now exists and is pushed:
-- `delta_experiment/scripts/diag_longhorizon_drift.py` — NOTTA true-autoregressive rollout;
-  per-chunk GT-free drift signals (sharpness / colorfulness / temporal_motion / seam ratio) +
-  PSNR/SSIM/LPIPS where GT overlaps; per-signal slope + %-change verdict in `summary.json`.
-- `delta_experiment/sbatch/run_longhorizon_drift.sbatch` + `submit_longhorizon_drift.sh` —
-  H200, account `torch_pr_36_mren`, chunkable (`START_VIDEO_IDX`/`CHUNK_SIZE`).
-- `scripts/plot_drift_curves.py` — `summary.json` -> per-metric + headline drift-curve PNGs.
-
-Run: `bash delta_experiment/sbatch/submit_longhorizon_drift.sh` (defaults N=24, chunks=8,
-cond=14/frames=28/gsf=48, same geometry as the AdaSteer/placement/EXP3 runs so the drift curve is
-directly comparable). Read the drift verdict in `summary.json`: **degradation over chunk index =>
-headroom found**; **flat => switch base model.**
+[^stas]: **STAS** = *Structured Activation Steering.* Cheng, Xianhang; Zheng, Yujian;
+    Xie, Zhenyu; Liao, Tingting; Li, Hao. "Steering Video Diffusion Transformers with
+    Massive Activations." arXiv preprint arXiv:2603.17825, 2026.
+    <https://arxiv.org/abs/2603.17825>. BibTeX key `cheng2026stas` (in `paper/refs.bib`).
+    Training-free self-guidance: amplifies "massive activation" spikes at first-frame and
+    latent-frame-boundary tokens toward a scaled global-max magnitude; no weight updates,
+    <0.1% overhead. The acronym does not appear in the title, so search the title, not "STAS".
