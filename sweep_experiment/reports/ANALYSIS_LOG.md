@@ -1385,3 +1385,31 @@ adding an anchor-similarity term for color/contrast. (3) Efficiency + next actua
 verifier (decode only the chosen candidate -> save (k-1)/k decodes) and the drift-gated TTC actuator.
 This is NOT a paper number yet -- N=8 gating, GT chunks n=11 -- but it is the first credible positive
 and reframes the controller narrative from "diagnosis of nulls" to "a working GT-free selection gate."
+
+---
+
+## 2026-08-14 — TTC w=0 first GPU run is GARBAGE: Euler sign bug in TTC_LongCat (same one SAViDNO already fixed)
+tags: [ttc, bug, sampling-space, savi-dno, euler-sign, smoke-test]
+refs: comparison_methods/scripts/ttc_longcat.py; comparison_methods/scripts/savi_dno_longcat.py
+  (_flow_euler_sample_differentiable); sweep_experiment/reports/experiment_outputs/2026-08-14.md;
+  jobs 15699080-083 / longhorizon_sweep_ttc_w0_native_12ch
+
+TTC actuator's first GPU execution (w=0, shard_0000, 2 videos x 12 chunks) completed without a
+traceback — joint [cond|gen] decode and chained rollout geometry are fine. The pixels are not.
+On the same two videos that native NOTTA / best-of-N scored at PSNR 16-21 dB, TTC w=0 produced
+PSNR 7.38 / 8.38, LPIPS ~0.94, and *identical* GT-free signals across a car clip and a watch clip
+(sharpness stuck at 0.0021, motion ~0.130, colorfulness ~0.23, flat over 12 chunks). That is
+decoded initial noise, not a continuation.
+
+ROOT CAUSE: `TTC_LongCat.sample` still used the pre-fix SAViDNO Euler convention
+`x_t = x_t + dt * v` and `x0 = x_t - sigma * v`. SAViDNO later documented that LongCat's
+`generate_vc` negates the DiT output (`noise_pred = -noise_pred`) so the matching step is
+`x_t = x_t - dt * v`, with clean estimate `x0 = x_t + sigma * v`. The old sign "stepped away
+from clean and never denoised (output ~ decoded initial noise -> PSNR ~9 / SSIM ~0.05,
+identical regardless of CFG/steps)" — verbatim the w=0 smoke-test signature.
+
+FIX: flip Euler + x0 + v_corr in `ttc_longcat.py` to match SAViDNO/`generate_vc`. Do NOT
+launch w=0.1 / ttc_gated on the broken sampler. Cancel remaining 1569908x shards; their
+output is the same garbage and is NOT a paired baseline. Resubmit w=0 after pull as the
+new smoke test — pass criterion is PSNR ~16-20 dB on chunk 1 of these videos and
+per-video / per-chunk variation in the GT-free signals (not a constant 0.0021/0.130).

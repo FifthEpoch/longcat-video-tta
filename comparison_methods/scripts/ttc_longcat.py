@@ -21,10 +21,10 @@ Implementation notes / honesty caveat:
   flow-matching Euler sampler (not a DDPM), the correction is applied to the
   running x0 estimate:
 
-      x0_hat   = x_t - sigma * v(x_t)                    (flow-matching x0)
+      x0_hat   = x_t + sigma * v(x_t)                    (LongCat DiT: v = x0-eps)
       x0_corr  = re_anchor(x0_hat, anchor)               (appearance only)
-      v_corr   = (x_t - x0_corr) / sigma
-      x_{t+1}  = x_t + dt * v_corr
+      v_corr   = (x0_corr - x_t) / sigma
+      x_{t+1}  = x_t - dt * v_corr                       (must match SAViDNO/generate_vc)
 
   applied only when sigma <= --ttc-sigma-threshold (the low-noise appearance
   band) and every --ttc-cadence steps. "Appearance only" (default) shifts each
@@ -141,12 +141,17 @@ class TTC_LongCat:
 
             if (t_curr <= self.sigma_threshold and t_curr > 1e-6
                     and (i % self.cadence == 0) and self.weight > 0):
-                x0 = x_t - t_curr * v
+                # LongCat DiT outputs v = x0 - eps; clean estimate is
+                # x0_hat = x_t + sigma * v (see SAViDNO_LongCat).
+                x0 = x_t + t_curr * v
                 x0 = self._re_anchor(x0, anchor)
-                v = (x_t - x0) / t_curr
+                v = (x0 - x_t) / t_curr
                 n_corr += 1
 
-            x_t = x_t + dt * v
+            # MUST match SAViDNO / generate_vc: negate the DiT velocity.
+            # The old `x_t + dt * v` stepped away from clean and decoded as
+            # noise (PSNR ~8, LPIPS ~0.94, identical signals across videos).
+            x_t = x_t - dt * v
 
         if return_latents:
             return x_t, n_corr
