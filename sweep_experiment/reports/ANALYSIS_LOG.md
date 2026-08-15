@@ -1443,3 +1443,35 @@ quality 7 as the paper headline. Keep LongCat results as the saturated-13B audit
 Keep best-of-N / gated TTC as the method (backbone-agnostic). Finish the already-
 submitted LongCat TTC w0 v2 smoke only; do not launch more LongCat arms. Next:
 Wan 1.3B NOTTA 5 s vs 30 s VBench-Long smoke on ~16 MovieGen prompts.
+
+---
+
+## 2026-08-15 — CORRECTION: stay in continuation / I2V; T2V was not required
+tags: [methodology, continuation, i2v, correction]
+refs: sweep_experiment/reports/paper_tables/2026-08-15_longhorizon_field_standard.md;
+CausVid (CVPR 2025) I2V/V2V claims; VBench-I2V (official VBench++ extension);
+History-Guided / DFoT (ICML 2025)
+
+The previous entry recommended T2V because that is the *default task* of CausVid /
+Self-Forcing / Pyramid Flow, not because continuation is invalid. User asked whether
+we can stay in video continuation. Yes — and we should.
+
+WHY T2V WAS SUGGESTED (and why that was the wrong coupling): those 1.3B streaming
+papers generate from text (or a first frame treated as T2V-with-an-image). I
+collapsed "switch to their small model" into "switch to their T2V task." Those are
+independent knobs. Our scientific claim is exposure bias under *visual*
+re-conditioning — a continuation problem. T2V-from-scratch removes the conditioning
+tail our verifier, gate, and TTC anchor all read.
+
+WHAT THE FIELD ALREADY OFFERS FOR CONTINUATION:
+- CausVid (CVPR 2025) explicitly does streaming **I2V and V2V** on the same 1.3B
+  causal student (zero-shot).
+- **VBench-I2V** (VBench++ official): i2v_subject, i2v_background, camera_motion +
+  the 6 quality dims. This is the conditioned analogue of VBench-Long.
+- DFoT (ICML 2025) is video *prediction* (history frames → 64-frame rollout) with
+  FVD on Kinetics-600 — the other published continuation-shaped setting.
+
+REVISED STACK: Wan2.1-1.3B (CausVid/Self-Forcing causal ckpt) used as **I2V /
+prefix-conditioned AR continuation**, eval on **VBench-I2V** at 5/10/30 s. Optional
+second table: Kinetics-600 64-frame FVD (DFoT protocol). Do not move the paper to
+T2V-from-scratch.

@@ -63,8 +63,8 @@ OpenVid, Kinetics). One-Minute TTT is the exception (5-min cartoons, used as
 | Knob | Switch **from** | Switch **to** | Why |
 |---|---|---|---|
 | **Base model** | LongCat-Video 13.6B | **Wan2.1-T2V-1.3B** (official weights). For true streaming AR, prefer the **CausVid or Self-Forcing 1.3B causal checkpoint** (same backbone, KV-cache, already the published streaming baseline). | 10× smaller; every 2025 streaming paper is here; headroom exists (Self-Forcing still degrades past 5 s). |
-| **Task** | in-domain 14→14 / native 13/80 continuation on Panda | **Autoregressive / streaming T2V** (optional I2V from first frame). Horizons: **5 s (in-train) / 10 s / 30 s** — the exact Self-Forcing degradation ladder. | Matches CausVid + Self-Forcing; 30 s is where they say error accumulation appears. |
-| **Eval set** | Panda-70M preview clips | **VBench prompt suite** (946) for 5 s; **MovieGen-128** (CausVid) for 10–30 s long tables. No new video download required for T2V. | This is what reviewers will compare against. |
+| **Task** | in-domain 14→14 / native 13/80 continuation on Panda | **Stay in continuation / I2V** (condition on a real image or short prefix, roll out AR). Horizons: **5 s / 10 s / 30 s**. T2V-from-scratch is *not* required — it was only the default task of the 1.3B streaming papers. | Exposure bias is a *conditioning* problem; I2V/continuation is the matching task. CausVid (CVPR 2025) already reports streaming I2V; VBench-I2V is the official suite. |
+| **Eval set** | Panda-70M preview clips | **VBench-I2V image suite** (subject/background/camera splits) for conditioned gen; optionally MovieGen-128 images for 10–30 s. Kinetics-600 64-frame rollouts only if we also want a DFoT-style prediction/FVD table. | Field-standard *conditioned* eval. Do not switch to T2V prompts just to match CausVid's T2V table. |
 | **Headline metrics** | PSNR/SSIM/LPIPS + hand-crafted drift | **VBench-Long quality 7:** subject consistency, background consistency, temporal flickering, motion smoothness, dynamic degree, aesthetic quality, imaging quality. Keep our GT-free drift curves as a *diagnostic* (in-loop verifier), not the paper headline. | Field-standard, GT-free, defined at any length. We already have `eval_vbench.py`. |
 | **N** | 8 videos × 12 chunks | **≥100 prompts** at 5 s; **≥32–128** at 10–30 s (MovieGen-128 is the published long set). | 1.3B + 4-step CausVid/Self-Forcing makes this cheap vs LongCat 50-step 13.6B. |
 
@@ -90,8 +90,9 @@ Kinetics-600 is a valid *second* table if we also want a DFoT-style FVD number.
 
 1. Pull Wan2.1-T2V-1.3B (and, if we want streaming AR out of the box, the
    Self-Forcing or CausVid 1.3B causal weights — both public).
-2. Run a **NOTTA / no-control** 5 s and 30 s VBench-Long smoke on ~16 MovieGen
-   prompts to confirm the backbone drifts past 5 s (Self-Forcing's own claim).
+2. Run a **NOTTA / no-control** 5 s and 30 s **VBench-I2V** smoke on ~16
+   conditioning images (not T2V-from-scratch) to confirm the backbone drifts
+   past 5 s under visual re-conditioning.
 3. Port `bestof` + `ttc` onto that sampler (same verifier; VBench quality dims
    as the offline eval).
 4. Only then scale N. Do **not** keep spending H200 hours on LongCat TTC v2
