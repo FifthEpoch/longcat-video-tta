@@ -76,9 +76,19 @@ else
 fi
 echo "Self-Forcing HEAD: $(git -C "${SF_ROOT}" rev-parse --short HEAD)  $(git -C "${SF_ROOT}" log -1 --pretty=%s)"
 
-echo "pip install -r requirements.txt"
+# Official requirements.txt pulls nvidia-pyindex / nvidia-tensorrt / pycuda
+# (TensorRT ONNX export + the Self-Forcing demo server). Those need CUDA
+# headers; job 15772007 died with `cuda.h: No such file or directory` while
+# building pycuda. PyTorch inference (sample / I2V continuation) does not
+# use them. Strip before pip; treat the same as optional flash-attn.
+REQ_FILTERED="${TMPDIR}/sf_requirements_infer.txt"
+grep -vE '^(nvidia-pyindex|nvidia-tensorrt|pycuda)([[:space:]]|$)' \
+    "${SF_ROOT}/requirements.txt" > "${REQ_FILTERED}"
+echo "pip install -r requirements.txt (TensorRT/pycuda stripped)"
+echo "---- filtered-out extras ----"
+comm -13 <(sort "${REQ_FILTERED}") <(sort "${SF_ROOT}/requirements.txt") || true
 "${PIP}" install --upgrade pip
-"${PIP}" install -r "${SF_ROOT}/requirements.txt"
+"${PIP}" install -r "${REQ_FILTERED}"
 
 # flash-attn is in the official recipe but is a frequent compile failure.
 # Do not fail the job if it does not build; inference still loads without it.

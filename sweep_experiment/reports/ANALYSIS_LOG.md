@@ -1493,3 +1493,18 @@ Self-Forcing + pip + optional flash-attn; (2) CPU download Wan-AI/Wan2.1-T2V-1.3
 if Drive rate-limits); (3) GPU healthcheck writes
 `wan_experiment/results/setup_healthcheck/report.json`. Submitter:
 `bash wan_experiment/sbatch/submit_setup_chain.sh`. User can disconnect.
+
+---
+
+## 2026-08-15 — Wan setup_env failed on TensorRT extras; download already done
+tags: [infra, wan, self-forcing, conda, pycuda]
+refs: wan_experiment/sbatch/setup_env.sbatch; jobs 15772007/008/009
+
+15772008 (download) COMPLETED in 3m53s: Wan2.1-T2V-1.3B 17G + self_forcing_dmd.pt
+5.3G on disk. VBench-I2V gdown exited 1 on a Drive permission/rate-limit (131M
+partial images remain; non-blocking). 15772007 (env) FAILED in 10m: official
+Self-Forcing `requirements.txt` pulls `nvidia-pyindex` / `nvidia-tensorrt` /
+`pycuda`; pycuda died with `cuda.h: No such file or directory`. 15772009
+CANCELLED by afterok. Env skeleton + SF clone already exist — do not FORCE=1
+wipe. Fix: strip those three lines before pip (inference unused). Resubmit
+setup_env + healthcheck only; do not re-download.

@@ -31,6 +31,22 @@ wan_experiment/slurm_log/wan_healthcheck_<jid>.out
 
 Jobs 1 and 2 run **in parallel**. Job 3 waits for both (`afterok`).
 
+**If download already succeeded** (Wan dir + `self_forcing_dmd.pt` present) and
+only the env job failed, do **not** rerun the full chain. Pull, then:
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+J1=$(sbatch --parsable --account=torch_pr_36_mren wan_experiment/sbatch/setup_env.sbatch)
+J3=$(sbatch --parsable --account=torch_pr_36_mren --dependency=afterok:${J1} \
+    wan_experiment/sbatch/healthcheck.sbatch)
+echo "setup_env=${J1}  healthcheck=${J3}"
+```
+
+Do **not** `FORCE=1` the env unless you intend to wipe it. The 15772007 failure
+was `pip install -r requirements.txt` building `pycuda` / `nvidia-pyindex`
+(TensorRT extras; `cuda.h` missing). Setup now strips those three lines.
+Inference does not need them.
+
 ## Canonical paths
 
 | Thing | Path |
