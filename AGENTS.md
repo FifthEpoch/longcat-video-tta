@@ -11,6 +11,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | What | Path | Notes |
 |---|---|---|
 | **This index file** | `AGENTS.md` | Updated as artifacts are added |
+| **Cluster & sbatch onboarding guide** | `docs/CLUSTER_SBATCH_GUIDE.md` | Self-contained guide for a brand-new agent: cluster quirks (account flag, /scratch, conda/PYTHONHOME), how to write sbatch jobs, and ready-to-use fine-tune + long-horizon continuation recipes. |
 | **Master experiment index** | `sweep_experiment/reports/INDEX.md` | **Single source of truth** for what experiments exist + cluster paths. Read this first when picking up work. |
 | **Analysis log (decisions/findings)** | `sweep_experiment/reports/ANALYSIS_LOG.md` | Append-only log of paper-relevant findings and decisions. NEVER edit past entries. |
 | **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
@@ -21,6 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_setup_chain.sh` | New stack. **Do not install into `conda-envs/longcat`.** Env = `conda-envs/self_forcing`. Weights = `/scratch/wc3013/wan-checkpoints/`. |
 
 ## 2. CRITICAL workflow rules
 

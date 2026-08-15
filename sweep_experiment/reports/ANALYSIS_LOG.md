@@ -1475,3 +1475,21 @@ REVISED STACK: Wan2.1-1.3B (CausVid/Self-Forcing causal ckpt) used as **I2V /
 prefix-conditioned AR continuation**, eval on **VBench-I2V** at 5/10/30 s. Optional
 second table: Kinetics-600 64-frame FVD (DFoT protocol). Do not move the paper to
 T2V-from-scratch.
+
+---
+
+## 2026-08-15 — Cluster setup chain for Wan2.1-1.3B / Self-Forcing (do NOT reuse longcat env)
+tags: [infra, wan, self-forcing, conda, sbatch]
+refs: wan_experiment/README.md; wan_experiment/sbatch/{setup_env,download_assets,healthcheck}.sbatch;
+wan_experiment/sbatch/submit_setup_chain.sh
+
+The LongCat conda env (`/scratch/wc3013/conda-envs/longcat`, numpy 2.x / torch 2.6)
+cannot host Self-Forcing (pins numpy==1.24.4, diffusers==0.31.0). Same reason we
+already have a separate `vbench-backfill` env. New env: `conda-envs/self_forcing`.
+
+Overnight chain (jobs 1+2 parallel, 3 afterok): (1) GPU env create + clone
+Self-Forcing + pip + optional flash-attn; (2) CPU download Wan-AI/Wan2.1-T2V-1.3B
+(~15 GB) + gdhe17/Self-Forcing DMD ckpt + VBench-I2V image suite (gdown; non-fatal
+if Drive rate-limits); (3) GPU healthcheck writes
+`wan_experiment/results/setup_healthcheck/report.json`. Submitter:
+`bash wan_experiment/sbatch/submit_setup_chain.sh`. User can disconnect.
