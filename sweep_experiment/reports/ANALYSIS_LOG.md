@@ -1413,3 +1413,33 @@ launch w=0.1 / ttc_gated on the broken sampler. Cancel remaining 1569908x shards
 output is the same garbage and is NOT a paired baseline. Resubmit w=0 after pull as the
 new smoke test — pass criterion is PSNR ~16-20 dB on chunk 1 of these videos and
 per-video / per-chunk variation in the GT-free signals (not a constant 0.0021/0.130).
+
+---
+
+## 2026-08-15 — Switch long-horizon work onto the field's 1.3B streaming testbed
+tags: [methodology, base-model, dataset, metrics, long-horizon, streaming, wan2.1, vbench-long]
+refs: sweep_experiment/reports/paper_tables/2026-08-15_longhorizon_field_standard.md;
+CausVid (Yin et al., CVPR 2025); Self-Forcing (Huang et al., NeurIPS 2025 Spotlight);
+Pyramid Flow (Jin et al., ICLR 2025); FIFO-Diffusion (Kim et al., NeurIPS 2024);
+FreeNoise (Qiu et al., ICLR 2024); One-Minute TTT (Dalal et al., CVPR 2025);
+History-Guided / DFoT (Song et al., ICML 2025); VBench (Huang et al., CVPR 2024)
+
+User decision: LongCat 13.6B is too expensive for the N we need now that the task is
+long-horizon / streaming, and we should adopt the field's model + data + metrics.
+Survey restricted to peer-reviewed 2024–2025 venue papers (no lightly-cited arXiv).
+
+FINDING: the published streaming/long-horizon standard is **Wan2.1-T2V-1.3B**
+(CausVid CVPR'25, Self-Forcing NeurIPS'25), eval on **VBench / VBench-Long** and
+**MovieGen-128** prompts at 5 s / 10 s / 30 s, headline metrics = VBench quality
+dims (subject/background consistency, flicker, motion smoothness, imaging/aesthetic,
+dynamic degree) + human, not PSNR. Training-source clips in that literature are
+3–10 s (MixKit, WebVid, OpenVid, Kinetics); nobody uses Panda short-clip
+continuation as the long-horizon test. Self-Forcing explicitly reports quality
+collapse when extrapolating past its 5 s train horizon — that is the headroom.
+
+DECISION: switch the experimental stack to Wan2.1-1.3B (prefer CausVid/Self-Forcing
+causal 1.3B checkpoint for streaming AR), VBench + MovieGen-128 prompts, VBench-Long
+quality 7 as the paper headline. Keep LongCat results as the saturated-13B audit.
+Keep best-of-N / gated TTC as the method (backbone-agnostic). Finish the already-
+submitted LongCat TTC w0 v2 smoke only; do not launch more LongCat arms. Next:
+Wan 1.3B NOTTA 5 s vs 30 s VBench-Long smoke on ~16 MovieGen prompts.
