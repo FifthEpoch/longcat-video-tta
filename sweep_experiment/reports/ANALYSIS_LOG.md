@@ -1524,3 +1524,25 @@ Fix: skip flash-attn by default (`SKIP_FLASH=1`), run `setup.py develop`
 first, drop `--gres` so setup is a CPU job (avoids the 2-GPU cap), 12m
 `timeout` if someone sets `SKIP_FLASH=0`. Inference does not need flash-attn.
 Resubmit setup_env + healthcheck only. Do not FORCE=1.
+
+---
+
+## 2026-08-16 — Wan / Self-Forcing healthcheck GREEN (15858269)
+tags: [infra, wan, self-forcing, healthcheck]
+refs: wan_experiment/results/setup_healthcheck/report.json; jobs 15858268/269
+
+Required checks all passed. On disk and loadable: Wan2.1-T2V-1.3B config + T5
+(22.7 GB across 2 files) + VAE + Self-Forcing DMD 5.3 GB (`generator_ema`).
+VBench-I2V: 105 images found, 8 decoded (partial Drive download was enough).
+Env: torch 2.13.0+cu130, CUDA yes, NVIDIA H200. `n_tensors=0` is a schema
+quirk (ckpt top key is `generator_ema`, not `state_dict`/`model`) — file
+loaded; unwrap that key in the runner.
+
+Optional `smoke_t2v` failed in 16.6s: official Self-Forcing `inference.py`
+does `from torchvision.io import write_video`, removed in torchvision bundled
+with torch 2.13. Do not use that entry point. Write our own I2V / prefix-
+conditioned continuation runner (imageio/av). Do not pin-downgrade torch
+unless a forward pass actually breaks — 2.13+cu130 matches the H200 node.
+
+Setup chain is closed. Next experiment: NOTTA 5 s vs 30 s VBench-I2V smoke
+on ~16 images, then port best-of-N + gated TTC.

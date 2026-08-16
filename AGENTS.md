@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_setup_chain.sh` | New stack. **Do not install into `conda-envs/longcat`.** Env = `conda-envs/self_forcing`. Weights = `/scratch/wc3013/wan-checkpoints/` (download 15772008 done). Skip SF TensorRT extras (`cuda.h`) and **skip flash-attn by default** (15796574 TIMED OUT 2h compiling it). `setup_env.sbatch` is CPU-only. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_setup_chain.sh` | **Healthcheck GREEN 2026-08-16** (15858269). Env = `conda-envs/self_forcing` (torch 2.13.0+cu130). Weights = `/scratch/wc3013/wan-checkpoints/`. VBench-I2V = 105 images. Do **not** call official `inference.py` (`write_video` gone in this torchvision). Skip TensorRT extras + flash-attn. Next: our I2V continuation runner. |
 
 ## 2. CRITICAL workflow rules
 

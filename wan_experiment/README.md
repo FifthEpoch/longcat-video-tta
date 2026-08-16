@@ -62,3 +62,10 @@ Known setup failures (both already patched):
 | VBench-I2V images | `/scratch/wc3013/longcat-video-tta/datasets/vbench_i2v/` |
 
 Re-run any step alone (`FORCE=1` to redo). All three scripts are idempotent.
+
+## Setup status (2026-08-16)
+
+Healthcheck job **15858269** passed all required checks. Official
+`inference.py` smoke failed (`torchvision.io.write_video` removed in the
+torch 2.13 wheel). That is expected; the continuation runner will write
+video via imageio/av and load the DMD ckpt from the `generator_ema` key.
