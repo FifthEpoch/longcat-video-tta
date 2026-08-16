@@ -1508,3 +1508,19 @@ Self-Forcing `requirements.txt` pulls `nvidia-pyindex` / `nvidia-tensorrt` /
 CANCELLED by afterok. Env skeleton + SF clone already exist — do not FORCE=1
 wipe. Fix: strip those three lines before pip (inference unused). Resubmit
 setup_env + healthcheck only; do not re-download.
+
+---
+
+## 2026-08-15 — setup_env TIMED OUT compiling flash-attn (15796574)
+tags: [infra, wan, self-forcing, flash-attn, slurm]
+refs: wan_experiment/sbatch/setup_env.sbatch; jobs 15796574/575
+
+15796574 ran 2h00m on gh125 then TIMEOUT. Log is 60 lines of
+`Building wheel for flash-attn ... still running`. TensorRT-skip worked;
+`setup.py develop` never ran. 15796575 CANCELLED by afterok. Reason field
+also shows `QOSMaxGRESPerUser` (job sat in Priority ~4.5h before starting).
+
+Fix: skip flash-attn by default (`SKIP_FLASH=1`), run `setup.py develop`
+first, drop `--gres` so setup is a CPU job (avoids the 2-GPU cap), 12m
+`timeout` if someone sets `SKIP_FLASH=0`. Inference does not need flash-attn.
+Resubmit setup_env + healthcheck only. Do not FORCE=1.

@@ -21,7 +21,7 @@ mkdir -p "${PROJECT_ROOT}/wan_experiment/slurm_log"
 echo "Submitting Wan/Self-Forcing setup chain (account=${ACCOUNT})"
 
 J1=$(sbatch --parsable --account="${ACCOUNT}" "${SB}/setup_env.sbatch")
-echo "  [1/3] setup_env      job ${J1}  (GPU, ~2h)"
+echo "  [1/3] setup_env      job ${J1}  (CPU, ~1h; flash-attn skipped)"
 
 J2=$(sbatch --parsable --account="${ACCOUNT}" "${SB}/download_assets.sbatch")
 echo "  [2/3] download       job ${J2}  (CPU, ~4h, parallel with 1)"

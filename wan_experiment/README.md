@@ -25,7 +25,7 @@ wan_experiment/slurm_log/wan_healthcheck_<jid>.out
 
 | Job | Script | Partition | Wall | What |
 |---|---|---|---|---|
-| 1 | `setup_env.sbatch` | GPU (flash-attn compile) | 2 h | conda env + clone Self-Forcing + pip |
+| 1 | `setup_env.sbatch` | CPU (flash-attn skipped) | 1 h | conda env + clone Self-Forcing + pip |
 | 2 | `download_assets.sbatch` | CPU | 4 h | Wan2.1-1.3B (~15 GB) + SF DMD ckpt + VBench-I2V images |
 | 3 | `healthcheck.sbatch` | GPU | 1 h | load weights, decode 8 I2V images, optional 1-clip T2V smoke |
 
@@ -42,10 +42,14 @@ J3=$(sbatch --parsable --account=torch_pr_36_mren --dependency=afterok:${J1} \
 echo "setup_env=${J1}  healthcheck=${J3}"
 ```
 
-Do **not** `FORCE=1` the env unless you intend to wipe it. The 15772007 failure
-was `pip install -r requirements.txt` building `pycuda` / `nvidia-pyindex`
-(TensorRT extras; `cuda.h` missing). Setup now strips those three lines.
-Inference does not need them.
+Do **not** `FORCE=1` the env unless you intend to wipe it.
+
+Known setup failures (both already patched):
+- 15772007: official `requirements.txt` builds `pycuda` / `nvidia-pyindex`
+  (`cuda.h` missing). Those three lines are stripped. Unused by inference.
+- 15796574: `TIMEOUT` at 2h compiling optional `flash-attn`. Setup is now
+  CPU-only and skips flash-attn by default (`SKIP_FLASH=1`). `setup.py develop`
+  runs before any optional compile.
 
 ## Canonical paths
 

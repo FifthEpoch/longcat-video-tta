@@ -5,17 +5,17 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:h200:1
-#SBATCH --time=02:00:00
+#SBATCH --time=01:00:00
 #SBATCH --output=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_sf_env_%j.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_sf_env_%j.err
-#SBATCH --comment="preemption=yes;requeue=true"
 
 # Create /scratch/$USER/conda-envs/self_forcing (Self-Forcing official recipe).
-# GPU node: flash-attn needs a CUDA compiler. Do NOT install into longcat.
+# CPU job: flash-attn is skipped by default (job 15796574 TIMED OUT at 2h
+# compiling it). Inference does not need it. Do NOT install into longcat.
 #
 #   sbatch wan_experiment/sbatch/setup_env.sbatch
 #   FORCE=1 to rebuild the env from scratch.
+#   SKIP_FLASH=0 to attempt flash-attn (needs a GPU node + CUDA headers).
 
 set -euo pipefail
 export PYTHONNOUSERSITE=1
@@ -25,6 +25,7 @@ PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 CONDA_ENV="${CONDA_ENV:-${SCRATCH_BASE}/conda-envs/self_forcing}"
 SF_ROOT="${SF_ROOT:-${SCRATCH_BASE}/third_party/Self-Forcing}"
 FORCE="${FORCE:-0}"
+SKIP_FLASH="${SKIP_FLASH:-1}"
 
 export TMPDIR="${SCRATCH_BASE}/tmp"
 export PIP_CACHE_DIR="${SCRATCH_BASE}/pip-cache"
@@ -38,6 +39,7 @@ echo "  job     : ${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
 echo "  env     : ${CONDA_ENV}"
 echo "  sf_root : ${SF_ROOT}"
 echo "  force   : ${FORCE}"
+echo "  skip_flash : ${SKIP_FLASH}"
 echo "=============================================================================="
 
 module purge
@@ -90,19 +92,26 @@ comm -13 <(sort "${REQ_FILTERED}") <(sort "${SF_ROOT}/requirements.txt") || true
 "${PIP}" install --upgrade pip
 "${PIP}" install -r "${REQ_FILTERED}"
 
-# flash-attn is in the official recipe but is a frequent compile failure.
-# Do not fail the job if it does not build; inference still loads without it.
-set +e
-"${PIP}" install flash-attn --no-build-isolation
-FLASH_RC=$?
-set -e
-if [ "${FLASH_RC}" -ne 0 ]; then
-    echo "WARNING: flash-attn install failed (rc=${FLASH_RC}); continuing without it"
-fi
-
+# Required path first. Job 15796574 never reached setup.py develop because
+# flash-attn compile ate the 2h GPU wall-clock.
 echo "python setup.py develop (Self-Forcing)"
 cd "${SF_ROOT}"
 "${PYTHON}" setup.py develop
+
+# flash-attn is optional. Default SKIP_FLASH=1. A timeout cap is mandatory
+# even when requested — an unbounded compile killed 15796574.
+if [ "${SKIP_FLASH}" = "1" ]; then
+    echo "SKIP_FLASH=1 -> not installing flash-attn (inference works without it)"
+else
+    echo "SKIP_FLASH=0 -> attempting flash-attn (12m cap)"
+    set +e
+    timeout 12m "${PIP}" install flash-attn --no-build-isolation
+    FLASH_RC=$?
+    set -e
+    if [ "${FLASH_RC}" -ne 0 ]; then
+        echo "WARNING: flash-attn install failed or timed out (rc=${FLASH_RC}); continuing"
+    fi
+fi
 
 echo "---- env sanity ----"
 "${PYTHON}" - <<'PY'
