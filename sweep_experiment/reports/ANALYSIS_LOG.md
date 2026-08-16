@@ -1546,3 +1546,24 @@ unless a forward pass actually breaks — 2.13+cu130 matches the H200 node.
 
 Setup chain is closed. Next experiment: NOTTA 5 s vs 30 s VBench-I2V smoke
 on ~16 images, then port best-of-N + gated TTC.
+
+---
+
+## 2026-08-16 — I2V continuation runner (NOTTA smoke first)
+tags: [wan, self-forcing, i2v, continuation, infra]
+refs: wan_experiment/scripts/run_i2v_continuation.py;
+wan_experiment/sbatch/{run_i2v_notta.sbatch,submit_i2v_smoke.sh}
+
+Built our own runner around official `CausalInferencePipeline.inference`
+(`--i2v` path): resize 480×832, VAE-encode first frame, AR denoise with
+KV cache, imageio mp4. Overrides: `independent_first_frame=true` (else a
+1-frame prefix fails the block-size assert); KV cache enlarged past the
+hardcoded 21-frame / 32760-token default (required even for 5 s = 22
+latent frames, and mandatory for 30 s). `n_gen` rounded up to a multiple
+of `num_frame_per_block=3`. Symlink `Self-Forcing/wan_models/Wan2.1-T2V-1.3B`
+→ `/scratch/wc3013/wan-checkpoints/Wan2.1-T2V-1.3B` because wan_wrapper
+hardcodes that relative path.
+
+Gating smoke: 2 VBench-I2V images × 5 s, series `i2v_notta_smoke`. Do not
+submit 16×{5,30}s until mp4s look like video. Then port best-of-N + gated
+TTC onto this sampler.

@@ -67,5 +67,29 @@ Re-run any step alone (`FORCE=1` to redo). All three scripts are idempotent.
 
 Healthcheck job **15858269** passed all required checks. Official
 `inference.py` smoke failed (`torchvision.io.write_video` removed in the
-torch 2.13 wheel). That is expected; the continuation runner will write
-video via imageio/av and load the DMD ckpt from the `generator_ema` key.
+torch 2.13 wheel). That is expected; the continuation runner writes
+video via imageio and loads the DMD ckpt from the `generator_ema` key.
+
+## First experiment — NOTTA I2V smoke (2 images × 5 s)
+
+Do **not** launch 16×30 s until this writes real video.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_smoke.sh
+```
+
+When it finishes:
+
+```bash
+cat wan_experiment/results/i2v_notta_smoke/h5s_shard0/summary.json
+ls -la wan_experiment/results/i2v_notta_smoke/h5s_shard0/
+```
+
+Pass criterion: `n_ok == n`, mp4s are several MB, first/last frames look
+like the conditioning image (not the TTC-v1 decoded-noise signature).
+Then we submit 16 images × {5 s, 30 s}.
+
+Runner: `wan_experiment/scripts/run_i2v_continuation.py`
+(official CausalInferencePipeline I2V path; `independent_first_frame=true`;
+KV cache enlarged past the 21-frame default).
