@@ -1567,3 +1567,39 @@ hardcodes that relative path.
 Gating smoke: 2 VBench-I2V images × 5 s, series `i2v_notta_smoke`. Do not
 submit 16×{5,30}s until mp4s look like video. Then port best-of-N + gated
 TTC onto this sampler.
+
+---
+
+## 2026-08-16 — Gating must not lose to always-on BoN / always-on TTC
+tags: [methodology, gating, ablation, novelty, best-of-N, ttc]
+refs: ANALYSIS_LOG 2026-08-10 pivot + 2026-08-11 bestof credibility;
+user question 2026-08-16
+
+User correctly flagged a load-bearing novelty risk: if the claimed
+contribution is the GATE, then `gated` must be compared to **always
+intervene**. If always-BoN or always-TTC matches or beats gated on
+quality, the controller story is false (or collapses to "a verifier
+for BoN," which we already said is not novel).
+
+What we actually have, vs what we hypothesized:
+- LongCat best-of-N k=4 was **always-on search**. cand0 = NOTTA, so the
+  verifier can *soft-skip* by picking cand0 (it did on 25% of chunks).
+  That is not the same as a hard incoming-context gate that skips the
+  extra k-1 samples. We have never run gated-BoN vs always-BoN.
+- `ttc` vs `ttc_gated` was designed as that ablation; TTC never passed
+  a clean smoke, so we have **no** gated-vs-always quality number.
+- The *reason* to expect gating to help is the closed delta line:
+  intervening on non-drifted chunks can hurt (ramp contraindicated;
+  significant chunks all negative). That argument is stronger for TTC
+  (it rewrites the trajectory) than for BoN (cand0 is already in the
+  pool; always-on BoN can still pick NOTTA).
+
+LOCKED comparison on Wan (same seeds, same images, same horizon):
+  NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC
+  and, if both actuators are live, the joint controller (gate chooses
+  skip / BoN / TTC). Headline: gated vs its always-on twin, paired.
+Pass for the gate: quality ≥ always-on on the endpoint (VBench-I2V /
+|drift|), and strictly cheaper (skipped interventions). A quality *loss*
+vs always-on kills the gating claim even if we save compute. A quality
+tie + compute win is a valid efficiency paper, not a "gating fixes
+drift" paper — say that plainly. A quality win is the controller paper.
