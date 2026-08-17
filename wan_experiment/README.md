@@ -82,13 +82,8 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_i2v_smoke.sh
 ```
 
-Eyeball one clip before scaling (first frame should match the cond jpg):
-
-```bash
-ls -la wan_experiment/results/i2v_notta_smoke/h5s_shard0/
-# on a node with ffmpeg, or scp the mp4 locally:
-# 000_A_black_and_white_abstract_video_featuring_mesmerizing_bubbles_h5s_s0.mp4
-```
+First-frame MAE vs cond jpg: **5.56 / 3.71** (I2V pass; login node has
+no ffmpeg — use `imageio.get_reader().get_data(0)`).
 
 ## Next — 16 images × {5 s, 30 s} NOTTA
 

@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_i2v_notta16.sh` | **I2V smoke GREEN 2026-08-16** (15880611, n_ok=2, 8–12 s/5 s clip). Env = `conda-envs/self_forcing` (torch 2.13.0+cu130). Runner = `wan_experiment/scripts/run_i2v_continuation.py`. Next: eyeball one smoke mp4, then 16×{5,30}s NOTTA. Do **not** call official `inference.py`. Do **not** rebuild the env or compile flash-attn. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_i2v_notta16.sh` | **I2V smoke GREEN 2026-08-16** (15880611, n_ok=2, frame-0 MAE 5.56/3.71). Env = `conda-envs/self_forcing`. Next: 16×{5,30}s NOTTA. Do **not** call official `inference.py`. Do **not** rebuild the env or compile flash-attn. |
 
 ## 2. CRITICAL workflow rules
 
@@ -198,9 +198,9 @@ Per-method `merged_summary.json` lives at:
   NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
   LongCat 13.6B stays the saturated-large-model audit. Do not launch
   more LongCat TTC.
-- **Wan I2V smoke:** job **15880611 PASSED** (`n_ok=2`, 85 frames,
-  5.9/3.9 MB mp4s, 8–12 s/clip). Autograd-off fixed the 138 GB OOM.
-  Visual first-frame check still pending, then `submit_i2v_notta16.sh`.
+- **Wan I2V smoke:** job **15880611 PASSED** (`n_ok=2`, frame-0 MAE
+  5.56/3.71 vs cond). Autograd-off fixed the 138 GB OOM. Next:
+  `submit_i2v_notta16.sh`.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard

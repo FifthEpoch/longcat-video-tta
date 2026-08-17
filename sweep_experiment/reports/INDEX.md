@@ -62,8 +62,8 @@ NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
 
 | Series | N | Horizon | Method | Status | Cluster path | Key finding |
 |---|---|---|---|---|---|---|
-| `i2v_notta_smoke` | 2 | 5 s (85 px) | NOTTA | **DONE 2026-08-16** job 15880611 | `wan_experiment/results/i2v_notta_smoke/h5s_shard0/` | First working generate. n_ok=2, mp4s 5.9/3.9 MB, 8–12 s/clip. Autograd-off fixed the 138 GB OOM. Visual check of first-frame fidelity still pending. |
-| `i2v_notta_16v` | 16 | 5 s + 30 s | NOTTA | NOT YET RUN | `wan_experiment/results/i2v_notta_16v/` | Submit via `wan_experiment/sbatch/submit_i2v_notta16.sh` after eyeballing one smoke mp4. |
+| `i2v_notta_smoke` | 2 | 5 s (85 px) | NOTTA | **DONE 2026-08-16** job 15880611 | `wan_experiment/results/i2v_notta_smoke/h5s_shard0/` | First working generate. n_ok=2, mp4s 5.9/3.9 MB, 8–12 s/clip. Frame-0 MAE vs cond 5.56 / 3.71 (I2V, not noise). Autograd-off fixed the 138 GB OOM. |
+| `i2v_notta_16v` | 16 | 5 s + 30 s | NOTTA | READY TO SUBMIT | `wan_experiment/results/i2v_notta_16v/` | `wan_experiment/sbatch/submit_i2v_notta16.sh` |
 
 Timing notes: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan_i2v_smoke.md)
 

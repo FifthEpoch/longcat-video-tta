@@ -25,8 +25,15 @@ Warm clip is ~8 s for ~5.3 s of video.
 
 Wan is the method stack. LongCat stays the 13B saturation audit.
 
+## First-frame fidelity vs cond jpg (uint8 MAE)
+
+| Clip | mae_vs_cond | Verdict |
+|---|---|---|
+| 000 bubbles | 5.56 | I2V (VAE-roundtrip). Noise would be ~80–120. |
+| 001 pot | 3.71 | I2V |
+
 ## Pass / remaining gate
 
 - `n_ok == 2`, multi-MB mp4s, 85 frames: **pass**
-- First-frame fidelity vs cond image: **not yet eyeballed**
+- First-frame fidelity vs cond image: **pass**
 - Next series: `i2v_notta_16v` via `wan_experiment/sbatch/submit_i2v_notta16.sh`

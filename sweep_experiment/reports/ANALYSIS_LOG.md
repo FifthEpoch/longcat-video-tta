@@ -1690,3 +1690,13 @@ image, not TTC-v1 noise), then 16×{5,30}s NOTTA, then port the GT-free
 verifier and the required five-way:
 NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
 Do not reopen LongCat TTC. Do not rebuild the env.
+
+---
+
+## 2026-08-16 — Smoke first-frame MAE confirms I2V (5.56 / 3.71)
+tags: [infra, wan, i2v, smoke, fidelity]
+refs: job 15880611; /tmp/wan_first_{000,001}.png
+
+Frame 0 vs resized cond jpg: bubbles MAE 5.56, pot MAE 3.71 (uint8).
+That is VAE-roundtrip I2V, not decoded noise. Content gate passed.
+Submit `i2v_notta_16v` 16×{5,30}s. Then port verifier / five-way.
