@@ -34,6 +34,9 @@ METHOD="${METHOD:-notta}"
 SEARCH_K="${SEARCH_K:-4}"
 SEARCH_FROM="${SEARCH_FROM:-1}"
 GATE_THRESHOLD="${GATE_THRESHOLD:-2.0}"
+GATE_CH1_THRESHOLD="${GATE_CH1_THRESHOLD:-0.8}"
+GATE_DELTA="${GATE_DELTA:-0.5}"
+GATE_DELTA_PREV_MIN="${GATE_DELTA_PREV_MIN:-0.5}"
 CHUNK_LATENTS="${CHUNK_LATENTS:-24}"
 SERIES="${SERIES:-i2v_chunked_smoke}"
 SHARD_ID="${SHARD_ID:-0}"
@@ -54,6 +57,7 @@ echo "Wan I2V chunked ${METHOD}"
 echo "  job     : ${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
 echo "  horizon : ${HORIZON_S}s  n=${N_VIDEOS}  seed=${SEED}  k=${SEARCH_K}"
 echo "  chunk   : ${CHUNK_LATENTS} latents  search_from=${SEARCH_FROM}"
+echo "  gate    : late=${GATE_THRESHOLD} ch1=${GATE_CH1_THRESHOLD} delta=${GATE_DELTA} prev_min=${GATE_DELTA_PREV_MIN}"
 echo "  series  : ${SERIES}  shard=${SHARD_ID}/${NUM_SHARDS}"
 echo "  out     : ${OUT_DIR}"
 echo "=============================================================================="
@@ -88,6 +92,9 @@ cd "${PROJECT_ROOT}"
     --search-k "${SEARCH_K}" \
     --search-from-chunk "${SEARCH_FROM}" \
     --gate-threshold "${GATE_THRESHOLD}" \
+    --gate-ch1-threshold "${GATE_CH1_THRESHOLD}" \
+    --gate-delta "${GATE_DELTA}" \
+    --gate-delta-prev-min "${GATE_DELTA_PREV_MIN}" \
     --shard-id "${SHARD_ID}" \
     --num-shards "${NUM_SHARDS}"
 

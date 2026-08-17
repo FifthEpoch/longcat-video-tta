@@ -14,12 +14,14 @@ searches chunks 1..N-1. Do not add TTC until this writes real video.
     python wan_experiment/scripts/run_i2v_chunked.py \
         --method always_bon --search-k 4 --horizon-s 30 --n 2 --chunk-latents 24
     python wan_experiment/scripts/run_i2v_chunked.py \
-        --method gated_bon --search-k 4 --gate-threshold 2.0 --horizon-s 30 --n 16
+        --method gated_bon --search-k 4 --gate-threshold 2.0 \
+        --gate-ch1-threshold 0.8 --gate-delta 0.5 --horizon-s 30 --n 32
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -32,7 +34,11 @@ _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-from i2v_verifier import gen_free_signals, reference_signals, verifier_score  # noqa: E402
+from i2v_verifier import (  # noqa: E402
+    gen_free_signals,
+    reference_signals,
+    score_breakdown,
+)
 from run_i2v_continuation import (  # noqa: E402
     FPS,
     FRAME_SEQ_PER_LATENT,
@@ -51,6 +57,62 @@ from run_i2v_continuation import (  # noqa: E402
 
 
 REF_WIN = 16  # 1 s @ 16 fps, skip cond frame 0
+
+
+def _json_float(x):
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(v) or math.isinf(v):
+        return None
+    return v
+
+
+def _json_signals(d: dict | None) -> dict | None:
+    if not d:
+        return None
+    return {k: _json_float(d.get(k)) for k in d}
+
+
+def _incoming_window(pixels: np.ndarray):
+    win = min(REF_WIN, pixels.shape[0] - 1)
+    if win < 1:
+        return None
+    return gen_free_signals(pixels[-win:], pixels[-win - 1])
+
+
+def hybrid_gate_decision(
+    chunk_idx: int,
+    incoming: float,
+    incoming_prev: float | None,
+    search_from: int,
+    t_late: float,
+    t_ch1: float,
+    t_delta: float,
+    t_delta_prev_min: float,
+) -> tuple[bool, str]:
+    """Fire if ch1-early or late level or rising trend.
+
+    Agreed 2026-08-17 after T=2.0 lost to always-on: a single global T
+    cannot keep video 07 skipped (inc=0.68) and still catch 05 (0.87).
+    """
+    if chunk_idx < search_from:
+        return False, "forced_prefix"
+    reasons: list[str] = []
+    if chunk_idx == 1 and incoming > t_ch1:
+        reasons.append("ch1")
+    if incoming > t_late:
+        reasons.append("level")
+    if incoming_prev is not None:
+        delta = incoming - incoming_prev
+        if delta > t_delta and incoming_prev > t_delta_prev_min:
+            reasons.append("trend")
+    if reasons:
+        return True, "+".join(reasons)
+    return False, "skip"
 
 
 def _reset_caches(pipeline, batch_size, dtype, device) -> None:
@@ -216,6 +278,9 @@ def generate_chunked(
     search_from_chunk: int,
     seam_weight: float,
     gate_threshold: float,
+    gate_ch1_threshold: float = 0.8,
+    gate_delta: float = 0.5,
+    gate_delta_prev_min: float = 0.5,
 ):
     import torch
 
@@ -232,22 +297,47 @@ def generate_chunked(
     committed = 1
     ref = None
     committed_pixels = None
+    incoming_prev = None
     chunk_logs = []
 
     for ci in range(n_chunks):
+        incoming_signals = None
+        incoming_devs = None
         incoming_drift = None
+        incoming_delta = None
         gated_fired = False
+        gate_reason = "forced_prefix"
+
+        if ref is not None and committed_pixels is not None:
+            incoming_signals = _incoming_window(committed_pixels)
+            if incoming_signals is not None:
+                incoming_devs = score_breakdown(
+                    incoming_signals, ref, seam_weight=0.0,
+                )
+                incoming_drift = incoming_devs["score"]
+                if incoming_prev is not None:
+                    incoming_delta = incoming_drift - incoming_prev
+
         if method == "always_bon" and ci >= search_from_chunk:
             n_try = search_k
-        elif method == "gated_bon" and ci >= search_from_chunk and ref is not None:
-            pix = committed_pixels
-            win = min(REF_WIN, pix.shape[0] - 1)
-            incoming = gen_free_signals(pix[-win:], pix[-win - 1])
-            incoming_drift = verifier_score(incoming, ref, seam_weight=0.0)
-            gated_fired = incoming_drift > gate_threshold
+            gated_fired = True
+            gate_reason = "always"
+        elif method == "gated_bon" and ci >= search_from_chunk and incoming_drift is not None:
+            gated_fired, gate_reason = hybrid_gate_decision(
+                ci, incoming_drift, incoming_prev, search_from_chunk,
+                t_late=gate_threshold,
+                t_ch1=gate_ch1_threshold,
+                t_delta=gate_delta,
+                t_delta_prev_min=gate_delta_prev_min,
+            )
             n_try = search_k if gated_fired else 1
+        elif method == "notta":
+            n_try = 1
+            gate_reason = "notta" if ci >= search_from_chunk else "forced_prefix"
         else:
             n_try = 1
+            gate_reason = "forced_prefix"
+
         cands = []
         for c in range(n_try):
             cseed = _cand_seed(seed, c)
@@ -269,7 +359,8 @@ def generate_chunked(
                     raise RuntimeError("chunk 0 too short to build a 1 s reference")
                 ref = reference_signals(pixels[1:1 + REF_WIN])
             free = gen_free_signals(gen_only, last_cond)
-            score = verifier_score(free, ref, seam_weight=seam_weight)
+            br = score_breakdown(free, ref, seam_weight=seam_weight)
+            score = br["score"]
             cands.append({
                 "cand": c,
                 "seed": cseed,
@@ -277,10 +368,14 @@ def generate_chunked(
                 "latents": output[:, committed:end].detach().clone(),
                 "pixels": pixels,
                 "free": {k: free[k] for k in free},
+                "breakdown": br,
             })
             print(
                 f"    chunk {ci} cand{c} seed={cseed} score={score:.4f} "
-                f"sharp={free['sharpness']:.4g} motion={free['temporal_motion']:.4g}",
+                f"sharp={free['sharpness']:.4g} motion={free['temporal_motion']:.4g} "
+                f"dev_sharp={br['dev_sharpness']:.3f} "
+                f"dev_motion={br['dev_temporal_motion']:.3f} "
+                f"seam={br['seam_term']:.3f}",
                 flush=True,
             )
         chosen = min(range(len(cands)), key=lambda i: cands[i]["score"])
@@ -288,28 +383,57 @@ def generate_chunked(
         output[:, committed:committed + chunk_latents] = best["latents"]
         committed += chunk_latents
         committed_pixels = best["pixels"]
-        chunk_logs.append({
+        cand0_score = cands[0]["score"]
+        chosen_minus_cand0 = best["score"] - cand0_score
+        outgoing_signals = _incoming_window(committed_pixels) if ref is not None else None
+        outgoing_devs = (
+            score_breakdown(outgoing_signals, ref, seam_weight=0.0)
+            if outgoing_signals is not None and ref is not None else None
+        )
+        outgoing_drift = outgoing_devs["score"] if outgoing_devs is not None else None
+        rec = {
             "chunk": ci,
             "chosen_cand": int(chosen),
             "search_k": n_try,
-            "incoming_drift": incoming_drift,
-            "gated_fired": gated_fired,
+            "incoming_drift": _json_float(incoming_drift),
+            "incoming_prev": _json_float(incoming_prev),
+            "incoming_delta": _json_float(incoming_delta),
+            "incoming_signals": _json_signals(incoming_signals),
+            "incoming_devs": _json_signals(incoming_devs),
+            "outgoing_drift": _json_float(outgoing_drift),
+            "outgoing_devs": _json_signals(outgoing_devs),
+            "gated_fired": bool(gated_fired),
+            "gate_reason": gate_reason,
+            "cand0_score": _json_float(cand0_score),
+            "chosen_score": _json_float(best["score"]),
+            "chosen_minus_cand0": _json_float(chosen_minus_cand0),
+            "chosen_breakdown": _json_signals(best["breakdown"]),
             "candidates": [
                 {
                     "cand": c["cand"],
                     "seed": c["seed"],
-                    "score": c["score"],
+                    "score": _json_float(c["score"]),
                     "chosen": c["cand"] == chosen,
-                    **c["free"],
+                    "signals": _json_signals(c["free"]),
+                    "devs": _json_signals(c["breakdown"]),
+                    **{k: _json_float(c["free"][k]) for k in c["free"]},
                 }
                 for c in cands
             ],
-        })
+        }
+        chunk_logs.append(rec)
+        if incoming_drift is not None:
+            incoming_prev = incoming_drift
         gate_s = ""
         if incoming_drift is not None:
-            gate_s = f" incoming={incoming_drift:.3f} fire={int(gated_fired)}"
+            dlt = f" Δ={incoming_delta:+.3f}" if incoming_delta is not None else ""
+            gate_s = (
+                f" incoming={incoming_drift:.3f}{dlt} "
+                f"fire={int(gated_fired)} reason={gate_reason}"
+            )
         print(
-            f"  chunk {ci}: pick={chosen}/{n_try} score={best['score']:.4f}{gate_s}",
+            f"  chunk {ci}: pick={chosen}/{n_try} score={best['score']:.4f} "
+            f"vs_cand0={chosen_minus_cand0:+.3f}{gate_s}",
             flush=True,
         )
 
@@ -350,7 +474,13 @@ def main() -> int:
                     help="first chunk index to search (0=search prefix too)")
     ap.add_argument("--seam-weight", type=float, default=1.0)
     ap.add_argument("--gate-threshold", type=float, default=2.0,
-                    help="gated_bon: search iff incoming last-1s composite > this")
+                    help="gated_bon late-drift level: fire if incoming > this")
+    ap.add_argument("--gate-ch1-threshold", type=float, default=0.8,
+                    help="gated_bon: fire chunk 1 if incoming > this")
+    ap.add_argument("--gate-delta", type=float, default=0.5,
+                    help="gated_bon: fire if incoming-incoming_prev > this")
+    ap.add_argument("--gate-delta-prev-min", type=float, default=0.5,
+                    help="gated_bon: trend only if incoming_prev > this (keeps 06 skipped)")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     args = ap.parse_args()
@@ -384,7 +514,9 @@ def main() -> int:
         f"device={device} torch={torch.__version__} method={args.method} "
         f"horizon={args.horizon_s}s n_gen={n_gen} chunk_latents={chunk_latents} "
         f"n_chunks={n_chunks} n_pix={n_pix} k={args.search_k} "
-        f"search_from={args.search_from_chunk} gate={args.gate_threshold} "
+        f"search_from={args.search_from_chunk} "
+        f"gate_late={args.gate_threshold} gate_ch1={args.gate_ch1_threshold} "
+        f"gate_delta={args.gate_delta} gate_delta_prev_min={args.gate_delta_prev_min} "
         f"n_items={len(items)}"
     )
     print(
@@ -435,6 +567,8 @@ def main() -> int:
                     n_gen, chunk_latents, args.seed, device,
                     args.method, args.search_k, args.search_from_chunk,
                     args.seam_weight, args.gate_threshold,
+                    args.gate_ch1_threshold, args.gate_delta,
+                    args.gate_delta_prev_min,
                 )
             write_mp4(mp4, video, fps=FPS)
             n_div = sum(
@@ -442,6 +576,11 @@ def main() -> int:
                 if ch["search_k"] > 1 and ch["chosen_cand"] != 0
             )
             n_fire = sum(1 for ch in chunk_logs if ch.get("gated_fired"))
+            last = chunk_logs[-1] if chunk_logs else {}
+            reason_counts = {}
+            for ch in chunk_logs:
+                r = ch.get("gate_reason") or "unknown"
+                reason_counts[r] = reason_counts.get(r, 0) + 1
             rec = {
                 "ok": True,
                 "seconds": round(time.time() - t0, 2),
@@ -456,9 +595,23 @@ def main() -> int:
                 "search_k": args.search_k,
                 "search_from_chunk": args.search_from_chunk,
                 "gate_threshold": args.gate_threshold,
+                "gate_ch1_threshold": args.gate_ch1_threshold,
+                "gate_delta": args.gate_delta,
+                "gate_delta_prev_min": args.gate_delta_prev_min,
                 "n_divergent_chunks": n_div,
                 "n_gated_fired": n_fire,
-                "ref_signals": ref,
+                "gate_reason_counts": reason_counts,
+                "incoming_series": [ch.get("incoming_drift") for ch in chunk_logs],
+                "outgoing_series": [ch.get("outgoing_drift") for ch in chunk_logs],
+                "gate_reasons": [ch.get("gate_reason") for ch in chunk_logs],
+                "chosen_minus_cand0_series": [
+                    ch.get("chosen_minus_cand0") for ch in chunk_logs
+                ],
+                "last_chunk_score": last.get("chosen_score"),
+                "last_chunk_cand0_score": last.get("cand0_score"),
+                "last_chunk_chosen_minus_cand0": last.get("chosen_minus_cand0"),
+                "last_chunk_breakdown": last.get("chosen_breakdown"),
+                "ref_signals": _json_signals(ref),
                 "chunks": chunk_logs,
                 "horizon_s_requested": args.horizon_s,
                 "seed": args.seed,
@@ -466,7 +619,8 @@ def main() -> int:
             }
             print(
                 f"  wrote {mp4.name}  T={video.shape[0]}  {rec['seconds']}s  "
-                f"divergent_chunks={n_div} gated_fired={n_fire}",
+                f"divergent_chunks={n_div} gated_fired={n_fire} "
+                f"last={rec['last_chunk_score']} reasons={reason_counts}",
                 flush=True,
             )
         except Exception as e:
@@ -488,6 +642,18 @@ def main() -> int:
             _cuda_mem("after_fail")
         meta_path.write_text(json.dumps(rec, indent=2))
         rows.append(rec)
+        if rec.get("ok") and rec.get("chunks"):
+            trace_path = out_dir / "gate_trace.jsonl"
+            with trace_path.open("a") as tf:
+                for ch in rec["chunks"]:
+                    tf.write(json.dumps({
+                        "file_name": rec.get("file_name"),
+                        "stem": rec.get("stem"),
+                        "method": args.method,
+                        "seed": args.seed,
+                        **{k: ch[k] for k in ch if k != "candidates"},
+                        "n_candidates": len(ch.get("candidates") or []),
+                    }) + "\n")
 
     summary = {
         "n": len(rows),
@@ -501,6 +667,9 @@ def main() -> int:
         "search_k": args.search_k,
         "search_from_chunk": args.search_from_chunk,
         "gate_threshold": args.gate_threshold,
+        "gate_ch1_threshold": args.gate_ch1_threshold,
+        "gate_delta": args.gate_delta,
+        "gate_delta_prev_min": args.gate_delta_prev_min,
         "seed": args.seed,
         "shard_id": args.shard_id,
         "num_shards": args.num_shards,

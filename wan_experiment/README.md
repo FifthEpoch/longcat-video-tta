@@ -138,8 +138,27 @@ bash wan_experiment/sbatch/submit_i2v_bon16.sh
 ```
 
 **DONE 2026-08-17** (15884598/599/600). Chunk-0 cand0 matched 16/16.
-always-BoN left cand0 on 43/64. gated fired 27/64. No TTC. Last-chunk
-quality vs always-on still to score.
+Last-chunk NOTTA 4.43 / always 3.23 / gated 3.38. Search works. Gated
+vs always is **not** a quality win (mean +0.152). Efficiency line.
+
+## Next — 32v hybrid gate (ch1 / late / trend)
+
+`gated_bon` fires if `(chunk==1 and incoming>0.8)` or `incoming>2.0`
+or `(Δincoming>0.5 and incoming_prev>0.5)`. Per-chunk traces go to
+`gate_trace.jsonl`. Re-runs NOTTA and always-on so the schema matches.
+No TTC.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_bon32_hybrid.sh
+```
+
+After the three jobs finish:
+
+```bash
+python wan_experiment/scripts/analyze_i2v_bon.py \
+    --series-dir wan_experiment/results/i2v_bon_32v_hybrid
+```
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;

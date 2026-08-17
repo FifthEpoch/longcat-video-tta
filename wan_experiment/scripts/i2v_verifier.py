@@ -69,23 +69,50 @@ def reference_signals(frames_01: np.ndarray) -> Dict[str, float]:
     return gen_free_signals(frames_01, frames_01[0])
 
 
+def _rel_dev(cur: float, ref: float) -> float:
+    if cur is None or ref is None or cur != cur or ref != ref:
+        return float("nan")
+    return abs(float(cur) - float(ref)) / (abs(float(ref)) + 1e-6)
+
+
+def signal_devs(free: Dict[str, float], ref: Dict[str, float]) -> Dict[str, float]:
+    """Per-signal |cur-ref| / (|ref|+eps). NaN if either side is missing."""
+    return {k: _rel_dev(free.get(k), ref.get(k)) for k in VERIFIER_SIGNALS}
+
+
+def seam_term(free: Dict[str, float], ref: Dict[str, float]) -> float:
+    seam_jump = free.get("seam_jump")
+    ref_motion = ref.get("temporal_motion")
+    if (
+        seam_jump is None or seam_jump != seam_jump
+        or ref_motion is None or ref_motion != ref_motion
+    ):
+        return float("nan")
+    return float(seam_jump) / (float(ref_motion) + 1e-6)
+
+
+def score_breakdown(
+    free: Dict[str, float],
+    ref: Dict[str, float],
+    seam_weight: float = 1.0,
+) -> Dict[str, float]:
+    """Per-term verifier loss. score = sum(devs) + seam_weight * seam_term."""
+    devs = signal_devs(free, ref)
+    seam = seam_term(free, ref)
+    parts = [v for v in devs.values() if v == v]
+    if seam == seam:
+        parts.append(float(seam_weight) * seam)
+    return {
+        **{f"dev_{k}": float(v) if v == v else float("nan") for k, v in devs.items()},
+        "seam_term": float(seam) if seam == seam else float("nan"),
+        "score": float(sum(parts)) if parts else float("nan"),
+    }
+
+
 def verifier_score(
     free: Dict[str, float],
     ref: Dict[str, float],
     seam_weight: float = 1.0,
 ) -> float:
     """Lower = closer to ref. Two-sided deviation (does not reward freeze)."""
-    s = 0.0
-    for k in VERIFIER_SIGNALS:
-        rv, cv = ref.get(k), free.get(k)
-        if rv is None or cv is None or rv != rv or cv != cv:
-            continue
-        s += abs(cv - rv) / (abs(rv) + 1e-6)
-    seam_jump = free.get("seam_jump")
-    ref_motion = ref.get("temporal_motion")
-    if (
-        seam_jump is not None and seam_jump == seam_jump
-        and ref_motion is not None and ref_motion == ref_motion
-    ):
-        s += seam_weight * seam_jump / (ref_motion + 1e-6)
-    return float(s)
+    return float(score_breakdown(free, ref, seam_weight=seam_weight)["score"])

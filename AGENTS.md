@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **16v NOTTA + drift GREEN.** Chunked BoN runner ready: `submit_i2v_bon_smoke.sh`. Official `inference()` cannot take a growing I2V prefix (only caches frame 0). Do **not** call official `inference.py`. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **16v T=2.0 three-way DONE** (efficiency, not quality win). Hybrid gate + 32v submit: `submit_i2v_bon32_hybrid.sh`. Official `inference()` cannot take a growing I2V prefix (only caches frame 0). Do **not** call official `inference.py`. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -208,11 +208,16 @@ Per-method `merged_summary.json` lives at:
   quality win (mean +0.152, 6/16 better-or-tie); median slightly
   favors gated; always-on hurt 2/16. Honest line: efficiency
   controller that keeps most of the search gain. No TTC yet.
+- **Wan hybrid gate (2026-08-17):** fire if (chunk==1 and incoming>0.8)
+  or incoming>2.0 or (Δincoming>0.5 and prev>0.5). Per-chunk traces
+  in `gate_trace.jsonl`. 32v three-way ready:
+  `submit_i2v_bon32_hybrid.sh`. No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-17 00:13): none.
+- **In-flight cluster jobs** (as of 2026-08-17 16:33): none until the
+  user pulls and submits `i2v_bon_32v_hybrid`.
 
 ## 4. Daily-log template
 

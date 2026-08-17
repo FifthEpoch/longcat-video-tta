@@ -1858,3 +1858,23 @@ headroom; miss is ch2 Δ=+0.55. Hybrid: fire chunk 1 if incoming>0.8;
 else fire if incoming>2.0; else fire if Δincoming>0.5 and prev>0.5.
 Keeps 06/07 early-skip. Next is implement + 2-clip smoke, not another
 blind T sweep.
+
+---
+
+## 2026-08-17 — Hybrid gate implemented; 32v three-way ready
+tags: [wan, gated, hybrid, 32v]
+refs: run_i2v_chunked.py; submit_i2v_bon32_hybrid.sh;
+paper_tables/2026-08-17_wan_i2v_hybrid_gate_spec.md
+
+gated_bon now fires if (chunk==1 and incoming>0.8) or incoming>2.0 or
+(Δincoming>0.5 and incoming_prev>0.5). T=2.0 remains the late level.
+Per-chunk logs: incoming, prev, Δ, gate_reason (ch1/level/trend/skip),
+incoming+outgoing per-signal |dev|, cand0 vs chosen, last-1s outgoing
+composite. Sidecar `gate_trace.jsonl` one line per (video, chunk).
+Analyzer: `analyze_i2v_bon.py`. Submit N=32 30 s three-way (re-run
+NOTTA and always-on so the schema matches). Skip the 2-clip smoke —
+16v already validated RNG. Hypothesis: if ch1-fire videos then follow
+always-on and 06/07 stay skipped early, gated−always last-chunk mean
+flips from +0.15 to about −0.2. Falsifiers: prefix diverges without
+endpoint gain; trend fires 07 at a later chunk; local score still
+fails to predict last-chunk. No TTC.
