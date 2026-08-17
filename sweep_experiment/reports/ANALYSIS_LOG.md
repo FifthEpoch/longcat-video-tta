@@ -1644,3 +1644,16 @@ compiles `flex_attention` with `max-autotune-no-cudagraphs` at import;
 on H200 that autotune workspace can consume the card. Fix: set
 `TORCH_COMPILE_DISABLE=1` before import, replace `flex_attention` with
 eager, T5 via DynamicSwapInstaller, `low_memory=True`. Resubmit 2×5 s.
+
+---
+
+## 2026-08-16 — Stop blind I2V smokes; 138 GB persists (15879723)
+tags: [infra, wan, oom]
+refs: jobs 15876397, 15877786, 15879723; wan_experiment/scripts/probe_vram.py
+
+Three smokes, three identical ~138 GB fills. KV-cache cap did not fire;
+compile-disable did not shrink the footprint. Next is a load-only VRAM
+probe (tensor shapes + memory_summary), not another 5 s generate. The
+138 GB number still matches `24 × 32760 × 30 × K+V × 12 × 128 × bf16`
+— something is still allocating a 24-frame cache at 32760 tokens/frame
+even if our enlarge() print claims 1560.
