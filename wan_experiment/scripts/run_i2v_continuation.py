@@ -34,6 +34,11 @@ LATENT_C, LATENT_H, LATENT_W = 16, 60, 104
 PIXEL_H, PIXEL_W = 480, 832
 FPS = 16
 BLOCK = 3
+# Tokens per latent frame at 480x832 (30x52 patches). Official default
+# cache is 21 * 1560 = 32760. Do NOT use generator.seq_len (also 32760) as
+# "tokens per frame" — job 15876397 did that via pipeline.frame_seq_length
+# resolving to 32760 and allocated 24*32760*30*2*12*128*bf16 ≈ 135 GB.
+FRAME_SEQ_PER_LATENT = 1560
 
 
 def gen_latents_for_horizon(seconds: float, block: int = BLOCK) -> int:
@@ -135,13 +140,33 @@ def write_mp4(path: Path, video_01: "np.ndarray", fps: int = FPS) -> None:
     imageio.mimwrite(str(path), frames, fps=fps, codec="libx264", quality=8)
 
 
+def _cuda_mem(tag: str) -> None:
+    import torch
+    if not torch.cuda.is_available():
+        return
+    alloc = torch.cuda.memory_allocated() / 1e9
+    reserved = torch.cuda.memory_reserved() / 1e9
+    print(f"cuda_mem[{tag}] allocated={alloc:.2f}G reserved={reserved:.2f}G")
+
+
 def enlarge_kv_cache(pipeline, n_frames: int) -> None:
     """Replace Self-Forcing's 21-frame KV cache without changing local attn."""
     import torch
 
-    frame_seq = pipeline.frame_seq_length
-    n_blocks = pipeline.num_transformer_blocks
-    kv_cache_size = int(n_frames) * int(frame_seq)
+    n_blocks = int(pipeline.num_transformer_blocks)
+    kv_cache_size = int(n_frames) * FRAME_SEQ_PER_LATENT
+    # bf16 K+V, 30 blocks, 12 heads x 128: refuse a 15876397-sized alloc.
+    est_gb = n_blocks * 2 * kv_cache_size * 12 * 128 * 2 / 1e9
+    reported = getattr(pipeline, "frame_seq_length", None)
+    print(f"KV cache: {n_frames} frames x {FRAME_SEQ_PER_LATENT} tokens "
+          f"(pipeline.frame_seq_length={reported}) -> {kv_cache_size} tokens, "
+          f"est {est_gb:.2f} GB")
+    if est_gb > 48:
+        raise RuntimeError(
+            f"KV cache estimate {est_gb:.1f} GB exceeds 48 GB safety cap "
+            f"(n_frames={n_frames}, tokens={kv_cache_size}). "
+            f"Refusing to allocate (see job 15876397)."
+        )
 
     def _initialize_kv_cache(batch_size, dtype, device):
         cache = []
@@ -163,11 +188,10 @@ def enlarge_kv_cache(pipeline, n_frames: int) -> None:
                 ),
             })
         pipeline.kv_cache1 = cache
+        _cuda_mem("after_kv_init")
 
     pipeline._initialize_kv_cache = _initialize_kv_cache
     pipeline._cache_frames = n_frames
-    print(f"KV cache sized for {n_frames} latent frames "
-          f"({kv_cache_size} tokens)")
 
 
 def install_sdpa_attention_fallback() -> None:
@@ -234,6 +258,7 @@ def load_pipeline(sf_root: Path, wan_dir: Path, sf_ckpt: Path, device, n_cache_f
     pipeline.generator.to(device=device)
     pipeline.vae.to(device=device)
     enlarge_kv_cache(pipeline, n_cache_frames)
+    _cuda_mem("after_load")
     return pipeline
 
 
@@ -279,6 +304,8 @@ def generate_one(pipeline, image_path: Path, prompt: str, n_gen: int, seed: int,
         pipeline.vae.model.clear_cache()
     except Exception:
         pass
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return arr, tuple(latents.shape)
 
 
@@ -368,6 +395,13 @@ def main() -> int:
             }
             print(f"  FAIL {rec['error']}")
             print(rec["traceback"])
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+            _cuda_mem("after_fail")
         meta_path.write_text(json.dumps(rec, indent=2))
         rows.append(rec)
 

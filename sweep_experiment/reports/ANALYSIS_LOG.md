@@ -1617,3 +1617,17 @@ imports `flash_attention` (hard assert), while the SDPA fallback is
 only on `attention()`. Fix: monkeypatch both to PyTorch SDPA when
 flash-attn is absent. Do not restart a 2h flash-attn compile. Resubmit
 the same 2×5 s smoke.
+
+---
+
+## 2026-08-16 — I2V smoke OOM from 24×32760-token KV cache (15876397)
+tags: [infra, wan, oom, kv-cache]
+refs: job 15876397; wan_experiment/scripts/run_i2v_continuation.py
+
+SDPA path reached the DiT; H200 filled to 138.10 / 139.80 GiB. That
+allocation is `n_frames * pipeline.frame_seq_length` with
+`frame_seq_length=32760` (WanDiffusionWrapper.seq_len = 21 frames of
+1560 tokens), not 1560 tokens/frame. 24×32760×30×2×12×128×2 B ≈ 135 GB.
+Fix: hardcode `FRAME_SEQ_PER_LATENT=1560`, print estimate, refuse >48 GB.
+5 s cache should be ~7 GB. Resubmit 2×5 s smoke. Do not treat this as a
+model-too-big problem.
