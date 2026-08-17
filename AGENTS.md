@@ -203,11 +203,11 @@ Per-method `merged_summary.json` lives at:
   (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
   Signature = sharpen + freeze. Table:
   `paper_tables/2026-08-17_wan_i2v_notta16_drift.md`.
-- **Wan 16v three-way (2026-08-17):** jobs 15884598/599/600 DONE.
-  Seed match 16/16. always-BoN 43/64 left cand0. gated fired 27/64
-  (4 videos never fire = NOTTA). Gated 21% cheaper. Last-chunk
-  quality vs always-on not yet scored — do that before a win/lose
-  call. No TTC yet.
+- **Wan 16v three-way (2026-08-17):** last-chunk NOTTA 4.43 / always
+  3.23 / gated 3.38. Search works. Gated vs always is **not** a
+  quality win (mean +0.152, 6/16 better-or-tie); median slightly
+  favors gated; always-on hurt 2/16. Honest line: efficiency
+  controller that keeps most of the search gain. No TTC yet.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard

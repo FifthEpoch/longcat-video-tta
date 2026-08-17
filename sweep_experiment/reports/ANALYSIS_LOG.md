@@ -1815,3 +1815,18 @@ skipped 4 videos entirely (those mp4s = NOTTA). Mean wall 84 / 267 /
 as incoming drift grows. This is the first valid paired Wan comparison.
 Do not claim a quality win until last-chunk composites are tabulated.
 Locked test still stands: gated must not lose to always-on. No TTC yet.
+
+---
+
+## 2026-08-17 — Last-chunk: search works; gated is efficiency, not a quality win
+tags: [wan, bon, gated, quality]
+refs: paper_tables/2026-08-17_wan_i2v_bon16_lastchunk.md
+
+Last-chunk composite (lower better), N=16: NOTTA 4.43 / always 3.23 /
+gated 3.38. always−NOTTA −1.20 (14/16 better). gated−NOTTA −1.05.
+gated−always +0.152 mean, −0.131 median, 6/16 better-or-tie. always-on
+hurt NOTTA on 06 and 07; gated was better on both. Locked rule: this
+is not a quality win vs always-on. Closest bucket is **tie + cheaper**
+(gated 21% less wall). Do not claim gated beats always-on. Do not drop
+gating. No TTC yet. Optional next: endpoint sharp/motion on the same
+mp4s (`score_i2v_drift.py`) as a second metric.
