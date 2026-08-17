@@ -254,7 +254,16 @@ def load_pipeline(sf_root: Path, wan_dir: Path, sf_ckpt: Path, device, n_cache_f
     del state
 
     pipeline = pipeline.to(dtype=torch.bfloat16)
-    pipeline.text_encoder.to(device=device)
+    # Official recipe: swap T5 in/out. Full umt5-xxl fp32 on GPU plus a
+    # compiled flex_attention workspace filled the H200 (15877786, 138 GB)
+    # even after the KV-cache size fix.
+    try:
+        from demo_utils.memory import DynamicSwapInstaller
+        DynamicSwapInstaller.install_model(pipeline.text_encoder, device=device)
+        print("text_encoder: DynamicSwapInstaller")
+    except Exception as e:
+        pipeline.text_encoder.to(device=device)
+        print(f"text_encoder: full GPU ({type(e).__name__}: {e})")
     pipeline.generator.to(device=device)
     pipeline.vae.to(device=device)
     enlarge_kv_cache(pipeline, n_cache_frames)
@@ -291,12 +300,13 @@ def generate_one(pipeline, image_path: Path, prompt: str, n_gen: int, seed: int,
         [1, n_gen, LATENT_C, LATENT_H, LATENT_W],
         device=device, dtype=torch.bfloat16,
     )
+    _cuda_mem("before_inference")
     video, latents = pipeline.inference(
         noise=noise,
         text_prompts=[prompt],
         return_latents=True,
         initial_latent=initial,
-        low_memory=False,
+        low_memory=True,
     )
     # video: [B, T, C, H, W] in [0, 1]
     arr = video[0].float().clamp(0, 1).permute(0, 2, 3, 1).cpu().numpy()
@@ -335,18 +345,34 @@ def main() -> int:
         print("shard is empty; nothing to do")
         return 0
 
+    # Must be set before importing torch / Self-Forcing. causal_model.py does
+    # `flex_attention = torch.compile(..., mode="max-autotune-no-cudagraphs")`
+    # at import time; on an H200 that autotune workspace is the remaining
+    # 138 GB after the KV-cache fix (job 15877786, identical footprint).
+    os.environ["TORCH_COMPILE_DISABLE"] = "1"
+    os.environ["TORCHDYNAMO_DISABLE"] = "1"
+
     # Imports from Self-Forcing require cwd + sys.path at the clone root
     # (hardcoded wan_models/Wan2.1-T2V-1.3B paths in wan_wrapper.py).
     sys.path.insert(0, str(sf_root))
     os.chdir(sf_root)
 
     import torch
+    torch._dynamo.config.disable = True
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device={device} torch={torch.__version__} "
           f"horizon={args.horizon_s}s n_gen={n_gen} n_pix={n_pix} "
           f"n_items={len(items)} shard={args.shard_id}/{args.num_shards}")
 
     install_sdpa_attention_fallback()
+    try:
+        import wan.modules.causal_model as _cm
+        from torch.nn.attention.flex_attention import flex_attention as _eager_fa
+        _cm.flex_attention = _eager_fa
+        print("flex_attention: eager (torch.compile disabled)")
+    except Exception as e:
+        print(f"flex_attention: leave as-is ({type(e).__name__}: {e})")
+    _cuda_mem("after_import")
 
     t_load = time.time()
     pipeline = load_pipeline(

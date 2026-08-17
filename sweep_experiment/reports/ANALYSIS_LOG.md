@@ -1631,3 +1631,16 @@ allocation is `n_frames * pipeline.frame_seq_length` with
 Fix: hardcode `FRAME_SEQ_PER_LATENT=1560`, print estimate, refuse >48 GB.
 5 s cache should be ~7 GB. Resubmit 2×5 s smoke. Do not treat this as a
 model-too-big problem.
+
+---
+
+## 2026-08-16 — 15877786 still 138 GB OOM; disable flex_attention compile
+tags: [infra, wan, oom, torch-compile, flex-attention]
+refs: job 15877786; wan/modules/causal_model.py (torch.compile max-autotune)
+
+KV-cache cap held (job would have aborted a 135 GB cache). Same 138.10 GB
+PyTorch fill, now in the denoise loop. Remaining suspect: Self-Forcing
+compiles `flex_attention` with `max-autotune-no-cudagraphs` at import;
+on H200 that autotune workspace can consume the card. Fix: set
+`TORCH_COMPILE_DISABLE=1` before import, replace `flex_attention` with
+eager, T5 via DynamicSwapInstaller, `low_memory=True`. Resubmit 2×5 s.
