@@ -61,5 +61,38 @@ level-crossing problem. Ideas that can beat always-on without copying it:
    video (11 already does this well; 12 fired too late to recover).
 4. **Do not** “always search chunk 1.” That is how always-on hurt 06/07.
 
-Do not retune T and resubmit 16v until the chunk-1 score dump below
-shows that always-on's ch1 best actually beats cand0 on the miss videos.
+## Chunk-1 dump (shared prefix — valid)
+
+| i | inc | always pick | best−cand0 | T=0.8 fire? | Endpoint note |
+|---|---|---|---|---|---|
+| 05 | 0.87 | 2 | **−1.08** | Y | Entire last-chunk gain is this chunk. Catch. |
+| 01 | 1.27 | 3 | **−0.73** | Y | Huge local gain; last-chunk always≈NOTTA. |
+| 11 | 2.38 | 1 | **−1.10** | Y (already) | Already caught. |
+| 06 | 0.20 | 1 | −0.44 | N | Local gain; **endpoint always hurt**. Skip. |
+| 02 | 0.90 | 1 | −0.12 | Y | Then compounds. |
+| 07 | 0.68 | 3 | −0.22 | N | Local gain; **endpoint always hurt**. Skip. |
+| 03 | 1.27 | 1 | −0.01 | Y | Coin flip. Later path did the work. |
+| 12 | 0.53 | 0 | 0 | N | No ch1 headroom. Miss is ch2 (inc 1.09, Δ+0.55). |
+| 08, 10 | 0.92, 1.22 | 0 | 0 | Y | Would fire and still pick cand0. Waste. |
+
+Local verifier improvement at chunk 1 does **not** imply a better
+last chunk (01, 06, 07). That is why always-on can hurt.
+
+## Recommended hybrid (not a single T)
+
+```
+fire if
+  (chunk == 1 and incoming > 0.8)          # catch 05, 02, 09
+  or incoming > 2.0                        # current late-drift rule
+  or (Δincoming > 0.5 and incoming_prev > 0.5)  # catch 12, not 06
+```
+
+06: ch1 0.20 skip; ch2 Δ=+1.04 but prev=0.20 < 0.5 skip; ch3 2.46 fire.
+Same path as now (the win vs always).
+07: ch1 0.68 skip; late Δ may fire only chunk 4.
+12: ch2 Δ=+0.55 and prev=0.53 → fire. The +2.60 miss.
+
+Optimistic if ch1-fire videos then follow always-on: gated−always mean
+flips from +0.15 to about **−0.2** (gated wins), *if* 06/07 stay skipped
+early. That is a hypothesis, not a result. Next: implement the hybrid,
+2-clip smoke, then 16v. Do not “always search chunk 1.”

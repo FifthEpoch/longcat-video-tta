@@ -1844,3 +1844,17 @@ hurt NOTTA) have incoming 0.20 and 0.68. No global T separates 0.68
 from 0.87. Next: dump always-on chunk-1 candidate scores (shared
 prefix, valid offline) and try a trend/Δincoming gate, not another
 16v T-sweep. Do not “always search chunk 1.”
+
+---
+
+## 2026-08-17 — Hybrid gate: T=0.8 at chunk 1 + late T=2 + trend
+tags: [wan, gated, hybrid]
+refs: paper_tables/2026-08-17_wan_gate_threshold_diagnosis.md (chunk-1 dump)
+
+ch1 best−cand0: 05 is −1.08 (all of its last-chunk gain). 03 is −0.01
+(coin flip). 06/07 have local ch1 gains (−0.44, −0.22) but always-on
+hurt the endpoint — local verifier ≠ last-chunk. 12 has zero ch1
+headroom; miss is ch2 Δ=+0.55. Hybrid: fire chunk 1 if incoming>0.8;
+else fire if incoming>2.0; else fire if Δincoming>0.5 and prev>0.5.
+Keeps 06/07 early-skip. Next is implement + 2-clip smoke, not another
+blind T sweep.
