@@ -1772,3 +1772,17 @@ k=4 searches chunks 1–4; cand0 = seed 0. Verifier is the LongCat composite
 (relative |dev| of sharpness/color/contrast/motion + seam). TTC is not
 implemented — wait for this 2×30 s smoke to write real mp4s. Submit:
 `wan_experiment/sbatch/submit_i2v_bon_smoke.sh`.
+
+---
+
+## 2026-08-17 — Chunked BoN smoke: search alive; seed the sampler
+tags: [wan, bon, smoke, rng]
+refs: jobs 15883525 / 15883526; paper_tables/2026-08-17_wan_i2v_chunked_bon_smoke.md
+
+n_ok=2/2 both methods, 481-frame multi-MB mp4s. always-BoN left cand0
+on 5/8 searchable chunks (bubbles 3, pot 2). NOTTA verifier scores rise
+on later chunks (pot 1.77→4.81). Infra + search pass. Quality pairing
+is invalid: chunk 0 cand0 already differs (3.305 vs 2.992) because
+denoise `add_noise` used global `randn_like`. Fix: one Generator per
+(cand, chunk) for init noise and step noise. Do not resubmit the 2-clip
+smoke. Do not add TTC. Next 16v five-way only after the RNG fix.

@@ -101,8 +101,13 @@ def _cache_clean_latents(pipeline, latents, conditional_dict) -> None:
         t += n
 
 
-def _denoise_chunk(pipeline, noise, start_frame, conditional_dict, output) -> None:
-    """Official Step 3 loop for one chunk. Writes output[:, start:start+n]."""
+def _denoise_chunk(pipeline, noise, start_frame, conditional_dict, output, rng) -> None:
+    """Official Step 3 loop for one chunk. Writes output[:, start:start+n].
+
+    ``rng`` must seed add_noise. Job 15883525 vs 15883526: chunk 0 cand0
+    scores already differed (3.305 vs 2.992) because randn_like used the
+    global CUDA RNG. Without this, cand0 is not a NOTTA twin.
+    """
     import torch
 
     bsz, n_gen = noise.shape[:2]
@@ -128,9 +133,13 @@ def _denoise_chunk(pipeline, noise, start_frame, conditional_dict, output) -> No
             )
             if index < len(pipeline.denoising_step_list) - 1:
                 next_timestep = pipeline.denoising_step_list[index + 1]
+                extra = torch.randn(
+                    denoised_pred.flatten(0, 1).shape,
+                    device=device, dtype=denoised_pred.dtype, generator=rng,
+                )
                 noisy_input = pipeline.scheduler.add_noise(
                     denoised_pred.flatten(0, 1),
-                    torch.randn_like(denoised_pred.flatten(0, 1)),
+                    extra,
                     next_timestep * torch.ones(
                         [bsz * block], device=device, dtype=torch.long
                     ),
@@ -207,16 +216,20 @@ def generate_chunked(
     k_eff = search_k if method == "always_bon" else 1
 
     for ci in range(n_chunks):
-        sl = slice(ci * chunk_latents, (ci + 1) * chunk_latents)
         search_here = method == "always_bon" and ci >= search_from_chunk
         n_try = k_eff if search_here else 1
         cands = []
         for c in range(n_try):
             cseed = _cand_seed(seed, c)
-            noise = _make_noise(n_gen, cseed, device)[:, sl]
+            rng = torch.Generator(device=device)
+            rng.manual_seed(int(cseed) + 10007 * ci)
+            noise = torch.randn(
+                [1, chunk_latents, LATENT_C, LATENT_H, LATENT_W],
+                device=device, dtype=torch.bfloat16, generator=rng,
+            )
             _reset_caches(pipeline, 1, output.dtype, device)
             _cache_clean_latents(pipeline, output[:, :committed], conditional_dict)
-            _denoise_chunk(pipeline, noise, committed, conditional_dict, output)
+            _denoise_chunk(pipeline, noise, committed, conditional_dict, output, rng)
             end = committed + chunk_latents
             pixels = _decode_pixels(pipeline, output[:, :end])
             n_committed_pix = pixel_frames(committed - 1) if committed > 1 else 1

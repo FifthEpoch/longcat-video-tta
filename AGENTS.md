@@ -203,9 +203,10 @@ Per-method `merged_summary.json` lives at:
   (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
   Signature = sharpen + freeze. Table:
   `paper_tables/2026-08-17_wan_i2v_notta16_drift.md`.
-- **Next:** submit `wan_experiment/sbatch/submit_i2v_bon_smoke.sh`
-  (2×30 s chunked NOTTA vs always-BoN k=4). Do not implement TTC until
-  that smoke writes real mp4s. Gated five-way after BoN search is alive.
+- **Chunked BoN smoke:** jobs 15883525/526 **PASSED** (n_ok=2, search
+  left cand0 on 5/8 chunks). cand0 ≠ NOTTA (unseeded add_noise) — RNG
+  fix is on main. Do not cite this smoke as paired quality. Do not add
+  TTC. Next: 16v NOTTA vs always-BoN vs gated-BoN after the RNG pull.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard

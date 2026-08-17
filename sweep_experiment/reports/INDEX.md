@@ -64,7 +64,7 @@ NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
 |---|---|---|---|---|---|---|
 | `i2v_notta_smoke` | 2 | 5 s (85 px) | NOTTA | **DONE 2026-08-16** job 15880611 | `wan_experiment/results/i2v_notta_smoke/h5s_shard0/` | First working generate. n_ok=2, mp4s 5.9/3.9 MB, 8–12 s/clip. Frame-0 MAE vs cond 5.56 / 3.71 (I2V, not noise). Autograd-off fixed the 138 GB OOM. |
 | `i2v_notta_16v` | 16 | 5 s + 30 s | NOTTA | **DONE 2026-08-16** n_ok=16/16 both | `wan_experiment/results/i2v_notta_16v/{h5s,h30s}_shard0/` | 5 s mean 9.61 s/clip; 30 s mean 38.32 s/clip. Drift (skip f0, 1 s windows): 5 s median sharp +11% / motion −14%; **30 s median sharp +167% / motion −60%**. Headroom real. Table: [`2026-08-17_wan_i2v_notta16_drift.md`](paper_tables/2026-08-17_wan_i2v_notta16_drift.md). |
-| `i2v_chunked_smoke` | 2 | 30 s (5×24 lat) | NOTTA, always-BoN k=4 | READY TO SUBMIT | `wan_experiment/results/i2v_chunked_smoke/` | Chunk 0 shared (seed 0). Search from chunk 1. No TTC until mp4s exist. `submit_i2v_bon_smoke.sh` |
+| `i2v_chunked_smoke` | 2 | 30 s (5×24 lat) | NOTTA, always-BoN k=4 | **DONE 2026-08-17** jobs 15883525/526 | `wan_experiment/results/i2v_chunked_smoke/` | n_ok=2, search alive (5/8 chunks left cand0). NOTTA scores worsen later. **Not a paired quality result** — chunk 0 cand0 already differed (unseeded add_noise). Table: [`2026-08-17_wan_i2v_chunked_bon_smoke.md`](paper_tables/2026-08-17_wan_i2v_chunked_bon_smoke.md). |
 
 Timing: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan_i2v_smoke.md), [`paper_tables/2026-08-16_wan_i2v_notta16.md`](paper_tables/2026-08-16_wan_i2v_notta16.md)
 
