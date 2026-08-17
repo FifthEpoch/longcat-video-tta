@@ -1756,3 +1756,19 @@ a threshold. cand0 of BoN = NOTTA seed for that chunk. Same 16 images,
 seed 0, 30 s. Do not implement TTC until BoN chunk path generates
 real video (Wan TTC-v1 lesson). Next code: chunked inference hook on
 CausalInferencePipeline, then NOTTA vs always-BoN k=4 smoke on 2 clips.
+
+---
+
+## 2026-08-17 — Chunked Wan BoN runner (no TTC yet)
+tags: [wan, bon, chunked, verifier]
+refs: wan_experiment/scripts/run_i2v_chunked.py; i2v_verifier.py
+
+Official `inference()` with `independent_first_frame=True` only KV-caches
+`initial_latent[:, :1]`, so a growing prefix cannot be passed back through
+that API. Runner replays committed latents at t=0 (same path as I2V init),
+then denoises the next chunk. 30 s = 5 × 24 gen latents (~6 s). Chunk 0 is
+always seed 0 (shared prefix + first-1s-after-cond reference). always-BoN
+k=4 searches chunks 1–4; cand0 = seed 0. Verifier is the LongCat composite
+(relative |dev| of sharpness/color/contrast/motion + seam). TTC is not
+implemented — wait for this 2×30 s smoke to write real mp4s. Submit:
+`wan_experiment/sbatch/submit_i2v_bon_smoke.sh`.

@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **16v NOTTA + drift GREEN 2026-08-17.** 30 s median sharp +167% / motion −60%. Five-way must be **chunked**. Env = `conda-envs/self_forcing`. Do **not** call official `inference.py`. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **16v NOTTA + drift GREEN.** Chunked BoN runner ready: `submit_i2v_bon_smoke.sh`. Official `inference()` cannot take a growing I2V prefix (only caches frame 0). Do **not** call official `inference.py`. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -203,8 +203,9 @@ Per-method `merged_summary.json` lives at:
   (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
   Signature = sharpen + freeze. Table:
   `paper_tables/2026-08-17_wan_i2v_notta16_drift.md`.
-- **Next code:** chunked inference hook, then NOTTA vs always-BoN k=4
-  smoke on 2×30 s clips. Do not implement TTC until BoN writes real video.
+- **Next:** submit `wan_experiment/sbatch/submit_i2v_bon_smoke.sh`
+  (2×30 s chunked NOTTA vs always-BoN k=4). Do not implement TTC until
+  that smoke writes real mp4s. Gated five-way after BoN search is alive.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard

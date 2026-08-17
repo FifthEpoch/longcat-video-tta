@@ -110,9 +110,22 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 ```
 
 **DONE 2026-08-17.** 30 s median sharp **+167%**, motion **−60%**.
-5 s is mild (+11% / −14%). Five-way is unlocked and must be **chunked**
-(see ANALYSIS_LOG 2026-08-17). Do not implement TTC before a BoN smoke
-writes real video.
+5 s is mild (+11% / −14%).
+
+## Next — chunked NOTTA vs always-BoN k=4 (2 × 30 s)
+
+Official `inference()` only KV-caches I2V frame 0, so the runner
+(`run_i2v_chunked.py`) replays committed latents then denoises the next
+chunk. 30 s = 5 × 24 gen latents. Chunk 0 is seed 0 (shared prefix).
+always-BoN searches chunks 1–4. No TTC in this smoke.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_bon_smoke.sh
+```
+
+Pass: both `n_ok==2`, multi-MB mp4s. Then check `n_divergent_chunks`
+(if always 0, search is a no-op). Gated + TTC only after that.
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
