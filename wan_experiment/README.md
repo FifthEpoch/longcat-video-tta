@@ -72,25 +72,34 @@ video via imageio and loads the DMD ckpt from the `generator_ema` key.
 
 ## First experiment — NOTTA I2V smoke (2 images × 5 s)
 
-Do **not** launch 16×30 s until this writes real video.
+**PASSED 2026-08-16, job 15880611.** `n_ok=2`, 85-frame 480×832 mp4s
+(5.9 MB / 3.9 MB), generate 11.99 s then 8.01 s. Job wall 2:55 including
+load. The 138 GB OOMs were autograd (`65ba50c`).
 
 ```bash
+# already done; keep for reruns
 cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_i2v_smoke.sh
 ```
 
-When it finishes:
+Eyeball one clip before scaling (first frame should match the cond jpg):
 
 ```bash
-cat wan_experiment/results/i2v_notta_smoke/h5s_shard0/summary.json
 ls -la wan_experiment/results/i2v_notta_smoke/h5s_shard0/
+# on a node with ffmpeg, or scp the mp4 locally:
+# 000_A_black_and_white_abstract_video_featuring_mesmerizing_bubbles_h5s_s0.mp4
 ```
 
-Pass criterion: `n_ok == n`, mp4s are several MB, first/last frames look
-like the conditioning image (not the TTC-v1 decoded-noise signature).
-Then we submit 16 images × {5 s, 30 s}.
+## Next — 16 images × {5 s, 30 s} NOTTA
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_notta16.sh
+```
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn
 is missing — job 15858704 died on `assert FLASH_ATTN_2_AVAILABLE`).
+Must run with `torch.set_grad_enabled(False)` + `inference_mode`
+(job 15879723 filled the H200 with grads on).

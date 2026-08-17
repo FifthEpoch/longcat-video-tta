@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_i2v_smoke.sh` | **Healthcheck GREEN 2026-08-16** (15858269). Env = `conda-envs/self_forcing` (torch 2.13.0+cu130). Runner = `wan_experiment/scripts/run_i2v_continuation.py` (I2V, imageio, `generator_ema`). First job: 2-image 5 s NOTTA smoke. Do **not** call official `inference.py`. Do **not** launch 16×30 s until smoke writes real video. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` + `wan_experiment/sbatch/submit_i2v_notta16.sh` | **I2V smoke GREEN 2026-08-16** (15880611, n_ok=2, 8–12 s/5 s clip). Env = `conda-envs/self_forcing` (torch 2.13.0+cu130). Runner = `wan_experiment/scripts/run_i2v_continuation.py`. Next: eyeball one smoke mp4, then 16×{5,30}s NOTTA. Do **not** call official `inference.py`. Do **not** rebuild the env or compile flash-attn. |
 
 ## 2. CRITICAL workflow rules
 
@@ -189,29 +189,24 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-06-08.
+**Date:** Updated 2026-08-16.
 
 - **Paper target:** CVPR 2027.
-- **Headline finding (current):** AdaSteer matches No-TTA on every metric
-  in every regime at 1000v scale (full 7-dim VBench backfill complete).
-  LoRA-R8 trades quality dimensions (Aes↑, IQ↓) but doesn't strictly win.
-  In long-context Panda only, AdaSteer preserves Subj where LoRA worsens
-  it — possible "identity-preserving long-context TTA" angle. See
-  `sweep_experiment/reports/paper_tables/2026-06-08_headline_1000v.md`
-  and `sweep_experiment/reports/ANALYSIS_LOG.md` (entry 2026-06-08).
-- **Per-video story:** AdaSteer is per-video net-positive in OOD long-horizon
-  scenarios; saturated at the population level for in-domain short horizon.
-  (Per-video win/loss analysis from June 1–2 still stands.)
-- **The big missing experiment:** Panda 1000v batch-retrieval. The pool
-  was built and embedded but the sweep was never submitted. UCF retrieval
-  results are uninformative due to UCF's class-block layout (SIM≈RAND).
-- **In-flight cluster jobs** (as of 2026-06-08): all backfill jobs DONE.
-- **Pending decisions:**
-  - Submit Panda 1000v retrieval sweep (4 methods × 10 chunks)?
-  - Skip the small-N "gain compresses" comparison or use existing 26-100v
-    discovery rows as proxy?
-  - Whether to extend Panda segment pool from 3K → 25K via full Panda-70M
-    metadata (Phase 2B was started but not completed).
+- **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD,
+  I2V continuation. Contribution is a drift-gated GT-free test-time
+  controller. Required comparison (same seeds/images/horizon):
+  NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
+  LongCat 13.6B stays the saturated-large-model audit. Do not launch
+  more LongCat TTC.
+- **Wan I2V smoke:** job **15880611 PASSED** (`n_ok=2`, 85 frames,
+  5.9/3.9 MB mp4s, 8–12 s/clip). Autograd-off fixed the 138 GB OOM.
+  Visual first-frame check still pending, then `submit_i2v_notta16.sh`.
+- **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
+  native AR long-horizon drifts; AdaSteer delta + routing closed;
+  BoN k=4 N=8 passed credibility gate as always-on search, not a hard
+  incoming-context gate.
+- **In-flight cluster jobs** (as of 2026-08-16 23:00): none.
+- **Pending:** eyeball smoke mp4 → 16×{5,30}s NOTTA → port verifier.
 
 ## 4. Daily-log template
 

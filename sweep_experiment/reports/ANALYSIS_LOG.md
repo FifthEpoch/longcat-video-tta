@@ -1673,3 +1673,20 @@ always passes `seq_len=32760` (pads every block). Autograd over a few
 `inference_mode()`. KV-cache and compile-disable work was not wasted
 (those were real bugs) but they were not this 138 GB. Resubmit 2×5 s
 smoke. VRAM probe optional.
+
+---
+
+## 2026-08-16 — Wan I2V NOTTA smoke passed (15880611)
+tags: [infra, wan, i2v, notta, smoke]
+refs: job 15880611; wan_experiment/results/i2v_notta_smoke/h5s_shard0/
+
+COMPLETED 0:0 in 2:55 on gh118. n_ok=2/2, 85 frames, 480×832, mp4s 5.9 MB
+and 3.9 MB. Per-clip generate 11.99 s then 8.01 s. Autograd-off (`65ba50c`)
+was the last OOM fix. Stack is now usable: Wan2.1-T2V-1.3B + Self-Forcing
+causal DMD, official CausalInferencePipeline I2V path, imageio writer,
+SDPA fallback, KV cache at 1560 tok/frame, compile disabled, T5
+DynamicSwap, `inference_mode`. Next: eyeball one mp4 (first frame ≈ cond
+image, not TTC-v1 noise), then 16×{5,30}s NOTTA, then port the GT-free
+verifier and the required five-way:
+NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
+Do not reopen LongCat TTC. Do not rebuild the env.

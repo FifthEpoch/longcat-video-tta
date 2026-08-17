@@ -9,7 +9,7 @@ update the Status / Findings columns when re-merged. NEVER delete rows
 even if results are superseded — mark them `superseded` and keep them
 for audit trail.
 
-**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-06-08.
+**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-08-16.
 
 ---
 
@@ -50,6 +50,22 @@ here is a GATING sample.
 | `longhorizon_sweep_delta_stream_native_12ch` | 8 | 12 / ~60 s | AdaSteer δ re-fit each chunk on generated window | DONE 2026-08-09 | same root | NULL under paired test (p≥0.26); population "flattening" was cancellation (raised per-video volatility). |
 | `longhorizon_sweep_delta_stream_clean_native_12ch` | 8 | 12 / ~60 s | δ re-fit toward clean chunk-0 latents | DONE 2026-08-10 | same root | NULL (p≥0.53); fixes saturation, overshoots contrast fade. 3rd delta recipe to fail; delta line CLOSED (+ ramp contraindicated, routing = noise ceiling). |
 | `longhorizon_sweep_bestof_k4_native_12ch` | 8 | 12 / ~60 s | best-of-4 GT-free drift verifier (cand0 = NOTTA seed) | DONE 2026-08-11 | `sweep_experiment/results/longhorizon_sweep_bestof_k4_native_12ch/` | **FIRST credible positive.** Verifier picks non-NOTTA 75%; on 11 GT chunks chosen beats RANDOM by **+0.833 dB PSNR** (81% of by-PSNR oracle), −0.032 LPIPS — passes the credibility gate routing failed. Per-signal oracle capture: sharpness 96%, motion 76%, contrast 29%, color 10%. BUT end-to-end paired |drift| vs NOTTA not yet significant at N=8 (sharpness/motion lean right, contrast wrong). Worth SCALING. |
+
+---
+
+## Wan 1.3B I2V continuation (2026-08 — current stack)
+
+LongCat 13.6B stays as the saturated-large-model audit. Paper methods move
+to Wan2.1-T2V-1.3B + Self-Forcing causal DMD, **I2V continuation** (not
+T2V-from-scratch). Required comparison once the verifier is ported:
+NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
+
+| Series | N | Horizon | Method | Status | Cluster path | Key finding |
+|---|---|---|---|---|---|---|
+| `i2v_notta_smoke` | 2 | 5 s (85 px) | NOTTA | **DONE 2026-08-16** job 15880611 | `wan_experiment/results/i2v_notta_smoke/h5s_shard0/` | First working generate. n_ok=2, mp4s 5.9/3.9 MB, 8–12 s/clip. Autograd-off fixed the 138 GB OOM. Visual check of first-frame fidelity still pending. |
+| `i2v_notta_16v` | 16 | 5 s + 30 s | NOTTA | NOT YET RUN | `wan_experiment/results/i2v_notta_16v/` | Submit via `wan_experiment/sbatch/submit_i2v_notta16.sh` after eyeballing one smoke mp4. |
+
+Timing notes: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan_i2v_smoke.md)
 
 ---
 
