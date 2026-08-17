@@ -301,13 +301,14 @@ def generate_one(pipeline, image_path: Path, prompt: str, n_gen: int, seed: int,
         device=device, dtype=torch.bfloat16,
     )
     _cuda_mem("before_inference")
-    video, latents = pipeline.inference(
-        noise=noise,
-        text_prompts=[prompt],
-        return_latents=True,
-        initial_latent=initial,
-        low_memory=True,
-    )
+    with torch.inference_mode():
+        video, latents = pipeline.inference(
+            noise=noise,
+            text_prompts=[prompt],
+            return_latents=True,
+            initial_latent=initial,
+            low_memory=True,
+        )
     # video: [B, T, C, H, W] in [0, 1]
     arr = video[0].float().clamp(0, 1).permute(0, 2, 3, 1).cpu().numpy()
     try:
@@ -359,6 +360,11 @@ def main() -> int:
 
     import torch
     torch._dynamo.config.disable = True
+    # Official inference.py does this. Without it, 2 denoise blocks on a
+    # 32760-padded seq (WanDiffusionWrapper.seq_len) fill the H200: job
+    # 15879723 was 3.1 GB at before_inference / 10 GB after KV init, then
+    # 138 GB by the 3rd block. Not the KV cache (est 6.90 GB, confirmed).
+    torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device={device} torch={torch.__version__} "
           f"horizon={args.horizon_s}s n_gen={n_gen} n_pix={n_pix} "

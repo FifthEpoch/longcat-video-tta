@@ -1657,3 +1657,19 @@ probe (tensor shapes + memory_summary), not another 5 s generate. The
 138 GB number still matches `24 × 32760 × 30 × K+V × 12 × 128 × bf16`
 — something is still allocating a 24-frame cache at 32760 tokens/frame
 even if our enlarge() print claims 1560.
+
+---
+
+## 2026-08-16 — 138 GB OOM was autograd, not the KV cache (15879723 head)
+tags: [infra, wan, oom, autograd]
+refs: wan_i2v_notta_15879723.out head; wan_experiment/scripts/run_i2v_continuation.py
+
+Log head: after_load 3.09 GB, KV cache print `24 x 1560 = 37440 tokens,
+est 6.90 GB`, after_kv_init 10.06 GB. Two denoise blocks print timesteps,
+then 138 GB OOM. Official Self-Forcing `inference.py` line is
+`torch.set_grad_enabled(False)`; we never set it. WanDiffusionWrapper
+always passes `seq_len=32760` (pads every block). Autograd over a few
+30-block padded forwards explains the fill. Fix: disable grad +
+`inference_mode()`. KV-cache and compile-disable work was not wasted
+(those were real bugs) but they were not this 138 GB. Resubmit 2×5 s
+smoke. VRAM probe optional.
