@@ -1830,3 +1830,17 @@ is not a quality win vs always-on. Closest bucket is **tie + cheaper**
 (gated 21% less wall). Do not claim gated beats always-on. Do not drop
 gating. No TTC yet. Optional next: endpoint sharp/motion on the same
 mp4s (`score_i2v_drift.py`) as a second metric.
+
+---
+
+## 2026-08-17 — Single gate threshold cannot beat always-on
+tags: [wan, gated, threshold, diagnosis]
+refs: paper_tables/2026-08-17_wan_gate_threshold_diagnosis.md
+
+always-on first diverges at chunk 1 on 13/16 videos. T=2.0 skips that
+chunk (incoming 0.2–1.3). Big gated misses (02, 03, 05, 09, 12) have
+incoming 0.87–1.27 at first always-div. Correct skips (06, 07, always
+hurt NOTTA) have incoming 0.20 and 0.68. No global T separates 0.68
+from 0.87. Next: dump always-on chunk-1 candidate scores (shared
+prefix, valid offline) and try a trend/Δincoming gate, not another
+16v T-sweep. Do not “always search chunk 1.”
