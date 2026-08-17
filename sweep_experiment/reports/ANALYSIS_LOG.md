@@ -1603,3 +1603,17 @@ Pass for the gate: quality ≥ always-on on the endpoint (VBench-I2V /
 vs always-on kills the gating claim even if we save compute. A quality
 tie + compute win is a valid efficiency paper, not a "gating fixes
 drift" paper — say that plainly. A quality win is the controller paper.
+
+---
+
+## 2026-08-16 — I2V smoke died on flash-attn assert; SDPA fallback
+tags: [infra, wan, flash-attn, sdpa]
+refs: job 15858704; wan/modules/attention.py:118; wan_experiment/scripts/run_i2v_continuation.py
+
+`i2v_notta_smoke` n_ok=0. Both videos hit `assert FLASH_ATTN_2_AVAILABLE`
+on the first DiT forward. Pipeline load succeeded. Cause: we skip
+compiling flash-attn (15796574 TIMEOUT); Self-Forcing's `model.py`
+imports `flash_attention` (hard assert), while the SDPA fallback is
+only on `attention()`. Fix: monkeypatch both to PyTorch SDPA when
+flash-attn is absent. Do not restart a 2h flash-attn compile. Resubmit
+the same 2×5 s smoke.

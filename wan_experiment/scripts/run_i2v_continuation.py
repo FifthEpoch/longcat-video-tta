@@ -170,6 +170,45 @@ def enlarge_kv_cache(pipeline, n_frames: int) -> None:
           f"({kv_cache_size} tokens)")
 
 
+def install_sdpa_attention_fallback() -> None:
+    """Self-Forcing's Wan blocks call flash_attention() directly.
+
+    Job 15858704 died at `assert FLASH_ATTN_2_AVAILABLE` because we skip
+    compiling flash-attn (2h TIMEOUT on 15796574). wan/modules/attention.py
+    already has an SDPA path on `attention()`, but `model.py` imports
+    `flash_attention` by name. Patch both modules. H200 + torch 2.13 SDPA
+    uses the built-in flash kernel; padding masks (k_lens) are ignored —
+    acceptable for this smoke, revisit if VBench looks off.
+    """
+    from wan.modules import attention as attn
+    from wan.modules import model as wan_model
+
+    if attn.FLASH_ATTN_2_AVAILABLE or attn.FLASH_ATTN_3_AVAILABLE:
+        print("flash-attn available; no SDPA fallback")
+        return
+
+    import torch
+
+    def _flash_attention_sdpa(
+        q, k, v,
+        q_lens=None, k_lens=None, dropout_p=0.,
+        softmax_scale=None, q_scale=None, causal=False,
+        window_size=(-1, -1), deterministic=False,
+        dtype=torch.bfloat16, version=None,
+    ):
+        return attn.attention(
+            q, k, v,
+            q_lens=q_lens, k_lens=k_lens, dropout_p=dropout_p,
+            softmax_scale=softmax_scale, q_scale=q_scale, causal=causal,
+            window_size=window_size, deterministic=deterministic,
+            dtype=dtype, fa_version=version,
+        )
+
+    wan_model.flash_attention = _flash_attention_sdpa
+    attn.flash_attention = _flash_attention_sdpa
+    print("WARNING: flash-attn missing; using PyTorch SDPA fallback")
+
+
 def load_pipeline(sf_root: Path, wan_dir: Path, sf_ckpt: Path, device, n_cache_frames: int):
     import torch
     from omegaconf import OmegaConf
@@ -279,6 +318,8 @@ def main() -> int:
     print(f"device={device} torch={torch.__version__} "
           f"horizon={args.horizon_s}s n_gen={n_gen} n_pix={n_pix} "
           f"n_items={len(items)} shard={args.shard_id}/{args.num_shards}")
+
+    install_sdpa_attention_fallback()
 
     t_load = time.time()
     pipeline = load_pipeline(

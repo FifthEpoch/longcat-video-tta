@@ -92,4 +92,5 @@ Then we submit 16 images × {5 s, 30 s}.
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
-KV cache enlarged past the 21-frame default).
+KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn
+is missing — job 15858704 died on `assert FLASH_ATTN_2_AVAILABLE`).
