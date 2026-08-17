@@ -63,7 +63,7 @@ NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
 | Series | N | Horizon | Method | Status | Cluster path | Key finding |
 |---|---|---|---|---|---|---|
 | `i2v_notta_smoke` | 2 | 5 s (85 px) | NOTTA | **DONE 2026-08-16** job 15880611 | `wan_experiment/results/i2v_notta_smoke/h5s_shard0/` | First working generate. n_ok=2, mp4s 5.9/3.9 MB, 8–12 s/clip. Frame-0 MAE vs cond 5.56 / 3.71 (I2V, not noise). Autograd-off fixed the 138 GB OOM. |
-| `i2v_notta_16v` | 16 | 5 s + 30 s | NOTTA | **DONE 2026-08-16** n_ok=16/16 both | `wan_experiment/results/i2v_notta_16v/{h5s,h30s}_shard0/` | 5 s mean 9.61 s/clip; 30 s mean 38.32 s/clip. Drift vs horizon not yet scored. |
+| `i2v_notta_16v` | 16 | 5 s + 30 s | NOTTA | **DONE 2026-08-16** n_ok=16/16 both | `wan_experiment/results/i2v_notta_16v/{h5s,h30s}_shard0/` | 5 s mean 9.61 s/clip; 30 s mean 38.32 s/clip. First drift pass: 5 s only (motion number invalid — incl. cond still); 30 s Killed (OOM). Rescore with streaming scorer. |
 
 Timing: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan_i2v_smoke.md), [`paper_tables/2026-08-16_wan_i2v_notta16.md`](paper_tables/2026-08-16_wan_i2v_notta16.md)
 

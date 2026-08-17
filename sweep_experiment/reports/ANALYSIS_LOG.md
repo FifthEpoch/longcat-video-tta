@@ -1714,3 +1714,17 @@ headroom is unknown: next measurement is first-1s vs last-1s GT-free
 drift on these mp4s (`score_i2v_drift.py`). If 30 s is flat, do not
 claim a controller win at this horizon — go longer or accept no-drift.
 Do not implement the five-way until that table exists.
+
+---
+
+## 2026-08-17 — 30 s drift score Killed; 5 s motion number is invalid
+tags: [infra, wan, drift, oom]
+refs: score_i2v_drift.py first run; i2v_notta_16v
+
+5 s finished. Mean tail/head (windows included frame 0): sharp +35%,
+color +7%, contrast +10%, motion −31%. Do not cite the motion drop —
+I2V frame 0 is the cond still, so the reference window contains the
+still→video jump. Sharpness mean is outlier-dominated (004 +268%,
+011 +126%). 30 s process was `Killed` on the login node: full-clip
+float32 load is ~2.3 GB. Fix: stream first-1s-after-cond vs last-1s,
+report mean and median. Rerun before any five-way decision.

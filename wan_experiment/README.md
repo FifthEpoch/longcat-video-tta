@@ -109,6 +109,9 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
     --dir wan_experiment/results/i2v_notta_16v/h30s_shard0
 ```
 
+First run (2026-08-17) died on 30 s (`Killed`): it loaded every frame as
+float32. Current scorer streams head/tail 1 s only and skips cond frame 0.
+
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn

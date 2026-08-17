@@ -60,33 +60,54 @@ def _motion(frames: np.ndarray) -> np.ndarray:
     return np.concatenate([[np.nan], d])
 
 
-def _read_mp4(path: Path) -> np.ndarray:
+def _read_head_tail(path: Path, win: int = WIN, skip_first: int = 1):
+    """Stream the mp4; keep only skip_first:skip_first+win and the last win.
+
+    Login-node OOM (2026-08-17): loading 481×480×832 float32 is ~2.3 GB/clip.
+    Frame 0 is the I2V cond image — include it in the head and motion
+    'collapses' because the still→video jump is in the reference window.
+    """
     import imageio.v2 as imageio
 
     r = imageio.get_reader(str(path))
-    frames = [np.asarray(im)[..., :3] for im in r]
+    head_u8: list[np.ndarray] = []
+    tail_u8: list[np.ndarray] = []
+    n = 0
+    for im in r:
+        im = np.asarray(im)[..., :3]
+        if skip_first <= n < skip_first + win:
+            head_u8.append(im)
+        tail_u8.append(im)
+        if len(tail_u8) > win:
+            tail_u8.pop(0)
+        n += 1
     r.close()
-    arr = np.stack(frames, axis=0).astype(np.float32) / 255.0
-    return arr
+    if n < skip_first + 2 * win:
+        raise RuntimeError(f"{path} has {n} frames; need >{skip_first + 2 * win}")
+    head = np.stack(head_u8, axis=0).astype(np.float32) / 255.0
+    tail = np.stack(tail_u8, axis=0).astype(np.float32) / 255.0
+    return n, head, tail
 
 
-def _window_means(frames: np.ndarray) -> dict:
+def _window_stats(frames: np.ndarray) -> dict:
     gray = _to_gray(frames)
-    sigs = {
-        "sharpness": _laplacian_var(gray),
-        "colorfulness": _colorfulness(frames),
-        "contrast": _contrast(gray),
-        "temporal_motion": _motion(frames),
+    motion = _motion(frames)
+    return {
+        "sharpness": float(np.mean(_laplacian_var(gray))),
+        "colorfulness": float(np.mean(_colorfulness(frames))),
+        "contrast": float(np.mean(_contrast(gray))),
+        "temporal_motion": float(np.nanmean(motion)),
     }
-    t = frames.shape[0]
-    w = min(WIN, max(1, t // 3))
-    out = {"n_frames": int(t), "win": int(w)}
-    for k, v in sigs.items():
-        v = np.asarray(v, dtype=np.float64)
-        head = float(np.nanmean(v[:w]))
-        tail = float(np.nanmean(v[-w:]))
-        rel = (tail - head) / head if abs(head) > 1e-12 else float("nan")
-        out[k] = {"head": head, "tail": tail, "rel": rel}
+
+
+def _head_tail_rel(n: int, head: np.ndarray, tail: np.ndarray) -> dict:
+    hs = _window_stats(head)
+    ts = _window_stats(tail)
+    out = {"n_frames": int(n), "win": int(head.shape[0]), "skip_first": 1}
+    for k in hs:
+        h, t = hs[k], ts[k]
+        rel = (t - h) / h if abs(h) > 1e-12 else float("nan")
+        out[k] = {"head": h, "tail": t, "rel": rel}
     return out
 
 
@@ -94,8 +115,8 @@ def score_dir(d: Path) -> dict:
     mp4s = sorted(d.glob("*.mp4"))
     rows = []
     for p in mp4s:
-        frames = _read_mp4(p)
-        rec = _window_means(frames)
+        n, head, tail = _read_head_tail(p)
+        rec = _head_tail_rel(n, head, tail)
         rec["mp4"] = str(p)
         rec["stem"] = p.stem
         rows.append(rec)
@@ -109,9 +130,12 @@ def score_dir(d: Path) -> dict:
         )
     summary = {"dir": str(d), "n": len(rows), "rows": rows}
     if rows:
+        keys = ("sharpness", "colorfulness", "contrast", "temporal_motion")
         summary["mean_rel"] = {
-            k: float(np.nanmean([r[k]["rel"] for r in rows]))
-            for k in ("sharpness", "colorfulness", "contrast", "temporal_motion")
+            k: float(np.nanmean([r[k]["rel"] for r in rows])) for k in keys
+        }
+        summary["median_rel"] = {
+            k: float(np.nanmedian([r[k]["rel"] for r in rows])) for k in keys
         }
     return summary
 
@@ -126,15 +150,23 @@ def main() -> None:
         d = Path(d)
         print(f"=== {d} ===", flush=True)
         reports.append(score_dir(d))
-    print("\nmean tail/head relative change (1 s windows):")
+    print("\ntail/head relative change (1 s windows, skip cond frame 0):")
     for rep in reports:
         mr = rep.get("mean_rel", {})
+        md = rep.get("median_rel", {})
         print(
             f"  {Path(rep['dir']).name}  n={rep['n']}  "
-            f"sharp={mr.get('sharpness', float('nan')):+.3f}  "
+            f"mean  sharp={mr.get('sharpness', float('nan')):+.3f}  "
             f"color={mr.get('colorfulness', float('nan')):+.3f}  "
             f"contr={mr.get('contrast', float('nan')):+.3f}  "
             f"motion={mr.get('temporal_motion', float('nan')):+.3f}"
+        )
+        print(
+            f"  {Path(rep['dir']).name}  n={rep['n']}  "
+            f"median sharp={md.get('sharpness', float('nan')):+.3f}  "
+            f"color={md.get('colorfulness', float('nan')):+.3f}  "
+            f"contr={md.get('contrast', float('nan')):+.3f}  "
+            f"motion={md.get('temporal_motion', float('nan')):+.3f}"
         )
     out = args.out
     if out is None and args.dir:
