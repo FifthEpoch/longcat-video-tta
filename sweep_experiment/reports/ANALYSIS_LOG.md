@@ -1700,3 +1700,17 @@ refs: job 15880611; /tmp/wan_first_{000,001}.png
 Frame 0 vs resized cond jpg: bubbles MAE 5.56, pot MAE 3.71 (uint8).
 That is VAE-roundtrip I2V, not decoded noise. Content gate passed.
 Submit `i2v_notta_16v` 16×{5,30}s. Then port verifier / five-way.
+
+---
+
+## 2026-08-16 — Wan I2V NOTTA 16v passed at 5 s and 30 s
+tags: [infra, wan, i2v, notta, timing]
+refs: wan_experiment/results/i2v_notta_16v/; paper_tables/2026-08-16_wan_i2v_notta16.md
+
+n_ok=16/16 at both horizons. 5 s: 85 px, mean 9.61 s/clip. 30 s: 481 px,
+mean 38.32 s/clip (~1.27 s GPU per generated second). Stack is fast
+enough for BoN (k=4 would be ~40 s at 5 s, ~150 s at 30 s). Quality
+headroom is unknown: next measurement is first-1s vs last-1s GT-free
+drift on these mp4s (`score_i2v_drift.py`). If 30 s is flat, do not
+claim a controller win at this horizon — go longer or accept no-drift.
+Do not implement the five-way until that table exists.

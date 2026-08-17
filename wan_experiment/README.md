@@ -85,11 +85,28 @@ bash wan_experiment/sbatch/submit_i2v_smoke.sh
 First-frame MAE vs cond jpg: **5.56 / 3.71** (I2V pass; login node has
 no ffmpeg — use `imageio.get_reader().get_data(0)`).
 
-## Next — 16 images × {5 s, 30 s} NOTTA
+## 16 images × {5 s, 30 s} NOTTA
+
+**PASSED 2026-08-16.** `n_ok=16` at both horizons. Mean generate+write
+9.61 s (5 s) and 38.32 s (30 s).
+
+```bash
+# already done; keep for reruns
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_notta16.sh
+```
+
+## Next — GT-free drift on those mp4s (CPU, login node)
+
+Do this before porting BoN/TTC. If 30 s is flat vs 5 s, there is no
+controller headroom at this horizon.
 
 ```bash
 cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-bash wan_experiment/sbatch/submit_i2v_notta16.sh
+/scratch/wc3013/conda-envs/self_forcing/bin/python \
+    wan_experiment/scripts/score_i2v_drift.py \
+    --dir wan_experiment/results/i2v_notta_16v/h5s_shard0 \
+    --dir wan_experiment/results/i2v_notta_16v/h30s_shard0
 ```
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
