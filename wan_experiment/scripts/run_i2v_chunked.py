@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chunked Wan I2V: NOTTA or always-BoN (cand0 = NOTTA seed).
+"""Chunked Wan I2V: NOTTA, always-BoN, or gated-BoN (cand0 = NOTTA seed).
 
 Official CausalInferencePipeline.inference() only KV-caches initial_latent[:, :1]
 when independent_first_frame=True, so we cannot pass a growing prefix back
@@ -13,6 +13,8 @@ searches chunks 1..N-1. Do not add TTC until this writes real video.
         --method notta --horizon-s 30 --n 2 --chunk-latents 24
     python wan_experiment/scripts/run_i2v_chunked.py \
         --method always_bon --search-k 4 --horizon-s 30 --n 2 --chunk-latents 24
+    python wan_experiment/scripts/run_i2v_chunked.py \
+        --method gated_bon --search-k 4 --gate-threshold 2.0 --horizon-s 30 --n 16
 """
 from __future__ import annotations
 
@@ -170,19 +172,35 @@ def _decode_pixels(pipeline, latents) -> np.ndarray:
     return arr
 
 
-def _make_noise(n_gen, seed, device):
+def _cand_seed(base: int, cand: int) -> int:
+    return int(base) if cand == 0 else int(base) + cand * 100003
+
+
+def _chunk_rng(device, base: int, cand: int, chunk: int):
+    """One CUDA generator per (video-seed, cand, chunk). cand0/chunk i matches NOTTA."""
     import torch
 
     g = torch.Generator(device=device)
-    g.manual_seed(int(seed))
-    return torch.randn(
-        [1, n_gen, LATENT_C, LATENT_H, LATENT_W],
-        device=device, dtype=torch.bfloat16, generator=g,
-    )
+    g.manual_seed(int(_cand_seed(base, cand)) + 10007 * int(chunk))
+    return g
 
 
-def _cand_seed(base: int, cand: int) -> int:
-    return int(base) if cand == 0 else int(base) + cand * 100003
+def _seed_torch(torch_mod, seed: int) -> None:
+    """Process-level invariance. Per-chunk noise still uses _chunk_rng."""
+    os.environ["PYTHONHASHSEED"] = str(int(seed))
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    torch_mod.manual_seed(int(seed))
+    if torch_mod.cuda.is_available():
+        torch_mod.cuda.manual_seed_all(int(seed))
+    torch_mod.backends.cudnn.deterministic = True
+    torch_mod.backends.cudnn.benchmark = False
+    torch_mod.backends.cuda.matmul.allow_tf32 = False
+    torch_mod.backends.cudnn.allow_tf32 = False
+    try:
+        torch_mod.use_deterministic_algorithms(True, warn_only=True)
+    except Exception:
+        pass
+    print("rng: deterministic flags on (warn_only); per-chunk CUDA Generator")
 
 
 def generate_chunked(
@@ -197,6 +215,7 @@ def generate_chunked(
     search_k: int,
     search_from_chunk: int,
     seam_weight: float,
+    gate_threshold: float,
 ):
     import torch
 
@@ -212,17 +231,27 @@ def generate_chunked(
 
     committed = 1
     ref = None
+    committed_pixels = None
     chunk_logs = []
-    k_eff = search_k if method == "always_bon" else 1
 
     for ci in range(n_chunks):
-        search_here = method == "always_bon" and ci >= search_from_chunk
-        n_try = k_eff if search_here else 1
+        incoming_drift = None
+        gated_fired = False
+        if method == "always_bon" and ci >= search_from_chunk:
+            n_try = search_k
+        elif method == "gated_bon" and ci >= search_from_chunk and ref is not None:
+            pix = committed_pixels
+            win = min(REF_WIN, pix.shape[0] - 1)
+            incoming = gen_free_signals(pix[-win:], pix[-win - 1])
+            incoming_drift = verifier_score(incoming, ref, seam_weight=0.0)
+            gated_fired = incoming_drift > gate_threshold
+            n_try = search_k if gated_fired else 1
+        else:
+            n_try = 1
         cands = []
         for c in range(n_try):
             cseed = _cand_seed(seed, c)
-            rng = torch.Generator(device=device)
-            rng.manual_seed(int(cseed) + 10007 * ci)
+            rng = _chunk_rng(device, seed, c, ci)
             noise = torch.randn(
                 [1, chunk_latents, LATENT_C, LATENT_H, LATENT_W],
                 device=device, dtype=torch.bfloat16, generator=rng,
@@ -258,10 +287,13 @@ def generate_chunked(
         best = cands[chosen]
         output[:, committed:committed + chunk_latents] = best["latents"]
         committed += chunk_latents
+        committed_pixels = best["pixels"]
         chunk_logs.append({
             "chunk": ci,
             "chosen_cand": int(chosen),
             "search_k": n_try,
+            "incoming_drift": incoming_drift,
+            "gated_fired": gated_fired,
             "candidates": [
                 {
                     "cand": c["cand"],
@@ -273,7 +305,13 @@ def generate_chunked(
                 for c in cands
             ],
         })
-        print(f"  chunk {ci}: pick={chosen}/{n_try} score={best['score']:.4f}", flush=True)
+        gate_s = ""
+        if incoming_drift is not None:
+            gate_s = f" incoming={incoming_drift:.3f} fire={int(gated_fired)}"
+        print(
+            f"  chunk {ci}: pick={chosen}/{n_try} score={best['score']:.4f}{gate_s}",
+            flush=True,
+        )
 
     pixels = _decode_pixels(pipeline, output)
     if torch.cuda.is_available():
@@ -305,11 +343,14 @@ def main() -> int:
                     help="0 = 24 if horizon>=29 else gen_latents_for_horizon(chunk-s)")
     ap.add_argument("--n", type=int, default=2)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--method", choices=("notta", "always_bon"), default="notta")
+    ap.add_argument("--method", choices=("notta", "always_bon", "gated_bon"),
+                    default="notta")
     ap.add_argument("--search-k", type=int, default=4)
     ap.add_argument("--search-from-chunk", type=int, default=1,
                     help="first chunk index to search (0=search prefix too)")
     ap.add_argument("--seam-weight", type=float, default=1.0)
+    ap.add_argument("--gate-threshold", type=float, default=2.0,
+                    help="gated_bon: search iff incoming last-1s composite > this")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     args = ap.parse_args()
@@ -337,12 +378,14 @@ def main() -> int:
         return 0
 
     torch = _bootstrap_sf(sf_root)
+    _seed_torch(torch, args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(
         f"device={device} torch={torch.__version__} method={args.method} "
         f"horizon={args.horizon_s}s n_gen={n_gen} chunk_latents={chunk_latents} "
         f"n_chunks={n_chunks} n_pix={n_pix} k={args.search_k} "
-        f"search_from={args.search_from_chunk} n_items={len(items)}"
+        f"search_from={args.search_from_chunk} gate={args.gate_threshold} "
+        f"n_items={len(items)}"
     )
     print(
         f"KV current_start uses pipeline.frame_seq_length "
@@ -383,6 +426,7 @@ def main() -> int:
             rows.append({"ok": True, "skipped": True, "mp4": str(mp4), **item})
             continue
         print(f"[{i+1}/{len(items)}] {args.method} {item['file_name']!r}")
+        _seed_torch(torch, args.seed)
         t0 = time.time()
         try:
             with torch.inference_mode():
@@ -390,13 +434,14 @@ def main() -> int:
                     pipeline, item["image_path"], item["prompt"],
                     n_gen, chunk_latents, args.seed, device,
                     args.method, args.search_k, args.search_from_chunk,
-                    args.seam_weight,
+                    args.seam_weight, args.gate_threshold,
                 )
             write_mp4(mp4, video, fps=FPS)
             n_div = sum(
                 1 for ch in chunk_logs
                 if ch["search_k"] > 1 and ch["chosen_cand"] != 0
             )
+            n_fire = sum(1 for ch in chunk_logs if ch.get("gated_fired"))
             rec = {
                 "ok": True,
                 "seconds": round(time.time() - t0, 2),
@@ -410,7 +455,9 @@ def main() -> int:
                 "method": args.method,
                 "search_k": args.search_k,
                 "search_from_chunk": args.search_from_chunk,
+                "gate_threshold": args.gate_threshold,
                 "n_divergent_chunks": n_div,
+                "n_gated_fired": n_fire,
                 "ref_signals": ref,
                 "chunks": chunk_logs,
                 "horizon_s_requested": args.horizon_s,
@@ -419,7 +466,7 @@ def main() -> int:
             }
             print(
                 f"  wrote {mp4.name}  T={video.shape[0]}  {rec['seconds']}s  "
-                f"divergent_chunks={n_div}",
+                f"divergent_chunks={n_div} gated_fired={n_fire}",
                 flush=True,
             )
         except Exception as e:
@@ -453,6 +500,7 @@ def main() -> int:
         "n_pix": n_pix,
         "search_k": args.search_k,
         "search_from_chunk": args.search_from_chunk,
+        "gate_threshold": args.gate_threshold,
         "seed": args.seed,
         "shard_id": args.shard_id,
         "num_shards": args.num_shards,

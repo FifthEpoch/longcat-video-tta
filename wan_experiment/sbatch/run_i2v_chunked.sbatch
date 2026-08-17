@@ -6,13 +6,13 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:h200:1
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_i2v_chunk_%j.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_i2v_chunk_%j.err
 #SBATCH --comment="preemption=yes;requeue=true"
 
-# Chunked Wan I2V: METHOD=notta|always_bon
-#   sbatch --export=ALL,METHOD=always_bon,HORIZON_S=30,N_VIDEOS=2,SEARCH_K=4 \
+# Chunked Wan I2V: METHOD=notta|always_bon|gated_bon
+#   sbatch --export=ALL,METHOD=gated_bon,HORIZON_S=30,N_VIDEOS=16,SEARCH_K=4 \
 #       wan_experiment/sbatch/run_i2v_chunked.sbatch
 
 set -euo pipefail
@@ -33,12 +33,15 @@ SEED="${SEED:-0}"
 METHOD="${METHOD:-notta}"
 SEARCH_K="${SEARCH_K:-4}"
 SEARCH_FROM="${SEARCH_FROM:-1}"
+GATE_THRESHOLD="${GATE_THRESHOLD:-2.0}"
 CHUNK_LATENTS="${CHUNK_LATENTS:-24}"
 SERIES="${SERIES:-i2v_chunked_smoke}"
 SHARD_ID="${SHARD_ID:-0}"
 NUM_SHARDS="${NUM_SHARDS:-1}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/wan_experiment/results/${SERIES}/${METHOD}_h${HORIZON_S}s_shard${SHARD_ID}}"
 
+export PYTHONHASHSEED="${SEED}"
+export CUBLAS_WORKSPACE_CONFIG=":4096:8"
 export TMPDIR="${SCRATCH_BASE}/tmp"
 export HF_HOME="${SCRATCH_BASE}/.cache/huggingface"
 export TRANSFORMERS_CACHE="${HF_HOME}"
@@ -84,6 +87,7 @@ cd "${PROJECT_ROOT}"
     --method "${METHOD}" \
     --search-k "${SEARCH_K}" \
     --search-from-chunk "${SEARCH_FROM}" \
+    --gate-threshold "${GATE_THRESHOLD}" \
     --shard-id "${SHARD_ID}" \
     --num-shards "${NUM_SHARDS}"
 

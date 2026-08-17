@@ -1786,3 +1786,18 @@ is invalid: chunk 0 cand0 already differs (3.305 vs 2.992) because
 denoise `add_noise` used global `randn_like`. Fix: one Generator per
 (cand, chunk) for init noise and step noise. Do not resubmit the 2-clip
 smoke. Do not add TTC. Next 16v five-way only after the RNG fix.
+
+---
+
+## 2026-08-17 — Seed-invariant chunk RNG + gated-BoN 16v
+tags: [wan, bon, rng, gated]
+refs: run_i2v_chunked.py; submit_i2v_bon16.sh
+
+Per-(cand, chunk) CUDA Generator for init noise and add_noise. Process
+flags: cudnn deterministic, TF32 off, use_deterministic_algorithms
+warn_only, CUBLAS_WORKSPACE_CONFIG, re-seed before each video. cand0
+chunk i is identical across NOTTA / always-BoN / gated-BoN when the
+committed prefix matches. gated-BoN searches iff incoming last-1s
+composite > 2.0 (smoke NOTTA later chunks were 3–5; early ~1–2).
+Submit 16v 30 s three-way, no TTC. First check: chunk-0 cand0 scores
+must match across methods; if not, stop and do not scale.

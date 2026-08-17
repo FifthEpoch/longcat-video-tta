@@ -125,8 +125,20 @@ bash wan_experiment/sbatch/submit_i2v_bon_smoke.sh
 ```
 
 **PASSED 2026-08-17** (15883525/526): n_ok=2, search left cand0 on 5/8
-chunks. Not a paired quality result (chunk 0 cand0 already differed).
-Sampler RNG is now seeded. Pull before any 16v run. No TTC yet.
+chunks. Not a paired quality result (unseeded add_noise).
+
+## Next — 16v 30 s NOTTA | always-BoN | gated-BoN
+
+cand0 is seed-invariant (per-chunk CUDA Generator + deterministic
+flags). gated-BoN fires when incoming last-1s composite > 2.0.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_bon16.sh
+```
+
+First check after finish: chunk-0 cand0 verifier scores must match
+across the three methods. If they differ, stop. No TTC.
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
