@@ -1801,3 +1801,17 @@ committed prefix matches. gated-BoN searches iff incoming last-1s
 composite > 2.0 (smoke NOTTA later chunks were 3–5; early ~1–2).
 Submit 16v 30 s three-way, no TTC. First check: chunk-0 cand0 scores
 must match across methods; if not, stop and do not scale.
+
+---
+
+## 2026-08-17 — 16v three-way: seed match; gate is a real controller
+tags: [wan, bon, gated, 16v]
+refs: jobs 15884598/599/600; paper_tables/2026-08-17_wan_i2v_bon16.md
+
+n_ok=16/16. Chunk-0 cand0 scores identical on all 16 videos — RNG fix
+held. always-BoN left cand0 on 43/64 chunks. gated-BoN fired 27/64,
+skipped 4 videos entirely (those mp4s = NOTTA). Mean wall 84 / 267 /
+211 s (gated 21% cheaper than always). Gate fires more on later chunks
+as incoming drift grows. This is the first valid paired Wan comparison.
+Do not claim a quality win until last-chunk composites are tabulated.
+Locked test still stands: gated must not lose to always-on. No TTC yet.

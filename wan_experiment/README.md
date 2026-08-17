@@ -137,8 +137,9 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_i2v_bon16.sh
 ```
 
-First check after finish: chunk-0 cand0 verifier scores must match
-across the three methods. If they differ, stop. No TTC.
+**DONE 2026-08-17** (15884598/599/600). Chunk-0 cand0 matched 16/16.
+always-BoN left cand0 on 43/64. gated fired 27/64. No TTC. Last-chunk
+quality vs always-on still to score.
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
