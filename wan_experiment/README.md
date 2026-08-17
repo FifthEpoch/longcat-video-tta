@@ -109,8 +109,10 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
     --dir wan_experiment/results/i2v_notta_16v/h30s_shard0
 ```
 
-First run (2026-08-17) died on 30 s (`Killed`): it loaded every frame as
-float32. Current scorer streams head/tail 1 s only and skips cond frame 0.
+**DONE 2026-08-17.** 30 s median sharp **+167%**, motion **−60%**.
+5 s is mild (+11% / −14%). Five-way is unlocked and must be **chunked**
+(see ANALYSIS_LOG 2026-08-17). Do not implement TTC before a BoN smoke
+writes real video.
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;

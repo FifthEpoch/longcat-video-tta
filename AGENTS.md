@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **16v NOTTA GREEN 2026-08-16** (`i2v_notta_16v`, n_ok=16 at 5 s and 30 s). Env = `conda-envs/self_forcing`. Next: `score_i2v_drift.py` on those mp4s, then five-way if 30 s drifts. Do **not** call official `inference.py`. Do **not** rebuild the env. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **16v NOTTA + drift GREEN 2026-08-17.** 30 s median sharp +167% / motion −60%. Five-way must be **chunked**. Env = `conda-envs/self_forcing`. Do **not** call official `inference.py`. |
 
 ## 2. CRITICAL workflow rules
 
@@ -189,25 +189,27 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-16.
+**Date:** Updated 2026-08-17.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD,
   I2V continuation. Contribution is a drift-gated GT-free test-time
   controller. Required comparison (same seeds/images/horizon):
   NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
-  LongCat 13.6B stays the saturated-large-model audit. Do not launch
-  more LongCat TTC.
-- **Wan I2V:** smoke + **16v NOTTA PASSED** at 5 s and 30 s (`n_ok=16`,
-  ~9.6 s / ~38 s per clip). Next: score first-1s vs last-1s drift on
-  those mp4s (`wan_experiment/scripts/score_i2v_drift.py`) before
-  porting BoN/TTC. No five-way until we know 30 s actually drifts.
+  **Must be chunked** (e.g. 6×5 s on a 30 s rollout). Clip-level gate
+  at t=0 is vacuous (incoming context = cond still). LongCat 13.6B
+  stays the saturated-large-model audit. Do not launch more LongCat TTC.
+- **Wan drift (2026-08-17, N=16):** 5 s median sharp +11% / motion −14%
+  (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
+  Signature = sharpen + freeze. Table:
+  `paper_tables/2026-08-17_wan_i2v_notta16_drift.md`.
+- **Next code:** chunked inference hook, then NOTTA vs always-BoN k=4
+  smoke on 2×30 s clips. Do not implement TTC until BoN writes real video.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-16 23:37): none. 16v NOTTA done.
-- **Pending:** eyeball smoke mp4 → 16×{5,30}s NOTTA → port verifier.
+- **In-flight cluster jobs** (as of 2026-08-17 00:13): none.
 
 ## 4. Daily-log template
 

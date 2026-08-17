@@ -1728,3 +1728,31 @@ still→video jump. Sharpness mean is outlier-dominated (004 +268%,
 011 +126%). 30 s process was `Killed` on the login node: full-clip
 float32 load is ~2.3 GB. Fix: stream first-1s-after-cond vs last-1s,
 report mean and median. Rerun before any five-way decision.
+
+---
+
+## 2026-08-17 — Wan 30 s NOTTA drifts; five-way must be chunked
+tags: [wan, drift, notta, five-way, gating]
+refs: i2v_notta_16v/drift_head_tail.json; paper_tables/2026-08-17_wan_i2v_notta16_drift.md
+
+N=16, same images/seed, 1 s after cond frame vs last 1 s. Medians:
+
+| H | sharp | color | contrast | motion |
+|---|---|---|---|---|
+| 5 s | +11% | +9% | +9% | −14% |
+| 30 s | +167% | +28% | −5% | −60% |
+
+30 s sharpness up on 15/16; motion down on 15/16. Headroom is real.
+Signature = sharpen + freeze (not LongCat's sharpen + motion inflation).
+Cite medians. Means are outlier-pulled.
+
+**Gating lock:** I2V t=0 incoming context is the cond still. A clip-level
+gate has nothing to fire on, so gated-BoN = NOTTA and the required
+comparison is vacuous. Five-way on Wan is a **chunked 30 s rollout**
+(e.g. 6 × 5 s blocks, 21 gen latents each). At each chunk boundary,
+score last-1s vs first-1s-after-cond reference + seam. Always-on
+actuates every chunk; gated actuates only if relative |drift| exceeds
+a threshold. cand0 of BoN = NOTTA seed for that chunk. Same 16 images,
+seed 0, 30 s. Do not implement TTC until BoN chunk path generates
+real video (Wan TTC-v1 lesson). Next code: chunked inference hook on
+CausalInferencePipeline, then NOTTA vs always-BoN k=4 smoke on 2 clips.
