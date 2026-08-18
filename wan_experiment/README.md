@@ -185,6 +185,12 @@ python wan_experiment/scripts/analyze_i2v_bon.py \
     --baseline-dir wan_experiment/results/i2v_bon_32v_hybrid
 ```
 
+**DONE 2026-08-18.** 03/24 caught (exact ties). 21/32 exact ties with
+always-search. Wall 256 vs 258 s — spent the 33% hybrid saving.
+Erased hybrid’s unique wins on 11 and 16. Not a quality win. Hybrid
+stays the efficiency method. Table:
+`sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_sticky.md`.
+
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn

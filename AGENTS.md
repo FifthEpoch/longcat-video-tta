@@ -214,16 +214,17 @@ Per-method `merged_summary.json` lives at:
   First-16 hybrid flipped T=2.0 +0.15 → −0.12. Still efficiency,
   not a quality win. Table:
   `paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md`.
-- **Wan sticky gate (2026-08-18):** `--gate-sticky` — once an alarm
-  fires, later pieces keep searching. Gated-only 32v ready:
-  `submit_i2v_bon32_sticky.sh`. Pair against hybrid do-nothing /
-  always-search. No TTC.
+- **Wan sticky 32v (2026-08-18):** 03/24 caught (exact ties with
+  always-search). 21/32 exact ties overall. Wall 256 vs 258 s —
+  spent the hybrid 33% saving. Erased hybrid wins on 11 and 16.
+  Not a quality win. Hybrid remains the efficiency method. Table:
+  `paper_tables/2026-08-18_wan_i2v_bon32_sticky.md`. No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 00:01): none until the
-  user pulls and submits `i2v_bon_32v_sticky`.
+- **In-flight cluster jobs** (as of 2026-08-18 10:47): none.
+  `i2v_bon_32v_sticky` DONE.
 
 ## 4. Daily-log template
 

@@ -1915,3 +1915,23 @@ hybrid do-nothing and always-search. Pass/fail: 03 and 24 should move
 toward always-search; 06/07/28/30 must stay skipped on piece 1; watch
 for a second 26-style explosion. Does not fix 17 (never wakes). No
 test-time training.
+
+---
+
+## 2026-08-18 — Sticky 32v: 03/24 caught; became always-search
+tags: [wan, gated, sticky, 32v]
+refs: paper_tables/2026-08-18_wan_i2v_bon32_sticky.md;
+wan_experiment/results/i2v_bon_32v_sticky/
+
+n_ok=32/32. Median last-piece do-nothing 3.68 / always-search 2.97 /
+sticky 2.99. sticky−always −0.012 mean, 0 median, 6/21/5. Fired
+96/128 (28 already_on). Wall 256 vs always-search 258 s — the 33%
+hybrid saving is gone. 03 and 24 now exact ties with always-search
+(the intended fix). 06/07 still skipped on piece 1 and still beat
+always-search. 30 was un-saved (copied always-search harm). No second
+video-26 explosion. Hybrid’s two unique wins (11: 2.16, 16: 2.66)
+were erased; local chosen−cand0 kept improving while the ending got
+worse. 17 still never wakes. Locked read: stay-on works as designed
+and is not a quality win. It is delayed-start always-search. Cite
+hybrid if the claim is cheaper-at-same-typical-quality. Do not stack
+another stay-on. No test-time training.
