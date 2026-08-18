@@ -1,7 +1,8 @@
 #!/bin/bash
 # Official VBench on the already-finished hybrid 32v mp4s.
-# One sequential GPU job (GRES-friendly; 15959146 may already be queued).
-# last5 first, then full 30 s. No generation. No TTC.
+# Space-separated METHODS only — SLURM --export splits on commas
+# (job 15959601 scored notta only because of that).
+# Existing notta last5/full results are skipped.
 #
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 #   bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
@@ -15,18 +16,18 @@ SB="${PROJECT_ROOT}/wan_experiment/sbatch"
 SERIES="${SERIES:-i2v_bon_32v_hybrid}"
 ROOT="${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
 CLIPS="${CLIPS:-last5 full}"
-
-VIDEO_DIRS="${ROOT}/notta_h30s_shard0,${ROOT}/always_bon_h30s_shard0,${ROOT}/gated_bon_h30s_shard0"
+METHODS="${METHODS:-notta always_bon gated_bon}"
 
 mkdir -p "${PROJECT_ROOT}/wan_experiment/slurm_log"
 
 J1=$(sbatch --parsable --account="${ACCOUNT}" --time=08:00:00 \
-    --export=ALL,VIDEO_DIRS="${VIDEO_DIRS}",CLIPS="${CLIPS}" \
+    --export=ALL,SERIES_DIR="${ROOT}",METHODS="${METHODS}",CLIPS="${CLIPS}" \
     "${SB}/run_i2v_vbench.sbatch")
 echo "32v hybrid official VBench  job ${J1}"
 echo "  series=${SERIES}"
+echo "  methods=${METHODS}"
 echo "  clips=${CLIPS}"
-echo "  dirs=${VIDEO_DIRS}"
+echo "  notta last5/full already exist from 15959601 and will be skipped"
 echo "When it finishes:"
 echo "  python wan_experiment/scripts/analyze_i2v_vbench.py \\"
 echo "    --series-dir ${ROOT} --clip last5 \\"

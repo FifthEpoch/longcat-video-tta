@@ -1,6 +1,7 @@
 # Search-while-sick spec (2026-08-18)
 
-**Status:** implemented, not yet scored.
+**Status:** scored 2026-08-18, job 15959146. Checklist pass.
+See `2026-08-18_wan_i2v_bon32_sick.md`.
 **Series:** `i2v_bon_32v_sick` (gated-search only)
 **Baseline:** do-nothing and always-search from `i2v_bon_32v_hybrid`
 **Submit:** `wan_experiment/sbatch/submit_i2v_bon32_sick.sh`

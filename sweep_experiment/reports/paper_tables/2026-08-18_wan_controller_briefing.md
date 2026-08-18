@@ -2,8 +2,9 @@
 
 **Audience:** weekly recap / PI update.
 **Date:** 2026-08-18.
-**Status:** hybrid gated-search is the method to cite (tie on typical
-quality, 33% cheaper). Search-while-sick is in flight (job 15959146).
+**Status:** search-while-sick is the best *handcrafted* median (2.764)
+and hits the 11/16 + 24 checklist; hybrid is still cheapest (173 s).
+Official VBench is incomplete (15959601 scored do-nothing only).
 Do not start test-time training.
 
 This note is the full picture: what we generate, how we measure drift,

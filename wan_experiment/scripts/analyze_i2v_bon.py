@@ -142,6 +142,7 @@ def analyze(
         "n_gated_fired": fire_chunks,
         "wall": wall_stats,
         "paired": paired,
+        "series_name": series_dir.name,
     }
 
 
@@ -149,7 +150,7 @@ def _md_table(report: dict) -> str:
     s = report["stats"]
     d = report["delta_stats"]
     lines = [
-        "# Wan I2V hybrid-gate last-chunk (auto)",
+        f"# Wan I2V last-chunk (auto) — {report.get('series_name', 'gated')}",
         "",
         f"N paired = {report['n_paired']}. Lower composite is better.",
         "",
@@ -159,7 +160,7 @@ def _md_table(report: dict) -> str:
     for m, label in (
         ("notta", "NOTTA"),
         ("always_bon", "always-BoN k=4"),
-        ("gated_bon", "gated-BoN hybrid"),
+        ("gated_bon", "gated-search"),
     ):
         w = report["wall"][m]["mean"]
         lines.append(

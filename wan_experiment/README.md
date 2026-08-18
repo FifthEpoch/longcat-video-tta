@@ -229,7 +229,22 @@ python wan_experiment/scripts/analyze_i2v_vbench.py \
     --clip last5
 ```
 
+**Job 15959601 scored do-nothing only** (SLURM `--export` comma bug).
+Pull and resubmit; existing notta files are skipped.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
+```
+
 Spec: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_official_eval_spec.md`.
+
+## Search-while-sick 32v — DONE 2026-08-18 (job 15959146)
+
+Checklist pass on the handcrafted score. Median 2.764 vs always 2.966
+/ hybrid 3.036. 11=1.830, 16=2.656, 24 exact always, wall 204 s.
+Table: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_sick.md`.
+Not a paper quality claim until VBench has all three methods.
 
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;

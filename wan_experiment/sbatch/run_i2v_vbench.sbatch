@@ -14,15 +14,19 @@
 # Official VBench quality scoring on already-generated Wan I2V mp4s.
 # Uses vbench-backfill (NOT self_forcing, NOT longcat).
 #
-# Required:
-#   VIDEO_DIRS  comma-separated shard dirs (mp4 + summary.json)
-# Optional:
-#   CLIPS       space-separated: last5 and/or full and/or first5 (default: last5 full)
+# Do NOT pass comma-separated paths via sbatch --export. SLURM splits
+# --export values on commas, which is why job 15959601 only scored notta.
+#
+# Required / optional env:
+#   SERIES_DIR  results series (default i2v_bon_32v_hybrid)
+#   METHODS     space-separated method names (default: notta always_bon gated_bon)
+#   HORIZON_TAG shard suffix (default: h30s_shard0)
+#   CLIPS       space-separated: last5 and/or full and/or first5
 #   DIMS        VBench quality dims
 #   FORCE       1 to re-run existing dims
 #
-# last5 is scored first: it is the outcome window and is much cheaper
-# than the full 481-frame clip.
+# Existing joined.json / per-dim files are skipped, so a rerun after
+# 15959601 only scores always_bon and gated_bon.
 
 set -euo pipefail
 export PYTHONNOUSERSITE=1
@@ -35,7 +39,12 @@ CACHE_DIR="${VBENCH_CACHE_DIR:-${SCRATCH_BASE}/vbench-cache}"
 
 cd "${PROJECT_ROOT}"
 
-VIDEO_DIRS="${VIDEO_DIRS:?ERROR: VIDEO_DIRS must be set}"
+SERIES_DIR="${SERIES_DIR:-${PROJECT_ROOT}/wan_experiment/results/i2v_bon_32v_hybrid}"
+if [[ "${SERIES_DIR}" != /* ]]; then
+    SERIES_DIR="${PROJECT_ROOT}/${SERIES_DIR}"
+fi
+METHODS="${METHODS:-notta always_bon gated_bon}"
+HORIZON_TAG="${HORIZON_TAG:-h30s_shard0}"
 CLIPS="${CLIPS:-last5 full}"
 DIMS_DEFAULT="subject_consistency background_consistency aesthetic_quality imaging_quality motion_smoothness dynamic_degree temporal_flickering"
 DIMS="${DIMS:-$DIMS_DEFAULT}"
@@ -66,7 +75,9 @@ unset PYTHONPATH
 
 echo "=============================================================================="
 echo "Wan I2V official VBench"
-echo "  VIDEO_DIRS : ${VIDEO_DIRS}"
+echo "  SERIES_DIR : ${SERIES_DIR}"
+echo "  METHODS    : ${METHODS}"
+echo "  HORIZON    : ${HORIZON_TAG}"
 echo "  CLIPS      : ${CLIPS}"
 echo "  DIMS       : ${DIMS}"
 echo "  MODE       : ${MODE}"
@@ -82,12 +93,8 @@ print('  cuda', torch.cuda.is_available())
 "
 
 STATUS=0
-IFS=',' read -ra DIRS <<< "${VIDEO_DIRS}"
-for raw in "${DIRS[@]}"; do
-    d="$(echo "${raw}" | xargs)"
-    if [[ "${d}" != /* ]]; then
-        d="${PROJECT_ROOT}/${d}"
-    fi
+for method in ${METHODS}; do
+    d="${SERIES_DIR}/${method}_${HORIZON_TAG}"
     if [ ! -d "${d}" ]; then
         echo "ERROR: missing ${d}" >&2
         STATUS=2
@@ -110,6 +117,6 @@ echo "==========================================================================
 echo "VBench job exit status so far: ${STATUS}"
 echo "Analyze (login node, any python):"
 echo "  python wan_experiment/scripts/analyze_i2v_vbench.py \\"
-echo "    --series-dir wan_experiment/results/i2v_bon_32v_hybrid --clip last5"
+echo "    --series-dir ${SERIES_DIR} --clip last5"
 echo "=============================================================================="
 exit ${STATUS}

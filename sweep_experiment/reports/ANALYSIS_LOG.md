@@ -2024,3 +2024,43 @@ User pulled c6eef97 and submitted submit_i2v_vbench_hybrid32.sh.
 squeue 11:47: 15959146 R 14:15 gh107 (i2v_bon_32v_sick);
 15959601 PD Priority (hybrid VBench last5+full). Check-when-done
 commands live in the in-flight table. No test-time training.
+
+---
+
+## 2026-08-18 — Search-while-sick 32v: checklist pass on handcrafted score
+tags: [wan, gated, sick, 32v]
+refs: job 15959146;
+paper_tables/2026-08-18_wan_i2v_bon32_sick.md;
+wan_experiment/results/i2v_bon_32v_sick/
+
+n_ok=32/32, finished 14:24 EDT. Median last-piece do-nothing 3.679 /
+always 2.966 / sick **2.764**. sick−always −0.155 mean, 0 median,
+9/14/9. Wall 204 s (between hybrid 173 and sticky 256). Fired 84/128.
+
+Pass/fail vs spec: 11 **1.830** (beat hybrid 2.157; sticky had 4.319);
+16 **2.656** exact hybrid; 24 exact always 2.315; 03 **1.755** vs
+always 1.567 (piece 4 off after 1.674→1.019 recovery, as predicted;
+hybrid miss was +1.26); 06/07 still skipped on piece 1; 30 back to
+1.444. 17 still never wakes. 26 still 85.63.
+
+Locked read: first gated rule that keeps hybrid unique wins and
+catches 24 without becoming always-search. Best handcrafted median so
+far, 21% cheaper than always. Not a strict quality win (9–9). Do not
+cite as paper quality until official VBench has all three methods.
+No test-time training.
+
+---
+
+## 2026-08-18 — VBench job 15959601 scored do-nothing only
+tags: [wan, vbench, infra, bug]
+refs: job 15959601;
+wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
+
+squeue gone; analyze failed: no always_bon / gated_bon joined.json.
+Root cause: sbatch `--export=ALL,VIDEO_DIRS=a,b,c` — SLURM splits
+export values on commas, so only the notta path survived. notta
+last5+full completed (exit 0). do-nothing full-clip dynamic_degree
+median 0.0 is a freeze hint, not a three-way result.
+
+Fix: SERIES_DIR + space-separated METHODS, no commas. Rerun skips
+existing notta files. Resubmit after cluster pull. No PSNR. No TTC.

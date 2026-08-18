@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick **15959146 RUNNING**. Hybrid VBench **15959601 PD**. Check commands: `paper_tables/2026-08-18_wan_in_flight_jobs.md`. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick **15959146 DONE** (checklist pass, median 2.764). VBench 15959601 incomplete (notta only). Resubmit `submit_i2v_vbench_hybrid32.sh`. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -222,24 +222,25 @@ Per-method `merged_summary.json` lives at:
   always-search while the pick-score lied about the tail. Next
   lever: search-while-sick (turn off on recovery). Table:
   `paper_tables/2026-08-18_wan_i2v_11_16_diagnosis.md`.
-- **Wan search-while-sick (2026-08-18):** `--gate-sticky` plus
-  `--gate-sick-min 1.0` / `--gate-recovery 0.5`. Job **15959146**
-  submitted (Priority). Briefing:
-  `paper_tables/2026-08-18_wan_controller_briefing.md`. No TTC.
+- **Wan search-while-sick (2026-08-18):** Job **15959146 DONE**.
+  Checklist pass on the handcrafted score. Median 2.764 vs always
+  2.966 / hybrid 3.036. 11/16 recovered, 24 exact always, wall 204 s.
+  9/14/9 — not a strict quality win. Table:
+  `paper_tables/2026-08-18_wan_i2v_bon32_sick.md`. No TTC.
 - **Official outcome eval (2026-08-18, paper-blocking):** controller
   stays GT-free at decision time; finished mp4s must be scored with
   VBench quality dims. No PSNR on these 32 stills (no 30 s GT).
-  Submit `wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh` after
-  cluster pull. Spec:
+  Job 15959601 scored do-nothing only (comma `--export` bug).
+  Resubmit `submit_i2v_vbench_hybrid32.sh` after cluster pull. Spec:
   `paper_tables/2026-08-18_wan_i2v_official_eval_spec.md`.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 11:47):
-  **15959146** `i2v_bon_32v_sick` **R** on gh107;
-  **15959601** hybrid official VBench **PD** Priority.
-  Cheat sheet: `paper_tables/2026-08-18_wan_in_flight_jobs.md`.
+- **In-flight cluster jobs** (as of 2026-08-18 18:37): none until
+  VBench is resubmitted. 15959146 DONE. 15959601 incomplete (notta
+  only; comma `--export` bug). Resubmit after pull:
+  `bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh`.
 
 ## 4. Daily-log template
 
