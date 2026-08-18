@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **32v hybrid DONE** (efficiency, not quality win). Sticky gated-only next: `submit_i2v_bon32_sticky.sh`. Official `inference()` cannot take a growing I2V prefix (only caches frame 0). Do **not** call official `inference.py`. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **32v hybrid DONE** (efficiency). Sticky DONE (became always-search). Search-while-sick next: `submit_i2v_bon32_sick.sh`. Official `inference()` cannot take a growing I2V prefix. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -221,13 +221,16 @@ Per-method `merged_summary.json` lives at:
   diagnosis: hybrid slept after recovery; stay-on rebuilt
   always-search while the pick-score lied about the tail. Next
   lever: search-while-sick (turn off on recovery). Table:
-  `paper_tables/2026-08-18_wan_i2v_11_16_diagnosis.md`. No TTC.
+  `paper_tables/2026-08-18_wan_i2v_11_16_diagnosis.md`.
+- **Wan search-while-sick (2026-08-18):** `--gate-sticky` plus
+  `--gate-sick-min 1.0` / `--gate-recovery 0.5`. Gated-only 32v
+  ready: `submit_i2v_bon32_sick.sh`. No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 10:47): none.
-  `i2v_bon_32v_sticky` DONE.
+- **In-flight cluster jobs** (as of 2026-08-18 11:18): none until the
+  user pulls and submits `i2v_bon_32v_sick`.
 
 ## 4. Daily-log template
 

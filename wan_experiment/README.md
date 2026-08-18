@@ -191,6 +191,25 @@ Erased hybrid’s unique wins on 11 and 16. Not a quality win. Hybrid
 stays the efficiency method. Table:
 `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_sticky.md`.
 
+## Next — search while sick (same 32 videos)
+
+Stay-on after an alarm, but turn memory off if the last second
+recovered by more than 0.5 or is now below 1.0. Gated-search only.
+No test-time training.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_bon32_sick.sh
+```
+
+After it finishes:
+
+```bash
+python wan_experiment/scripts/analyze_i2v_bon.py \
+    --series-dir wan_experiment/results/i2v_bon_32v_sick \
+    --baseline-dir wan_experiment/results/i2v_bon_32v_hybrid
+```
+
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn

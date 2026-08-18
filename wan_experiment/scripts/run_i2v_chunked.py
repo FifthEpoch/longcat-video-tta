@@ -116,6 +116,26 @@ def hybrid_gate_decision(
     return False, "skip"
 
 
+def search_while_sick_keep_on(
+    incoming: float | None,
+    outgoing: float | None,
+    sick_min: float,
+    recovery: float,
+) -> tuple[bool, str | None]:
+    """After a search: keep memory on only if still sick and not recovered.
+
+    ``sick_min <= 0`` and ``recovery <= 0`` → forever stay-on (old sticky).
+    Recovery is checked first (video 11: outgoing 1.11 is still >= 1.0
+    but incoming fell by 1.27).
+    """
+    if incoming is not None and outgoing is not None and recovery > 0:
+        if incoming - outgoing > recovery:
+            return False, "recovered"
+    if outgoing is not None and sick_min > 0 and outgoing < sick_min:
+        return False, "healthy"
+    return True, None
+
+
 def _reset_caches(pipeline, batch_size, dtype, device) -> None:
     if pipeline.kv_cache1 is None:
         pipeline._initialize_kv_cache(batch_size, dtype, device)
@@ -283,6 +303,8 @@ def generate_chunked(
     gate_delta: float = 0.5,
     gate_delta_prev_min: float = 0.5,
     gate_sticky: bool = False,
+    gate_sick_min: float = 0.0,
+    gate_recovery: float = 0.0,
 ):
     import torch
 
@@ -401,6 +423,18 @@ def generate_chunked(
             if outgoing_signals is not None and ref is not None else None
         )
         outgoing_drift = outgoing_devs["score"] if outgoing_devs is not None else None
+        recovery = None
+        if incoming_drift is not None and outgoing_drift is not None:
+            recovery = incoming_drift - outgoing_drift
+        gate_off_reason = None
+        if gated_fired and n_try > 1:
+            already_on = True
+            if gate_sticky and (gate_sick_min > 0 or gate_recovery > 0):
+                keep, gate_off_reason = search_while_sick_keep_on(
+                    incoming_drift, outgoing_drift,
+                    gate_sick_min, gate_recovery,
+                )
+                already_on = keep
         rec = {
             "chunk": ci,
             "chosen_cand": int(chosen),
@@ -412,10 +446,15 @@ def generate_chunked(
             "incoming_devs": _json_signals(incoming_devs),
             "outgoing_drift": _json_float(outgoing_drift),
             "outgoing_devs": _json_signals(outgoing_devs),
+            "recovery": _json_float(recovery),
             "gated_fired": bool(gated_fired),
             "gate_reason": gate_reason,
             "gate_sticky": bool(gate_sticky),
+            "gate_sick_min": gate_sick_min,
+            "gate_recovery": gate_recovery,
             "already_on_before": bool(already_on_before),
+            "already_on_after": bool(already_on),
+            "gate_off_reason": gate_off_reason,
             "cand0_score": _json_float(cand0_score),
             "chosen_score": _json_float(best["score"]),
             "chosen_minus_cand0": _json_float(chosen_minus_cand0),
@@ -434,16 +473,15 @@ def generate_chunked(
             ],
         }
         chunk_logs.append(rec)
-        if gated_fired and n_try > 1:
-            already_on = True
         if incoming_drift is not None:
             incoming_prev = incoming_drift
         gate_s = ""
         if incoming_drift is not None:
             dlt = f" Δ={incoming_delta:+.3f}" if incoming_delta is not None else ""
+            off = f" off={gate_off_reason}" if gate_off_reason else ""
             gate_s = (
                 f" incoming={incoming_drift:.3f}{dlt} "
-                f"fire={int(gated_fired)} reason={gate_reason}"
+                f"fire={int(gated_fired)} reason={gate_reason}{off}"
             )
         print(
             f"  chunk {ci}: pick={chosen}/{n_try} score={best['score']:.4f} "
@@ -497,6 +535,12 @@ def main() -> int:
                     help="gated_bon: trend only if incoming_prev > this (keeps 06 skipped)")
     ap.add_argument("--gate-sticky", action="store_true",
                     help="once any alarm fires on a video, keep searching later pieces")
+    ap.add_argument("--gate-sick-min", type=float, default=0.0,
+                    help="with --gate-sticky: turn memory off if last-second "
+                         "outgoing < this (0=disabled; search-while-sick uses 1.0)")
+    ap.add_argument("--gate-recovery", type=float, default=0.0,
+                    help="with --gate-sticky: turn memory off if incoming-outgoing "
+                         "> this (0=disabled; search-while-sick uses 0.5)")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     args = ap.parse_args()
@@ -533,7 +577,9 @@ def main() -> int:
         f"search_from={args.search_from_chunk} "
         f"gate_late={args.gate_threshold} gate_ch1={args.gate_ch1_threshold} "
         f"gate_delta={args.gate_delta} gate_delta_prev_min={args.gate_delta_prev_min} "
-        f"gate_sticky={int(args.gate_sticky)} n_items={len(items)}"
+        f"gate_sticky={int(args.gate_sticky)} "
+        f"gate_sick_min={args.gate_sick_min} gate_recovery={args.gate_recovery} "
+        f"n_items={len(items)}"
     )
     print(
         f"KV current_start uses pipeline.frame_seq_length "
@@ -585,6 +631,7 @@ def main() -> int:
                     args.seam_weight, args.gate_threshold,
                     args.gate_ch1_threshold, args.gate_delta,
                     args.gate_delta_prev_min, args.gate_sticky,
+                    args.gate_sick_min, args.gate_recovery,
                 )
             write_mp4(mp4, video, fps=FPS)
             n_div = sum(
@@ -615,6 +662,8 @@ def main() -> int:
                 "gate_delta": args.gate_delta,
                 "gate_delta_prev_min": args.gate_delta_prev_min,
                 "gate_sticky": bool(args.gate_sticky),
+                "gate_sick_min": args.gate_sick_min,
+                "gate_recovery": args.gate_recovery,
                 "n_divergent_chunks": n_div,
                 "n_gated_fired": n_fire,
                 "gate_reason_counts": reason_counts,
@@ -688,6 +737,8 @@ def main() -> int:
         "gate_delta": args.gate_delta,
         "gate_delta_prev_min": args.gate_delta_prev_min,
         "gate_sticky": bool(args.gate_sticky),
+        "gate_sick_min": args.gate_sick_min,
+        "gate_recovery": args.gate_recovery,
         "seed": args.seed,
         "shard_id": args.shard_id,
         "num_shards": args.num_shards,

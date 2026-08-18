@@ -1954,3 +1954,21 @@ Useful cue: incoming after the search. Next lever is “search while
 sick” (turn off on recovery / low incoming), not another forever
 stay-on and not test-time training. Pick-score-on-the-tail is the
 backup if the off-switch is not enough.
+
+---
+
+## 2026-08-18 — Search-while-sick implemented; 32v gated-only ready
+tags: [wan, gated, sick, 32v]
+refs: run_i2v_chunked.py --gate-sticky --gate-sick-min 1.0
+--gate-recovery 0.5; submit_i2v_bon32_sick.sh;
+paper_tables/2026-08-18_wan_i2v_sick_gate_spec.md
+
+Same hybrid alarms + stay-on, but memory turns off if the last
+search recovered incoming by more than 0.5 or outgoing last-second
+is below 1.0. Knobs default to 0 so forever-sticky stays
+reproducible. Gated-only series i2v_bon_32v_sick; pair against
+hybrid do-nothing / always-search. Pass/fail: 11/16 near hybrid,
+03/24 near always-search, 06/07 still skipped early, 30 back to
+1.44, wall between 173 and 256 s. Trace caveat: 11 may search
+piece 4 after a late alarm (prefix still hybrid through piece 2);
+03 may turn off after piece 3 recovery. No test-time training.
