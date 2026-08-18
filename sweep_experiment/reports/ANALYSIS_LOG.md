@@ -1878,3 +1878,24 @@ always-on and 06/07 stay skipped early, gated−always last-chunk mean
 flips from +0.15 to about −0.2. Falsifiers: prefix diverges without
 endpoint gain; trend fires 07 at a later chunk; local score still
 fails to predict last-chunk. No TTC.
+
+---
+
+## 2026-08-17 — 32v hybrid: tie + 33% cheaper; do not cite means
+tags: [wan, bon, gated, hybrid, 32v]
+refs: paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md;
+wan_experiment/results/i2v_bon_32v_hybrid/
+
+n_ok=32/32. Video 26 (spiral galaxy) last-chunk 85.63 for always and
+gated vs NOTTA 5.06 — raw means are unusable. Cite medians: NOTTA
+3.68 / always 2.97 / gated 3.04. Exclude-26 means: 3.92 / 3.08 /
+3.04. gated−always −0.041 mean, 0 median, 9/10/13, 19/32
+better-or-tie. Wall 92 / 258 / 173 s (gated 33% cheaper). Fired
+66/128. First-16 NOTTA/always match `i2v_bon_16v` (4.429 / 3.226) —
+pairing held. Hybrid flipped that slice's gated−always from +0.152
+to −0.118 (drop 03 → −0.210). 05/02/09 matched always; 12 almost;
+06/07/28/30 saved from always-hurt. Leftover misses: 17 never-fire,
+03/24 ch1-then-skip, 26 search catastrophe (gate followed). Locked
+read: still not a quality win vs always-on. Efficiency paper. Do not
+drop gating. Next lever is stay-on hysteresis, not another T sweep.
+No TTC.

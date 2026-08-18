@@ -208,16 +208,18 @@ Per-method `merged_summary.json` lives at:
   quality win (mean +0.152, 6/16 better-or-tie); median slightly
   favors gated; always-on hurt 2/16. Honest line: efficiency
   controller that keeps most of the search gain. No TTC yet.
-- **Wan hybrid gate (2026-08-17):** fire if (chunk==1 and incoming>0.8)
-  or incoming>2.0 or (Δincoming>0.5 and prev>0.5). Per-chunk traces
-  in `gate_trace.jsonl`. 32v three-way ready:
-  `submit_i2v_bon32_hybrid.sh`. No TTC.
+- **Wan hybrid 32v (2026-08-17):** cite medians, not means (video 26
+  = 85.6). Last-chunk median NOTTA 3.68 / always 2.97 / gated 3.04.
+  gated−always −0.041 / 0, 19/32 better-or-tie, **33% cheaper**.
+  First-16 hybrid flipped T=2.0 +0.15 → −0.12. Still efficiency,
+  not a quality win. Table:
+  `paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md`. No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-17 16:33): none until the
-  user pulls and submits `i2v_bon_32v_hybrid`.
+- **In-flight cluster jobs** (as of 2026-08-17 23:10): none.
+  `i2v_bon_32v_hybrid` DONE.
 
 ## 4. Daily-log template
 

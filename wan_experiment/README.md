@@ -160,6 +160,12 @@ python wan_experiment/scripts/analyze_i2v_bon.py \
     --series-dir wan_experiment/results/i2v_bon_32v_hybrid
 ```
 
+**DONE 2026-08-17.** Cite medians (video 26 = 85.6): NOTTA 3.68 /
+always 2.97 / gated 3.04. gated−always −0.041 / 0, 19/32
+better-or-tie, 33% cheaper. First-16 pairing held; hybrid flipped
+T=2.0 +0.15 → −0.12. Still efficiency, not a quality win. Table:
+`sweep_experiment/reports/paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md`.
+
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn
