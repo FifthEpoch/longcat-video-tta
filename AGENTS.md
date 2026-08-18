@@ -217,8 +217,11 @@ Per-method `merged_summary.json` lives at:
 - **Wan sticky 32v (2026-08-18):** 03/24 caught (exact ties with
   always-search). 21/32 exact ties overall. Wall 256 vs 258 s —
   spent the hybrid 33% saving. Erased hybrid wins on 11 and 16.
-  Not a quality win. Hybrid remains the efficiency method. Table:
-  `paper_tables/2026-08-18_wan_i2v_bon32_sticky.md`. No TTC.
+  Not a quality win. Hybrid remains the efficiency method. 11/16
+  diagnosis: hybrid slept after recovery; stay-on rebuilt
+  always-search while the pick-score lied about the tail. Next
+  lever: search-while-sick (turn off on recovery). Table:
+  `paper_tables/2026-08-18_wan_i2v_11_16_diagnosis.md`. No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard

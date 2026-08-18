@@ -1935,3 +1935,22 @@ worse. 17 still never wakes. Locked read: stay-on works as designed
 and is not a quality win. It is delayed-start always-search. Cite
 hybrid if the claim is cheaper-at-same-typical-quality. Do not stack
 another stay-on. No test-time training.
+
+---
+
+## 2026-08-18 — Videos 11/16: recovery skip vs lying pick-score
+tags: [wan, gated, sticky, verifier, diagnosis]
+refs: paper_tables/2026-08-18_wan_i2v_11_16_diagnosis.md
+
+Hybrid unique wins (11: 2.16, 16: 2.66) came from sleeping after a
+good piece-1 search. 11 recovered 2.38→1.11; 16 stayed healthy at
+0.88. Stay-on forbade those skips, rebuilt always-search’s path, and
+the pick-score kept reporting wins (11 piece 4 −4.11, 16 piece 4
+−3.64) while last-second outgoing exploded (4.91, 7.45). Same shape
+on 01 and 30. Opposite of 03/24, where incoming stayed high/flat and
+later search was the win. Large piece-1 pick-score is the wrong stay-on
+cue (11 had −1.10 and should sleep; 03 had −0.01 and should continue).
+Useful cue: incoming after the search. Next lever is “search while
+sick” (turn off on recovery / low incoming), not another forever
+stay-on and not test-time training. Pick-score-on-the-tail is the
+backup if the off-switch is not enough.
