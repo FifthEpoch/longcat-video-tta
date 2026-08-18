@@ -2012,3 +2012,15 @@ expected sign if the verifier is a useful proxy is negative.
 i2v_subject / i2v_background need vbench2_beta_i2v and are not in the
 first job. A Panda-prefix Wan series is a later optional pixel audit,
 not a rescoring of the current 32. No test-time training.
+
+---
+
+## 2026-08-18 — Two in-flight jobs: sick running, VBench queued
+tags: [wan, jobs, sick, vbench]
+refs: job 15959146; job 15959601;
+paper_tables/2026-08-18_wan_in_flight_jobs.md
+
+User pulled c6eef97 and submitted submit_i2v_vbench_hybrid32.sh.
+squeue 11:47: 15959146 R 14:15 gh107 (i2v_bon_32v_sick);
+15959601 PD Priority (hybrid VBench last5+full). Check-when-done
+commands live in the in-flight table. No test-time training.
