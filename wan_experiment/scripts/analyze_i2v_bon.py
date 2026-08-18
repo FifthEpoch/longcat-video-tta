@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Paired last-chunk + per-step gate analysis for Wan I2V chunked BoN.
+"""Paired last-chunk + per-step gate analysis for Wan I2V chunked search.
 
     python wan_experiment/scripts/analyze_i2v_bon.py \
         --series-dir wan_experiment/results/i2v_bon_32v_hybrid
+
+    # Sticky gated-search vs hybrid do-nothing / always-search:
+    python wan_experiment/scripts/analyze_i2v_bon.py \
+        --series-dir wan_experiment/results/i2v_bon_32v_sticky \
+        --baseline-dir wan_experiment/results/i2v_bon_32v_hybrid
 """
 from __future__ import annotations
 
@@ -54,10 +59,16 @@ def _fmt(x, nd=3):
     return f"{x:.{nd}f}"
 
 
-def analyze(series_dir: Path, horizon_s: float) -> dict:
+def analyze(
+    series_dir: Path,
+    horizon_s: float,
+    baseline_dir: Path | None = None,
+) -> dict:
+    notta_dir = baseline_dir or series_dir
+    always_dir = baseline_dir or series_dir
     methods = {
-        "notta": _load_rows(series_dir, "notta", horizon_s),
-        "always_bon": _load_rows(series_dir, "always_bon", horizon_s),
+        "notta": _load_rows(notta_dir, "notta", horizon_s),
+        "always_bon": _load_rows(always_dir, "always_bon", horizon_s),
         "gated_bon": _load_rows(series_dir, "gated_bon", horizon_s),
     }
     by = {m: {_key(r): r for r in rows} for m, rows in methods.items()}
@@ -223,11 +234,17 @@ def _md_table(report: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--series-dir", required=True)
+    ap.add_argument(
+        "--baseline-dir", default="",
+        help="if set, load do-nothing and always-search from this series "
+             "(use for sticky gated vs i2v_bon_32v_hybrid)",
+    )
     ap.add_argument("--horizon-s", type=float, default=30.0)
     ap.add_argument("--out-md", default="")
     args = ap.parse_args()
     series_dir = Path(args.series_dir).resolve()
-    report = analyze(series_dir, args.horizon_s)
+    baseline = Path(args.baseline_dir).resolve() if args.baseline_dir else None
+    report = analyze(series_dir, args.horizon_s, baseline_dir=baseline)
     slim = {k: report[k] for k in report if k != "paired"}
     print(json.dumps(slim, indent=2))
     print()

@@ -15,7 +15,8 @@ searches chunks 1..N-1. Do not add TTC until this writes real video.
         --method always_bon --search-k 4 --horizon-s 30 --n 2 --chunk-latents 24
     python wan_experiment/scripts/run_i2v_chunked.py \
         --method gated_bon --search-k 4 --gate-threshold 2.0 \
-        --gate-ch1-threshold 0.8 --gate-delta 0.5 --horizon-s 30 --n 32
+        --gate-ch1-threshold 0.8 --gate-delta 0.5 --gate-sticky \
+        --horizon-s 30 --n 32
 """
 from __future__ import annotations
 
@@ -281,6 +282,7 @@ def generate_chunked(
     gate_ch1_threshold: float = 0.8,
     gate_delta: float = 0.5,
     gate_delta_prev_min: float = 0.5,
+    gate_sticky: bool = False,
 ):
     import torch
 
@@ -298,6 +300,7 @@ def generate_chunked(
     ref = None
     committed_pixels = None
     incoming_prev = None
+    already_on = False
     chunk_logs = []
 
     for ci in range(n_chunks):
@@ -307,6 +310,7 @@ def generate_chunked(
         incoming_delta = None
         gated_fired = False
         gate_reason = "forced_prefix"
+        already_on_before = already_on
 
         if ref is not None and committed_pixels is not None:
             incoming_signals = _incoming_window(committed_pixels)
@@ -323,13 +327,19 @@ def generate_chunked(
             gated_fired = True
             gate_reason = "always"
         elif method == "gated_bon" and ci >= search_from_chunk and incoming_drift is not None:
-            gated_fired, gate_reason = hybrid_gate_decision(
+            alarm_fired, alarm_reason = hybrid_gate_decision(
                 ci, incoming_drift, incoming_prev, search_from_chunk,
                 t_late=gate_threshold,
                 t_ch1=gate_ch1_threshold,
                 t_delta=gate_delta,
                 t_delta_prev_min=gate_delta_prev_min,
             )
+            if gate_sticky and already_on:
+                gated_fired = True
+                gate_reason = alarm_reason if alarm_fired else "already_on"
+            else:
+                gated_fired = alarm_fired
+                gate_reason = alarm_reason
             n_try = search_k if gated_fired else 1
         elif method == "notta":
             n_try = 1
@@ -404,6 +414,8 @@ def generate_chunked(
             "outgoing_devs": _json_signals(outgoing_devs),
             "gated_fired": bool(gated_fired),
             "gate_reason": gate_reason,
+            "gate_sticky": bool(gate_sticky),
+            "already_on_before": bool(already_on_before),
             "cand0_score": _json_float(cand0_score),
             "chosen_score": _json_float(best["score"]),
             "chosen_minus_cand0": _json_float(chosen_minus_cand0),
@@ -422,6 +434,8 @@ def generate_chunked(
             ],
         }
         chunk_logs.append(rec)
+        if gated_fired and n_try > 1:
+            already_on = True
         if incoming_drift is not None:
             incoming_prev = incoming_drift
         gate_s = ""
@@ -481,6 +495,8 @@ def main() -> int:
                     help="gated_bon: fire if incoming-incoming_prev > this")
     ap.add_argument("--gate-delta-prev-min", type=float, default=0.5,
                     help="gated_bon: trend only if incoming_prev > this (keeps 06 skipped)")
+    ap.add_argument("--gate-sticky", action="store_true",
+                    help="once any alarm fires on a video, keep searching later pieces")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     args = ap.parse_args()
@@ -517,7 +533,7 @@ def main() -> int:
         f"search_from={args.search_from_chunk} "
         f"gate_late={args.gate_threshold} gate_ch1={args.gate_ch1_threshold} "
         f"gate_delta={args.gate_delta} gate_delta_prev_min={args.gate_delta_prev_min} "
-        f"n_items={len(items)}"
+        f"gate_sticky={int(args.gate_sticky)} n_items={len(items)}"
     )
     print(
         f"KV current_start uses pipeline.frame_seq_length "
@@ -568,7 +584,7 @@ def main() -> int:
                     args.method, args.search_k, args.search_from_chunk,
                     args.seam_weight, args.gate_threshold,
                     args.gate_ch1_threshold, args.gate_delta,
-                    args.gate_delta_prev_min,
+                    args.gate_delta_prev_min, args.gate_sticky,
                 )
             write_mp4(mp4, video, fps=FPS)
             n_div = sum(
@@ -598,6 +614,7 @@ def main() -> int:
                 "gate_ch1_threshold": args.gate_ch1_threshold,
                 "gate_delta": args.gate_delta,
                 "gate_delta_prev_min": args.gate_delta_prev_min,
+                "gate_sticky": bool(args.gate_sticky),
                 "n_divergent_chunks": n_div,
                 "n_gated_fired": n_fire,
                 "gate_reason_counts": reason_counts,
@@ -670,6 +687,7 @@ def main() -> int:
         "gate_ch1_threshold": args.gate_ch1_threshold,
         "gate_delta": args.gate_delta,
         "gate_delta_prev_min": args.gate_delta_prev_min,
+        "gate_sticky": bool(args.gate_sticky),
         "seed": args.seed,
         "shard_id": args.shard_id,
         "num_shards": args.num_shards,

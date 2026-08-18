@@ -37,6 +37,7 @@ GATE_THRESHOLD="${GATE_THRESHOLD:-2.0}"
 GATE_CH1_THRESHOLD="${GATE_CH1_THRESHOLD:-0.8}"
 GATE_DELTA="${GATE_DELTA:-0.5}"
 GATE_DELTA_PREV_MIN="${GATE_DELTA_PREV_MIN:-0.5}"
+GATE_STICKY="${GATE_STICKY:-0}"
 CHUNK_LATENTS="${CHUNK_LATENTS:-24}"
 SERIES="${SERIES:-i2v_chunked_smoke}"
 SHARD_ID="${SHARD_ID:-0}"
@@ -57,7 +58,7 @@ echo "Wan I2V chunked ${METHOD}"
 echo "  job     : ${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
 echo "  horizon : ${HORIZON_S}s  n=${N_VIDEOS}  seed=${SEED}  k=${SEARCH_K}"
 echo "  chunk   : ${CHUNK_LATENTS} latents  search_from=${SEARCH_FROM}"
-echo "  gate    : late=${GATE_THRESHOLD} ch1=${GATE_CH1_THRESHOLD} delta=${GATE_DELTA} prev_min=${GATE_DELTA_PREV_MIN}"
+echo "  gate    : late=${GATE_THRESHOLD} ch1=${GATE_CH1_THRESHOLD} delta=${GATE_DELTA} prev_min=${GATE_DELTA_PREV_MIN} sticky=${GATE_STICKY}"
 echo "  series  : ${SERIES}  shard=${SHARD_ID}/${NUM_SHARDS}"
 echo "  out     : ${OUT_DIR}"
 echo "=============================================================================="
@@ -78,6 +79,10 @@ PYTHON="${CONDA_ENV}/bin/python"
 }
 
 cd "${PROJECT_ROOT}"
+EXTRA_ARGS=()
+if [[ "${GATE_STICKY}" == "1" ]]; then
+    EXTRA_ARGS+=(--gate-sticky)
+fi
 "${PYTHON}" wan_experiment/scripts/run_i2v_chunked.py \
     --sf-root "${SF_ROOT}" \
     --wan-dir "${WAN_DIR}" \
@@ -96,7 +101,8 @@ cd "${PROJECT_ROOT}"
     --gate-delta "${GATE_DELTA}" \
     --gate-delta-prev-min "${GATE_DELTA_PREV_MIN}" \
     --shard-id "${SHARD_ID}" \
-    --num-shards "${NUM_SHARDS}"
+    --num-shards "${NUM_SHARDS}" \
+    "${EXTRA_ARGS[@]}"
 
 echo "=============================================================================="
 echo "Wrote ${OUT_DIR}/summary.json  $(date)"

@@ -1899,3 +1899,19 @@ to −0.118 (drop 03 → −0.210). 05/02/09 matched always; 12 almost;
 read: still not a quality win vs always-on. Efficiency paper. Do not
 drop gating. Next lever is stay-on hysteresis, not another T sweep.
 No TTC.
+
+---
+
+## 2026-08-18 — Sticky gate: once fired, keep searching
+tags: [wan, gated, sticky, 32v]
+refs: run_i2v_chunked.py --gate-sticky; submit_i2v_bon32_sticky.sh;
+paper_tables/2026-08-18_wan_i2v_sticky_gate_spec.md
+
+Same three hybrid alarms. New flag --gate-sticky: after the first
+search on a video, every later piece searches too (reason already_on
+if no fresh alarm). Default off, so the hybrid 32v series stays
+reproducible. Submit gated-only into i2v_bon_32v_sticky; pair against
+hybrid do-nothing and always-search. Pass/fail: 03 and 24 should move
+toward always-search; 06/07/28/30 must stay skipped on piece 1; watch
+for a second 26-style explosion. Does not fix 17 (never wakes). No
+test-time training.

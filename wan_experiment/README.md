@@ -166,6 +166,25 @@ better-or-tie, 33% cheaper. First-16 pairing held; hybrid flipped
 T=2.0 +0.15 → −0.12. Still efficiency, not a quality win. Table:
 `sweep_experiment/reports/paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md`.
 
+## Next — sticky gated-search (same 32 videos)
+
+Once any alarm fires, later pieces keep searching. Same three alarms
+as the hybrid run. Only gated-search is re-run; compare against the
+hybrid do-nothing and always-search jobs. No test-time training.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_bon32_sticky.sh
+```
+
+After it finishes:
+
+```bash
+python wan_experiment/scripts/analyze_i2v_bon.py \
+    --series-dir wan_experiment/results/i2v_bon_32v_sticky \
+    --baseline-dir wan_experiment/results/i2v_bon_32v_hybrid
+```
+
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn
