@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick **15959146 DONE** (checklist pass, median 2.764). VBench 15959601 incomplete (notta only). Resubmit `submit_i2v_vbench_hybrid32.sh`. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick **15959146 DONE**. VBench retry **15984561** submitted. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -237,10 +237,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 18:37): none until
-  VBench is resubmitted. 15959146 DONE. 15959601 incomplete (notta
-  only; comma `--export` bug). Resubmit after pull:
-  `bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh`.
+- **In-flight cluster jobs** (as of 2026-08-18 18:45):
+  **15984561** hybrid VBench retry (notta skip; always + gated).
+  15959146 DONE. 15959601 incomplete (notta only). Cheat sheet:
+  `paper_tables/2026-08-18_wan_in_flight_jobs.md`.
 
 ## 4. Daily-log template
 

@@ -2064,3 +2064,13 @@ median 0.0 is a freeze hint, not a three-way result.
 
 Fix: SERIES_DIR + space-separated METHODS, no commas. Rerun skips
 existing notta files. Resubmit after cluster pull. No PSNR. No TTC.
+
+---
+
+## 2026-08-18 — VBench retry submitted job 15984561
+tags: [wan, vbench, jobs]
+refs: job 15984561; paper_tables/2026-08-18_wan_in_flight_jobs.md
+
+User pulled 4116c3a and resubmitted. Analyze run immediately after
+submit still failed (only notta joined.json). Expected. Wait for
+always_bon and gated_bon last5+full. No TTC.
