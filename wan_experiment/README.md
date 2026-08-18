@@ -210,6 +210,27 @@ python wan_experiment/scripts/analyze_i2v_bon.py \
     --baseline-dir wan_experiment/results/i2v_bon_32v_hybrid
 ```
 
+## Next — official VBench on the hybrid 32 mp4s (paper-blocking)
+
+The controller stays GT-free. The finished videos do not. The
+handcrafted last-piece score is not a paper quality claim (11/16
+already showed it can lie). These 32 stills have no 30 s GT, so no
+PSNR. Score do-nothing / always-search / gated-search with VBench
+quality dims (`last5` then `full`) in `vbench-backfill`.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
+```
+
+```bash
+python wan_experiment/scripts/analyze_i2v_vbench.py \
+    --series-dir wan_experiment/results/i2v_bon_32v_hybrid \
+    --clip last5
+```
+
+Spec: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_official_eval_spec.md`.
+
 Runner: `wan_experiment/scripts/run_i2v_continuation.py`
 (official CausalInferencePipeline I2V path; `independent_first_frame=true`;
 KV cache enlarged past the 21-frame default; PyTorch SDPA if flash-attn

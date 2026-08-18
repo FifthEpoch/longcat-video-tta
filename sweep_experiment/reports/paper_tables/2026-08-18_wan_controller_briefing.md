@@ -223,8 +223,9 @@ searching them early.
 
 ## 7. What we are not doing
 
-- We do not compare to a real 30-second video (no PSNR/FVD in this
-  loop). The verifier *is* the quality number for controller decisions.
+- The **controller loop** does not look at a real 30-second video.
+  Incoming / score / outgoing stay GT-free. That is not the same as
+  skipping official metrics on the finished mp4s — see §9.
 - We do not train the model at test time. 11 and 16 showed that
   “intervene more” can destroy a good prefix.
 - We do not slide one cutoff on every piece of every video. 07 at 0.68
@@ -261,3 +262,23 @@ Results tables:
 `2026-08-17_wan_i2v_bon32_hybrid.md`,
 `2026-08-18_wan_i2v_bon32_sticky.md`,
 `2026-08-17_wan_i2v_notta16_drift.md`.
+
+---
+
+## 9. Outcome scorecard (added same day)
+
+The hybrid / sticky / sick numbers above are **handcrafted last-piece
+composites**. They are allowed inside the controller. They are **not**
+enough to claim the videos got better.
+
+Official outcome eval (no new generation): VBench quality dims on the
+hybrid 32 mp4s, `last5` then `full`. Spec:
+`2026-08-18_wan_i2v_official_eval_spec.md`.
+
+```bash
+bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
+```
+
+These 32 stills have no paired 30 s GT. Do not invent PSNR. If
+Spearman(last-chunk, VBench) is near zero, the verifier is not a
+quality proxy and the efficiency story is unverified.

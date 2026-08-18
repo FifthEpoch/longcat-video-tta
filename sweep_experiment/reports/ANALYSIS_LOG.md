@@ -1985,3 +1985,30 @@ submit_i2v_bon32_sick.sh. squeue: 15959146 h200_cour PD Priority.
 Briefing written: setup, four GT-free signals + seam, incoming /
 score / outgoing / recovery equations, hybrid vs stay-on headline
 medians, in-flight checks. Cite medians. No test-time training.
+
+---
+
+## 2026-08-18 — Outcome eval must be official VBench, not the verifier
+tags: [wan, methodology, vbench, eval, controller]
+refs: paper_tables/2026-08-18_wan_i2v_official_eval_spec.md;
+wan_experiment/scripts/score_i2v_vbench.py;
+wan_experiment/scripts/analyze_i2v_vbench.py;
+wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
+
+User lock: the controller still may not peek at ground truth when it
+fires or picks. The finished videos must still be scored with common
+metrics, or we cannot tell if do-nothing / always-search / gated-search
+are improving, and we cannot tell if the handcrafted composite even
+detects drift that helps performance. 11/16 already showed the
+pick-score can lie.
+
+These 32 clips are VBench-I2V stills — no paired 30 s GT, so no
+PSNR/SSIM/LPIPS/FVD here. Official scorecard is VBench quality dims
+(same family as Panda 1000v) on the existing hybrid mp4s. last5 first
+(outcome window), then full 30 s (diluted by shared piece 0). Analyzer
+prints the three-way table plus Spearman(last-chunk, each VBench dim);
+expected sign if the verifier is a useful proxy is negative.
+
+i2v_subject / i2v_background need vbench2_beta_i2v and are not in the
+first job. A Panda-prefix Wan series is a later optional pixel audit,
+not a rescoring of the current 32. No test-time training.

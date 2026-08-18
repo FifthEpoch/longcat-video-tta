@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **32v hybrid DONE** (efficiency). Sticky DONE (became always-search). Search-while-sick next: `submit_i2v_bon32_sick.sh`. Official `inference()` cannot take a growing I2V prefix. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | **32v hybrid DONE** (handcrafted-score efficiency only). Official VBench next: `submit_i2v_vbench_hybrid32.sh`. Sick job 15959146 in flight. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-17.
+**Date:** Updated 2026-08-18.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD,
@@ -211,8 +211,8 @@ Per-method `merged_summary.json` lives at:
 - **Wan hybrid 32v (2026-08-17):** cite medians, not means (video 26
   = 85.6). Last-chunk median NOTTA 3.68 / always 2.97 / gated 3.04.
   gated−always −0.041 / 0, 19/32 better-or-tie, **33% cheaper**.
-  First-16 hybrid flipped T=2.0 +0.15 → −0.12. Still efficiency,
-  not a quality win. Table:
+  First-16 hybrid flipped T=2.0 +0.15 → −0.12. Efficiency on the
+  **handcrafted score only** — official VBench not scored yet. Table:
   `paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md`.
 - **Wan sticky 32v (2026-08-18):** 03/24 caught (exact ties with
   always-search). 21/32 exact ties overall. Wall 256 vs 258 s —
@@ -226,12 +226,19 @@ Per-method `merged_summary.json` lives at:
   `--gate-sick-min 1.0` / `--gate-recovery 0.5`. Job **15959146**
   submitted (Priority). Briefing:
   `paper_tables/2026-08-18_wan_controller_briefing.md`. No TTC.
+- **Official outcome eval (2026-08-18, paper-blocking):** controller
+  stays GT-free at decision time; finished mp4s must be scored with
+  VBench quality dims. No PSNR on these 32 stills (no 30 s GT).
+  Submit `wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh` after
+  cluster pull. Spec:
+  `paper_tables/2026-08-18_wan_i2v_official_eval_spec.md`.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 11:24): **15959146**
-  `i2v_bon_32v_sick` (Priority).
+- **In-flight cluster jobs** (as of 2026-08-18 11:39): **15959146**
+  `i2v_bon_32v_sick` (Priority). Official VBench hybrid job not
+  submitted until cluster `git pull` + `submit_i2v_vbench_hybrid32.sh`.
 
 ## 4. Daily-log template
 
