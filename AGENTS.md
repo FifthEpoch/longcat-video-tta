@@ -223,14 +223,15 @@ Per-method `merged_summary.json` lives at:
   lever: search-while-sick (turn off on recovery). Table:
   `paper_tables/2026-08-18_wan_i2v_11_16_diagnosis.md`.
 - **Wan search-while-sick (2026-08-18):** `--gate-sticky` plus
-  `--gate-sick-min 1.0` / `--gate-recovery 0.5`. Gated-only 32v
-  ready: `submit_i2v_bon32_sick.sh`. No TTC.
+  `--gate-sick-min 1.0` / `--gate-recovery 0.5`. Job **15959146**
+  submitted (Priority). Briefing:
+  `paper_tables/2026-08-18_wan_controller_briefing.md`. No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 11:18): none until the
-  user pulls and submits `i2v_bon_32v_sick`.
+- **In-flight cluster jobs** (as of 2026-08-18 11:24): **15959146**
+  `i2v_bon_32v_sick` (Priority).
 
 ## 4. Daily-log template
 

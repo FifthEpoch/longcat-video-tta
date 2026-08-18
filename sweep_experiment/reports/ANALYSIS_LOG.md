@@ -1972,3 +1972,16 @@ hybrid do-nothing / always-search. Pass/fail: 11/16 near hybrid,
 1.44, wall between 173 and 256 s. Trace caveat: 11 may search
 piece 4 after a late alarm (prefix still hybrid through piece 2);
 03 may turn off after piece 3 recovery. No test-time training.
+
+---
+
+## 2026-08-18 — Search-while-sick submitted; controller briefing
+tags: [wan, gated, sick, briefing]
+refs: job 15959146;
+paper_tables/2026-08-18_wan_controller_briefing.md
+
+User pulled d5b0804..52d1718 and submitted
+submit_i2v_bon32_sick.sh. squeue: 15959146 h200_cour PD Priority.
+Briefing written: setup, four GT-free signals + seam, incoming /
+score / outgoing / recovery equations, hybrid vs stay-on headline
+medians, in-flight checks. Cite medians. No test-time training.
