@@ -211,6 +211,9 @@ Per-method `merged_summary.json` lives at:
   failure-gated CachedSearch; optional `{shift,cfg,sink}` search;
   prefix backtrack. Memo:
   `paper_tables/2026-08-18_wan_nonweight_next.md`.
+- **Week briefing (2026-08-18):** model + dataset switch with citations,
+  plus long-horizon concepts. Setup talk, not the method talk.
+  `paper_tables/2026-08-18_week_switch_briefing.md`.
 - **Wan drift (2026-08-17, N=16):** 5 s median sharp +11% / motion −14%
   (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
   Signature = sharpen + freeze. Table:

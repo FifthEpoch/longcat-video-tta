@@ -2233,3 +2233,21 @@ Try, in order, after the T2V bench exists: (1) failure-gated
 CachedSearch; (2) motion / ImageReward verifier; (3) search
 `{shift, cfg, sink}` not only seed; (4) prefix backtrack if outgoing
 explodes. **No TTC / LoRA-at-test-time.**
+
+---
+
+## 2026-08-18 — Weekly briefing: model / dataset switch + long-horizon concepts
+**Tags:** paper-narrative, methodology, wan
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-08-18_week_switch_briefing.md`
+- `paper_tables/2026-08-15_longhorizon_field_standard.md`
+- canvas `week-switch-briefing.canvas.tsx`
+
+User asked for a presentation of the past week *before* new-method
+experiments: why we switched models, why we switched datasets, and the
+key concepts in long-horizon generation, with citations.
+
+The briefing compresses the 15 August field-standard memo plus the 18
+August protocol stop. It is the setup talk, not the BoN/gating result
+talk. Interactive canvas + dated markdown. No generate job.
