@@ -273,6 +273,8 @@ Per-method `merged_summary.json` lives at:
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
   `paper_tables/2026-08-19_wan_i2v_bon32_vbench_trend.md`
+  All 7 dims in one grid:
+  `paper_tables/2026-08-19_wan_i2v_bon32_vbench_alldims.md`
 - **VBench 16v 5 s vs 30 s + first16/last16 (DONE 16010032):**
   16-frame VBench does **not** copy handpicked sharp/motion. Only
   aesthetic Δrel matches “30 s worse” (−11.5% vs +1.8%).
