@@ -2251,3 +2251,41 @@ key concepts in long-horizon generation, with citations.
 The briefing compresses the 15 August field-standard memo plus the 18
 August protocol stop. It is the setup talk, not the BoN/gating result
 talk. Interactive canvas + dated markdown. No generate job.
+
+---
+
+## 2026-08-18 — T2V was not agreed; V2V continuation is allowed
+**Tags:** decision, methodology, wan, continuation
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-08-18_v2v_continuation_allowed.md`
+- Rebuts 2026-08-18 “comparable verify is T2V 128 MovieGen” as the
+  *only* next experiment
+- Restates 2026-08-15 “stay in continuation / I2V; T2V was not required”
+
+User: we did not agree on text-to-video; for long horizon, is
+video-to-video not okay?
+
+Yes. T2V 128 MovieGen + VBench-Long is the most *copied* 30–60 s table
+(Relax Forcing / SF++ / FreqForcing). It is not a task lock. The 15
+August correction already said the model switch and the T2V default are
+independent knobs. Our claim is exposure bias under **visual**
+re-conditioning. T2V-from-scratch removes the prefix the verifier/gate
+read.
+
+What we stopped on 18 August is **I2V-from-a-still** scale-up, not
+visual continuation. A still has no motion (bad reference; freeze). A
+real video prefix is the DFoT / SEINE / LongCat continuation setting
+and is a valid long-horizon task. CausVid (CVPR 2025) already does
+streaming I2V/V2V on Wan 1.3B (their V2V *table* is DAVIS translation,
+not prefix-continuation). StreamingT2V’s ablation of “condition on last
+frames, AR forever” is exactly V2V-style continuation — and they say it
+stagnates.
+
+Honest: there is no Relax Forcing–sized continuation leaderboard. A 30 s
+V2V-prefix table is a continuation paper, not a T2V MovieGen cell.
+
+**Decision:** T2V is one optional comparison, not required. V2V
+prefix-continuation (real video history → 30 s AR, VBench on the full
+clip) is allowed and is the closer match to the claim. I2V-still
+scale-up stays closed. No job until the user picks. No TTC.

@@ -203,9 +203,15 @@ Per-method `merged_summary.json` lives at:
   N=32, `custom_input`. Length 30 s and Wan 1.3B are fine; task / N /
   suite are not. Stop:
   `paper_tables/2026-08-18_wan_protocol_stop.md`.
-- **Next comparable verify (SPEC READY, not submitted):** T2V 30 s
+- **Task lock (2026-08-18, user correction):** T2V was **not** agreed.
+  I2V-from-still scale-up stays closed. **V2V prefix-continuation is
+  allowed** and is the closer match to the claim (visual history →
+  long AR). T2V 128 MovieGen is only an optional comparison to Relax
+  Forcing–style tables. Note:
+  `paper_tables/2026-08-18_v2v_continuation_allowed.md`.
+- **Optional T2V compare (SPEC READY, not submitted):** T2V 30 s
   (60 s optional), 128 MovieGen + Qwen, VBench-Long, do-nothing |
-  always-BoN | gated-BoN. New runner required. Spec:
+  always-BoN | gated-BoN. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **Next methods after that bench (no weights):** motion verifier +
   failure-gated CachedSearch; optional `{shift,cfg,sink}` search;
