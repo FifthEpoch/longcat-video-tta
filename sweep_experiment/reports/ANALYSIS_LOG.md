@@ -2498,3 +2498,22 @@ this 16v 30 s 0.842.
 5 s full = VBench-I2V-length. 30 s full = score the whole generation
 (our hybrid lock; field long-horizon uses VBench-Long). Windows remain
 diagnostics. No new job. No PSNR. No TTC.
+
+---
+
+## 2026-08-19 — Why dynamic_degree is ~0 throughout
+**Tags:** methodology, wan, vbench
+**Owner:** agent
+**Refs:** VBench `dynamic_degree.py`; job 16009916 / 16010032
+
+User asked why dynamic degree is so low in every window and on both
+full clips.
+
+It is a **per-video 0/1**, then a population fraction. RAFT top-5%
+flow must beat `6.0 * min(H,W)/256` = **11.25 px** on our 480p, on
+enough sampled pairs (~8 fps). Small I2V motion fails. Median 0 =
+majority static. Mean 0.250 at 5 s = 8/32 (or 4/16). Already true in
+the first 5 s — not a 30 s-only freeze by this test. Handpicked
+`|Δframe|` can drop 60% without flipping the bit. VBench paper:
+consistency vs dynamic degree trade off. I2V-from-still on Wan 1.3B
+SF is the low-dynamic side of that trade-off.

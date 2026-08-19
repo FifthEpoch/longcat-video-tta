@@ -54,3 +54,29 @@ VBench-Long (scene-split + slow/fast consistency on the full
 generation) is the field’s answer to (4). We have not run it on these
 I2V-32 clips. The hybrid-32 **full clip** remains the official VBench++
 cite.
+
+## Why `dynamic_degree` is ~0 throughout
+
+Official `vbench/dynamic_degree.py` (what `vbench-backfill` ran):
+
+1. Sample frames at ~8 fps.
+2. RAFT flow between consecutive sampled frames.
+3. Per pair: mean of the **top 5%** flow magnitudes (pixels).
+4. Adaptive threshold: `6.0 * min(H,W) / 256`. Our 480×832 clips →
+   **11.25 px**.
+5. Need `round(4 * n_sampled / 16)` pairs above that threshold
+   (~11 pairs on a 5 s clip, ~60 on a 30 s clip) or the video is **0**.
+6. The number we print is the **fraction of videos that got 1**.
+
+It is not a motion amount. A clip with small I2V animation (hair,
+clouds, a head turn of a few pixels) is static under this bar. Median
+0 means **more than half** of the 16/32 stills never cleared it —
+already at 0–5 s (mean 0.250 = 8/32 or 4/16). The 30 s full-clip mean
+can rise (0.438 = 7/16) because a longer file has more pairs to
+accumulate; the median stays 0.
+
+This matches I2V-from-a-photograph on Wan 1.3B Self-Forcing: the
+student invents modest motion from a still, then freezes. VBench
+itself notes a trade-off: high subject/smoothness/flicker often comes
+with low dynamic degree. Our handpicked `|Δframe|` is a continuous
+signal and can fall 60% without ever flipping the RAFT coin.
