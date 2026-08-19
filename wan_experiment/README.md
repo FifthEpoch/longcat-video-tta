@@ -234,6 +234,23 @@ python wan_experiment/scripts/analyze_i2v_vbench.py \
 tie (cite this vs other papers). last5 exists as a diagnostic.
 Read: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`.
 
+## STOP — do not scale I2V-32 (locked 2026-08-18)
+
+This I2V-from-still protocol is **discovery only**. Recent long-horizon
+papers on Wan 1.3B + Self-Forcing are **T2V**, 128 MovieGen
+(Qwen-refined), **VBench-Long**, 30 s / 60 s.
+
+- Do **not** submit I2V-32 or I2V-200 scale-up.
+- Do **not** add TTC.
+- Do **not** claim N=32 VBench as a standard long-horizon result.
+
+Comparable verify (spec only, **not submitted**):
+`sweep_experiment/reports/paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
+Non-weight next methods:
+`sweep_experiment/reports/paper_tables/2026-08-18_wan_nonweight_next.md`.
+Stop write-up:
+`sweep_experiment/reports/paper_tables/2026-08-18_wan_protocol_stop.md`.
+
 ## Search-while-sick 32v — DONE 2026-08-18 (job 15959146)
 
 Checklist pass on the handcrafted score. Median 2.764 vs always 2.966

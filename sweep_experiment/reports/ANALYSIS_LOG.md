@@ -2145,3 +2145,91 @@ Defaults flipped: score/analyze `--clip full`; sbatch
 `CLIPS=full last5` (full first so preemption still leaves the
 comparable number). Hybrid 32 already has both windows; no rescore.
 No TTC.
+
+---
+
+## 2026-08-18 — STOP: I2V-32 is not the field long-horizon protocol
+**Tags:** decision, methodology, wan, long-horizon
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-08-18_wan_protocol_stop.md`
+- `paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`
+- Self-Forcing / Relax Forcing / FreqForcing / Self-Forcing++ / VBench-Long
+- Rebuts 2026-08-15 “stay in I2V; T2V was not required” *for the
+  standard-bench question only*
+
+User asked to verify freeze / search / gating on a larger
+industry-standard sample, and to halt if our basic setup is not what
+recent similar papers report.
+
+Halt. 5 s is not the long-horizon table — that part was already
+correct — but **I2V-from-still × 32 VBench-I2V images × custom_input
+VBench** is also not the long-horizon table.
+
+What 2025–2026 long-horizon papers actually do on our model family
+(Wan2.1-T2V-1.3B + Self-Forcing-style causal student): **T2V** from
+text, AR continue from own KV cache, **N ≈ 128** MovieGen prompts
+(often Qwen-refined), score with **VBench-Long** on the **full**
+clip, horizon **30 s / 60 s / 120 s**. Self-Forcing uses 5 s as the
+main table and 30 s as an extrapolation-failure demo. Official
+VBench-I2V is a different protocol again (5 s / 81 frames on
+Wan-I2V-14B).
+
+What is fine about our run: 30 s length; Wan 1.3B causal. What is
+not: task (still → animate vs text → self-continue), N (32 vs 128),
+suite (`custom_input` vs VBench-Long / MovieGen).
+
+**Decision:** do **not** submit I2V-32 or I2V-200 scale-up. The 32-clip
+hybrid VBench stays as a discovery scorecard. Do not claim it as a
+standard long-horizon result. No TTC.
+
+---
+
+## 2026-08-18 — Comparable verify is T2V 128 MovieGen + VBench-Long
+**Tags:** decision, methodology, wan, vbench-long
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`
+
+If we later verify freeze + search/gating against the field, copy
+Relax Forcing / FreqForcing / Self-Forcing++:
+
+- Wan 1.3B + Self-Forcing DMD
+- **T2V** (not I2V-from-still)
+- First 128 MovieGen prompts, Qwen-refined
+  (`prompts/MovieGenVideoBench_extended.txt` on the Self-Forcing clone)
+- 30 s required; 60 s optional second table
+- Methods: do-nothing | always-BoN k=4 | gated-BoN
+- Official score: **VBench-Long on the full clip**
+- Series name: `t2v_bon_128v_vbenchlong`
+
+This is a **new generate series**, not a rescore of the 32 stills.
+`run_i2v_chunked.py` is I2V-only; the next agent must write a T2V
+runner. **SPEC READY. Not submitted.** No job until explicitly
+launched. No TTC.
+
+---
+
+## 2026-08-18 — Non-weight next methods (after a standard bench)
+**Tags:** decision, methodology, wan, search, no-ttc
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-18_wan_nonweight_next.md`
+
+Brainstorm locked. Do not retune the I2V-32 sharpness-deviation gate
+and call that a paper quality win. Do this on T2V 128 / VBench-Long.
+
+Closest field language: Early Failure Detection (intervene only when
+failure is predicted); CachedSearch (cheap explore, recommit winner);
+BAG/NaviCache (gate NFEs); LatSearch (score partial latents); Temporal
+Backtracking Search (rewind prefix). StreamingT2V: long AR stagnates.
+History Guidance: vanilla history-CFG kills dynamics.
+
+What our I2V-32 run forbids us to forget: composite anti-aligned with
+IQ; `dynamic_degree` is 0/1 and seed-BoN barely leaves the freeze
+attractor; pick-score can lie; first-second-after-a-still is a bad
+motion target. Changing the seed does not change a collapsed
+trajectory.
+
+Try, in order, after the T2V bench exists: (1) failure-gated
+CachedSearch; (2) motion / ImageReward verifier; (3) search
+`{shift, cfg, sink}` not only seed; (4) prefix backtrack if outgoing
+explodes. **No TTC / LoRA-at-test-time.**

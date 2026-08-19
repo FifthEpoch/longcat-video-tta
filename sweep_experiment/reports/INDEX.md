@@ -53,12 +53,13 @@ here is a GATING sample.
 
 ---
 
-## Wan 1.3B I2V continuation (2026-08 — current stack)
+## Wan 1.3B I2V continuation (2026-08 — discovery only; do not scale)
 
-LongCat 13.6B stays as the saturated-large-model audit. Paper methods move
-to Wan2.1-T2V-1.3B + Self-Forcing causal DMD, **I2V continuation** (not
-T2V-from-scratch). Required comparison once the verifier is ported:
-NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
+LongCat 13.6B stays as the saturated-large-model audit. The I2V-32
+30 s series is a **discovery / stress** run on our protocol. It is
+**not** the field long-horizon table (that table is T2V, 128 MovieGen,
+VBench-Long). **Do not scale I2V-32 or I2V-200.** **Do not add TTC.**
+Stop lock: [`paper_tables/2026-08-18_wan_protocol_stop.md`](paper_tables/2026-08-18_wan_protocol_stop.md).
 
 | Series | N | Horizon | Method | Status | Cluster path | Key finding |
 |---|---|---|---|---|---|---|
@@ -81,7 +82,10 @@ Timing: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan
 | `panda_1000v_retrieval` (K5/K10 × SIM/RAND) | UCF retrieval is uninformative due to class-block layout. Panda hash-ordered pool would give a clean retrieval signal. | **DONE** 2026-07-05 (40 jobs, pool `panda_2048_480p`, 999v merged). | **CLOSED** — SIM≈RAND; no PSNR/FVD win vs ADA. See [`paper_tables/2026-07-05_panda_1000v_retrieval.md`](paper_tables/2026-07-05_panda_1000v_retrieval.md). |
 | 200v "gain disappears" comparison | Show research partner that small-N gains compress at scale. | Existing 26-100v discovery runs available; no actual N=200 series. | Skip or use 100v `panda_cover_candidates` as proxy. |
 | Larger Panda retrieval pool (25K segments) | Original ambition: 25K segments from full Panda metadata for richer retrieval. | Phase 2A: 3K-segment pool built. Phase 2B: full-metadata download started but never completed → 25K. | Decide after Panda 1000v retrieval result. |
-| `i2v_bon_32v_hybrid` official VBench | Paper-blocking outcome scorecard. **Cite the full clip** (comparable VBench++). last5 is diagnostic only. | **DONE** 15959601+15984561. full + last5, 32 paired. | Full-clip **tie** (Aes 0.587/0.593/0.591, IQ 71.24/71.28/71.19, dynamic median 0). last5 IQ drop is not the paper number. Read: [`2026-08-18_wan_i2v_bon32_vbench_read.md`](paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md). |
+| `i2v_bon_32v_hybrid` official VBench | Paper-blocking outcome scorecard. **Cite the full clip** (comparable VBench++). last5 is diagnostic only. | **DONE** 15959601+15984561. full + last5, 32 paired. | Full-clip **tie** (Aes 0.587/0.593/0.591, IQ 71.24/71.28/71.19, dynamic median 0). last5 IQ drop is not the paper number. Read: [`2026-08-18_wan_i2v_bon32_vbench_read.md`](paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md). **Discovery protocol only — not a standard long-horizon result.** |
+| I2V-32 / I2V-200 30 s scale-up | Larger N on the *current* stills would tighten our error bars only. | **NOT SUBMITTED. Do not submit.** | **CLOSED 2026-08-18.** Task/N/suite are not the field recipe (I2V-from-still, N=32, `custom_input`). Stop: [`2026-08-18_wan_protocol_stop.md`](paper_tables/2026-08-18_wan_protocol_stop.md). |
+| `t2v_bon_128v_vbenchlong` | Comparable long-horizon verify: T2V, Wan 1.3B Self-Forcing, 128 MovieGen (Qwen-refined), 30 s (60 s optional), VBench-Long, do-nothing \| always-BoN \| gated-BoN. | **SPEC READY. Not submitted.** Needs a new T2V runner (not a flag on `run_i2v_chunked.py`). | Do **not** launch until explicitly submitted. Spec: [`2026-08-18_wan_t2v_vbenchlong_128_spec.md`](paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md). |
+| Wan non-weight next methods | After the T2V 128 bench exists: motion verifier, failure-gated CachedSearch, `{shift,cfg,sink}` search, prefix backtrack. | Not started. | **No TTC.** Do this on T2V 128, not on a larger I2V-32. Memo: [`2026-08-18_wan_nonweight_next.md`](paper_tables/2026-08-18_wan_nonweight_next.md). |
 | Wan Panda-prefix pixel audit | Optional later. PSNR/SSIM/LPIPS/FVD need paired long GT; VBench-I2V stills do not have it. | Not started. Would reuse Panda-70M / UCF prefixes already on cluster. | Do **not** invent PSNR on the current 32. New generate series only. |
 
 ---

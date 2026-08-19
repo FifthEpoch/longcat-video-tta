@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick handcrafted DONE. Official VBench **DONE**: no quality win; verifier anti-aligned with IQ. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Next comparable verify is T2V 128 MovieGen + VBench-Long (spec only, not submitted). Do **not** add TTC. |
 
 ## 2. CRITICAL workflow rules
 
@@ -192,13 +192,25 @@ Per-method `merged_summary.json` lives at:
 **Date:** Updated 2026-08-18.
 
 - **Paper target:** CVPR 2027.
-- **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD,
-  I2V continuation. Contribution is a drift-gated GT-free test-time
-  controller. Required comparison (same seeds/images/horizon):
-  NOTTA | always-BoN | gated-BoN | always-TTC | gated-TTC.
-  **Must be chunked** (e.g. 6×5 s on a 30 s rollout). Clip-level gate
-  at t=0 is vacuous (incoming context = cond still). LongCat 13.6B
-  stays the saturated-large-model audit. Do not launch more LongCat TTC.
+- **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
+  I2V-32 30 s is a **discovery / stress** run, not the field
+  long-horizon table. **Do not scale I2V-32 or I2V-200.** **Do not
+  add TTC / LoRA-at-test-time.** LongCat 13.6B stays the
+  saturated-large-model audit. Do not launch more LongCat TTC.
+- **Protocol stop (2026-08-18):** recent long-horizon papers on this
+  model family are **T2V** self-continuation, **128 MovieGen**
+  (Qwen-refined), **VBench-Long**, 30 s / 60 s. Ours was I2V-from-still,
+  N=32, `custom_input`. Length 30 s and Wan 1.3B are fine; task / N /
+  suite are not. Stop:
+  `paper_tables/2026-08-18_wan_protocol_stop.md`.
+- **Next comparable verify (SPEC READY, not submitted):** T2V 30 s
+  (60 s optional), 128 MovieGen + Qwen, VBench-Long, do-nothing |
+  always-BoN | gated-BoN. New runner required. Spec:
+  `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
+- **Next methods after that bench (no weights):** motion verifier +
+  failure-gated CachedSearch; optional `{shift,cfg,sink}` search;
+  prefix backtrack. Memo:
+  `paper_tables/2026-08-18_wan_nonweight_next.md`.
 - **Wan drift (2026-08-17, N=16):** 5 s median sharp +11% / motion −14%
   (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
   Signature = sharpen + freeze. Table:
@@ -212,7 +224,8 @@ Per-method `merged_summary.json` lives at:
   = 85.6). Last-chunk median NOTTA 3.68 / always 2.97 / gated 3.04.
   gated−always −0.041 / 0, 19/32 better-or-tie, **33% cheaper**.
   First-16 hybrid flipped T=2.0 +0.15 → −0.12. Efficiency on the
-  **handcrafted score only** — official VBench not scored yet. Table:
+  **handcrafted score only**. Official VBench (full clip) is a tie —
+  see the Official VBench bullet. Table:
   `paper_tables/2026-08-17_wan_i2v_bon32_hybrid.md`.
 - **Wan sticky 32v (2026-08-18):** 03/24 caught (exact ties with
   always-search). 21/32 exact ties overall. Wall 256 vs 258 s —
@@ -241,8 +254,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 19:51): none.
-  15984561 DONE. Official VBench analyzed.
+- **In-flight cluster jobs** (as of 2026-08-18 21:00): none.
+  15984561 DONE. Official VBench analyzed. **No I2V scale-up.
+  No T2V 128 job. No TTC.**
 
 ## 4. Daily-log template
 
