@@ -2475,3 +2475,26 @@ Handpicked drift does (first 1 s vs last 1 s of the same file).
 VBench-Long exists because short-clip VBench on slices misses that.
 
 Do not read “subject +0.035 from 0–5 to 25–30” as quality improving.
+
+---
+
+## 2026-08-19 — Headline the entire-clip 5 s vs 30 s VBench++ table
+**Tags:** methodology, wan, vbench
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-19_wan_i2v_notta16_vbench_fullclip.md`;
+job 16010032 `vbench_full`
+
+User asked for the typical VBench++ number: the **entire** 5 s clip and
+the **entire** 30 s clip. Those scores were already in job 16010032
+(`clip=full`) and buried under “unequal length.” Pulled out as the
+citeable table.
+
+N=16 NOTTA, median: subject 0.932 → **0.842** (−0.090), background
+−0.045, aes −0.043, IQ −1.06. Smoothness/flicker slightly up. Dynamic
+median 0 both; mean 0.250 → 0.438 (longer clip, more chance of one
+RAFT-dynamic burst). Hybrid-32 30 s do-nothing subject 0.848 matches
+this 16v 30 s 0.842.
+
+5 s full = VBench-I2V-length. 30 s full = score the whole generation
+(our hybrid lock; field long-horizon uses VBench-Long). Windows remain
+diagnostics. No new job. No PSNR. No TTC.

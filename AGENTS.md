@@ -276,6 +276,8 @@ Per-method `merged_summary.json` lives at:
   All 7 dims in one grid:
   `paper_tables/2026-08-19_wan_i2v_bon32_vbench_alldims.md`
 - **VBench 16v 5 s vs 30 s + first16/last16 (DONE 16010032):**
+  **Cite entire clips:** 5 s full vs 30 s full, subject 0.932→0.842.
+  `paper_tables/2026-08-19_wan_i2v_notta16_vbench_fullclip.md`
   16-frame VBench does **not** copy handpicked sharp/motion. Only
   aesthetic Δrel matches “30 s worse” (−11.5% vs +1.8%).
   `paper_tables/2026-08-19_wan_i2v_notta16_vbench_headtail.md`
