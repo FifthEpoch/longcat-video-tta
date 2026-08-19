@@ -2104,3 +2104,27 @@ efficiency line is now “about the same VBench, slightly worse last5
 Aes/IQ, 33% cheaper.” Do not treat sick’s better composite as a
 quality win without scoring those mp4s — the signal may be
 anti-aligned with IQ. No PSNR. No TTC.
+
+---
+
+## 2026-08-18 — last5 is diagnostic; BoN does not “worsen VBench++”
+tags: [wan, vbench, methodology]
+refs: paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md;
+VBench-I2V; VBench-Long (vbench2_beta_long)
+
+User asked whether last-5s-only is a common horizon protocol, and
+whether we are claiming best-of-4 worsens VBench++.
+
+last5 is **not** the field headline. VBench-I2V scores the full
+native-length clip. VBench-Long scores the whole long video via
+scene-split + fixed clips + slow/fast aggregation. Our 2026-08-15
+lock was generate-at 5/10/30 s, not crop-the-tail of 30 s. last5
+stays as a divergence diagnostic (shared piece 0 dilutes the full
+clip). Paper tables that say “VBench++” should use the full 30 s
+numbers.
+
+Full-clip always vs do-nothing is a **tie** (Aes +0.006, subject
++0.007, IQ +0.04, motion −0.001, dynamic median 0). Do not write
+“BoN worsens VBench++.” Fair narrower claim: last5 imaging drops
+(68.2 → 66.4) while last5 Aes rises (0.535 → 0.548). Gating is
+still not a quality win on either window. No TTC.

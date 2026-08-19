@@ -2,11 +2,15 @@
 
 **Series:** `i2v_bon_32v_hybrid` (do-nothing / always-search / gated-search).
 **Jobs:** 15959601 (notta) + 15984561 (always + gated). Exit 0.
-**Cite:** last5 outcome window
-[`2026-08-18_wan_i2v_bon32_vbench_last5.md`](2026-08-18_wan_i2v_bon32_vbench_last5.md).
-Full 30 s is prefix-diluted:
+**Cite for a standard-shaped VBench number:** the **full 30 s** table
 [`2026-08-18_wan_i2v_bon32_vbench_full.md`](2026-08-18_wan_i2v_bon32_vbench_full.md).
+**last5** is a diagnostic crop (where methods diverge), not the
+official VBench-I2V / VBench-Long protocol.
+[`2026-08-18_wan_i2v_bon32_vbench_last5.md`](2026-08-18_wan_i2v_bon32_vbench_last5.md).
 No PSNR (no 30 s GT on these stills).
+
+**Do not say “best-of-4 worsens VBench++.”** Full-clip is a tie
+with mixed signs. last5 imaging is down; last5 aesthetic is up.
 
 This is the first official scorecard for the controller. The
 handcrafted last-piece composite is **not** the quality claim.
@@ -75,6 +79,37 @@ quality win. `dynamic_degree` median still 0. Do not cite full-clip
 as the outcome table.
 
 ---
+
+## Protocol note (added same evening)
+
+Evaluating **only the last 5 s of a 30 s rollout is not the common
+headline protocol**.
+
+- Official **VBench-I2V** scores the full generated clip at the
+  model’s native length (usually 2–10 s), not a tail crop.
+- **VBench-Long** scores the **whole** long video: scene-split, then
+  fixed-length clips, then slow (every frame) + fast (clip-first-frame)
+  aggregation. It does not keep only the ending.
+- Our 2026-08-15 lock was “eval at 5 / 10 / 30 s” — meaning
+  **generate** those horizons, not crop the last 5 s of a 30 s file.
+- last5 is still a valid **diagnostic**: piece 0 is shared, so a
+  full-clip mean is diluted. Use it to see where methods diverge.
+  Do not put last5 in a paper table as “VBench++.”
+
+On the full 30 s clip (the standard-shaped number):
+
+| Dimension | do-nothing | always-search | always − do-nothing |
+|---|---:|---:|---:|
+| subject | 0.848 | 0.855 | +0.007 |
+| background | 0.894 | 0.893 | −0.001 |
+| aesthetic | 0.587 | 0.593 | +0.006 |
+| imaging | 71.24 | 71.28 | +0.04 |
+| motion smoothness | 0.992 | 0.991 | −0.001 |
+| dynamic degree | 0 | 0 | 0 |
+
+That is a **tie**, not a worsening. last5 IQ (68.2 → 66.4) is a
+real tail-window drop and is allowed as a diagnosis. It is not
+“BoN hurts VBench++.”
 
 ## What this does to the paper
 
