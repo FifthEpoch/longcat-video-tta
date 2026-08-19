@@ -234,6 +234,23 @@ python wan_experiment/scripts/analyze_i2v_vbench.py \
 tie (cite this vs other papers). last5 exists as a diagnostic.
 Read: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`.
 
+## Next — VBench++ every 5 s (trend; full clip stays official)
+
+Score the same hybrid 32 mp4s in six windows: 0–5, 5–10, 10–15,
+15–20, 20–25, 25–30. Existing `vbench_full` / `vbench_last5` are
+skipped. The official comparable number is still the full clip.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh
+```
+
+```bash
+python wan_experiment/scripts/analyze_i2v_vbench_trend.py \
+    --series-dir wan_experiment/results/i2v_bon_32v_hybrid \
+    --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_bon32_vbench_trend.md
+```
+
 ## Next — optional T2V 128 MovieGen compare (submit-ready)
 
 Standard-bench compare for gating vs Relax Forcing / Self-Forcing++ /

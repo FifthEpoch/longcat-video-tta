@@ -2314,3 +2314,23 @@ allowed. I2V-32 scale-up still closed.
 Not launched from this machine. Operator: `git pull`, then
 `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh`, then the
 full 128. VBench-Long scoring is a later job.
+
+---
+
+## 2026-08-18 — VBench++ every 5 s window (trend)
+**Tags:** methodology, wan, vbench
+**Owner:** agent
+**Refs:**
+- `wan_experiment/scripts/score_i2v_vbench.py` (`wSTART_END` / `windows`)
+- `wan_experiment/scripts/analyze_i2v_vbench_trend.py`
+- `wan_experiment/sbatch/submit_i2v_vbench_windows.sh`
+
+User asked for VBench++ not just last5 but every 5 s of the 30 s
+generation, to plot the trend.
+
+Implemented six windows on the existing hybrid 32 mp4s: 0–5 … 25–30.
+Last window includes the leftover frame (481 px). Official comparable
+number stays the full clip. last5 remains a separate diagnostic (last
+80 frames, not exactly w25_30). No TTC. Not launched from this
+machine: `bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh`
+then `analyze_i2v_vbench_trend.py`. Plot the canvas after the job.

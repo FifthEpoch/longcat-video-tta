@@ -21,12 +21,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+WINDOW_RE = re.compile(r"^w(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)$")
 
 
 QUALITY_DIMS = [
@@ -67,6 +70,52 @@ def _mp4s(video_dir: Path) -> List[Path]:
     return sorted(p for p in video_dir.glob("*.mp4") if p.is_file())
 
 
+def window_bounds(clip: str, tail_s: float) -> Tuple[str, Optional[float], Optional[float]]:
+    """Return (kind, start_s, end_s). kind is full|tail|head|window."""
+    if clip == "full":
+        return "full", None, None
+    if clip == "last5":
+        return "tail", None, float(tail_s)
+    if clip == "first5":
+        return "head", 0.0, float(tail_s)
+    m = WINDOW_RE.match(clip)
+    if m:
+        return "window", float(m.group(1)), float(m.group(2))
+    raise ValueError(
+        f"unknown clip {clip!r}; use full, last5, first5, or wSTART_END (e.g. w10_15)"
+    )
+
+
+def windows_for_horizon(horizon_s: float, window_s: float) -> List[str]:
+    if window_s <= 0 or horizon_s <= 0:
+        raise ValueError("horizon and window must be positive")
+    n = max(1, int(round(horizon_s / window_s)))
+    names = []
+    for i in range(n):
+        start = i * window_s
+        end = (i + 1) * window_s
+        names.append(f"w{int(start)}_{int(end)}")
+    return names
+
+
+def _slice_frames(frames, src_fps: float, clip: str, tail_s: float):
+    kind, start_s, end_s = window_bounds(clip, tail_s)
+    n_all = len(frames)
+    if kind == "full":
+        return frames
+    if kind == "tail":
+        n = max(1, int(round(float(end_s) * src_fps)))
+        return frames[-n:]
+    start_f = max(0, int(round(float(start_s) * src_fps)))
+    end_f = min(n_all, int(round(float(end_s) * src_fps)))
+    if kind == "window" and end_f >= n_all - 1:
+        end_f = n_all
+    sliced = frames[start_f:end_f]
+    if not sliced:
+        raise RuntimeError(f"{clip} empty on {n_all} frames @ {src_fps} fps")
+    return sliced
+
+
 def _extract_clip(src: Path, dst: Path, clip: str, fps: float, tail_s: float) -> None:
     import cv2
 
@@ -84,13 +133,8 @@ def _extract_clip(src: Path, dst: Path, clip: str, fps: float, tail_s: float) ->
     if not frames:
         raise RuntimeError(f"0 frames in {src}")
 
-    n = max(1, int(round(tail_s * float(src_fps or fps))))
-    if clip == "last5":
-        frames = frames[-n:]
-    elif clip == "first5":
-        frames = frames[:n]
-    else:
-        raise ValueError(clip)
+    src_fps = float(src_fps or fps)
+    frames = _slice_frames(frames, src_fps, clip, tail_s)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     h, w = frames[0].shape[:2]
@@ -349,9 +393,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--video-dir", required=True, type=Path)
     ap.add_argument("--out-dir", type=Path, default=None)
-    ap.add_argument("--clip", default="full", choices=["full", "last5", "first5"],
-                    help="full generated clip (default; official comparable number), "
-                         "last tail_s seconds (optional diagnostic), or first tail_s.")
+    ap.add_argument(
+        "--clip", default="full",
+        help="full (official VBench++), last5, first5, wSTART_END (e.g. w10_15), "
+             "or windows (every --window-s seconds over --horizon-s).",
+    )
+    ap.add_argument("--horizon-s", type=float, default=30.0)
+    ap.add_argument("--window-s", type=float, default=5.0)
     ap.add_argument("--tail-s", type=float, default=5.0)
     ap.add_argument("--fps", type=float, default=16.0)
     ap.add_argument("--dimensions", nargs="+", default=QUALITY_DIMS)
@@ -367,11 +415,27 @@ def main() -> int:
             file=sys.stderr,
         )
         args.dimensions = [d for d in args.dimensions if d not in I2V_DIMS]
-    out_dir = args.out_dir or (args.video_dir / f"vbench_{args.clip}")
-    return score_dir(
-        args.video_dir, out_dir, args.dimensions, args.clip,
-        args.mode, args.force, args.fps, args.tail_s,
+    clips = (
+        windows_for_horizon(args.horizon_s, args.window_s)
+        if args.clip == "windows"
+        else [args.clip]
     )
+    status = 0
+    for clip in clips:
+        try:
+            window_bounds(clip, args.tail_s)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        out_dir = args.out_dir if (args.out_dir and args.clip != "windows") else (
+            args.video_dir / f"vbench_{clip}"
+        )
+        rc = score_dir(
+            args.video_dir, out_dir, args.dimensions, clip,
+            args.mode, args.force, args.fps, args.tail_s,
+        )
+        if rc != 0:
+            status = rc
+    return status
 
 
 if __name__ == "__main__":

@@ -265,9 +265,13 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 22:10): none until
-  the operator launches T2V 128. **No I2V scale-up. No TTC.**
-  T2V 128 is submit-ready, not launched from the laptop.
+- **In-flight cluster jobs** (as of 2026-08-18 23:00): none until
+  the operator launches T2V 128 and/or VBench 5 s windows.
+  **No I2V scale-up. No TTC.**
+- **VBench 5 s windows (SUBMIT-READY):** same hybrid 32 mp4s, six
+  windows 0–5 … 25–30. Full clip stays the official number.
+  `bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh` then
+  `analyze_i2v_vbench_trend.py`.
 
 ## 4. Daily-log template
 
