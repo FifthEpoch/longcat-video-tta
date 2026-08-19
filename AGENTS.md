@@ -209,9 +209,11 @@ Per-method `merged_summary.json` lives at:
   long AR). T2V 128 MovieGen is only an optional comparison to Relax
   Forcing–style tables. Note:
   `paper_tables/2026-08-18_v2v_continuation_allowed.md`.
-- **Optional T2V compare (SPEC READY, not submitted):** T2V 30 s
-  (60 s optional), 128 MovieGen + Qwen, VBench-Long, do-nothing |
-  always-BoN | gated-BoN. Spec:
+- **Optional T2V compare (SUBMIT-READY, not launched):** T2V 30 s,
+  128 MovieGen, do-nothing | always-BoN | gated-BoN. New runner
+  `wan_experiment/scripts/run_t2v_chunked.py`. Submit:
+  `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
+  `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **Next methods after that bench (no weights):** motion verifier +
   failure-gated CachedSearch; optional `{shift,cfg,sink}` search;
@@ -263,9 +265,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 21:00): none.
-  15984561 DONE. Official VBench analyzed. **No I2V scale-up.
-  No T2V 128 job. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-18 22:10): none until
+  the operator launches T2V 128. **No I2V scale-up. No TTC.**
+  T2V 128 is submit-ready, not launched from the laptop.
 
 ## 4. Daily-log template
 

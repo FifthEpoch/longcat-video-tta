@@ -233,7 +233,14 @@ def install_sdpa_attention_fallback() -> None:
     print("WARNING: flash-attn missing; using PyTorch SDPA fallback")
 
 
-def load_pipeline(sf_root: Path, wan_dir: Path, sf_ckpt: Path, device, n_cache_frames: int):
+def load_pipeline(
+    sf_root: Path,
+    wan_dir: Path,
+    sf_ckpt: Path,
+    device,
+    n_cache_frames: int,
+    independent_first_frame: bool = True,
+):
     import torch
     from omegaconf import OmegaConf
     from pipeline import CausalInferencePipeline
@@ -244,7 +251,8 @@ def load_pipeline(sf_root: Path, wan_dir: Path, sf_ckpt: Path, device, n_cache_f
     config = OmegaConf.merge(default_cfg, dmd_cfg)
     # Official I2V needs an independent first frame; default_config has this false
     # and then 1-frame prefix fails the num_frame_per_block assert.
-    config.independent_first_frame = True
+    # T2V must keep this false: every latent is generated in blocks of 3.
+    config.independent_first_frame = bool(independent_first_frame)
 
     pipeline = CausalInferencePipeline(config, device=device)
     state = torch.load(str(sf_ckpt), map_location="cpu", weights_only=False)

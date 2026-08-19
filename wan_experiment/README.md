@@ -234,6 +234,35 @@ python wan_experiment/scripts/analyze_i2v_vbench.py \
 tie (cite this vs other papers). last5 exists as a diagnostic.
 Read: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`.
 
+## Next — optional T2V 128 MovieGen compare (submit-ready)
+
+Standard-bench compare for gating vs Relax Forcing / Self-Forcing++ /
+FreqForcing. **Not a task lock.** V2V continuation remains allowed.
+I2V-32 scale-up stays closed. No TTC.
+
+30 s = 6 × 21 latents (Self-Forcing 5 s unit). First 128 MovieGen
+prompts (Qwen-extended if the Self-Forcing clone has
+`prompts/MovieGenVideoBench_extended.txt`, else vendored
+`datasets/moviegen_128.txt`).
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+# 2-prompt smoke first (new runner)
+SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh
+# then the 128 (4 shards × 3 methods; 2-way H200 extras queue)
+bash wan_experiment/sbatch/submit_t2v_bon128.sh
+```
+
+After generate finishes:
+
+```bash
+python wan_experiment/scripts/analyze_i2v_bon.py \
+    --series-dir wan_experiment/results/t2v_bon_128v_vbenchlong
+```
+
+VBench-Long on the full clip is the official number; that scorer is
+not in this submit.
+
 ## STOP — do not scale I2V-32 (locked 2026-08-18)
 
 This I2V-from-still protocol is **discovery only**. Recent long-horizon

@@ -1,7 +1,15 @@
 # Spec — standard long-horizon verify (not submitted)
 
-**Status:** SPEC READY. No generate job. Do not run until explicitly
-submitted. Do **not** substitute I2V-32 scale-up.
+**Status:** SUBMIT-READY (2026-08-18). User asked to run T2V 128 as an
+optional standard compare for gating vs other methods. Not a task lock.
+V2V continuation remains allowed. I2V-32 scale-up stays closed. No TTC.
+
+Cluster (after `git pull`):
+```
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh   # 2 prompts first
+bash wan_experiment/sbatch/submit_t2v_bon128.sh           # then 128
+```
 
 **Why this exists:** if we verify freeze / BoN / gating against the
 field, copy Relax Forcing / FreqForcing / Self-Forcing++.
@@ -51,4 +59,11 @@ Cite full-clip VBench-Long medians vs Relax Forcing / Self-Forcing
 baselines in those papers. Dynamic degree: report **mean** (fraction
 dynamic) and median; median 0 is a 0/1 artifact.
 
-Submit command: **none.** This file is the spec only.
+Submit command: see status block above. Runner:
+`wan_experiment/scripts/run_t2v_chunked.py` (new file; not a flag on
+`run_i2v_chunked.py`). Prompts: first 128 of MovieGen VideoBench
+(Qwen-extended if present on the Self-Forcing clone, else vendored
+`datasets/moviegen_128.txt`). Horizon: 6 × 21 latents (~501 frames,
+~31.3 s) to match the Self-Forcing 5 s unit. 4 shards × 3 methods.
+Official score after generate: VBench-Long on the full clip (not yet
+submitted).

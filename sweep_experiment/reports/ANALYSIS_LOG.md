@@ -2289,3 +2289,28 @@ V2V-prefix table is a continuation paper, not a T2V MovieGen cell.
 prefix-continuation (real video history → 30 s AR, VBench on the full
 clip) is allowed and is the closer match to the claim. I2V-still
 scale-up stays closed. No job until the user picks. No TTC.
+
+---
+
+## 2026-08-18 — T2V 128 MovieGen compare is submit-ready
+**Tags:** methodology, wan, t2v, jobs
+**Owner:** agent
+**Refs:**
+- `wan_experiment/scripts/run_t2v_chunked.py`
+- `wan_experiment/sbatch/submit_t2v_bon128.sh`
+- `datasets/moviegen_128.txt`
+- `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`
+
+User: run T2V 128 anyway, as a standard bench to compare gating to
+other methods.
+
+Implemented a **new** T2V chunked runner (independent_first_frame=False,
+no still, 6×21 latents ≈ 31.3 s). Not a flag on `run_i2v_chunked.py`.
+Prompts: first 128 MovieGen (Qwen-extended if present on the SF clone,
+else official VideoBench vendored). Methods: do-nothing | always-BoN
+k=4 | hybrid gated-BoN. 4 shards. No TTC. V2V continuation still
+allowed. I2V-32 scale-up still closed.
+
+Not launched from this machine. Operator: `git pull`, then
+`SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh`, then the
+full 128. VBench-Long scoring is a later job.
