@@ -265,18 +265,20 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 23:00): none until
-  the operator launches T2V 128 and/or VBench 5 s windows.
+- **In-flight cluster jobs** (as of 2026-08-19 01:28):
+  **16009916** hybrid-32 VBench 5 s windows (`w0_5`…`w25_30`).
+  Cluster tree after that submit: `eb51141`. 16v first16 job not
+  submitted yet (needs pull to `f48318b`). T2V 128 not launched.
   **No I2V scale-up. No TTC.**
-- **VBench 5 s windows (SUBMIT-READY):** same hybrid 32 mp4s, six
-  windows 0–5 … 25–30. Full clip stays the official number.
-  `bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh` then
-  `analyze_i2v_vbench_trend.py`.
+- **VBench 5 s windows (IN FLIGHT 16009916):** same hybrid 32 mp4s,
+  six windows 0–5 … 25–30. Full clip stays the official number.
+  Analyze when DONE: `analyze_i2v_vbench_trend.py`.
 - **VBench 16v 5 s vs 30 s + first16/last16 (SUBMIT-READY):**
   same windows as the handpicked drift table, on VBench++ dims.
-  16-frame scores are diagnostic. `bash
-  wan_experiment/sbatch/submit_i2v_vbench_notta16.sh` then
-  `analyze_i2v_vbench_horizon.py`. Spec:
+  16-frame scores are diagnostic. Cluster must `git pull` to
+  `f48318b` then
+  `bash wan_experiment/sbatch/submit_i2v_vbench_notta16.sh`.
+  Analyze: `analyze_i2v_vbench_horizon.py`. Spec:
   `paper_tables/2026-08-19_wan_i2v_notta16_vbench_headtail_spec.md`.
 
 ## 4. Daily-log template

@@ -2360,3 +2360,20 @@ smoothness will be noisy. 5 s and 30 s were separate generates;
 first1 is not a shared prefix. No new videos. No TTC. Not launched
 from this machine: `bash wan_experiment/sbatch/submit_i2v_vbench_notta16.sh`
 then `analyze_i2v_vbench_horizon.py`.
+
+---
+
+## 2026-08-19 — Hybrid 32 VBench windows job 16009916 submitted
+**Tags:** jobs, wan, vbench
+**Owner:** agent
+**Refs:** job 16009916; cluster pull `4116c3a` → `eb51141`
+
+Operator moved the two untracked paper tables aside and
+`--ff-only` succeeded. `submit_i2v_vbench_windows.sh` accepted:
+job **16009916**, series `i2v_bon_32v_hybrid`, methods
+notta / always_bon / gated_bon, clips `w0_5` … `w25_30`.
+
+FETCH_HEAD was `eb51141`. The first16/last16 commit `f48318b` was
+not on the cluster yet, so `submit_i2v_vbench_notta16.sh` was not
+run. Next: pull to `f48318b` and submit the 16v job. Do not
+cancel 16009916. No TTC. No I2V scale-up.
