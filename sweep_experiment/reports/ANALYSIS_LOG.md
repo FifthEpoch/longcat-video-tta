@@ -2442,3 +2442,36 @@ smoothness / flicker go up (frozen tails look consistent). 5 s full ≈
 30 s first5 (subject −0.001). Do not equate 16-frame VBench with the
 handpicked table. Official hybrid-32 number remains the full-clip tie.
 No PSNR. No TTC. I2V-32 scale-up stays closed.
+
+---
+
+## 2026-08-19 — Why 5 s VBench windows barely move (except aes/IQ)
+**Tags:** methodology, wan, vbench
+**Owner:** agent
+**Refs:** `score_i2v_vbench.py` (`ensure_clip_dir` + `VBench.evaluate`);
+Huang et al., VBench, CVPR 2024
+
+User asked how VBench is calculated; the 0–5 vs 25–30 drop looked too
+small.
+
+We do **not** score “frame 0 vs frame 400.” For each window we cut a
+new mp4 (`vbench_clips/wSTART_END/`) and run official `custom_input`
+VBench on that file **alone**. Each dim is therefore an intra-clip
+statistic on ~80 frames.
+
+That saturates consistency / smoothness / flicker on a freeze: DINO
+and CLIP cosine of nearby frames go up, AMT interpolation is easy,
+flicker is low. `dynamic_degree` is 0/1 RAFT per clip, so the median
+stays 0 if most clips were already still at 0–5 s. Only
+`aesthetic_quality` (LAION, per-frame average) and `imaging_quality`
+(MUSIQ, per-frame average) can fall with appearance. Those drops are
+not tiny: do-nothing aes 0.651→0.538 (−17% relative), IQ 72.87→68.14
+(−6.5%).
+
+Evidence the long-range effect is real but hidden by windowing: full
+30 s subject is **0.848**, while every 5 s window is **0.93–0.97**.
+The window never asks whether the last 5 s still matches the first 5 s.
+Handpicked drift does (first 1 s vs last 1 s of the same file).
+VBench-Long exists because short-clip VBench on slices misses that.
+
+Do not read “subject +0.035 from 0–5 to 25–30” as quality improving.
