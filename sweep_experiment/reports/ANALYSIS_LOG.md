@@ -2395,3 +2395,22 @@ Wan + T5 + VAE; we do not sample bidirectional 50-step Wan.
 
 Same turn: squeue shows 16009916 PD QOSMaxGRESPerUser and 16010032
 PD Priority. Leave both queued.
+
+---
+
+## 2026-08-19 — VBench window + 16v head-tail jobs DONE
+**Tags:** jobs, wan, vbench
+**Owner:** agent
+**Refs:** jobs 16009916, 16010032
+
+Both COMPLETED 0:0, started together at 02:30:53 on courtesy nodes
+(gh119 / gh132) — the 2-way cap did not serialize them.
+
+- 16009916: hybrid 32, 6 windows, 18/18 `joined.json`, 1h04, ~11 GB RSS.
+  Last window gated `w25_30` n=32 ran=7 fail=0. Dynamic median still 0.
+- 16010032: 16v NOTTA 5 s + 30 s, clips full/first5/first1/last1,
+  8/8 `joined.json`, 23m. Last clip `last1` on 30 s n=16 ran=7 fail=0.
+
+No paper table yet. Analyzer stdout not pasted. Do not cite the two
+log-tail populations. Full-clip hybrid 32 remains the official VBench++
+number. 16-frame clips stay diagnostic. No TTC. No I2V scale-up.
