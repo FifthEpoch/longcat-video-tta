@@ -2,10 +2,10 @@
 
 **Audience:** weekly recap / PI update.
 **Date:** 2026-08-18.
-**Status:** search-while-sick is the best *handcrafted* median (2.764)
-and hits the 11/16 + 24 checklist; hybrid is still cheapest (173 s).
-Official VBench is incomplete (15959601 scored do-nothing only).
-Do not start test-time training.
+**Status:** official last5 VBench is in — **no quality win**.
+Do-nothing best IQ/background; dynamic median 0; gated Aes worse
+than always. Handcrafted “search works” does not survive. Sick
+still only has the composite. Do not start test-time training.
 
 This note is the full picture: what we generate, how we measure drift,
 the exact equations, how the controller uses those numbers, and the

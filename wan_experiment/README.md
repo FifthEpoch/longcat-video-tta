@@ -229,15 +229,10 @@ python wan_experiment/scripts/analyze_i2v_vbench.py \
     --clip last5
 ```
 
-**Job 15959601 scored do-nothing only** (SLURM `--export` comma bug).
-Pull and resubmit; existing notta files are skipped.
-
-```bash
-cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
-```
-
-Spec: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_official_eval_spec.md`.
+**DONE 2026-08-18** (15959601 + 15984561). Official last5: no quality
+win. Do-nothing best IQ/background; dynamic median 0; gated Aes
+worse than always. Verifier anti-aligned with IQ.
+Read: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`.
 
 ## Search-while-sick 32v — DONE 2026-08-18 (job 15959146)
 

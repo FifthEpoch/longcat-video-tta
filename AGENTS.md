@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick **15959146 DONE**. VBench retry **15984561** submitted. Do **not** add TTC yet. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | Sick handcrafted DONE. Official VBench **DONE**: no quality win; verifier anti-aligned with IQ. Do **not** add TTC yet. |
 
 ## 2. CRITICAL workflow rules
 
@@ -227,20 +227,18 @@ Per-method `merged_summary.json` lives at:
   2.966 / hybrid 3.036. 11/16 recovered, 24 exact always, wall 204 s.
   9/14/9 — not a strict quality win. Table:
   `paper_tables/2026-08-18_wan_i2v_bon32_sick.md`. No TTC.
-- **Official outcome eval (2026-08-18, paper-blocking):** controller
-  stays GT-free at decision time; finished mp4s must be scored with
-  VBench quality dims. No PSNR on these 32 stills (no 30 s GT).
-  Job 15959601 scored do-nothing only (comma `--export` bug).
-  Resubmit `submit_i2v_vbench_hybrid32.sh` after cluster pull. Spec:
-  `paper_tables/2026-08-18_wan_i2v_official_eval_spec.md`.
+- **Official VBench (2026-08-18, DONE):** last5 three-way on hybrid
+  32. No quality win. Do-nothing best IQ/background; dynamic median
+  0 all methods; gated Aes 0.522 vs always 0.548. last-chunk vs IQ
+  ρ +0.23 to +0.33 (anti-aligned). Read:
+  `paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`. No PSNR.
+  No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-18 18:45):
-  **15984561** hybrid VBench retry (notta skip; always + gated).
-  15959146 DONE. 15959601 incomplete (notta only). Cheat sheet:
-  `paper_tables/2026-08-18_wan_in_flight_jobs.md`.
+- **In-flight cluster jobs** (as of 2026-08-18 19:51): none.
+  15984561 DONE. Official VBench analyzed.
 
 ## 4. Daily-log template
 

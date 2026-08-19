@@ -2074,3 +2074,33 @@ refs: job 15984561; paper_tables/2026-08-18_wan_in_flight_jobs.md
 User pulled 4116c3a and resubmitted. Analyze run immediately after
 submit still failed (only notta joined.json). Expected. Wait for
 always_bon and gated_bon last5+full. No TTC.
+
+---
+
+## 2026-08-18 — Official VBench: search/gating do not improve quality
+tags: [wan, vbench, methodology, hybrid, verifier]
+refs: jobs 15959601 15984561;
+paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md;
+paper_tables/2026-08-18_wan_i2v_bon32_vbench_last5.md;
+paper_tables/2026-08-18_wan_i2v_bon32_vbench_full.md
+
+Three-way official VBench on the hybrid 32 mp4s is in. Cite last5.
+
+Do-nothing last5 imaging 68.17 vs always 66.43 vs gated 66.11;
+background 0.957 vs 0.952 vs 0.952. Always wins aesthetic only
+(0.548 vs do-nothing 0.535 vs gated 0.522). dynamic_degree median
+0.0 for all three; always mean 0.250 vs 0.188 (≈2 extra dynamic
+clips). Gated vs always win counts do not favor gating except a
+small subject edge.
+
+Spearman(last-chunk, imaging_quality) last5 is +0.229 / +0.243 /
++0.327. The handcrafted composite punishes sharpness deviation;
+MUSIQ rewards sharpness. Most other |ρ| < 0.3. Motion smoothness
+under search is the only useful negative ρ (−0.26 / −0.30).
+
+Locked read: the handcrafted “search works” last-chunk table does
+not survive official metrics. Gating is not a quality win. The
+efficiency line is now “about the same VBench, slightly worse last5
+Aes/IQ, 33% cheaper.” Do not treat sick’s better composite as a
+quality win without scoring those mp4s — the signal may be
+anti-aligned with IQ. No PSNR. No TTC.

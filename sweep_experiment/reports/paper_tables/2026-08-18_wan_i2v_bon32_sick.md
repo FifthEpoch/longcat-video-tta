@@ -67,9 +67,10 @@ First gated rule that keeps hybrid’s unique wins **and** catches 24
 (and almost 03) without spending the whole always-search budget.
 
 Not a strict quality win vs always-search: 9–9 split, median 0 delta.
-It **is** the best handcrafted median so far and 21% cheaper. Do not
-promote this to a paper quality claim until official VBench has all
-three methods.
+It **is** the best handcrafted median so far and 21% cheaper. Official
+hybrid VBench later showed the composite is **anti-aligned with
+imaging_quality**. Do not treat this sick median as a quality win.
+Score the sick mp4s on VBench only if that check is still needed.
 
 ## Locked read
 
