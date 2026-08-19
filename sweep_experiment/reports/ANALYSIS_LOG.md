@@ -2334,3 +2334,29 @@ number stays the full clip. last5 remains a separate diagnostic (last
 80 frames, not exactly w25_30). No TTC. Not launched from this
 machine: `bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh`
 then `analyze_i2v_vbench_trend.py`. Plot the canvas after the job.
+
+---
+
+## 2026-08-19 — VBench++ first-16 / last-16 on 5 s vs 30 s
+**Tags:** methodology, wan, vbench
+**Owner:** agent
+**Refs:**
+- `wan_experiment/scripts/score_i2v_vbench.py` (`first1` / `last1`)
+- `wan_experiment/scripts/analyze_i2v_vbench_horizon.py`
+- `wan_experiment/sbatch/submit_i2v_vbench_notta16.sh`
+- `paper_tables/2026-08-19_wan_i2v_notta16_vbench_headtail_spec.md`
+
+User asked whether VBench++ dims can use the same first-16-frame
+window as the handpicked drift table, at both 5 s and 30 s.
+
+Yes. `first1` = frames `[1:17]` (skip cond frame 0), `last1` = last
+16 frames — identical to `score_i2v_drift.py` `WIN=16`. Also score
+`full` and `first5` so 5 s full can sit next to the 30 s opening at
+the official ~5 s duration.
+
+These 16-frame clips are **diagnostics**, not official VBench++.
+VBench quality dims assume ~5 s. `dynamic_degree` / motion
+smoothness will be noisy. 5 s and 30 s were separate generates;
+first1 is not a shared prefix. No new videos. No TTC. Not launched
+from this machine: `bash wan_experiment/sbatch/submit_i2v_vbench_notta16.sh`
+then `analyze_i2v_vbench_horizon.py`.

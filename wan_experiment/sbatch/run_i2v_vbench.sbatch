@@ -21,8 +21,10 @@
 #   SERIES_DIR  results series (default i2v_bon_32v_hybrid)
 #   METHODS     space-separated method names (default: notta always_bon gated_bon)
 #   HORIZON_TAG shard suffix (default: h30s_shard0)
+#   VIDEO_DIRS  if set, score these dirs and ignore METHODS/HORIZON_TAG
+#               (used by i2v_notta_16v: h5s_shard0 + h30s_shard0)
 #   CLIPS       space-separated. Default "full last5".
-#               full is required (comparable VBench++). last5 is optional diagnostic.
+#               first1/last1 = 16 frames, skip cond frame 0 (drift match).
 #   DIMS        VBench quality dims
 #   FORCE       1 to re-run existing dims
 #
@@ -46,6 +48,7 @@ if [[ "${SERIES_DIR}" != /* ]]; then
 fi
 METHODS="${METHODS:-notta always_bon gated_bon}"
 HORIZON_TAG="${HORIZON_TAG:-h30s_shard0}"
+VIDEO_DIRS="${VIDEO_DIRS:-}"
 CLIPS="${CLIPS:-full last5}"
 DIMS_DEFAULT="subject_consistency background_consistency aesthetic_quality imaging_quality motion_smoothness dynamic_degree temporal_flickering"
 DIMS="${DIMS:-$DIMS_DEFAULT}"
@@ -79,6 +82,7 @@ echo "Wan I2V official VBench"
 echo "  SERIES_DIR : ${SERIES_DIR}"
 echo "  METHODS    : ${METHODS}"
 echo "  HORIZON    : ${HORIZON_TAG}"
+echo "  VIDEO_DIRS : ${VIDEO_DIRS:-(from METHODS+HORIZON_TAG)}"
 echo "  CLIPS      : ${CLIPS}"
 echo "  DIMS       : ${DIMS}"
 echo "  MODE       : ${MODE}"
@@ -94,8 +98,18 @@ print('  cuda', torch.cuda.is_available())
 "
 
 STATUS=0
-for method in ${METHODS}; do
-    d="${SERIES_DIR}/${method}_${HORIZON_TAG}"
+if [ -n "${VIDEO_DIRS}" ]; then
+    DIRS_TO_SCORE="${VIDEO_DIRS}"
+else
+    DIRS_TO_SCORE=""
+    for method in ${METHODS}; do
+        DIRS_TO_SCORE="${DIRS_TO_SCORE} ${SERIES_DIR}/${method}_${HORIZON_TAG}"
+    done
+fi
+for d in ${DIRS_TO_SCORE}; do
+    if [[ "${d}" != /* ]]; then
+        d="${PROJECT_ROOT}/${d}"
+    fi
     if [ ! -d "${d}" ]; then
         echo "ERROR: missing ${d}" >&2
         STATUS=2

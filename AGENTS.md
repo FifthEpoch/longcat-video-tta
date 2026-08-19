@@ -272,6 +272,12 @@ Per-method `merged_summary.json` lives at:
   windows 0–5 … 25–30. Full clip stays the official number.
   `bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh` then
   `analyze_i2v_vbench_trend.py`.
+- **VBench 16v 5 s vs 30 s + first16/last16 (SUBMIT-READY):**
+  same windows as the handpicked drift table, on VBench++ dims.
+  16-frame scores are diagnostic. `bash
+  wan_experiment/sbatch/submit_i2v_vbench_notta16.sh` then
+  `analyze_i2v_vbench_horizon.py`. Spec:
+  `paper_tables/2026-08-19_wan_i2v_notta16_vbench_headtail_spec.md`.
 
 ## 4. Daily-log template
 

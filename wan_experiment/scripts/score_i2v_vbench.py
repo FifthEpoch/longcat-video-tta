@@ -30,6 +30,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 WINDOW_RE = re.compile(r"^w(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)$")
+CLIP_CANON = {"first16": "first1", "last16": "last1"}
+# Match score_i2v_drift.py: 16 frames @ 16 fps, skip I2V cond frame 0.
+HEAD_SKIP_FRAMES = 1
+WIN_FRAMES = 16
 
 
 QUALITY_DIMS = [
@@ -71,18 +75,24 @@ def _mp4s(video_dir: Path) -> List[Path]:
 
 
 def window_bounds(clip: str, tail_s: float) -> Tuple[str, Optional[float], Optional[float]]:
-    """Return (kind, start_s, end_s). kind is full|tail|head|window."""
+    """Return (kind, a, b). kind is full|tail|head|window|head_frames|tail_frames."""
+    clip = CLIP_CANON.get(clip, clip)
     if clip == "full":
         return "full", None, None
     if clip == "last5":
         return "tail", None, float(tail_s)
+    if clip in ("last1", "last16"):
+        return "tail_frames", None, float(WIN_FRAMES)
     if clip == "first5":
         return "head", 0.0, float(tail_s)
+    if clip in ("first1", "first16"):
+        return "head_frames", float(HEAD_SKIP_FRAMES), float(WIN_FRAMES)
     m = WINDOW_RE.match(clip)
     if m:
         return "window", float(m.group(1)), float(m.group(2))
     raise ValueError(
-        f"unknown clip {clip!r}; use full, last5, first5, or wSTART_END (e.g. w10_15)"
+        f"unknown clip {clip!r}; use full, last5, first5, first1, last1, "
+        "or wSTART_END (e.g. w10_15)"
     )
 
 
@@ -106,6 +116,18 @@ def _slice_frames(frames, src_fps: float, clip: str, tail_s: float):
     if kind == "tail":
         n = max(1, int(round(float(end_s) * src_fps)))
         return frames[-n:]
+    if kind == "tail_frames":
+        n = max(1, int(end_s))
+        if n_all < n:
+            raise RuntimeError(f"{clip} needs {n} frames, got {n_all}")
+        return frames[-n:]
+    if kind == "head_frames":
+        skip, n = int(start_s), int(end_s)
+        if n_all < skip + n:
+            raise RuntimeError(
+                f"{clip} needs {skip + n} frames (skip {skip} + {n}), got {n_all}"
+            )
+        return frames[skip:skip + n]
     start_f = max(0, int(round(float(start_s) * src_fps)))
     end_f = min(n_all, int(round(float(end_s) * src_fps)))
     if kind == "window" and end_f >= n_all - 1:
@@ -114,6 +136,20 @@ def _slice_frames(frames, src_fps: float, clip: str, tail_s: float):
     if not sliced:
         raise RuntimeError(f"{clip} empty on {n_all} frames @ {src_fps} fps")
     return sliced
+
+
+def _check_slice_windows() -> None:
+    """first1/last1 must match score_i2v_drift.py (skip f0, 16 frames)."""
+    frames = list(range(85))
+    got = _slice_frames(frames, 16.0, "first1", 5.0)
+    if got != list(range(1, 17)):
+        raise RuntimeError(f"first1 slice {got[:3]}... != frames[1:17]")
+    got = _slice_frames(frames, 16.0, "last1", 5.0)
+    if got != list(range(69, 85)):
+        raise RuntimeError(f"last1 slice {got[:3]}... != frames[-16:]")
+    got = _slice_frames(frames, 16.0, "first5", 5.0)
+    if got != list(range(0, 80)):
+        raise RuntimeError(f"first5 slice len={len(got)} != 80")
 
 
 def _extract_clip(src: Path, dst: Path, clip: str, fps: float, tail_s: float) -> None:
@@ -395,8 +431,9 @@ def main() -> int:
     ap.add_argument("--out-dir", type=Path, default=None)
     ap.add_argument(
         "--clip", default="full",
-        help="full (official VBench++), last5, first5, wSTART_END (e.g. w10_15), "
-             "or windows (every --window-s seconds over --horizon-s).",
+        help="full (official VBench++), last5, first5, first1/last1 "
+             "(16 frames, skip cond frame 0 — same window as score_i2v_drift.py), "
+             "wSTART_END (e.g. w10_15), or windows.",
     )
     ap.add_argument("--horizon-s", type=float, default=30.0)
     ap.add_argument("--window-s", type=float, default=5.0)
@@ -418,8 +455,9 @@ def main() -> int:
     clips = (
         windows_for_horizon(args.horizon_s, args.window_s)
         if args.clip == "windows"
-        else [args.clip]
+        else [CLIP_CANON.get(args.clip, args.clip)]
     )
+    _check_slice_windows()
     status = 0
     for clip in clips:
         try:

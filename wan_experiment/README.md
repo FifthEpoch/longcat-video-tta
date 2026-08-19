@@ -251,6 +251,24 @@ python wan_experiment/scripts/analyze_i2v_vbench_trend.py \
     --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_bon32_vbench_trend.md
 ```
 
+## Next — VBench++ 5 s vs 30 s, including first 16 frames
+
+Same 16v NOTTA mp4s as the handpicked drift table. `first1` / `last1`
+are 16 frames, skip cond frame 0. Also scores `full` and `first5`
+(same-duration 5 s pair). 16-frame clips are diagnostic, not official
+VBench++.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_i2v_vbench_notta16.sh
+```
+
+```bash
+python wan_experiment/scripts/analyze_i2v_vbench_horizon.py \
+    --series-dir wan_experiment/results/i2v_notta_16v \
+    --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_notta16_vbench_headtail.md
+```
+
 ## Next — optional T2V 128 MovieGen compare (submit-ready)
 
 Standard-bench compare for gating vs Relax Forcing / Self-Forcing++ /
