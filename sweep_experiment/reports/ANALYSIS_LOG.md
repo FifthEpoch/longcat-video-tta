@@ -2414,3 +2414,31 @@ Both COMPLETED 0:0, started together at 02:30:53 on courtesy nodes
 No paper table yet. Analyzer stdout not pasted. Do not cite the two
 log-tail populations. Full-clip hybrid 32 remains the official VBench++
 number. 16-frame clips stay diagnostic. No TTC. No I2V scale-up.
+
+---
+
+## 2026-08-19 — Window trend + 16-frame VBench vs handpicked drift
+**Tags:** finding, wan, vbench, methodology
+**Owner:** agent
+**Refs:**
+- jobs 16009916, 16010032
+- `paper_tables/2026-08-19_wan_i2v_bon32_vbench_trend.md`
+- `paper_tables/2026-08-19_wan_i2v_notta16_vbench_headtail.md`
+- `paper_tables/2026-08-19_wan_i2v_vbench_windows_read.md`
+
+Analyzer stdout pasted. Cite medians.
+
+Hybrid 32 windows (N=32): piece 0 ties. Do-nothing aesthetic
+0.651→0.538 and IQ 72.9→68.1 from 0–5 to 25–30. Search does not
+reverse the decay; tail IQ favors do-nothing (68.14 vs 66.41 / 66.07).
+`dynamic_degree` median is 0 in **every** window — freeze is not an
+onset after piece 0; most clips already fail RAFT in the first 5 s.
+Subject stays high (0.934→0.969).
+
+16v first16/last16 (N=16): VBench Δrel does **not** reproduce
+handpicked sharp +167% / motion −60%. Only aesthetic says the 30 s
+tail is worse (−11.5% vs +1.8% at 5 s). IQ is mild (−2.3%). Subject /
+smoothness / flicker go up (frozen tails look consistent). 5 s full ≈
+30 s first5 (subject −0.001). Do not equate 16-frame VBench with the
+handpicked table. Official hybrid-32 number remains the full-clip tie.
+No PSNR. No TTC. I2V-32 scale-up stays closed.

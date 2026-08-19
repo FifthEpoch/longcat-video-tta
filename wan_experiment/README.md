@@ -236,38 +236,17 @@ Read: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_vbench_rea
 
 ## Next — VBench++ every 5 s (trend; full clip stays official)
 
-Score the same hybrid 32 mp4s in six windows: 0–5, 5–10, 10–15,
-15–20, 20–25, 25–30. Existing `vbench_full` / `vbench_last5` are
-skipped. The official comparable number is still the full clip.
-
-```bash
-cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-bash wan_experiment/sbatch/submit_i2v_vbench_windows.sh
-```
-
-```bash
-python wan_experiment/scripts/analyze_i2v_vbench_trend.py \
-    --series-dir wan_experiment/results/i2v_bon_32v_hybrid \
-    --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_bon32_vbench_trend.md
-```
+**DONE 2026-08-19** job 16009916. Table:
+`sweep_experiment/reports/paper_tables/2026-08-19_wan_i2v_bon32_vbench_trend.md`.
+Read: `2026-08-19_wan_i2v_vbench_windows_read.md`.
+Do-nothing aes 0.651→0.538, IQ 72.9→68.1. Search does not reverse it.
 
 ## Next — VBench++ 5 s vs 30 s, including first 16 frames
 
-Same 16v NOTTA mp4s as the handpicked drift table. `first1` / `last1`
-are 16 frames, skip cond frame 0. Also scores `full` and `first5`
-(same-duration 5 s pair). 16-frame clips are diagnostic, not official
-VBench++.
-
-```bash
-cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-bash wan_experiment/sbatch/submit_i2v_vbench_notta16.sh
-```
-
-```bash
-python wan_experiment/scripts/analyze_i2v_vbench_horizon.py \
-    --series-dir wan_experiment/results/i2v_notta_16v \
-    --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_notta16_vbench_headtail.md
-```
+**DONE 2026-08-19** job 16010032. Table:
+`sweep_experiment/reports/paper_tables/2026-08-19_wan_i2v_notta16_vbench_headtail.md`.
+16-frame VBench does not copy handpicked sharp/motion. Only aesthetic
+Δrel says 30 s tail is worse (−11.5% vs +1.8% at 5 s).
 
 ## Next — optional T2V 128 MovieGen compare (submit-ready)
 
