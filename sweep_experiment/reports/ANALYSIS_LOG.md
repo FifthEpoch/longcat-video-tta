@@ -2517,3 +2517,37 @@ the first 5 s — not a 30 s-only freeze by this test. Handpicked
 `|Δframe|` can drop 60% without flipping the bit. VBench paper:
 consistency vs dynamic degree trade off. I2V-from-still on Wan 1.3B
 SF is the low-dynamic side of that trade-off.
+
+---
+
+## 2026-08-19 — I2V VBench++: we already have captions; missing I2V dims
+**Tags:** methodology, wan, vbench, i2v
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-08-19_vbench_i2v_what_papers_do.md`
+- Huang et al., VBench++ Table III; `vbench2_beta_i2v` README
+- `run_i2v_continuation.py` `_load_prompt_map` / `text_prompts=[prompt]`
+- `score_i2v_vbench.py` (drops `i2v_subject` / `i2v_background`)
+
+User asked whether VBench++ needs a paired text prompt, and what I2V
+papers do.
+
+Generation: we already pair each VBench-I2V still with its `caption`
+from `i2v-bench-info.json`. DynamiCrafter / ConsistI2V / VideoCrafter-I2V
+/ Wan2.1-I2V-14B do the same (image + `prompt_en`; Wan often Qwen-extends).
+SVD-XT is on that leaderboard image-only (camera column blank).
+
+Scoring: official I2V tables add `i2v_subject`, `i2v_background`,
+`camera_motion` (image↔video, not prompt↔video except camera). Quality
+7 does not use text. We scored quality 7 only (`custom_input`). That
+does not make the run “promptless generation.” It does mean we are
+not on the VBench-I2V leaderboard protocol (also: they submit ~16
+frames / 2 s or 81 / 5 s, N in the hundreds).
+
+Dynamic degree on that official I2V table is also often low
+(ConsistI2V 18.6%, VideoCrafter-I2V 22.6%, I2VGen-XL 25.0%;
+DynamiCrafter 47.4%, Animate-Anything 2.7%). Adding the prompt at
+`evaluate()` will not raise ours. Next if we want the standard I2V
+columns: score `i2v_subject` / `i2v_background` on existing mp4s.
+For a high-dynamic table: T2V MovieGen-128, not more I2V stills.
+No TTC. No I2V-32 scale-up.
