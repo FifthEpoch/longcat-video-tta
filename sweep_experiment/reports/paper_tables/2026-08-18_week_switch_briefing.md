@@ -29,19 +29,55 @@ This talk is the setup. Method ideas come after.
 
 ---
 
-## Slide 2 — Agenda
+## Slide 2 — Why Self-Forcing DMD, not vanilla Wan 1.3B
 
-1. **Model.** Why LongCat 13.6B is the wrong workhorse now, and what
+Wan2.1-T2V-1.3B is the **teacher**. Self-Forcing DMD is the **student
+we run**. Same backbone and VAE. Different generator.
+
+| | Vanilla Wan 1.3B | Self-Forcing DMD (what we run) |
+|---|---|---|
+| Role | Teacher / official weights | Causal student (`self_forcing_dmd.pt`, `generator_ema`) |
+| How it generates | Bidirectional, fixed length, ~50 steps | Next frames from the past, few steps, KV cache |
+| Can it stream 30 s? | Only by regenerating a longer clip | Yes — append chunks; early errors stay in context |
+| Known failure | Not the streaming papers’ workhorse | Trained at 5 s; quality dies at 10–30 s (the paper says so) |
+| Who cites this stack | Wan Team (the backbone) | CausVid, Self-Forcing, Relax / Freq / SF++ |
+
+Three reasons we do not sample “just Wan”:
+
+1. **We need causal AR.** The claim is exposure bias under long
+   rollout. Bidirectional Wan denoises a whole clip at once. The
+   student predicts the next chunk from cached history — the same
+   failure CausVid / Self-Forcing measure.
+2. **Headroom.** Self-Forcing trains the student on its own rollouts
+   (distribution-matching distillation). That reduces exposure bias
+   inside 5 s. It does not remove it past 5 s. Our 30 s sharpen +
+   freeze is that leftover collapse.
+3. **Cost and a comparable table.** Few-step 1.3B is why 5 s is
+   ~10 s/clip and 30 s do-nothing is ~38 s. Vanilla many-step Wan
+   would spend the H200 on length, not methods, and would not sit
+   next to Relax Forcing / Self-Forcing++.
+
+We still load Wan + T5 + VAE. DMD is the extra generator file. We
+did not replace Wan; we stopped using it as a 50-step bidirectional
+sampler.
+
+---
+
+## Slide 3 — Agenda
+
+1. **Student vs teacher.** Why we run Self-Forcing DMD, not bidirectional
+   many-step Wan 1.3B.
+2. **Model.** Why LongCat 13.6B is the wrong workhorse now, and what
    published streaming papers already run on Wan 1.3B.
-2. **Dataset.** Why Panda / UCF are not a long-horizon bench, and why
+3. **Dataset.** Why Panda / UCF are not a long-horizon bench, and why
    MovieGen-128 + VBench-Long is the copy-able protocol.
-3. **Concepts.** Causal AR, KV cache, exposure bias, three meanings of
+4. **Concepts.** Causal AR, KV cache, exposure bias, three meanings of
    “continuation,” the freeze–identity trade, and how VBench-Long scores
    a minute-scale clip.
 
 ---
 
-## Slide 3 — Where we started (through 14 August)
+## Slide 4 — Where we started (through 14 August)
 
 The paper claim is a drift-gated, GT-free test-time controller. Until
 last week the stack was LongCat-Video 13.6B on Panda-70M / UCF-101 short
@@ -59,7 +95,7 @@ TTC.
 
 ---
 
-## Slide 4 — Three facts that decided the model switch
+## Slide 5 — Three facts that decided the model switch
 
 Recorded 15 August. Inclusion rule: venue papers (CVPR / NeurIPS / ICML /
 ICLR 2024–2025) plus the official suites they report. See the 15 August
@@ -86,7 +122,7 @@ change the scientific claim. It changes whether we can run N=128 at
 
 ---
 
-## Slide 5 — What published work uses Wan 1.3B
+## Slide 6 — What published work uses Wan 1.3B
 
 Wan2.1-T2V-1.3B (Wan Team, 2025) is the teacher. The long-horizon
 workhorse is a causal few-step student distilled from it.
@@ -109,7 +145,7 @@ why it is the long-horizon paper table.
 
 ---
 
-## Slide 6 — Our switch
+## Slide 7 — Our switch
 
 **From:** LongCat-Video 13.6B. Native 13-cond / 80-gen window. ~110 min
 per 60 s video at 50 steps. N=8 was the practical ceiling.
@@ -128,7 +164,7 @@ Makes N=128 at 30 s a real experiment.
 
 ---
 
-## Slide 7 — Why Panda-70M / UCF are not a long-horizon bench
+## Slide 8 — Why Panda-70M / UCF are not a long-horizon bench
 
 Those sets were the right audit for short-horizon TTA (AdaSteer vs LoRA
 at 28–76 frames). They are the wrong eval for minute-scale generation.
@@ -149,7 +185,7 @@ single GT future exists (prediction, robot, DFoT on Kinetics).
 
 ---
 
-## Slide 8 — What published long-horizon papers evaluate on
+## Slide 9 — What published long-horizon papers evaluate on
 
 | Suite | Who uses it | N / length | What it measures |
 |---|---|---|---|
@@ -164,7 +200,7 @@ narrative to keep generating.
 
 ---
 
-## Slide 9 — Honest accounting: what we actually ran this week
+## Slide 10 — Honest accounting: what we actually ran this week
 
 On 15 August we correctly switched the model and correctly refused to
 couple that to T2V-from-scratch (our claim is exposure bias under
@@ -185,7 +221,7 @@ long-horizon table.
 
 ---
 
-## Slide 10 — Concepts: causal AR, KV cache, exposure bias
+## Slide 11 — Concepts: causal AR, KV cache, exposure bias
 
 **Bidirectional vs causal.** A bidirectional video diffuser denoises the
 whole clip at once and is stuck at a fixed length. A causal / AR student
@@ -206,7 +242,7 @@ reduces exposure bias. It does not remove it past the 5 s train horizon.
 
 ---
 
-## Slide 11 — Concepts: three different “continuations”
+## Slide 12 — Concepts: three different “continuations”
 
 We used “continuation” for LongCat and I2V. The field uses it for a
 different object. Mixing them is how the 15 August T2V recommendation
@@ -227,7 +263,7 @@ as an **attention sink** for the same reason.
 
 ---
 
-## Slide 12 — Concepts: how the field scores a long video
+## Slide 13 — Concepts: how the field scores a long video
 
 **VBench quality 7** (Huang et al., CVPR 2024): subject consistency,
 background consistency, temporal flickering, motion smoothness, dynamic
@@ -249,7 +285,7 @@ required to lock the testbed.
 
 ---
 
-## Slide 13 — What we actually did, 15–18 August
+## Slide 14 — What we actually did, 15–18 August
 
 | Day | Decision or result |
 |---|---|
@@ -263,7 +299,7 @@ all three methods. I2V-32 / I2V-200 scale-up is closed.
 
 ---
 
-## Slide 14 — Where we are now
+## Slide 15 — Where we are now
 
 **Locked**
 

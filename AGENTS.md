@@ -265,11 +265,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-19 01:28):
-  **16009916** hybrid-32 VBench 5 s windows (`w0_5`…`w25_30`).
-  Cluster tree after that submit: `eb51141`. 16v first16 job not
-  submitted yet (needs pull to `f48318b`). T2V 128 not launched.
-  **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-19 01:31):
+  **16009916** hybrid-32 VBench windows (`PD QOSMaxGRESPerUser`).
+  **16010032** second `wan_i2v_` (`PD Priority`) — likely 16v
+  first16/last16 if they pulled `f48318b`. Neither running; 2-way
+  H200 cap. T2V 128 not launched. **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (IN FLIGHT 16009916):** same hybrid 32 mp4s,
   six windows 0–5 … 25–30. Full clip stays the official number.
   Analyze when DONE: `analyze_i2v_vbench_trend.py`.

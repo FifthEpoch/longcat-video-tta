@@ -2377,3 +2377,21 @@ FETCH_HEAD was `eb51141`. The first16/last16 commit `f48318b` was
 not on the cluster yet, so `submit_i2v_vbench_notta16.sh` was not
 run. Next: pull to `f48318b` and submit the 16v job. Do not
 cancel 16009916. No TTC. No I2V scale-up.
+
+---
+
+## 2026-08-19 — Briefing slide: why Self-Forcing DMD, not vanilla Wan
+**Tags:** methodology, wan, briefing
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-08-18_week_switch_briefing.md` (new Slide 2)
+- canvases/week-switch-briefing.canvas.tsx
+
+User said the DMD choice was not clear. Added an early slide:
+Wan 1.3B is the teacher; Self-Forcing DMD is the causal few-step
+student we run. Reasons: AR + KV cache, 5 s train / 10–30 s collapse
+(headroom), cost + comparable table vs Relax / SF++. We still load
+Wan + T5 + VAE; we do not sample bidirectional 50-step Wan.
+
+Same turn: squeue shows 16009916 PD QOSMaxGRESPerUser and 16010032
+PD Priority. Leave both queued.
