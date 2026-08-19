@@ -21,7 +21,8 @@
 #   SERIES_DIR  results series (default i2v_bon_32v_hybrid)
 #   METHODS     space-separated method names (default: notta always_bon gated_bon)
 #   HORIZON_TAG shard suffix (default: h30s_shard0)
-#   CLIPS       space-separated: last5 and/or full and/or first5
+#   CLIPS       space-separated. Default "full last5".
+#               full is required (comparable VBench++). last5 is optional diagnostic.
 #   DIMS        VBench quality dims
 #   FORCE       1 to re-run existing dims
 #
@@ -45,7 +46,7 @@ if [[ "${SERIES_DIR}" != /* ]]; then
 fi
 METHODS="${METHODS:-notta always_bon gated_bon}"
 HORIZON_TAG="${HORIZON_TAG:-h30s_shard0}"
-CLIPS="${CLIPS:-last5 full}"
+CLIPS="${CLIPS:-full last5}"
 DIMS_DEFAULT="subject_consistency background_consistency aesthetic_quality imaging_quality motion_smoothness dynamic_degree temporal_flickering"
 DIMS="${DIMS:-$DIMS_DEFAULT}"
 MODE="${MODE:-custom_input}"
@@ -117,6 +118,6 @@ echo "==========================================================================
 echo "VBench job exit status so far: ${STATUS}"
 echo "Analyze (login node, any python):"
 echo "  python wan_experiment/scripts/analyze_i2v_vbench.py \\"
-echo "    --series-dir ${SERIES_DIR} --clip last5"
+echo "    --series-dir ${SERIES_DIR} --clip full"
 echo "=============================================================================="
 exit ${STATUS}

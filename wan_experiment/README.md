@@ -216,7 +216,8 @@ The controller stays GT-free. The finished videos do not. The
 handcrafted last-piece score is not a paper quality claim (11/16
 already showed it can lie). These 32 stills have no 30 s GT, so no
 PSNR. Score do-nothing / always-search / gated-search with VBench
-quality dims (`last5` then `full`) in `vbench-backfill`.
+quality dims. **Always score the full clip** (comparable VBench++).
+last5 is optional diagnostic. Default job order: full then last5.
 
 ```bash
 cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
@@ -226,12 +227,11 @@ bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
 ```bash
 python wan_experiment/scripts/analyze_i2v_vbench.py \
     --series-dir wan_experiment/results/i2v_bon_32v_hybrid \
-    --clip last5
+    --clip full
 ```
 
-**DONE 2026-08-18** (15959601 + 15984561). Official last5: no quality
-win. Do-nothing best IQ/background; dynamic median 0; gated Aes
-worse than always. Verifier anti-aligned with IQ.
+**DONE 2026-08-18** (15959601 + 15984561). Full-clip VBench++ is a
+tie (cite this vs other papers). last5 exists as a diagnostic.
 Read: `sweep_experiment/reports/paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`.
 
 ## Search-while-sick 32v — DONE 2026-08-18 (job 15959146)

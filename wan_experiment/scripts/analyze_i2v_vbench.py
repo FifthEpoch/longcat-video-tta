@@ -8,7 +8,7 @@ a useful proxy for standard quality.
 
     python wan_experiment/scripts/analyze_i2v_vbench.py \
         --series-dir wan_experiment/results/i2v_bon_32v_hybrid \
-        --clip last5
+        --clip full
 """
 from __future__ import annotations
 
@@ -231,7 +231,9 @@ def render(result: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--series-dir", required=True, type=Path)
-    ap.add_argument("--clip", default="last5", choices=["full", "last5", "first5"])
+    ap.add_argument("--clip", default="full", choices=["full", "last5", "first5"],
+                    help="full = official comparable VBench++ number (default). "
+                         "last5 = optional tail diagnostic.")
     ap.add_argument("--horizon-s", type=float, default=30.0)
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()

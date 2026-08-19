@@ -227,10 +227,14 @@ Per-method `merged_summary.json` lives at:
   2.966 / hybrid 3.036. 11/16 recovered, 24 exact always, wall 204 s.
   9/14/9 — not a strict quality win. Table:
   `paper_tables/2026-08-18_wan_i2v_bon32_sick.md`. No TTC.
-- **Official VBench (2026-08-18, DONE):** last5 three-way on hybrid
-  32. No quality win. Do-nothing best IQ/background; dynamic median
-  0 all methods; gated Aes 0.522 vs always 0.548. last-chunk vs IQ
-  ρ +0.23 to +0.33 (anti-aligned). Read:
+- **VBench protocol (locked 2026-08-18):** always score the **full
+  generated clip**. That is the comparable number. last5 is optional
+  diagnostic only — never the paper’s “VBench++” table. Defaults:
+  `CLIPS=full last5`, analyze `--clip full`.
+- **Official VBench (2026-08-18, DONE, hybrid 32):** full-clip is a
+  tie (Aes 0.587/0.593/0.591, IQ 71.24/71.28/71.19, dynamic median
+  0). last5 IQ drop is diagnostic only. Verifier anti-aligned with
+  IQ on last5 (ρ +0.23 to +0.33). Read:
   `paper_tables/2026-08-18_wan_i2v_bon32_vbench_read.md`. No PSNR.
   No TTC.
 - **LongCat audit (closed):** short-horizon in-domain 14→14 saturated;

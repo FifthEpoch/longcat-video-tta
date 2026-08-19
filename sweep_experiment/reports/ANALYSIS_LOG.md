@@ -2128,3 +2128,20 @@ Full-clip always vs do-nothing is a **tie** (Aes +0.006, subject
 “BoN worsens VBench++.” Fair narrower claim: last5 imaging drops
 (68.2 → 66.4) while last5 Aes rises (0.535 → 0.548). Gating is
 still not a quality win on either window. No TTC.
+
+---
+
+## 2026-08-18 — Full generated clip is the required VBench++ number
+tags: [wan, vbench, methodology]
+refs: score_i2v_vbench.py --clip full;
+analyze_i2v_vbench.py --clip full;
+run_i2v_vbench.sbatch CLIPS=full last5
+
+User lock: always do the normal thing other papers do. Score the
+**full generated clip** as the official comparable VBench++ table.
+last5 may still run as a diagnostic (more pronounced tail), but it
+is never the paper’s VBench++ number and must not replace full.
+Defaults flipped: score/analyze `--clip full`; sbatch
+`CLIPS=full last5` (full first so preemption still leaves the
+comparable number). Hybrid 32 already has both windows; no rescore.
+No TTC.

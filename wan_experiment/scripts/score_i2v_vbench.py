@@ -13,8 +13,8 @@ self_forcing and not longcat.
 
     python wan_experiment/scripts/score_i2v_vbench.py \
         --video-dir wan_experiment/results/i2v_bon_32v_hybrid/notta_h30s_shard0 \
-        --clip last5 \
-        --out-dir wan_experiment/results/i2v_bon_32v_hybrid/notta_h30s_shard0/vbench_last5
+        --clip full \
+        --out-dir wan_experiment/results/i2v_bon_32v_hybrid/notta_h30s_shard0/vbench_full
 """
 from __future__ import annotations
 
@@ -349,9 +349,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--video-dir", required=True, type=Path)
     ap.add_argument("--out-dir", type=Path, default=None)
-    ap.add_argument("--clip", default="last5", choices=["full", "last5", "first5"],
-                    help="full 30 s, last tail_s seconds (outcome), or first tail_s "
-                         "(shared-prefix pairing check). Default last5.")
+    ap.add_argument("--clip", default="full", choices=["full", "last5", "first5"],
+                    help="full generated clip (default; official comparable number), "
+                         "last tail_s seconds (optional diagnostic), or first tail_s.")
     ap.add_argument("--tail-s", type=float, default=5.0)
     ap.add_argument("--fps", type=float, default=16.0)
     ap.add_argument("--dimensions", nargs="+", default=QUALITY_DIMS)

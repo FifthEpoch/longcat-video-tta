@@ -52,12 +52,13 @@ tables), in `custom_input` mode, `vbench-backfill` env:
 | `dynamic_degree` | RAFT; maps to our freeze story |
 | `temporal_flickering` | extra; used on Panda backfill |
 
-Two windows:
+Windows (locked 2026-08-18): **always score the full generated clip.**
+That is the comparable VBench++ number. last5 is optional diagnostic.
 
 | Clip | Frames | Role |
 |---|---|---|
-| `last5` | last 5 s (~80 frames) | **Outcome.** Methods diverge here. Scored first. |
-| `full` | 481 frames / 30 s | Official whole-clip number. Diluted by the shared piece-0 prefix. |
+| `full` | entire generated clip (481 frames / 30 s here) | **Required. Official comparable number.** What other papers report. |
+| `last5` | last 5 s (~80 frames) | Optional diagnostic. Methods diverge here. Do not label this “VBench++.” |
 | `first5` | first 5 s | Optional pairing sanity (should nearly match across methods). |
 
 `i2v_subject` / `i2v_background` need `vbench2_beta_i2v` and
@@ -85,14 +86,14 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_i2v_vbench_hybrid32.sh
 ```
 
-One sequential GPU job, last5 then full, three method dirs. Uses
+One sequential GPU job, **full then last5**, three method dirs. Uses
 `vbench-backfill`, not `self_forcing`.
 
 ```bash
 python wan_experiment/scripts/analyze_i2v_vbench.py \
     --series-dir wan_experiment/results/i2v_bon_32v_hybrid \
-    --clip last5 \
-    --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_bon32_vbench_last5.md
+    --clip full \
+    --out sweep_experiment/reports/paper_tables/$(date +%F)_wan_i2v_bon32_vbench_full.md
 ```
 
 ---
@@ -110,5 +111,5 @@ python wan_experiment/scripts/analyze_i2v_vbench.py \
   motion; our composite punishes *deviation* from the first second).
 - Cite medians. Video 26 is an 85.6 last-chunk outlier.
 
-No numbers in this file. The dated `*_vbench_last5.md` /
-`*_vbench_full.md` tables after the job are the result of record.
+No numbers in this file. The dated `*_vbench_full.md` table is the
+comparable result. `*_vbench_last5.md` is extra.
