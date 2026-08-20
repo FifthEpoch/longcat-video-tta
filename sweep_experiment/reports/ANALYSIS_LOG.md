@@ -2572,3 +2572,20 @@ Wave 1 methods: notta, seed_bon (control), motion_bon, shift_search
 (conditional on probe), backtrack. N=2 smoke then N=8 parallel. Promote
 past N=8 only if tail motion beats notta without IQ/subject collapse.
 No TTC. No I2V-32 scale-up. T2V 128 stays optional.
+
+---
+
+## 2026-08-20 — V2V probe: shift/CFG are no-ops; drop shift_search
+**Tags:** finding, methodology, wan, v2v
+**Owner:** agent
+**Refs:** jobs 16069897 / 16069898;
+`paper_tables/2026-08-20_wan_v2v_probe.md`
+
+Smoke NOTTA n=2 completed in 7 min (tail motion 0.0106). Probe n=2:
+all 9 `(shift, cfg)` cells have identical motion 0.01626.
+`apply_shift` / `apply_guidance` do not move pixels on Self-Forcing DMD.
+Last-chunk composite 6336 is prefix-vs-tail scale clash — not a quality
+number. Backtrack now ignores drift > 100 and keys off motion collapse.
+
+N=8 wave 1: notta, seed_bon, motion_bon, backtrack. `SKIP_SHIFT=1`.
+No CFG. No TTC. No I2V-32 scale-up.

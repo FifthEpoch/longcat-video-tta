@@ -303,7 +303,14 @@ def _should_backtrack(
     drift_threshold: float,
     motion_frac: float,
 ) -> tuple[bool, str]:
-    if outgoing_drift is not None and outgoing_drift > drift_threshold:
+    # Smoke job 16069897: last-chunk composite was 6336 (prefix vs tail
+    # scale clash). Ignore drift outside a sane band so backtrack does
+    # not fire on every chunk.
+    if (
+        outgoing_drift is not None
+        and 0.0 < outgoing_drift <= 100.0
+        and outgoing_drift > drift_threshold
+    ):
         return True, "outgoing_drift"
     if (
         outgoing_motion is not None and outgoing_motion == outgoing_motion
