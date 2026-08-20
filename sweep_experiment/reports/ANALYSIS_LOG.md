@@ -2551,3 +2551,24 @@ DynamiCrafter 47.4%, Animate-Anything 2.7%). Adding the prompt at
 columns: score `i2v_subject` / `i2v_background` on existing mp4s.
 For a high-dynamic table: T2V MovieGen-128, not more I2V stills.
 No TTC. No I2V-32 scale-up.
+
+---
+
+## 2026-08-20 — V2V sampling-space bake-off (beyond gating)
+**Tags:** decision, methodology, wan, v2v, search, no-ttc
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-08-20_wan_v2v_sampling_bakeoff_spec.md`
+- `paper_tables/2026-08-18_wan_nonweight_next.md`
+- `paper_tables/2026-08-18_v2v_continuation_allowed.md`
+
+User asked to move on from gating and run the sampling-space ideas.
+Host locked to **V2V prefix-continuation** (Panda 2 s real prefix → 30 s
+AR). ROI rank: flow `shift` (if it moves pixels) and a one-sided motion
+verifier first; prefix backtrack as a tail fix; CFG likely null on DMD;
+sink / CachedSearch / HG-f deferred.
+
+Wave 1 methods: notta, seed_bon (control), motion_bon, shift_search
+(conditional on probe), backtrack. N=2 smoke then N=8 parallel. Promote
+past N=8 only if tail motion beats notta without IQ/subject collapse.
+No TTC. No I2V-32 scale-up. T2V 128 stays optional.

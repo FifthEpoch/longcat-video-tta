@@ -294,6 +294,22 @@ Non-weight next methods:
 Stop write-up:
 `sweep_experiment/reports/paper_tables/2026-08-18_wan_protocol_stop.md`.
 
+## Current next — V2V sampling-space bake-off (2026-08-20)
+
+Real Panda prefix (9 latents / ~2 s) → 30 s AR. Not I2V-from-still.
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+SMOKE=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh    # N=2 NOTTA
+PROBE=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh    # shift × CFG
+bash wan_experiment/sbatch/submit_v2v_bakeoff.sh            # N=8 wave-1
+# if probe says shift_live=false:
+SKIP_SHIFT=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh
+```
+
+Runner: `wan_experiment/scripts/run_v2v_chunked.py`.
+Spec: `sweep_experiment/reports/paper_tables/2026-08-20_wan_v2v_sampling_bakeoff_spec.md`.
+
 ## Search-while-sick 32v — DONE 2026-08-18 (job 15959146)
 
 Checklist pass on the handcrafted score. Median 2.764 vs always 2.966

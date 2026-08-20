@@ -116,3 +116,21 @@ def verifier_score(
 ) -> float:
     """Lower = closer to ref. Two-sided deviation (does not reward freeze)."""
     return float(score_breakdown(free, ref, seam_weight=seam_weight)["score"])
+
+
+def motion_pick_score(
+    free: Dict[str, float],
+    ref: Dict[str, float],
+    seam_weight: float = 0.25,
+) -> float:
+    """Higher = more motion. Small seam penalty so a jump-cut does not win.
+
+    One-sided. Do not regularize toward the first-second reference — that
+    is what made the I2V-32 composite prefer freeze.
+    """
+    motion = free.get("temporal_motion")
+    if motion is None or motion != motion:
+        return float("-inf")
+    seam = seam_term(free, ref)
+    penalty = float(seam_weight) * seam if seam == seam else 0.0
+    return float(motion) - penalty

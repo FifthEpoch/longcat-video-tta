@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Next comparable verify is T2V 128 MovieGen + VBench-Long (spec only, not submitted). Do **not** add TTC. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: V2V Panda bake-off (`2026-08-20_wan_v2v_sampling_bakeoff_spec.md`). T2V 128 is optional. Do **not** add TTC. |
 
 ## 2. CRITICAL workflow rules
 
@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-18.
+**Date:** Updated 2026-08-20.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -215,10 +215,15 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Next methods after that bench (no weights):** motion verifier +
-  failure-gated CachedSearch; optional `{shift,cfg,sink}` search;
-  prefix backtrack. Memo:
-  `paper_tables/2026-08-18_wan_nonweight_next.md`.
+- **Current next experiment (2026-08-20):** V2V sampling-space bake-off
+  on Panda prefixes (2 s real → 30 s AR). Methods: notta, seed_bon,
+  motion_bon, shift_search (if probe moves), backtrack. Smoke then
+  probe then N=8. CachedSearch / sink-ckpt / HG-f are wave 2.
+  Spec: `paper_tables/2026-08-20_wan_v2v_sampling_bakeoff_spec.md`.
+  Submit: `SMOKE=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh`.
+- **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
+  + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.
+  Memo: `paper_tables/2026-08-18_wan_nonweight_next.md`.
 - **Week briefing (2026-08-18):** model + dataset switch with citations,
   plus long-horizon concepts. Setup talk, not the method talk.
   `paper_tables/2026-08-18_week_switch_briefing.md`.
