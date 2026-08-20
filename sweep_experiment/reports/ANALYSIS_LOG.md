@@ -2589,3 +2589,23 @@ number. Backtrack now ignores drift > 100 and keys off motion collapse.
 
 N=8 wave 1: notta, seed_bon, motion_bon, backtrack. `SKIP_SHIFT=1`.
 No CFG. No TTC. No I2V-32 scale-up.
+
+---
+
+## 2026-08-20 — V2V N=8: seed_bon raises tail motion; motion_bon/backtrack lose
+**Tags:** finding, wan, v2v, search
+**Owner:** agent
+**Refs:** jobs 16092846–849;
+`paper_tables/2026-08-20_wan_v2v_bakeoff_8v.md`
+
+Paired N=8, medians. seed_bon (k=4 seeds, old deviation pick) tail
+motion 0.0225 vs notta 0.0167 (**+35%**). motion_bon 0.0148 (−11%).
+backtrack 0.0130 (−22%). Wall: notta 18 m, search ~51 m, backtrack 23 m.
+
+On a real Panda prefix, seed search is not the I2V-still freeze
+attractor. Greedy per-chunk `|Δframe|` does not compose into a more
+dynamic 30 s tail. Backtrack (motion-collapse only after the 6336
+guard) did not help.
+
+Analyzer printed PROMOTE for seed_bon on motion alone. Official rule
+still needs full-clip VBench IQ/subject. Do not scale. No TTC.
