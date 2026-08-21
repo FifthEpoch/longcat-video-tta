@@ -2708,3 +2708,15 @@ dead-tail backtrack, no shift/CFG):
 N=8, same first-8 Panda videos as the bake-off. Submit with `TRICKS=1`.
 2-way cap: extras queue behind the N=32 pair. Analyze with
 `--baseline-dir .../v2v_panda_bakeoff_8v`.
+
+---
+
+## 2026-08-20 — TRICKS=1 queued (16115844–849)
+**Tags:** in-flight, wan, v2v
+**Owner:** agent
+**Refs:** `experiment_outputs/2026-08-20.md` 22:26; jobs 16115844–849
+
+Cluster pulled `fb11147` and submitted all six tricks. Confirm
+16113805/806 still Running on gh116/gh119. Tricks all Pending
+`QOSGrpGRES` on `h200_cour`. Courtesy did not bypass the 2-way cap
+this time. No cancel. Start when a confirm GPU frees.
