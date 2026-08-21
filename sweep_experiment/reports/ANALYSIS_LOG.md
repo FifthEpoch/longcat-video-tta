@@ -2838,3 +2838,24 @@ works on some hots; method still loses.
 Default next: **stop V2V generate.** Paper table is the N=32 VBench
 confirm. Optional later: `hot_tail` (short history only on hot
 prefixes). No TTC. No hist_drop-32.
+
+---
+
+## 2026-08-21 — Picker insight: motion is a vote, not a constraint
+**Tags:** methodology, wan, v2v, paper-narrative
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_picker_insight.md`
+
+The two-sided sum `|Δsharp|+|Δcolor|+|Δcontrast|+|Δmotion|+seam` is
+identity control. Dynamics only rise when notta undershoots the prefix
+(0000/0007/0018). When notta is already in-band, appearance outvotes
+motion → 0/7 hot, subject +0.039, Dyn 0.
+
+Hinge too loose (no ceiling). late_bon skipped chunk 0 (where the
+recoveries lived). quiet_bon gated on prefix quiet, not chunk collapse.
+hist_drop = seed + tail candidate. tail_hist = different mode (helps
+0002, kills seed lifts).
+
+Next *score*: motion as [0.85, 1.15]×prefix **constraint**, appearance
+as objective; else argmin |motion−prefix|. Resimulate on existing N=8
+candidate logs before any GPU. No hist_drop-32.
