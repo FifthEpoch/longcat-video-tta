@@ -3,10 +3,11 @@
 #   SMOKE=1    → N=2 NOTTA only
 #   PROBE=1    → N=2 knob_probe (shift × cfg)
 #   CONFIRM=1  → N=32 notta vs seed_bon only (N=8 promote confirm)
+#   TRICKS=1   → N=8 sampling-space probes (same 8 videos as bake-off)
 #   default    → N=8 wave-1 methods
 #
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-#   CONFIRM=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh
+#   TRICKS=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh
 #
 # No TTC. Do not scale I2V-32. 2-way H200 cap: extras queue.
 
@@ -21,6 +22,7 @@ VIDEO_DIR="${VIDEO_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
 SMOKE="${SMOKE:-0}"
 PROBE="${PROBE:-0}"
 CONFIRM="${CONFIRM:-0}"
+TRICKS="${TRICKS:-0}"
 SKIP_SHIFT="${SKIP_SHIFT:-0}"
 SKIP_BACKTRACK="${SKIP_BACKTRACK:-0}"
 NOTTA_WALL="${NOTTA_WALL:-04:00:00}"
@@ -42,6 +44,12 @@ elif [[ "${CONFIRM}" == "1" ]]; then
     SERIES="${SERIES:-v2v_panda_confirm_32v}"
     N_VIDEOS="${N_VIDEOS:-32}"
     METHODS=(notta seed_bon)
+    NOTTA_WALL="${NOTTA_WALL:-04:00:00}"
+    SEARCH_WALL="${SEARCH_WALL:-08:00:00}"
+elif [[ "${TRICKS}" == "1" ]]; then
+    SERIES="${SERIES:-v2v_panda_tricks_8v}"
+    N_VIDEOS="${N_VIDEOS:-8}"
+    METHODS=(hinge_bon late_bon hist_drop good_backtrack cached_bon sink)
     NOTTA_WALL="${NOTTA_WALL:-04:00:00}"
     SEARCH_WALL="${SEARCH_WALL:-08:00:00}"
 else
@@ -72,9 +80,10 @@ for METHOD in "${METHODS[@]}"; do
     K=1
     T="${NOTTA_WALL}"
     case "${METHOD}" in
-        seed_bon|motion_bon) K=4; T="${SEARCH_WALL}" ;;
+        seed_bon|motion_bon|hinge_bon|late_bon|hist_drop|cached_bon) K=4; T="${SEARCH_WALL}" ;;
         shift_search) K=3; T="${SEARCH_WALL}" ;;
         knob_probe) T="${SEARCH_WALL}" ;;
+        good_backtrack|sink) T="${NOTTA_WALL}" ;;
     esac
     J=$(sbatch --parsable --account="${ACCOUNT}" --time="${T}" \
         --export=ALL,METHOD="${METHOD}",SEARCH_K=${K},${COMMON} \
@@ -92,8 +101,11 @@ if [[ "${PROBE}" == "1" ]]; then
 else
     echo "  python wan_experiment/scripts/analyze_v2v_bakeoff.py \\"
     echo "    --series-dir ${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
+    if [[ "${TRICKS}" == "1" ]]; then
+        echo "    --baseline-dir ${PROJECT_ROOT}/wan_experiment/results/v2v_panda_bakeoff_8v"
+    fi
     echo "  # then official VBench on each method dir (vbench-backfill env):"
     echo "  python wan_experiment/scripts/score_i2v_vbench.py --clip full \\"
-    echo "    --video-dir ${PROJECT_ROOT}/wan_experiment/results/${SERIES}/notta_h30s_shard0"
+    echo "    --video-dir ${PROJECT_ROOT}/wan_experiment/results/${SERIES}/<method>_h30s_shard0"
 fi
 echo "Cancel:  scancel ${JOBS[*]}"

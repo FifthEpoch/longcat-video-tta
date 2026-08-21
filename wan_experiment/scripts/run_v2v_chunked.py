@@ -5,12 +5,19 @@ Piece 0 is a real Panda prefix (9 latents ≈ 2.1 s). Never searched.
 Then 6 × 21 latents (~30 s) of generated tail.
 
 Methods:
-  notta        — one seed, default shift=8 / cfg=1
-  seed_bon     — k=4 seeds, pick lowest I2V-32 deviation composite (control)
-  motion_bon   — k=4 seeds, pick highest |Δframe| (one-sided)
-  shift_search — same seed, shift in {8, 5, 12}, pick highest motion
-  backtrack    — one seed; if outgoing explodes, rewind and resample once
-  knob_probe   — first gen chunk only; grid shift × cfg; no 30 s write
+  notta          — one seed, default shift=8 / cfg=1
+  seed_bon       — k=4 seeds, pick lowest two-sided prefix deviation
+  motion_bon     — k=4 seeds, pick highest |Δframe| (falsified; keep for audit)
+  shift_search   — same seed, shift in {8, 5, 12} (probe: dead on this DMD)
+  backtrack      — rewind a dead tail and resample (falsified; keep for audit)
+  hinge_bon      — k=4, prefix-match pick (motion hinge, no extra-twitch reward)
+  late_bon       — seed_bon only when incoming motion < 0.7× prefix or last 2 chunks
+  hist_drop      — full history vs last-3-latent history vs extra seeds; hinge pick
+  good_backtrack — resample only if the just-written chunk collapsed *and* the
+                   previous commit was good (≥0.8× prefix motion)
+  cached_bon     — seed_bon pick, KV replayed once per chunk then snapshotted
+  sink           — k=1, replay prefix + last window only (attention-sink approx)
+  knob_probe     — first gen chunk only; grid shift × cfg; no 30 s write
 
 No TTC. Do not scale I2V-32.
 
@@ -37,6 +44,7 @@ if str(_SCRIPTS) not in sys.path:
 from i2v_verifier import (  # noqa: E402
     gen_free_signals,
     motion_pick_score,
+    prefix_match_score,
     reference_signals,
     score_breakdown,
 )
@@ -67,6 +75,7 @@ from run_i2v_continuation import (  # noqa: E402
     _cuda_mem,
 )
 from run_t2v_chunked import (  # noqa: E402
+    _cache_clean_latents_slices,
     _cache_clean_latents_t2v,
     t2v_latents_for_horizon,
     t2v_pixel_frames,
@@ -81,7 +90,13 @@ DEFAULT_CFG = 1.0
 METHODS = (
     "notta", "seed_bon", "always_bon", "motion_bon",
     "shift_search", "backtrack", "knob_probe",
+    "hinge_bon", "late_bon", "hist_drop", "good_backtrack",
+    "cached_bon", "sink",
 )
+TAIL_HISTORY_LATENTS = 3
+SINK_WINDOW_LATENTS = 21
+LATE_MOTION_FRAC = 0.7
+GOOD_SAVE_FRAC = 0.8
 
 
 def prefix_pixel_count(n_lat: int) -> int:
@@ -322,6 +337,170 @@ def _should_backtrack(
     return False, "ok"
 
 
+def _align_block(n: int, block: int = 3) -> int:
+    return int(n) - (int(n) % int(block))
+
+
+def _history_ranges(committed: int, prefix_latents: int, history: str):
+    if committed <= 0:
+        return []
+    if history == "tail":
+        start = max(0, committed - TAIL_HISTORY_LATENTS)
+        start = _align_block(start)
+        return [(start, committed)]
+    if history == "sink":
+        sink_end = int(prefix_latents)
+        if committed <= sink_end + SINK_WINDOW_LATENTS:
+            return [(0, committed)]
+        win_start = max(sink_end, _align_block(committed - SINK_WINDOW_LATENTS))
+        ranges = [(0, sink_end)]
+        if win_start > sink_end:
+            ranges.append((win_start, committed))
+        elif committed > sink_end:
+            ranges.append((sink_end, committed))
+        return ranges
+    return [(0, committed)]
+
+
+def _replay_history(
+    pipeline, output, committed, conditional_dict, history, prefix_latents,
+):
+    if committed <= 0:
+        return
+    ranges = _history_ranges(committed, prefix_latents, history)
+    if not ranges:
+        return
+    if len(ranges) == 1 and ranges[0] == (0, committed):
+        _cache_clean_latents_t2v(
+            pipeline, output[:, :committed], conditional_dict,
+        )
+        return
+    _cache_clean_latents_slices(
+        pipeline, output[:, :committed], conditional_dict, ranges,
+    )
+
+
+def _snapshot_kv(pipeline):
+    kv = []
+    for blk in pipeline.kv_cache1:
+        end = max(
+            int(blk["global_end_index"].item()),
+            int(blk["local_end_index"].item()),
+        )
+        kv.append({
+            "end": end,
+            "local_end": int(blk["local_end_index"].item()),
+            "global_end": int(blk["global_end_index"].item()),
+            "k": blk["k"][:, : max(end, 1)].clone(),
+            "v": blk["v"][:, : max(end, 1)].clone(),
+        })
+    cross = []
+    for blk in pipeline.crossattn_cache:
+        rec = {}
+        for key, val in blk.items():
+            rec[key] = val.clone() if hasattr(val, "clone") else val
+        cross.append(rec)
+    return {"kv": kv, "cross": cross}
+
+
+def _restore_kv(pipeline, snap) -> None:
+    for blk, saved in zip(pipeline.kv_cache1, snap["kv"]):
+        end = saved["end"]
+        if end > 0:
+            blk["k"][:, :end].copy_(saved["k"][:, :end])
+            blk["v"][:, :end].copy_(saved["v"][:, :end])
+        blk["global_end_index"].fill_(saved["global_end"])
+        blk["local_end_index"].fill_(saved["local_end"])
+    for blk, saved in zip(pipeline.crossattn_cache, snap["cross"]):
+        for key, val in saved.items():
+            if (
+                key in blk
+                and hasattr(val, "copy_")
+                and hasattr(blk[key], "copy_")
+            ):
+                blk[key].copy_(val)
+            else:
+                blk[key] = val
+
+
+def _build_cand_specs(
+    method: str,
+    ci: int,
+    n_chunks: int,
+    search_k: int,
+    search_from_chunk: int,
+    default_shift: float,
+    default_cfg: float,
+    incoming_motion: float | None,
+    prefix_motion: float | None,
+):
+    base = {"shift": default_shift, "cfg": default_cfg, "history": "full"}
+    if method == "notta" or ci < search_from_chunk:
+        reason = (
+            "notta" if method == "notta" and ci >= search_from_chunk
+            else "forced_prefix"
+        )
+        return [{**base, "cand": 0, "noise_id": 0}], False, reason
+    if method == "sink":
+        return (
+            [{**base, "cand": 0, "noise_id": 0, "history": "sink"}],
+            False,
+            "sink",
+        )
+    if method in ("seed_bon", "cached_bon", "hinge_bon", "motion_bon"):
+        return (
+            [
+                {**base, "cand": c, "noise_id": c}
+                for c in range(search_k)
+            ],
+            True,
+            method,
+        )
+    if method == "shift_search":
+        return (
+            [
+                {**base, "cand": i, "noise_id": 0, "shift": float(s)}
+                for i, s in enumerate(SHIFT_GRID)
+            ],
+            True,
+            "shift_search",
+        )
+    if method == "late_bon":
+        fire = False
+        reason = "late_skip"
+        if (
+            incoming_motion is not None and incoming_motion == incoming_motion
+            and prefix_motion is not None and prefix_motion == prefix_motion
+            and prefix_motion > 0
+            and incoming_motion < LATE_MOTION_FRAC * prefix_motion
+        ):
+            fire, reason = True, "late_motion"
+        if ci >= n_chunks - 2:
+            fire, reason = True, "late_horizon"
+        if fire:
+            return (
+                [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+                True,
+                reason,
+            )
+        return [{**base, "cand": 0, "noise_id": 0}], False, reason
+    if method == "hist_drop":
+        specs = [
+            {**base, "cand": 0, "noise_id": 0, "history": "full"},
+            {**base, "cand": 1, "noise_id": 0, "history": "tail"},
+            {**base, "cand": 2, "noise_id": 1, "history": "full"},
+            {**base, "cand": 3, "noise_id": 2, "history": "full"},
+        ]
+        return specs[: max(2, search_k)], True, "hist_drop"
+    if method in ("backtrack", "good_backtrack"):
+        return (
+            [{**base, "cand": 0, "noise_id": 0}],
+            False,
+            f"{method}_first",
+        )
+    return [{**base, "cand": 0, "noise_id": 0}], False, "notta"
+
+
 def _run_one_chunk(
     pipeline,
     output,
@@ -334,6 +513,9 @@ def _run_one_chunk(
     device,
     shift: float,
     cfg: float,
+    history: str = "full",
+    prefix_latents: int = PREFIX_LATENTS_DEFAULT,
+    kv_snap=None,
 ):
     import torch
 
@@ -344,11 +526,15 @@ def _run_one_chunk(
         [1, chunk_latents, LATENT_C, LATENT_H, LATENT_W],
         device=device, dtype=torch.bfloat16, generator=rng,
     )
-    _reset_caches(pipeline, 1, output.dtype, device)
-    if committed > 0:
-        _cache_clean_latents_t2v(
-            pipeline, output[:, :committed], conditional_dict,
-        )
+    if kv_snap is None:
+        _reset_caches(pipeline, 1, output.dtype, device)
+        if committed > 0:
+            _replay_history(
+                pipeline, output, committed, conditional_dict,
+                history, prefix_latents,
+            )
+    else:
+        _restore_kv(pipeline, kv_snap)
     _denoise_chunk(pipeline, noise, committed, conditional_dict, output, rng)
     end = committed + chunk_latents
     pixels = _decode_pixels(pipeline, output[:, :end])
@@ -397,14 +583,14 @@ def generate_chunked_v2v(
     incoming_prev = None
     chunk_logs = []
     prefix_motion = None
+    good_committed = prefix_latents
 
     for ci in range(n_chunks):
         incoming_signals = None
         incoming_devs = None
         incoming_drift = None
         incoming_delta = None
-        searched = False
-        reason = "forced_prefix"
+        incoming_motion = None
 
         if ref is not None and committed_pixels is not None:
             incoming_signals = _incoming_window(committed_pixels)
@@ -413,39 +599,16 @@ def generate_chunked_v2v(
                     incoming_signals, ref, seam_weight=0.0,
                 )
                 incoming_drift = incoming_devs["score"]
+                incoming_motion = incoming_signals.get("temporal_motion")
                 if incoming_prev is not None:
                     incoming_delta = incoming_drift - incoming_prev
 
-        cand_specs: list[dict] = []
-        if method == "notta" or ci < search_from_chunk:
-            cand_specs = [{"cand": 0, "shift": default_shift, "cfg": default_cfg}]
-            reason = "notta" if method == "notta" and ci >= search_from_chunk else "forced_prefix"
-        elif method == "seed_bon":
-            cand_specs = [
-                {"cand": c, "shift": default_shift, "cfg": default_cfg}
-                for c in range(search_k)
-            ]
-            searched, reason = True, "seed_bon"
-        elif method == "motion_bon":
-            cand_specs = [
-                {"cand": c, "shift": default_shift, "cfg": default_cfg}
-                for c in range(search_k)
-            ]
-            searched, reason = True, "motion_bon"
-        elif method == "shift_search":
-            cand_specs = [
-                {"cand": i, "shift": float(s), "cfg": default_cfg}
-                for i, s in enumerate(SHIFT_GRID)
-            ]
-            searched, reason = True, "shift_search"
-        elif method == "backtrack":
-            cand_specs = [{"cand": 0, "shift": default_shift, "cfg": default_cfg}]
-            reason = "backtrack_first"
-        else:
-            cand_specs = [{"cand": 0, "shift": default_shift, "cfg": default_cfg}]
-            reason = "notta"
+        cand_specs, searched, reason = _build_cand_specs(
+            method, ci, n_chunks, search_k, search_from_chunk,
+            default_shift, default_cfg, incoming_motion, prefix_motion,
+        )
 
-        def _score_cand(latents, pixels, cand, shift, cfg):
+        def _score_cand(latents, pixels, cand, shift, cfg, history="full"):
             n_committed_pix = t2v_pixel_frames(committed)
             gen_only = pixels[n_committed_pix:]
             last_cond = pixels[n_committed_pix - 1]
@@ -453,12 +616,15 @@ def generate_chunked_v2v(
             free = gen_free_signals(gen_only, last_cond)
             br = score_breakdown(free, nonlocal_ref, seam_weight=seam_weight)
             mscore = motion_pick_score(free, nonlocal_ref)
+            hscore = prefix_match_score(free, nonlocal_ref, seam_weight=seam_weight)
             return {
                 "cand": cand,
                 "seed": _cand_seed(seed, cand),
                 "shift": float(shift),
                 "cfg": float(cfg),
+                "history": history,
                 "score": br["score"],
+                "hinge_score": hscore,
                 "motion_score": mscore,
                 "latents": latents,
                 "pixels": pixels,
@@ -466,13 +632,26 @@ def generate_chunked_v2v(
                 "breakdown": br,
             }
 
+        kv_snap = None
+        if method == "cached_bon" and committed > 0:
+            _reset_caches(pipeline, 1, output.dtype, device)
+            _replay_history(
+                pipeline, output, committed, conditional_dict,
+                "full", prefix_latents,
+            )
+            kv_snap = _snapshot_kv(pipeline)
+
         cands = []
         built_ref = ref
         for spec in cand_specs:
+            noise_id = int(spec.get("noise_id", spec["cand"]))
+            hist = spec.get("history", "full")
             latents, pixels = _run_one_chunk(
                 pipeline, output, committed, chunk_latents,
-                conditional_dict, seed, spec["cand"], ci, device,
+                conditional_dict, seed, noise_id, ci, device,
                 spec["shift"], spec["cfg"],
+                history=hist, prefix_latents=prefix_latents,
+                kv_snap=kv_snap,
             )
             if built_ref is None:
                 prefix_win = pixels[: min(prefix_pix_n, pixels.shape[0])]
@@ -487,15 +666,16 @@ def generate_chunked_v2v(
                 prefix_motion = float(np.mean(np.abs(
                     prefix_win[1:] - prefix_win[:-1]
                 )))
-            # bind ref for scoring
             ref = built_ref
             rec = _score_cand(
                 latents, pixels, spec["cand"], spec["shift"], spec["cfg"],
+                history=hist,
             )
             cands.append(rec)
             print(
-                f"    chunk {ci} cand{spec['cand']} shift={spec['shift']} "
-                f"cfg={spec['cfg']} score={rec['score']:.4f} "
+                f"    chunk {ci} cand{spec['cand']} hist={hist} "
+                f"shift={spec['shift']} cfg={spec['cfg']} "
+                f"score={rec['score']:.4f} hinge={rec['hinge_score']:.4f} "
                 f"motion={rec['free']['temporal_motion']:.4g} "
                 f"motion_pick={rec['motion_score']:.4g}",
                 flush=True,
@@ -510,6 +690,8 @@ def generate_chunked_v2v(
                     else -1e9
                 ),
             )
+        elif method in ("hinge_bon", "hist_drop"):
+            chosen = min(range(len(cands)), key=lambda i: cands[i]["hinge_score"])
         else:
             chosen = min(range(len(cands)), key=lambda i: cands[i]["score"])
 
@@ -547,10 +729,10 @@ def generate_chunked_v2v(
                     pipeline, output, committed, chunk_latents,
                     conditional_dict, seed, 1, ci, device,
                     default_shift, default_cfg,
+                    history="full", prefix_latents=prefix_latents,
                 )
                 rec = _score_cand(latents, pixels, 1, default_shift, default_cfg)
                 cands.append(rec)
-                # keep the resample if it is not worse on drift
                 if rec["score"] <= best["score"] or (
                     rec["free"]["temporal_motion"]
                     > (best["free"]["temporal_motion"] or 0)
@@ -568,9 +750,63 @@ def generate_chunked_v2v(
                 outgoing_drift = (
                     outgoing_devs["score"] if outgoing_devs is not None else None
                 )
+                outgoing_motion = (
+                    outgoing_signals.get("temporal_motion")
+                    if outgoing_signals else None
+                )
                 backtracked = True
                 searched = True
                 reason = f"backtrack:{backtrack_reason}"
+        elif method == "good_backtrack" and ci >= search_from_chunk:
+            fire, backtrack_reason = _should_backtrack(
+                outgoing_drift, outgoing_motion, prefix_motion,
+                backtrack_threshold, backtrack_motion_frac,
+            )
+            prev_was_good = good_committed == committed - chunk_latents
+            if fire and prev_was_good:
+                print(
+                    f"    good_backtrack chunk {ci}: {backtrack_reason} "
+                    f"rewind_to={good_committed} motion={outgoing_motion}",
+                    flush=True,
+                )
+                committed -= chunk_latents
+                latents, pixels = _run_one_chunk(
+                    pipeline, output, committed, chunk_latents,
+                    conditional_dict, seed, 1, ci, device,
+                    default_shift, default_cfg,
+                    history="full", prefix_latents=prefix_latents,
+                )
+                rec = _score_cand(latents, pixels, 1, default_shift, default_cfg)
+                cands.append(rec)
+                chosen = len(cands) - 1
+                best = rec
+                output[:, committed:committed + chunk_latents] = best["latents"]
+                committed += chunk_latents
+                committed_pixels = best["pixels"]
+                outgoing_signals = _incoming_window(committed_pixels)
+                outgoing_devs = (
+                    score_breakdown(outgoing_signals, ref, seam_weight=0.0)
+                    if outgoing_signals is not None else None
+                )
+                outgoing_drift = (
+                    outgoing_devs["score"] if outgoing_devs is not None else None
+                )
+                outgoing_motion = (
+                    outgoing_signals.get("temporal_motion")
+                    if outgoing_signals else None
+                )
+                backtracked = True
+                searched = True
+                reason = f"good_backtrack:{backtrack_reason}"
+            elif fire and not prev_was_good:
+                reason = f"good_backtrack:skip_poison:{backtrack_reason}"
+        if (
+            outgoing_motion is not None and outgoing_motion == outgoing_motion
+            and prefix_motion is not None and prefix_motion == prefix_motion
+            and prefix_motion > 0
+            and outgoing_motion >= GOOD_SAVE_FRAC * prefix_motion
+        ):
+            good_committed = committed
 
         cand0_score = cands[0]["score"]
         rec = {
@@ -581,18 +817,21 @@ def generate_chunked_v2v(
             "incoming_drift": _json_float(incoming_drift),
             "incoming_prev": _json_float(incoming_prev),
             "incoming_delta": _json_float(incoming_delta),
+            "incoming_motion": _json_float(incoming_motion),
             "incoming_signals": _json_signals(incoming_signals),
             "incoming_devs": _json_signals(incoming_devs),
             "outgoing_drift": _json_float(outgoing_drift),
             "outgoing_devs": _json_signals(outgoing_devs),
             "outgoing_motion": _json_float(outgoing_motion),
             "prefix_motion": _json_float(prefix_motion),
+            "good_committed": int(good_committed),
             "searched": bool(searched),
             "gate_reason": reason,
             "backtracked": bool(backtracked),
             "backtrack_reason": backtrack_reason,
             "cand0_score": _json_float(cand0_score),
             "chosen_score": _json_float(best["score"]),
+            "chosen_hinge_score": _json_float(best["hinge_score"]),
             "chosen_motion_score": _json_float(best["motion_score"]),
             "chosen_minus_cand0": _json_float(best["score"] - cand0_score),
             "chosen_breakdown": _json_signals(best["breakdown"]),
@@ -602,11 +841,13 @@ def generate_chunked_v2v(
                     "seed": c["seed"],
                     "shift": c["shift"],
                     "cfg": c["cfg"],
+                    "history": c.get("history", "full"),
                     "score": _json_float(c["score"]),
+                    "hinge_score": _json_float(c["hinge_score"]),
                     "motion_score": _json_float(c["motion_score"]),
                     "chosen": c["cand"] == best["cand"] and math.isclose(
                         c["shift"], best["shift"],
-                    ),
+                    ) and c.get("history", "full") == best.get("history", "full"),
                     "signals": _json_signals(c["free"]),
                     "devs": _json_signals(c["breakdown"]),
                     **{k: _json_float(c["free"][k]) for k in c["free"]},

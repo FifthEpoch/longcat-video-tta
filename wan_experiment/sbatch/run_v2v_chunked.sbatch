@@ -11,7 +11,8 @@
 #SBATCH --error=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_v2v_chunk_%j.err
 #SBATCH --comment="preemption=yes;requeue=true"
 
-# Chunked Wan V2V: METHOD=notta|seed_bon|motion_bon|shift_search|backtrack|knob_probe
+# Chunked Wan V2V: METHOD=notta|seed_bon|hinge_bon|late_bon|hist_drop|
+#   good_backtrack|cached_bon|sink|motion_bon|shift_search|backtrack|knob_probe
 #   sbatch --export=ALL,METHOD=notta,HORIZON_S=30,N_VIDEOS=2 \
 #       wan_experiment/sbatch/run_v2v_chunked.sbatch
 

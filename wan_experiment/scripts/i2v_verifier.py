@@ -118,6 +118,34 @@ def verifier_score(
     return float(score_breakdown(free, ref, seam_weight=seam_weight)["score"])
 
 
+def prefix_match_score(
+    free: Dict[str, float],
+    ref: Dict[str, float],
+    seam_weight: float = 0.25,
+) -> float:
+    """Lower = closer to the (moving) prefix.
+
+    Appearance is two-sided. Motion is a hinge: only penalize
+    ``motion < prefix_motion``. Extra twitch is not a win.
+    """
+    parts: list[float] = []
+    for k in ("sharpness", "colorfulness", "contrast"):
+        d = _rel_dev(free.get(k), ref.get(k))
+        if d == d:
+            parts.append(d)
+    cur = free.get("temporal_motion")
+    refm = ref.get("temporal_motion")
+    if (
+        cur is not None and cur == cur
+        and refm is not None and refm == refm
+    ):
+        parts.append(max(0.0, (float(refm) - float(cur)) / (abs(float(refm)) + 1e-6)))
+    seam = seam_term(free, ref)
+    if seam == seam:
+        parts.append(float(seam_weight) * seam)
+    return float(sum(parts)) if parts else float("nan")
+
+
 def motion_pick_score(
     free: Dict[str, float],
     ref: Dict[str, float],

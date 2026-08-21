@@ -2682,3 +2682,29 @@ seeds; (3) attention sink of the prefix; (4) history-dropout search
 (HG without CFG); (5) backtrack to last *good* chunk; (6) CachedSearch
 only after N=32 confirms. Do not resubmit |Δframe|-max or dead-tail
 backtrack. No TTC.
+
+---
+
+## 2026-08-20 — N=32 confirm in flight; tricks implemented
+**Tags:** decision, wan, v2v, in-flight
+**Owner:** agent
+**Refs:** jobs 16113805 / 16113806; `submit_v2v_bakeoff.sh` `TRICKS=1`;
+`paper_tables/2026-08-20_wan_v2v_tricks_8v_spec.md`
+
+User pasted a successful `CONFIRM=1` submit after pulling `7371ea3`.
+`v2v_panda_confirm_32v` notta=16113805, seed_bon=16113806. Do not scancel.
+
+Same turn: “let’s test everything.” Implemented the six sampling-space
+probes on the existing V2V runner (no TTC, no |Δframe|-max, no
+dead-tail backtrack, no shift/CFG):
+
+1. `hinge_bon` — k=4, `prefix_match_score` (appearance two-sided, motion hinge)
+2. `late_bon` — seed_bon only if incoming motion < 0.7× prefix or last 2 chunks
+3. `hist_drop` — full history vs last-3 latents vs extra seeds; hinge pick
+4. `good_backtrack` — resample only if this chunk collapsed and the previous commit was good
+5. `cached_bon` — seed_bon pick, KV replayed once then snapshotted
+6. `sink` — k=1, replay prefix + last 21 latents (no rerope checkpoint)
+
+N=8, same first-8 Panda videos as the bake-off. Submit with `TRICKS=1`.
+2-way cap: extras queue behind the N=32 pair. Analyze with
+`--baseline-dir .../v2v_panda_bakeoff_8v`.

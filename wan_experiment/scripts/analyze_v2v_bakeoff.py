@@ -15,7 +15,11 @@ import statistics
 from pathlib import Path
 
 
-METHODS = ("notta", "seed_bon", "motion_bon", "shift_search", "backtrack")
+METHODS = (
+    "notta", "seed_bon", "motion_bon", "shift_search", "backtrack",
+    "hinge_bon", "late_bon", "hist_drop", "good_backtrack",
+    "cached_bon", "sink",
+)
 VBENCH_DIMS = (
     "subject_consistency",
     "background_consistency",
@@ -75,14 +79,25 @@ def _load_vbench(method_dir: Path, clip: str = "full") -> dict[str, float] | Non
     return None
 
 
-def analyze(series_dir: Path, clip: str = "full") -> dict:
+def analyze(
+    series_dir: Path,
+    clip: str = "full",
+    baseline_dir: Path | None = None,
+) -> dict:
     by = {}
     for m in METHODS:
         rows = _load_rows(series_dir, m)
         if rows:
             by[m] = {_key(r): r for r in rows}
+    if "notta" not in by and baseline_dir is not None:
+        rows = _load_rows(baseline_dir, "notta")
+        if rows:
+            by["notta"] = {_key(r): r for r in rows}
     if "notta" not in by:
-        raise FileNotFoundError(f"no notta rows under {series_dir}")
+        raise FileNotFoundError(
+            f"no notta rows under {series_dir}"
+            + (f" or {baseline_dir}" if baseline_dir else "")
+        )
     keys = sorted(by["notta"])
     for m, mapping in by.items():
         keys = [k for k in keys if k in mapping]
@@ -93,6 +108,8 @@ def analyze(series_dir: Path, clip: str = "full") -> dict:
         last = [mapping[k].get("last_chunk_score") for k in keys]
         last_m = [mapping[k].get("last_chunk_motion_score") for k in keys]
         dirs = sorted(series_dir.glob(f"{m}_h*s_shard*"))
+        if m == "notta" and not dirs and baseline_dir is not None:
+            dirs = sorted(baseline_dir.glob(f"{m}_h*s_shard*"))
         vb = _load_vbench(dirs[0], clip) if dirs else None
         method_stats[m] = {
             "n": len(keys),
@@ -197,10 +214,14 @@ def analyze(series_dir: Path, clip: str = "full") -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--series-dir", required=True, type=Path)
+    ap.add_argument("--baseline-dir", type=Path, default=None,
+                    help="optional series that has notta (e.g. bakeoff_8v)")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--clip", default="full")
     args = ap.parse_args()
-    result = analyze(args.series_dir, clip=args.clip)
+    result = analyze(
+        args.series_dir, clip=args.clip, baseline_dir=args.baseline_dir,
+    )
     print(result["markdown"])
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

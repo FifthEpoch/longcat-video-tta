@@ -115,6 +115,34 @@ def _cache_clean_latents_t2v(pipeline, latents, conditional_dict) -> None:
         t += block
 
 
+def _cache_clean_latents_slices(pipeline, latents, conditional_dict, ranges) -> None:
+    """Replay selected [start, end) latent spans at their original RoPE starts."""
+    import torch
+
+    bsz = latents.shape[0]
+    block = int(pipeline.num_frame_per_block)
+    device = latents.device
+    for start, end in ranges:
+        if end <= start:
+            continue
+        if (end - start) % block != 0:
+            raise RuntimeError(
+                f"slice [{start},{end}) length {end - start} not a multiple of {block}"
+            )
+        t = start
+        while t < end:
+            ts = torch.ones([bsz, block], device=device, dtype=torch.int64) * 0
+            pipeline.generator(
+                noisy_image_or_video=latents[:, t:t + block],
+                conditional_dict=conditional_dict,
+                timestep=ts,
+                kv_cache=pipeline.kv_cache1,
+                crossattn_cache=pipeline.crossattn_cache,
+                current_start=t * pipeline.frame_seq_length,
+            )
+            t += block
+
+
 def generate_chunked_t2v(
     pipeline,
     prompt: str,
