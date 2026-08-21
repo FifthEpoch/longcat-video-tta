@@ -2630,3 +2630,22 @@ On a real prefix, k=4 seed search is a live sampling-space intervention.
 Greedy motion pick and backtrack are not. Next allowed confirm: notta vs
 seed_bon only, N=32. N=8 Dyn is a coin-flip. No TTC. No I2V-32. No
 shift_search.
+
+---
+
+## 2026-08-20 — Recommend N=32 notta vs seed_bon only
+**Tags:** decision, methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-20_wan_v2v_what_happened.md`
+
+User asked what the bake-off meant and what to try next.
+
+Plain reading: seed diversity on a real prefix is the only live
+actuator we found. The “smart” ideas (motion pick, backtrack, shift,
+CFG) failed or were no-ops. The win used the old drift pick score — so
+the finding is “four seeds can leave the freeze on V2V,” not “we have a
+good verifier.”
+
+Recommend one confirm: N=32, notta vs seed_bon, same V2V protocol. If
+it holds, next method work is cheaper seed search or attention sink.
+If it dies, N=8 was noise. Not submitted until the user says go.
