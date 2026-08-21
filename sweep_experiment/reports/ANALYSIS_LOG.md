@@ -3006,3 +3006,27 @@ longlive_notta 0.0150 HOLD — host is not the Dyn fix.
 
 ---
 
+## 2026-08-21 — live gate is net-nonnegative at N=8; 0000 FN
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_lineage_pervideo.md`
+
+Per-video tails. Search iff prefix ≥ 0.012 fired on 0001 (0.022),
+0006 (0.019), 0007 (0.070). Those bit-match seed_bon (live_bon) or
+hist_drop (live_hist). Skips bit-match notta, including **0002/0003**
+where seed_bon damped.
+
+live_bon vs notta: 3 wins, 5 exact ties, **0 losses**. That is the
+first search policy with this sign pattern on these 8.
+
+0000 prefix 0.00638 was skipped — missed seed’s +0.013 recovery.
+The 12:24 reconstruction (0000+0007 searched) is wrong. Median
+0.0229 is 0006+0007 recoveries plus 0002/0003 kept high.
+
+Do not scale to 32. VBench still missing. Do not retune live_min
+while the rest of the wave is queued. longlive_notta still HOLD
+(0002/0004 much worse than SF notta).
+
+---
+
+
