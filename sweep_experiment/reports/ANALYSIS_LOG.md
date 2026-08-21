@@ -2720,3 +2720,32 @@ Cluster pulled `fb11147` and submitted all six tricks. Confirm
 16113805/806 still Running on gh116/gh119. Tricks all Pending
 `QOSGrpGRES` on `h200_cour`. Courtesy did not bypass the 2-way cap
 this time. No cancel. Start when a confirm GPU frees.
+
+---
+
+## 2026-08-21 — N=32 seed_bon dies; hist_drop is the only live trick
+**Tags:** finding, negative-result, wan, v2v, paper-narrative
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_confirm_32_and_tricks.md`;
+`experiment_outputs/2026-08-21.md` 02:21
+
+Generate complete: confirm 32/32, tricks 6×8/8.
+
+**seed_bon N=32 tail motion 0.01018 vs notta 0.01380 (−26%).** The N=8
++35% / Dyn 0→0.5 promote is a lucky prefix of the sorted Panda list.
+Do not write the paper around seed-BoN. Last-chunk drift also fell
+(20.5→18.5) — two-sided match quieted the tail, same failure mode as
+I2V-from-still.
+
+Tricks on the same 8 as the bake-off:
+- `cached_bon` = bake-off seed_bon to printed precision (KV snapshot works).
+- `sink` = bake-off notta to printed precision (replay-approx sink is dead).
+- `hinge_bon` +11% vs notta, **−18% vs seed_bon** — H-match hinge is not
+  why the 8 won.
+- `late_bon` −10%, `good_backtrack` −22% (drift 97).
+- `hist_drop` 0.02377 (**+42% vs notta, +6% vs seed_bon**). Only new
+  motion win. Still N=8. VBench IQ/subject before any scale-up.
+
+Next: full-clip VBench on confirm `{notta,seed_bon}` (document the kill)
+and tricks `hist_drop`. No TTC. No hist_drop N=32 until VBench +
+per-video check.
