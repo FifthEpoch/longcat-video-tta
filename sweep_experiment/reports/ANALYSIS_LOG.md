@@ -2963,3 +2963,23 @@ Submit: `bash wan_experiment/sbatch/submit_v2v_ideas.sh` after
 `git pull --ff-only origin main`. 2-way cap queues behind lineage.
 
 ---
+
+## 2026-08-21 — Lineage generate health: 808/809/811 COMPLETED
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `experiment_outputs/2026-08-21.md` (12:08 dump)
+
+Jobs **16140808** live_bon 31m, **16140809** live_hist 28m,
+**16140810** download 65s, **16140811** longlive_notta 18m: all
+COMPLETED 0:0, n_ok=8, 8 mp4s + summary. LongLive + RF ckpts on
+disk. 812–815 still PENDING. Ideas 125–131 still PENDING.
+
+Clip 0007 (the live-prefix recovery case, bake-off notta 0.01210):
+live_bon 0.02617 **bit-matches seed_bon**; live_hist 0.02856
+**bit-matches hist_drop**; longlive_notta 0.01499 (host did not
+unstick this collapse). That is the live gate firing on the one
+clip it should search. Population verdict needs the other 7
+(still prefixes should match notta). Do not promote from 0007
+alone. No VBench yet.
+
+---
