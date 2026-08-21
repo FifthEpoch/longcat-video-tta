@@ -2915,3 +2915,21 @@ hist_drop-32. 2-way H200 cap queues extras.
 
 Command: `bash wan_experiment/sbatch/submit_v2v_lineage.sh` after
 `git pull --ff-only origin main`.
+
+---
+
+## 2026-08-21 — Nine TTA/TTC ideas scored for sampling-space V2V
+**Tags:** methodology, wan, v2v, literature
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_sampling_ideas.md`
+
+User proposals ranked for *our* lock (sampling-space, no weight TTA).
+Keep: (1) pseudo-future validation as a **gate** on seeds/policies, not
+θ — `live_bon` is the cheap proxy in flight; (5) prefix anchor with
+**appearance ≠ motion** (naive prefix-match already froze Dyn at N=32);
+(3) noise-calibrated U_t as a trigger **after** an ε-stat probe on
+4-step DMD; (9) router as the system once 1 and 5 have N=8 numbers.
+Rewrite or drop: (2)(7) parameter TTA; (4) rolling ρ on vanilla SF
+(shift/CFG were dead; maybe RF host); (6) lookahead on 4-step DMD
+(= seed BoN); (8) horizon-increasing δ (`late_bon` already lost).
+Do not submit new GPUs until lineage 16140808–816 finishes.
