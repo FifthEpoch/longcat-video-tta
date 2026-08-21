@@ -31,11 +31,27 @@ VBENCH_DIMS = (
 )
 
 
-def _load_rows(series_dir: Path, method: str) -> list[dict]:
+def _load_rows(series_dir: Path, method: str, allow_partial: bool = False) -> list[dict]:
     rows = []
     for p in sorted(series_dir.glob(f"{method}_h*s_shard*/summary.json")):
         data = json.loads(p.read_text())
         rows.extend(r for r in data.get("rows") or [] if r.get("ok"))
+    if rows or not allow_partial:
+        return rows
+    # Job still running: summary.json is written only at the end.
+    # Each finished clip already has a per-video sidecar.
+    for d in sorted(series_dir.glob(f"{method}_h*s_shard*")):
+        for p in sorted(d.glob("*.json")):
+            if p.name in {"summary.json", "joined.json"}:
+                continue
+            if "vbench" in p.name:
+                continue
+            try:
+                rec = json.loads(p.read_text())
+            except Exception:
+                continue
+            if rec.get("ok") and rec.get("tail_motion") is not None:
+                rows.append(rec)
     return rows
 
 
@@ -83,14 +99,15 @@ def analyze(
     series_dir: Path,
     clip: str = "full",
     baseline_dir: Path | None = None,
+    allow_partial: bool = False,
 ) -> dict:
     by = {}
     for m in METHODS:
-        rows = _load_rows(series_dir, m)
+        rows = _load_rows(series_dir, m, allow_partial=allow_partial)
         if rows:
             by[m] = {_key(r): r for r in rows}
     if "notta" not in by and baseline_dir is not None:
-        rows = _load_rows(baseline_dir, "notta")
+        rows = _load_rows(baseline_dir, "notta", allow_partial=allow_partial)
         if rows:
             by["notta"] = {_key(r): r for r in rows}
     if "notta" not in by:
@@ -113,6 +130,7 @@ def analyze(
         vb = _load_vbench(dirs[0], clip) if dirs else None
         method_stats[m] = {
             "n": len(keys),
+            "n_on_disk": len(mapping),
             "tail_motion_median": _median(tail),
             "last_chunk_score_median": _median(last),
             "last_chunk_motion_median": _median(last_m),
@@ -150,7 +168,8 @@ def analyze(
     lines = [
         "# V2V sampling-space bake-off",
         "",
-        f"Series: `{series_dir}`  paired N={len(keys)}  cite medians.",
+        f"Series: `{series_dir}`  paired N={len(keys)}  cite medians."
+        + ("  **PARTIAL** (running job / per-video json)." if allow_partial else ""),
         "",
         "| Method | tail motion | last-chunk drift ↓ | last-chunk motion ↑ | decision |",
         "|---|---:|---:|---:|---|",
@@ -216,11 +235,14 @@ def main() -> int:
     ap.add_argument("--series-dir", required=True, type=Path)
     ap.add_argument("--baseline-dir", type=Path, default=None,
                     help="optional series that has notta (e.g. bakeoff_8v)")
+    ap.add_argument("--allow-partial", action="store_true",
+                    help="read per-video json if summary.json is not written yet")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--clip", default="full")
     args = ap.parse_args()
     result = analyze(
         args.series_dir, clip=args.clip, baseline_dir=args.baseline_dir,
+        allow_partial=args.allow_partial,
     )
     print(result["markdown"])
     if args.out:
