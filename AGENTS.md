@@ -271,9 +271,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-21 ~11:30): lineage
-  **16140808–816** (do not scancel). Ideas wave not yet on cluster
-  until user runs `submit_v2v_ideas.sh`.
+- **In-flight cluster jobs** (as of 2026-08-21 12:45):
+  lineage **16140812–816** (808/809/811 DONE); ideas **16145125–131**;
+  live_bon-32 yes/no **16147007** + VBench **16147008**. Do not scancel.
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic

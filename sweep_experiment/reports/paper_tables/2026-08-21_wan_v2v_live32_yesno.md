@@ -10,7 +10,7 @@ in the background; they are not this decision.
 
 **Series:** `v2v_panda_live_32v`
 **Baseline:** existing `v2v_panda_confirm_32v/notta` (do not regenerate).
-**Submit:** `bash wan_experiment/sbatch/submit_v2v_live32.sh`
+**Jobs:** generate **16147007**, VBench **16147008** (afterany). Submitted 12:45. PD Priority behind lineage/ideas.
 
 ## Locked verdict
 
