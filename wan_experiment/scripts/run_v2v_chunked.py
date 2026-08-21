@@ -17,6 +17,8 @@ Methods:
                    previous commit was good (≥0.8× prefix motion)
   cached_bon     — seed_bon pick, KV replayed once per chunk then snapshotted
   sink           — k=1, replay prefix + last window only (attention-sink approx)
+  quiet_bon      — seed_bon only if real prefix_motion < 0.018; else k=1 (hot skip)
+  tail_hist      — k=1, replay last 3 latents only (short history, no search)
   knob_probe     — first gen chunk only; grid shift × cfg; no 30 s write
 
 No TTC. Do not scale I2V-32.
@@ -91,12 +93,15 @@ METHODS = (
     "notta", "seed_bon", "always_bon", "motion_bon",
     "shift_search", "backtrack", "knob_probe",
     "hinge_bon", "late_bon", "hist_drop", "good_backtrack",
-    "cached_bon", "sink",
+    "cached_bon", "sink", "quiet_bon", "tail_hist",
 )
 TAIL_HISTORY_LATENTS = 3
 SINK_WINDOW_LATENTS = 21
 LATE_MOTION_FRAC = 0.7
 GOOD_SAVE_FRAC = 0.8
+# Search only if the real prefix is below this. N=32: seed_bon went 0/7
+# on notta-tail≥0.020 (hot). 0.018 sits between mid and hot.
+QUIET_SEARCH_MAX = 0.018
 
 
 def prefix_pixel_count(n_lat: int) -> int:
@@ -484,6 +489,27 @@ def _build_cand_specs(
                 reason,
             )
         return [{**base, "cand": 0, "noise_id": 0}], False, reason
+    if method == "quiet_bon":
+        if (
+            prefix_motion is not None and prefix_motion == prefix_motion
+            and prefix_motion >= QUIET_SEARCH_MAX
+        ):
+            return (
+                [{**base, "cand": 0, "noise_id": 0}],
+                False,
+                "quiet_hot",
+            )
+        return (
+            [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+            True,
+            "quiet_search",
+        )
+    if method == "tail_hist":
+        return (
+            [{**base, "cand": 0, "noise_id": 0, "history": "tail"}],
+            False,
+            "tail_hist",
+        )
     if method == "hist_drop":
         specs = [
             {**base, "cand": 0, "noise_id": 0, "history": "full"},
@@ -582,7 +608,12 @@ def generate_chunked_v2v(
     committed_pixels = None
     incoming_prev = None
     chunk_logs = []
-    prefix_motion = None
+    prefix_only = _decode_pixels(pipeline, output[:, :prefix_latents])
+    prefix_motion = (
+        float(np.mean(np.abs(prefix_only[1:] - prefix_only[:-1])))
+        if prefix_only.shape[0] >= 2 else None
+    )
+    print(f"  prefix_motion={prefix_motion}", flush=True)
     good_committed = prefix_latents
 
     for ci in range(n_chunks):
@@ -663,9 +694,10 @@ def generate_chunked_v2v(
                     else prefix_win
                 )
                 built_ref = reference_signals(ref_win)
-                prefix_motion = float(np.mean(np.abs(
-                    prefix_win[1:] - prefix_win[:-1]
-                )))
+                if prefix_motion is None:
+                    prefix_motion = float(np.mean(np.abs(
+                        prefix_win[1:] - prefix_win[:-1]
+                    )))
             ref = built_ref
             rec = _score_cand(
                 latents, pixels, spec["cand"], spec["shift"], spec["cfg"],

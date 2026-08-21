@@ -4,10 +4,11 @@
 #   PROBE=1    → N=2 knob_probe (shift × cfg)
 #   CONFIRM=1  → N=32 notta vs seed_bon only (N=8 promote confirm)
 #   TRICKS=1   → N=8 sampling-space probes (same 8 videos as bake-off)
+#   NEXT=1     → quiet_bon N=32 + tail_hist N=8 (post-confirm bedtime pair)
 #   default    → N=8 wave-1 methods
 #
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-#   TRICKS=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh
+#   NEXT=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh
 #
 # No TTC. Do not scale I2V-32. 2-way H200 cap: extras queue.
 
@@ -23,6 +24,7 @@ SMOKE="${SMOKE:-0}"
 PROBE="${PROBE:-0}"
 CONFIRM="${CONFIRM:-0}"
 TRICKS="${TRICKS:-0}"
+NEXT="${NEXT:-0}"
 SKIP_SHIFT="${SKIP_SHIFT:-0}"
 SKIP_BACKTRACK="${SKIP_BACKTRACK:-0}"
 NOTTA_WALL="${NOTTA_WALL:-04:00:00}"
@@ -52,6 +54,12 @@ elif [[ "${TRICKS}" == "1" ]]; then
     METHODS=(hinge_bon late_bon hist_drop good_backtrack cached_bon sink)
     NOTTA_WALL="${NOTTA_WALL:-04:00:00}"
     SEARCH_WALL="${SEARCH_WALL:-08:00:00}"
+elif [[ "${NEXT}" == "1" ]]; then
+    SERIES="${SERIES:-v2v_panda_next}"
+    N_VIDEOS="${N_VIDEOS:-32}"
+    METHODS=()
+    NOTTA_WALL="${NOTTA_WALL:-04:00:00}"
+    SEARCH_WALL="${SEARCH_WALL:-08:00:00}"
 else
     SERIES="${SERIES:-v2v_panda_bakeoff_8v}"
     N_VIDEOS="${N_VIDEOS:-8}"
@@ -76,14 +84,37 @@ if [[ ! -d "${VIDEO_DIR}" ]]; then
 fi
 
 JOBS=()
+if [[ "${NEXT}" == "1" ]]; then
+    J=$(sbatch --parsable --account="${ACCOUNT}" --time="${SEARCH_WALL}" \
+        --export=ALL,METHOD=quiet_bon,SEARCH_K=4,HORIZON_S=30,N_VIDEOS=32,SEED=0,SEARCH_FROM=0,PREFIX_LATENTS=9,CHUNK_LATENTS=21,SERIES=v2v_panda_quiet_32v,NUM_SHARDS=1,VIDEO_DIR="${VIDEO_DIR}" \
+        "${SB}/run_v2v_chunked.sbatch")
+    echo "V2V v2v_panda_quiet_32v quiet_bon n=32 job ${J}"
+    JOBS+=("${J}")
+    J=$(sbatch --parsable --account="${ACCOUNT}" --time="${NOTTA_WALL}" \
+        --export=ALL,METHOD=tail_hist,SEARCH_K=1,HORIZON_S=30,N_VIDEOS=8,SEED=0,SEARCH_FROM=0,PREFIX_LATENTS=9,CHUNK_LATENTS=21,SERIES=v2v_panda_tail_8v,NUM_SHARDS=1,VIDEO_DIR="${VIDEO_DIR}" \
+        "${SB}/run_v2v_chunked.sbatch")
+    echo "V2V v2v_panda_tail_8v tail_hist n=8 job ${J}"
+    JOBS+=("${J}")
+    echo "Submitted ${#JOBS[@]} jobs: ${JOBS[*]}"
+    echo "2-way H200 cap: extras queue behind VBench. No TTC. No hist_drop-32."
+    echo "When they finish:"
+    echo "  python wan_experiment/scripts/analyze_v2v_bakeoff.py \\"
+    echo "    --series-dir ${PROJECT_ROOT}/wan_experiment/results/v2v_panda_quiet_32v \\"
+    echo "    --baseline-dir ${PROJECT_ROOT}/wan_experiment/results/v2v_panda_confirm_32v"
+    echo "  python wan_experiment/scripts/analyze_v2v_bakeoff.py \\"
+    echo "    --series-dir ${PROJECT_ROOT}/wan_experiment/results/v2v_panda_tail_8v \\"
+    echo "    --baseline-dir ${PROJECT_ROOT}/wan_experiment/results/v2v_panda_bakeoff_8v"
+    echo "Cancel:  scancel ${JOBS[*]}"
+    exit 0
+fi
 for METHOD in "${METHODS[@]}"; do
     K=1
     T="${NOTTA_WALL}"
     case "${METHOD}" in
-        seed_bon|motion_bon|hinge_bon|late_bon|hist_drop|cached_bon) K=4; T="${SEARCH_WALL}" ;;
+        seed_bon|motion_bon|hinge_bon|late_bon|hist_drop|cached_bon|quiet_bon) K=4; T="${SEARCH_WALL}" ;;
         shift_search) K=3; T="${SEARCH_WALL}" ;;
         knob_probe) T="${SEARCH_WALL}" ;;
-        good_backtrack|sink) T="${NOTTA_WALL}" ;;
+        good_backtrack|sink|tail_hist) T="${NOTTA_WALL}" ;;
     esac
     J=$(sbatch --parsable --account="${ACCOUNT}" --time="${T}" \
         --export=ALL,METHOD="${METHOD}",SEARCH_K=${K},${COMMON} \

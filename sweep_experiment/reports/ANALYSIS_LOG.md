@@ -2793,3 +2793,24 @@ VBench submitted: 16122823 confirm `{notta,seed_bon}` full;
 16122824 tricks `{hist_drop,hinge_bon}` full. Both PD QOSGrpGRES.
 hist_drop still N=8 only; it increments the picker that just failed
 confirm. No hist_drop-32 until IQ/subject land.
+
+---
+
+## 2026-08-21 — Bedtime pair: quiet_bon N=32 + tail_hist N=8
+**Tags:** decision, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_next_bedtime.md`;
+`submit_v2v_bakeoff.sh` `NEXT=1`
+
+User asked what to run tonight without waiting for VBench.
+
+Not hist_drop-32: that method increments the picker that just went
+12/32 and 0/7 on hot prefixes.
+
+Instead:
+1. `quiet_bon` N=32 — k=4 only if real prefix_motion < 0.018, else
+   k=1. Causal test of “search damps a living prefix.”
+2. `tail_hist` N=8 — always last-3 latents, no search. Isolates the
+   history axis from seed search.
+
+VBench 16122823/824 already queued. These sit behind GRES. No TTC.

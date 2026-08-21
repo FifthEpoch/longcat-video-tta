@@ -18,7 +18,7 @@ from pathlib import Path
 METHODS = (
     "notta", "seed_bon", "motion_bon", "shift_search", "backtrack",
     "hinge_bon", "late_bon", "hist_drop", "good_backtrack",
-    "cached_bon", "sink",
+    "cached_bon", "sink", "quiet_bon", "tail_hist",
 )
 VBENCH_DIMS = (
     "subject_consistency",
