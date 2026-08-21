@@ -2814,3 +2814,27 @@ Instead:
    history axis from seed search.
 
 VBench 16122823/824 already queued. These sit behind GRES. No TTC.
+
+---
+
+## 2026-08-21 — N=32 VBench: Dyn 0/0, subject +0.039; stop seed-family
+**Tags:** finding, negative-result, wan, v2v, paper-narrative
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_overnight_vbench.md`;
+jobs 16122823/824, 16124386/387
+
+Official full-clip VBench n=32: notta vs seed_bon Dyn median **0 and 0**.
+The N=8 0→0.5 flip is dead. seed_bon subject **0.665→0.705 (+0.039)**,
+IQ −0.77 (under the 1.0 bar). Combined with sidecar tail −8.8%:
+prefix-match search at this scale is an **identity-preserving damper**.
+
+hist_drop / hinge N=8 VBench both PASS IQ+subject (hist IQ −0.15, hinge
++0.42) and Dyn 0.50 — the same N=8 coin-flip. Do **not** scale to 32.
+
+tail_hist ≈ notta (+0.8%). hist_drop’s +42% was search, not short
+history. quiet_bon n=32 tail 0.01089 vs notta 0.01353 (−19%). Gate
+works on some hots; method still loses.
+
+Default next: **stop V2V generate.** Paper table is the N=32 VBench
+confirm. Optional later: `hot_tail` (short history only on hot
+prefixes). No TTC. No hist_drop-32.
