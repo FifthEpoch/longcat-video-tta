@@ -2661,3 +2661,24 @@ If it dies, N=8 was noise. Not submitted until the user says go.
 User approved the confirm. Two jobs only. No motion_bon / backtrack /
 shift / TTC / I2V-32. First 32 Panda clips (N=8 is the prefix). Cite
 medians after full-clip VBench. If the win dies, N=8 was noise.
+
+---
+
+## 2026-08-20 — Sampling-space hypotheses after V2V N=8
+**Tags:** methodology, wan, v2v, hypothesis
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-20_wan_v2v_sampling_hypotheses.md`
+
+User asked what else is worth trying, inferred from the bake-off.
+
+Main inference (H-match): seed_bon’s old two-sided score is “stay like
+the real (moving) prefix.” That is why the same score froze on I2V
+(reference = first second after a still) and unfroze on V2V. motion_bon
+maximized twitch and lost; dead-tail backtrack lost; shift/CFG are dead.
+
+Next tricks, sampling space only: (1) prefix-match hinge on motion,
+N=8 paired with existing bake-off; (2) late-only / failure-gated
+seeds; (3) attention sink of the prefix; (4) history-dropout search
+(HG without CFG); (5) backtrack to last *good* chunk; (6) CachedSearch
+only after N=32 confirms. Do not resubmit |Δframe|-max or dead-tail
+backtrack. No TTC.
