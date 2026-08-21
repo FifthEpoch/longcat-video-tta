@@ -2609,3 +2609,24 @@ guard) did not help.
 
 Analyzer printed PROMOTE for seed_bon on motion alone. Official rule
 still needs full-clip VBench IQ/subject. Do not scale. No TTC.
+
+---
+
+## 2026-08-20 — V2V N=8 VBench: seed_bon passes the promote rule
+**Tags:** finding, decision, wan, v2v, vbench
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-20_wan_v2v_bakeoff_8v_vbench.md`;
+`v2v_panda_bakeoff_8v/*/vbench_full/joined.json`
+
+Full-clip VBench medians, N=8. seed_bon vs notta: tail motion +35%
+(0.0167→0.0225), IQ 67.98→67.38 (**−0.60**, under the ≥1.0 fail bar),
+subject 0.5951→0.5956. `dynamic_degree` median **0→0.5** (4/8 vs 0/8;
+notta mean 0.375 = 3/8). Locked rule **PASS**.
+
+motion_bon: no tail-motion gain; IQ actually up (+0.79); HOLD.
+backtrack: motion down, IQ **−2.94**; drop.
+
+On a real prefix, k=4 seed search is a live sampling-space intervention.
+Greedy motion pick and backtrack are not. Next allowed confirm: notta vs
+seed_bon only, N=32. N=8 Dyn is a coin-flip. No TTC. No I2V-32. No
+shift_search.
