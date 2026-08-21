@@ -19,6 +19,13 @@ Methods:
   sink           — k=1, replay prefix + last window only (attention-sink approx)
   quiet_bon      — seed_bon only if real prefix_motion < 0.018; else k=1 (hot skip)
   tail_hist      — k=1, replay last 3 latents only (short history, no search)
+  live_bon       — seed_bon only if prefix_motion >= 0.012 (invert quiet_bon)
+  live_hist      — hist_drop candidates only if prefix is live; else k=1
+  longlive_notta — LongLive-1.3B student, k=1, trained sink=3 / window=12
+  longlive_sink  — LongLive + prefix+window replay (sink actually trained-in)
+  longlive_prefix_sink — LongLive notta with sink_size=9 (whole prefix pinned)
+  longlive_live_bon — live_bon on the LongLive student
+  rolling_notta  — Rolling Forcing native sampler, real prefix, k=1
   knob_probe     — first gen chunk only; grid shift × cfg; no 30 s write
 
 No TTC. Do not scale I2V-32.
@@ -94,6 +101,9 @@ METHODS = (
     "shift_search", "backtrack", "knob_probe",
     "hinge_bon", "late_bon", "hist_drop", "good_backtrack",
     "cached_bon", "sink", "quiet_bon", "tail_hist",
+    "live_bon", "live_hist",
+    "longlive_notta", "longlive_sink", "longlive_live_bon",
+    "longlive_prefix_sink", "rolling_notta",
 )
 TAIL_HISTORY_LATENTS = 3
 SINK_WINDOW_LATENTS = 21
@@ -102,6 +112,10 @@ GOOD_SAVE_FRAC = 0.8
 # Search only if the real prefix is below this. N=32: seed_bon went 0/7
 # on notta-tail≥0.020 (hot). 0.018 sits between mid and hot.
 QUIET_SEARCH_MAX = 0.018
+# Invert quiet_bon: search only when the prefix itself is moving.
+# N=8 cand logs: 0007=0.070 live recovery; 0002/0003≈0.0008 stills.
+LIVE_SEARCH_MIN = 0.012
+_LIVE_SEARCH_MIN = LIVE_SEARCH_MIN
 
 
 def prefix_pixel_count(n_lat: int) -> int:
@@ -440,13 +454,15 @@ def _build_cand_specs(
     prefix_motion: float | None,
 ):
     base = {"shift": default_shift, "cfg": default_cfg, "history": "full"}
-    if method == "notta" or ci < search_from_chunk:
+    if method in ("notta", "longlive_notta", "longlive_prefix_sink") or ci < search_from_chunk:
         reason = (
-            "notta" if method == "notta" and ci >= search_from_chunk
+            "notta" if method in (
+                "notta", "longlive_notta", "longlive_prefix_sink",
+            ) and ci >= search_from_chunk
             else "forced_prefix"
         )
         return [{**base, "cand": 0, "noise_id": 0}], False, reason
-    if method == "sink":
+    if method in ("sink", "longlive_sink"):
         return (
             [{**base, "cand": 0, "noise_id": 0, "history": "sink"}],
             False,
@@ -504,6 +520,40 @@ def _build_cand_specs(
             True,
             "quiet_search",
         )
+    if method in ("live_bon", "longlive_live_bon"):
+        live = (
+            prefix_motion is not None and prefix_motion == prefix_motion
+            and prefix_motion >= _LIVE_SEARCH_MIN
+        )
+        if live:
+            return (
+                [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+                True,
+                "live_search",
+            )
+        return (
+            [{**base, "cand": 0, "noise_id": 0}],
+            False,
+            "live_skip_still",
+        )
+    if method == "live_hist":
+        live = (
+            prefix_motion is not None and prefix_motion == prefix_motion
+            and prefix_motion >= _LIVE_SEARCH_MIN
+        )
+        if not live:
+            return (
+                [{**base, "cand": 0, "noise_id": 0}],
+                False,
+                "live_hist_skip_still",
+            )
+        specs = [
+            {**base, "cand": 0, "noise_id": 0, "history": "full"},
+            {**base, "cand": 1, "noise_id": 0, "history": "tail"},
+            {**base, "cand": 2, "noise_id": 1, "history": "full"},
+            {**base, "cand": 3, "noise_id": 2, "history": "full"},
+        ]
+        return specs[: max(2, search_k)], True, "live_hist"
     if method == "tail_hist":
         return (
             [{**base, "cand": 0, "noise_id": 0, "history": "tail"}],
@@ -722,7 +772,7 @@ def generate_chunked_v2v(
                     else -1e9
                 ),
             )
-        elif method in ("hinge_bon", "hist_drop"):
+        elif method in ("hinge_bon", "hist_drop", "live_hist"):
             chosen = min(range(len(cands)), key=lambda i: cands[i]["hinge_score"])
         else:
             chosen = min(range(len(cands)), key=lambda i: cands[i]["score"])
@@ -905,6 +955,190 @@ def generate_chunked_v2v(
     return pixels, tuple(output.shape), ref, chunk_logs, prefix_pix_n
 
 
+def _rf_kv(pipeline):
+    kv = getattr(pipeline, "kv_cache_clean", None)
+    if kv is not None:
+        return kv
+    return pipeline.kv_cache1
+
+
+def generate_rolling_v2v(
+    pipeline,
+    video_path: Path,
+    prompt: str,
+    prefix_latents: int,
+    n_gen: int,
+    seed: int,
+    device,
+):
+    """Rolling Forcing tail after a real prefix. Their public
+    inference_rolling_forcing() overwrites prefix frames (current_start_frame
+    is also unbound on the multi-frame path), so we cache the prefix then
+    roll only the tail with a start offset.
+    """
+    import torch
+
+    prefix = encode_prefix_video(pipeline, Path(video_path), prefix_latents, device)
+    conditional_dict = pipeline.text_encoder(text_prompts=[prompt])
+    block = int(pipeline.num_frame_per_block)
+    if prefix_latents % block != 0 or n_gen % block != 0:
+        raise RuntimeError(
+            f"rolling V2V needs prefix={prefix_latents} and n_gen={n_gen} "
+            f"divisible by block={block}"
+        )
+    total = prefix_latents + n_gen
+    output = torch.zeros(
+        [1, total, LATENT_C, LATENT_H, LATENT_W],
+        device=device, dtype=torch.bfloat16,
+    )
+    output[:, :prefix_latents] = prefix[:, :prefix_latents]
+    rng = torch.Generator(device=device)
+    rng.manual_seed(int(seed))
+    noise = torch.randn(
+        [1, n_gen, LATENT_C, LATENT_H, LATENT_W],
+        device=device, dtype=torch.bfloat16, generator=rng,
+    )
+    pipeline._initialize_kv_cache(1, noise.dtype, device)
+    pipeline._initialize_crossattn_cache(1, noise.dtype, device)
+    kv = _rf_kv(pipeline)
+
+    t = 0
+    ts0 = torch.ones([1, block], device=device, dtype=torch.int64) * 0
+    while t < prefix_latents:
+        kwargs = dict(
+            noisy_image_or_video=output[:, t:t + block],
+            conditional_dict=conditional_dict,
+            timestep=ts0,
+            kv_cache=kv,
+            crossattn_cache=pipeline.crossattn_cache,
+            current_start=t * pipeline.frame_seq_length,
+        )
+        try:
+            pipeline.generator(**kwargs, updating_cache=True)
+        except TypeError:
+            pipeline.generator(**kwargs)
+        t += block
+
+    num_blocks = n_gen // block
+    steps = list(pipeline.denoising_step_list)
+    n_step = len(steps)
+    window_num = num_blocks + n_step - 1
+    noisy_cache = torch.zeros_like(output)
+    shared_timestep = torch.ones(
+        [1, n_step * block], device=device, dtype=torch.float32,
+    )
+    for index, current_timestep in enumerate(reversed(steps)):
+        shared_timestep[:, index * block:(index + 1) * block] *= current_timestep
+
+    offset = prefix_latents
+    for window_index in range(window_num):
+        start_block = max(0, window_index - n_step + 1)
+        end_block = min(num_blocks - 1, window_index)
+        cur0 = offset + start_block * block
+        cur1 = offset + (end_block + 1) * block
+        n_frames = cur1 - cur0
+        tail0 = cur0 - offset
+        tail1 = cur1 - offset
+        if n_frames == n_step * block or start_block == 0:
+            noisy_input = torch.cat([
+                noisy_cache[:, cur0:cur1 - block],
+                noise[:, tail1 - block:tail1],
+            ], dim=1)
+        else:
+            noisy_input = noisy_cache[:, cur0:cur1]
+        if n_frames == n_step * block:
+            current_timestep = shared_timestep
+        elif start_block == 0:
+            current_timestep = shared_timestep[:, -n_frames:]
+        else:
+            current_timestep = shared_timestep[:, :n_frames]
+        _, denoised_pred = pipeline.generator(
+            noisy_image_or_video=noisy_input,
+            conditional_dict=conditional_dict,
+            timestep=current_timestep,
+            kv_cache=kv,
+            crossattn_cache=pipeline.crossattn_cache,
+            current_start=cur0 * pipeline.frame_seq_length,
+        )
+        output[:, cur0:cur1] = denoised_pred
+        with torch.no_grad():
+            for block_idx in range(start_block, end_block + 1):
+                rel = block_idx - start_block
+                block_time_step = current_timestep[
+                    :, rel * block:(rel + 1) * block
+                ].mean().item()
+                matches = torch.abs(
+                    pipeline.denoising_step_list.to(device) - block_time_step
+                ) < 1e-4
+                idxs = torch.nonzero(matches, as_tuple=True)[0]
+                if idxs.numel() == 0:
+                    continue
+                block_timestep_index = int(idxs[0].item())
+                if block_timestep_index == n_step - 1:
+                    continue
+                next_timestep = pipeline.denoising_step_list[block_timestep_index + 1]
+                noisy_cache[:, offset + block_idx * block:offset + (block_idx + 1) * block] = (
+                    pipeline.scheduler.add_noise(
+                        denoised_pred.flatten(0, 1),
+                        torch.randn(
+                            denoised_pred.flatten(0, 1).shape,
+                            device=device, dtype=denoised_pred.dtype,
+                            generator=rng,
+                        ),
+                        next_timestep.to(device) * torch.ones(
+                            [denoised_pred.shape[0] * denoised_pred.shape[1]],
+                            device=device, dtype=torch.long,
+                        ),
+                    ).unflatten(0, denoised_pred.shape[:2])[
+                        :, rel * block:(rel + 1) * block
+                    ]
+                )
+            context_timestep = torch.ones_like(current_timestep) * float(
+                getattr(pipeline.args, "context_noise", 0) or 0
+            )
+            first = denoised_pred[:, :block]
+            ctx = context_timestep[:, :block]
+            kwargs = dict(
+                noisy_image_or_video=first,
+                conditional_dict=conditional_dict,
+                timestep=ctx,
+                kv_cache=kv,
+                crossattn_cache=pipeline.crossattn_cache,
+                current_start=cur0 * pipeline.frame_seq_length,
+            )
+            try:
+                pipeline.generator(**kwargs, updating_cache=True)
+            except TypeError:
+                pipeline.generator(**kwargs)
+        print(
+            f"  rolling window {window_index}/{window_num - 1} "
+            f"blocks {start_block}:{end_block} frames {cur0}:{cur1}",
+            flush=True,
+        )
+
+    pixels = _decode_pixels(pipeline, output)
+    prefix_pix_n = t2v_pixel_frames(prefix_latents)
+    prefix_only = pixels[:prefix_pix_n]
+    prefix_motion = (
+        float(np.mean(np.abs(prefix_only[1:] - prefix_only[:-1])))
+        if prefix_only.shape[0] >= 2 else None
+    )
+    chunk_logs = [{
+        "chunk": 0,
+        "chosen_cand": 0,
+        "search_k": 1,
+        "method": "rolling_notta",
+        "searched": False,
+        "gate_reason": "rolling_native",
+        "prefix_motion": _json_float(prefix_motion),
+        "chosen_score": None,
+        "chosen_motion_score": None,
+    }]
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return pixels, tuple(output.shape), None, chunk_logs, prefix_pix_n
+
+
 def generate_knob_probe(
     pipeline,
     video_path: Path,
@@ -1045,6 +1279,14 @@ def main() -> int:
     ap.add_argument("--backtrack-motion-frac", type=float, default=0.4)
     ap.add_argument("--default-shift", type=float, default=DEFAULT_SHIFT)
     ap.add_argument("--default-cfg", type=float, default=DEFAULT_CFG)
+    ap.add_argument("--live-min", type=float, default=LIVE_SEARCH_MIN)
+    ap.add_argument("--sink-size", type=int, default=3)
+    ap.add_argument("--local-attn-size", type=int, default=12)
+    ap.add_argument("--ll-root", default="")
+    ap.add_argument("--ll-base", default="")
+    ap.add_argument("--ll-lora", default="")
+    ap.add_argument("--rf-root", default="")
+    ap.add_argument("--rf-ckpt", default="")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     args = ap.parse_args()
@@ -1060,8 +1302,19 @@ def main() -> int:
     n_chunks = n_gen // args.chunk_latents
     n_pix = t2v_pixel_frames(args.prefix_latents + n_gen)
     method = "seed_bon" if args.method == "always_bon" else args.method
+    global _LIVE_SEARCH_MIN
+    _LIVE_SEARCH_MIN = float(args.live_min)
 
-    sf_root = Path(args.sf_root).resolve()
+    if method.startswith("longlive"):
+        host = "longlive"
+        host_root = Path(args.ll_root or args.sf_root).resolve()
+    elif method.startswith("rolling"):
+        host = "rolling"
+        host_root = Path(args.rf_root or args.sf_root).resolve()
+    else:
+        host = "sf"
+        host_root = Path(args.sf_root).resolve()
+
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     items = discover_v2v_items(Path(args.video_dir), args.n)
@@ -1070,14 +1323,14 @@ def main() -> int:
         print("shard is empty; nothing to do")
         return 0
 
-    torch = _bootstrap_sf(sf_root)
+    torch = _bootstrap_sf(host_root)
     _seed_torch(torch, args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(
         f"device={device} torch={torch.__version__} task=V2V method={method} "
-        f"horizon={args.horizon_s}s prefix_lat={args.prefix_latents} "
+        f"host={host} horizon={args.horizon_s}s prefix_lat={args.prefix_latents} "
         f"n_gen={n_gen} chunk={args.chunk_latents} n_chunks={n_chunks} "
-        f"n_pix={n_pix} n_items={len(items)}"
+        f"n_pix={n_pix} n_items={len(items)} live_min={_LIVE_SEARCH_MIN}"
     )
 
     install_sdpa_attention_fallback()
@@ -1090,11 +1343,36 @@ def main() -> int:
         print(f"flex_attention: leave as-is ({type(e).__name__}: {e})")
 
     t_load = time.time()
-    pipeline = load_pipeline(
-        sf_root, Path(args.wan_dir), Path(args.sf_ckpt),
-        device, n_cache_frames=args.prefix_latents + n_gen + 2,
-        independent_first_frame=False,
-    )
+    n_cache = args.prefix_latents + n_gen + 2
+    if host == "longlive":
+        if str(_SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(_SCRIPTS))
+        from v2v_hosts import load_longlive_pipeline
+        pipeline = load_longlive_pipeline(
+            host_root, Path(args.wan_dir),
+            Path(args.ll_base), Path(args.ll_lora),
+            device, n_cache_frames=n_cache,
+            sink_size=9 if method == "longlive_prefix_sink" else int(args.sink_size),
+            local_attn_size=int(args.local_attn_size),
+        )
+        if args.default_shift == DEFAULT_SHIFT:
+            args.default_shift = 5.0
+    elif host == "rolling":
+        if str(_SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(_SCRIPTS))
+        from v2v_hosts import load_rolling_pipeline
+        pipeline = load_rolling_pipeline(
+            host_root, Path(args.wan_dir), Path(args.rf_ckpt),
+            device, n_cache_frames=n_cache,
+        )
+        if args.default_shift == DEFAULT_SHIFT:
+            args.default_shift = 5.0
+    else:
+        pipeline = load_pipeline(
+            host_root, Path(args.wan_dir), Path(args.sf_ckpt),
+            device, n_cache_frames=n_cache,
+            independent_first_frame=False,
+        )
     if int(pipeline.frame_seq_length) != FRAME_SEQ_PER_LATENT:
         raise RuntimeError(
             f"pipeline.frame_seq_length={pipeline.frame_seq_length} "
@@ -1144,14 +1422,20 @@ def main() -> int:
                         flush=True,
                     )
                 else:
-                    video, lat_shape, ref, chunk_logs, prefix_pix = generate_chunked_v2v(
-                        pipeline, Path(item["video_path"]), item["prompt"],
-                        args.prefix_latents, n_gen, args.chunk_latents,
-                        args.seed, device, method, args.search_k,
-                        args.search_from_chunk, args.seam_weight,
-                        args.backtrack_threshold, args.backtrack_motion_frac,
-                        args.default_shift, args.default_cfg,
-                    )
+                    if method == "rolling_notta":
+                        video, lat_shape, ref, chunk_logs, prefix_pix = generate_rolling_v2v(
+                            pipeline, Path(item["video_path"]), item["prompt"],
+                            args.prefix_latents, n_gen, args.seed, device,
+                        )
+                    else:
+                        video, lat_shape, ref, chunk_logs, prefix_pix = generate_chunked_v2v(
+                            pipeline, Path(item["video_path"]), item["prompt"],
+                            args.prefix_latents, n_gen, args.chunk_latents,
+                            args.seed, device, method, args.search_k,
+                            args.search_from_chunk, args.seam_weight,
+                            args.backtrack_threshold, args.backtrack_motion_frac,
+                            args.default_shift, args.default_cfg,
+                        )
                     write_mp4(mp4, video, fps=FPS)
                     last = chunk_logs[-1] if chunk_logs else {}
                     tail = video[prefix_pix:] if video.shape[0] > prefix_pix else video
@@ -1222,6 +1506,8 @@ def main() -> int:
         "n_ok": sum(1 for r in rows if r.get("ok")),
         "task": "v2v",
         "method": method,
+        "host": host,
+        "live_min": _LIVE_SEARCH_MIN,
         "horizon_s": args.horizon_s,
         "prefix_latents": args.prefix_latents,
         "n_gen_latent": n_gen,

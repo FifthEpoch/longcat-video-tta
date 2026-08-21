@@ -23,9 +23,14 @@ SCRATCH_BASE="/scratch/${USER}"
 PROJECT_ROOT="${SCRATCH_BASE}/longcat-video-tta"
 CONDA_ENV="${CONDA_ENV:-${SCRATCH_BASE}/conda-envs/self_forcing}"
 SF_ROOT="${SF_ROOT:-${SCRATCH_BASE}/third_party/Self-Forcing}"
+LL_ROOT="${LL_ROOT:-${SCRATCH_BASE}/third_party/LongLive}"
+RF_ROOT="${RF_ROOT:-${SCRATCH_BASE}/third_party/RollingForcing}"
 CKPT_ROOT="${CKPT_ROOT:-${SCRATCH_BASE}/wan-checkpoints}"
 WAN_DIR="${CKPT_ROOT}/Wan2.1-T2V-1.3B"
 SF_CKPT="${CKPT_ROOT}/self_forcing_dmd.pt"
+LL_BASE="${LL_BASE:-${CKPT_ROOT}/longlive/models/longlive_base.pt}"
+LL_LORA="${LL_LORA:-${CKPT_ROOT}/longlive/models/lora.pt}"
+RF_CKPT="${RF_CKPT:-${CKPT_ROOT}/rolling_forcing_dmd.pt}"
 
 HORIZON_S="${HORIZON_S:-30}"
 N_VIDEOS="${N_VIDEOS:-8}"
@@ -41,6 +46,9 @@ SERIES="${SERIES:-v2v_panda_bakeoff_8v}"
 SHARD_ID="${SHARD_ID:-0}"
 NUM_SHARDS="${NUM_SHARDS:-1}"
 VIDEO_DIR="${VIDEO_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
+LIVE_MIN="${LIVE_MIN:-0.012}"
+SINK_SIZE="${SINK_SIZE:-3}"
+LOCAL_ATTN_SIZE="${LOCAL_ATTN_SIZE:-12}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/wan_experiment/results/${SERIES}/${METHOD}_h${HORIZON_S}s_shard${SHARD_ID}}"
 
 export PYTHONHASHSEED="${SEED}"
@@ -87,6 +95,11 @@ cd "${PROJECT_ROOT}"
     --sf-root "${SF_ROOT}" \
     --wan-dir "${WAN_DIR}" \
     --sf-ckpt "${SF_CKPT}" \
+    --ll-root "${LL_ROOT}" \
+    --ll-base "${LL_BASE}" \
+    --ll-lora "${LL_LORA}" \
+    --rf-root "${RF_ROOT}" \
+    --rf-ckpt "${RF_CKPT}" \
     --video-dir "${VIDEO_DIR}" \
     --out-dir "${OUT_DIR}" \
     --horizon-s "${HORIZON_S}" \
@@ -99,6 +112,9 @@ cd "${PROJECT_ROOT}"
     --search-from-chunk "${SEARCH_FROM}" \
     --backtrack-threshold "${BACKTRACK_THRESHOLD}" \
     --backtrack-motion-frac "${BACKTRACK_MOTION_FRAC}" \
+    --live-min "${LIVE_MIN}" \
+    --sink-size "${SINK_SIZE}" \
+    --local-attn-size "${LOCAL_ATTN_SIZE}" \
     --shard-id "${SHARD_ID}" \
     --num-shards "${NUM_SHARDS}"
 

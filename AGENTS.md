@@ -215,12 +215,12 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-20):** V2V sampling-space bake-off
-  on Panda prefixes (2 s real → 30 s AR). Methods: notta, seed_bon,
-  motion_bon, shift_search (if probe moves), backtrack. Smoke then
-  probe then N=8. CachedSearch / sink-ckpt / HG-f are wave 2.
-  Spec: `paper_tables/2026-08-20_wan_v2v_sampling_bakeoff_spec.md`.
-  Submit: `SMOKE=1 bash wan_experiment/sbatch/submit_v2v_bakeoff.sh`.
+- **Current next experiment (2026-08-21):** V2V lineage overnight, all
+  remaining tests at once. `live_bon` / `live_hist` on SF; LongLive
+  notta / sink / prefix_sink / live_bon; Rolling Forcing notta. N=8.
+  Submit: `bash wan_experiment/sbatch/submit_v2v_lineage.sh`. Spec:
+  `paper_tables/2026-08-21_wan_v2v_lineage_overnight.md`.
+  **No TTC. No hist_drop-32. No I2V scale-up.**
 - **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
   + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.
   Memo: `paper_tables/2026-08-18_wan_nonweight_next.md`.

@@ -2897,3 +2897,21 @@ dead until collapse is trained away — matches our replay-sink no-op.
 Inference-only bets for us: (1) LongLive/RF V2V notta N=8 (is the host
 the problem?), (2) `live_bon` on current SF, (3) prefix KV-recache only
 on LongLive’s kernel. Do not train SF++/GRPO. Do not HG-CFG on DMD.
+
+---
+
+## 2026-08-21 — Submit all remaining lineage tests at once
+**Tags:** methodology, wan, v2v, submit
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_lineage_overnight.md`
+
+User asked to implement and submit everything, not in order. Suite:
+`live_bon` + `live_hist` on SF (immediate); CPU download of LongLive
+v1.0 + Rolling Forcing; then `longlive_notta`, `longlive_sink`,
+`longlive_prefix_sink` (sink_size=9), `longlive_live_bon`,
+`rolling_notta`; VBench full chained `afterany`. Series
+`v2v_panda_lineage_8v`. Compare to bake-off notta. No TTC. No
+hist_drop-32. 2-way H200 cap queues extras.
+
+Command: `bash wan_experiment/sbatch/submit_v2v_lineage.sh` after
+`git pull --ff-only origin main`.

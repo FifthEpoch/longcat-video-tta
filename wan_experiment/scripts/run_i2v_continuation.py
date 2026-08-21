@@ -188,6 +188,7 @@ def enlarge_kv_cache(pipeline, n_frames: int) -> None:
                 ),
             })
         pipeline.kv_cache1 = cache
+        pipeline.kv_cache_clean = cache
         _cuda_mem("after_kv_init")
 
     pipeline._initialize_kv_cache = _initialize_kv_cache

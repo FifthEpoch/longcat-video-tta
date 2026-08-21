@@ -19,6 +19,9 @@ METHODS = (
     "notta", "seed_bon", "motion_bon", "shift_search", "backtrack",
     "hinge_bon", "late_bon", "hist_drop", "good_backtrack",
     "cached_bon", "sink", "quiet_bon", "tail_hist",
+    "live_bon", "live_hist",
+    "longlive_notta", "longlive_sink", "longlive_live_bon",
+    "longlive_prefix_sink", "rolling_notta",
 )
 VBENCH_DIMS = (
     "subject_consistency",
