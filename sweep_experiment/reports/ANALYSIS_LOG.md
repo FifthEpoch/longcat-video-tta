@@ -2749,3 +2749,23 @@ Tricks on the same 8 as the bake-off:
 Next: full-clip VBench on confirm `{notta,seed_bon}` (document the kill)
 and tricks `hist_drop`. No TTC. No hist_drop N=32 until VBench +
 per-video check.
+
+---
+
+## 2026-08-21 — Retract N=32 seed_bon kill; hist_drop is broad on N=8
+**Tags:** finding, methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_pervideo_retract.md`
+
+The −26% confirm median compared unpaired `summary.json` rows. ~20
+clips per method are `skipped: true` after preempt/requeue and have no
+`tail_motion`. Printed n=32 was ok-count.
+
+Honest pair (0020–0031 only): notta 0.01380 → seed_bon 0.01424
+(**+3%, 5/12**). Tie. Retract KILL and the “lucky prefix” story until
+sidecars for 0000–0019 are read.
+
+hist_drop on the bake-off 8: **6/8 vs notta, 7/8 vs seed_bon** (0000
+exact tie with seed). Losses vs notta are the two hottest prefixes.
+vs seed_bon every non-tie is +0.0008…+0.0043 — increment, not a new
+mode. Not one-clip. VBench still required before any scale-up.
