@@ -2878,3 +2878,22 @@ damps) and skipped live ones (where recovery lives). That is the −19%.
 Correct policy: search iff prefix is *live* (`>= ~0.012`); else notta.
 Never two-sided-match motion to a still reference. Do not generate the
 band constraint without that gate. Optional next: `live_bon` N=8 only.
+
+---
+
+## 2026-08-21 — Self-Forcing lineage brainstorm
+**Tags:** methodology, wan, v2v, literature
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_sf_lineage_brainstorm.md`
+
+Family: CausVid → Self-Forcing (our student) → SF++ (long DMD on
+self-rollouts, no sink) / Rolling Forcing (windowed denoise + sink+rerope)
+/ LongLive (sink + short window + KV-recache + long tuning). History
+Guidance is the CFG-on-history cousin; CachedSearch is cost.
+
+Long-horizon gains in this line are **trained**. LongLive: sinks are
+dead until collapse is trained away — matches our replay-sink no-op.
+
+Inference-only bets for us: (1) LongLive/RF V2V notta N=8 (is the host
+the problem?), (2) `live_bon` on current SF, (3) prefix KV-recache only
+on LongLive’s kernel. Do not train SF++/GRPO. Do not HG-CFG on DMD.
