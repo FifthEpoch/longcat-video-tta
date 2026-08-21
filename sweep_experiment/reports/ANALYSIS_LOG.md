@@ -2983,3 +2983,26 @@ clip it should search. Population verdict needs the other 7
 alone. No VBench yet.
 
 ---
+
+## 2026-08-21 — live_bon/live_hist +37% at N=8; do not scale yet
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_lineage_partial.md`
+
+Paired N=8 vs bake-off notta. live_bon and live_hist median tail
+0.0229 vs 0.0167 (+37%). last-chunk drift **exact notta 63.5052**.
+Analyzer printed PROMOTE because VBench IQ/subject are missing and
+it treats that as a pass.
+
+This +37% is the same size as seed_bon-8 (+35% → 0.0225), which
+later failed at N=32. Reconstruction: swapping only 0000 and 0007
+to their seed/hist values and leaving the other six as notta yields
+median 0.02293. 0007 logs already bit-match. last-chunk identity
+says the still-prefix majority was skipped.
+
+Honest status: **conditional**. Confirm 0002/0003 bit-match notta
+(not seed_bon). Wait for VBench. Do **not** submit live_bon-32.
+longlive_notta 0.0150 HOLD — host is not the Dyn fix.
+
+---
+
