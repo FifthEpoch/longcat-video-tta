@@ -2933,3 +2933,33 @@ Rewrite or drop: (2)(7) parameter TTA; (4) rolling ρ on vanilla SF
 (shift/CFG were dead; maybe RF host); (6) lookahead on 4-step DMD
 (= seed BoN); (8) horizon-increasing δ (`late_bon` already lost).
 Do not submit new GPUs until lineage 16140808–816 finishes.
+
+---
+
+## 2026-08-21 — Implement and submit ideas 1/5/3 now
+**Tags:** methodology, wan, v2v, submit
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_ideas_submit.md`
+
+User overrode the wait-on-lineage line. Implement sampling-space
+keepers and queue them today. Do **not** scancel 16140808–816.
+
+Landed methods on vanilla SF, same N=8 Panda prefix set, new series
+`v2v_panda_ideas_8v`:
+- `appear_bon` / `live_appear`: idea 5. Drop `|Δmotion|` from the
+  pick; appearance+seam only. live_appear also uses prefix_motion
+  ≥ 0.012.
+- `pseudo_gate` / `pseudo_appear`: idea 1. Split prefix 9 → A=6 +
+  B=3. Generate B from A with k seeds, MAE vs real B. Search the
+  30 s tail iff some extra seed beats notta on B. Else notta.
+- `noise_probe` / `noise_bon`: idea 3. Log first-step
+  (noisy−denoised) residual U_t. noise_bon searches extra seeds
+  iff cand0 `eps_mean_abs` ≥ 0.04 (overridable). Appear pick.
+
+Not implemented: weight TTA (#2/#7), rolling ρ on SF (#4),
+lookahead beam (#6), horizon-increasing δ (#8), full router (#9).
+
+Submit: `bash wan_experiment/sbatch/submit_v2v_ideas.sh` after
+`git pull --ff-only origin main`. 2-way cap queues behind lineage.
+
+---

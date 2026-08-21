@@ -22,6 +22,8 @@ METHODS = (
     "live_bon", "live_hist",
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
+    "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
+    "noise_probe", "noise_bon",
 )
 VBENCH_DIMS = (
     "subject_consistency",

@@ -47,6 +47,8 @@ SHARD_ID="${SHARD_ID:-0}"
 NUM_SHARDS="${NUM_SHARDS:-1}"
 VIDEO_DIR="${VIDEO_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
 LIVE_MIN="${LIVE_MIN:-0.012}"
+PSEUDO_GAMMA="${PSEUDO_GAMMA:-0.0}"
+NOISE_TAU="${NOISE_TAU:-0.04}"
 SINK_SIZE="${SINK_SIZE:-3}"
 LOCAL_ATTN_SIZE="${LOCAL_ATTN_SIZE:-12}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/wan_experiment/results/${SERIES}/${METHOD}_h${HORIZON_S}s_shard${SHARD_ID}}"
@@ -113,6 +115,8 @@ cd "${PROJECT_ROOT}"
     --backtrack-threshold "${BACKTRACK_THRESHOLD}" \
     --backtrack-motion-frac "${BACKTRACK_MOTION_FRAC}" \
     --live-min "${LIVE_MIN}" \
+    --pseudo-gamma "${PSEUDO_GAMMA}" \
+    --noise-tau "${NOISE_TAU}" \
     --sink-size "${SINK_SIZE}" \
     --local-attn-size "${LOCAL_ATTN_SIZE}" \
     --shard-id "${SHARD_ID}" \

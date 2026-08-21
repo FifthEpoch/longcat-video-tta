@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-20.
+**Date:** Updated 2026-08-21.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -215,11 +215,12 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-21):** V2V lineage overnight, all
-  remaining tests at once. `live_bon` / `live_hist` on SF; LongLive
-  notta / sink / prefix_sink / live_bon; Rolling Forcing notta. N=8.
-  Submit: `bash wan_experiment/sbatch/submit_v2v_lineage.sh`. Spec:
-  `paper_tables/2026-08-21_wan_v2v_lineage_overnight.md`.
+- **Current next experiment (2026-08-21):** two waves in flight / queued.
+  Wave 1 lineage (`v2v_panda_lineage_8v`, jobs **16140808–816**) —
+  do not scancel. Wave 2 ideas (`v2v_panda_ideas_8v`): `appear_bon`,
+  `live_appear`, `pseudo_gate`, `pseudo_appear`, `noise_probe`,
+  `noise_bon`. Submit: `bash wan_experiment/sbatch/submit_v2v_ideas.sh`.
+  Spec: `paper_tables/2026-08-21_wan_v2v_ideas_submit.md`.
   **No TTC. No hist_drop-32. No I2V scale-up.**
 - **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
   + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.
@@ -270,9 +271,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-19 11:39): none.
-  **16009916 DONE** (windows). **16010032 DONE** (16v head-tail).
-  Analyzer tables written. T2V 128 not launched.
+- **In-flight cluster jobs** (as of 2026-08-21 ~11:30): lineage
+  **16140808–816** (do not scancel). Ideas wave not yet on cluster
+  until user runs `submit_v2v_ideas.sh`.
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic

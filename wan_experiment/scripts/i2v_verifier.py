@@ -118,6 +118,27 @@ def verifier_score(
     return float(score_breakdown(free, ref, seam_weight=seam_weight)["score"])
 
 
+def appear_score(
+    free: Dict[str, float],
+    ref: Dict[str, float],
+    seam_weight: float = 1.0,
+) -> float:
+    """Prefix match with motion dropped. Identity/appearance only.
+
+    N=32 seed_bon two-sided motion damped Dyn. This is the sampling-space
+    form of prefix-anchored path correction.
+    """
+    parts: list[float] = []
+    for k in ("sharpness", "colorfulness", "contrast"):
+        d = _rel_dev(free.get(k), ref.get(k))
+        if d == d:
+            parts.append(d)
+    seam = seam_term(free, ref)
+    if seam == seam:
+        parts.append(float(seam_weight) * seam)
+    return float(sum(parts)) if parts else float("nan")
+
+
 def prefix_match_score(
     free: Dict[str, float],
     ref: Dict[str, float],

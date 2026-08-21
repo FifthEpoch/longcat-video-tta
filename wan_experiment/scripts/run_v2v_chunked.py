@@ -26,6 +26,13 @@ Methods:
   longlive_prefix_sink — LongLive notta with sink_size=9 (whole prefix pinned)
   longlive_live_bon — live_bon on the LongLive student
   rolling_notta  — Rolling Forcing native sampler, real prefix, k=1
+  appear_bon     — k=4, pick lowest appearance/seam (motion dropped)
+  live_appear    — appear_bon only if prefix_motion >= 0.012
+  pseudo_gate    — generate held-out last-3 prefix latents; search tail iff
+                   some seed beats notta MAE on that real B
+  pseudo_appear  — same gate, appearance pick on the tail
+  noise_probe    — k=1 notta, log first-step residual stats (U_t)
+  noise_bon      — search extra seeds iff cand0 U_t >= tau; appear pick
   knob_probe     — first gen chunk only; grid shift × cfg; no 30 s write
 
 No TTC. Do not scale I2V-32.
@@ -51,6 +58,7 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 from i2v_verifier import (  # noqa: E402
+    appear_score,
     gen_free_signals,
     motion_pick_score,
     prefix_match_score,
@@ -104,6 +112,8 @@ METHODS = (
     "live_bon", "live_hist",
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
+    "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
+    "noise_probe", "noise_bon",
 )
 TAIL_HISTORY_LATENTS = 3
 SINK_WINDOW_LATENTS = 21
@@ -116,6 +126,11 @@ QUIET_SEARCH_MAX = 0.018
 # N=8 cand logs: 0007=0.070 live recovery; 0002/0003≈0.0008 stills.
 LIVE_SEARCH_MIN = 0.012
 _LIVE_SEARCH_MIN = LIVE_SEARCH_MIN
+PSEUDO_B_LATENTS = 3
+PSEUDO_GAMMA = 0.0
+_PSEUDO_GAMMA = PSEUDO_GAMMA
+NOISE_TAU = 0.04
+_NOISE_TAU = NOISE_TAU
 
 
 def prefix_pixel_count(n_lat: int) -> int:
@@ -452,6 +467,7 @@ def _build_cand_specs(
     default_cfg: float,
     incoming_motion: float | None,
     prefix_motion: float | None,
+    pseudo_fire: bool = False,
 ):
     base = {"shift": default_shift, "cfg": default_cfg, "history": "full"}
     if method in ("notta", "longlive_notta", "longlive_prefix_sink") or ci < search_from_chunk:
@@ -468,7 +484,9 @@ def _build_cand_specs(
             False,
             "sink",
         )
-    if method in ("seed_bon", "cached_bon", "hinge_bon", "motion_bon"):
+    if method in (
+        "seed_bon", "cached_bon", "hinge_bon", "motion_bon", "appear_bon",
+    ):
         return (
             [
                 {**base, "cand": c, "noise_id": c}
@@ -520,7 +538,27 @@ def _build_cand_specs(
             True,
             "quiet_search",
         )
-    if method in ("live_bon", "longlive_live_bon"):
+    if method in ("pseudo_gate", "pseudo_appear"):
+        if pseudo_fire:
+            return (
+                [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+                True,
+                "pseudo_fire",
+            )
+        return (
+            [{**base, "cand": 0, "noise_id": 0}],
+            False,
+            "pseudo_skip",
+        )
+    if method == "noise_probe":
+        return [{**base, "cand": 0, "noise_id": 0}], False, "noise_probe"
+    if method == "noise_bon":
+        return (
+            [{**base, "cand": 0, "noise_id": 0}],
+            False,
+            "noise_cand0",
+        )
+    if method in ("live_bon", "longlive_live_bon", "live_appear"):
         live = (
             prefix_motion is not None and prefix_motion == prefix_motion
             and prefix_motion >= _LIVE_SEARCH_MIN
@@ -611,11 +649,16 @@ def _run_one_chunk(
             )
     else:
         _restore_kv(pipeline, kv_snap)
-    _denoise_chunk(pipeline, noise, committed, conditional_dict, output, rng)
+    stats_out = []
+    _denoise_chunk(
+        pipeline, noise, committed, conditional_dict, output, rng,
+        stats_out=stats_out,
+    )
     end = committed + chunk_latents
     pixels = _decode_pixels(pipeline, output[:, :end])
     latents = output[:, committed:end].detach().clone()
-    return latents, pixels
+    noise_stats = stats_out[0] if stats_out else None
+    return latents, pixels, noise_stats
 
 
 def generate_chunked_v2v(
@@ -665,6 +708,14 @@ def generate_chunked_v2v(
     )
     print(f"  prefix_motion={prefix_motion}", flush=True)
     good_committed = prefix_latents
+    pseudo_fire = False
+    pseudo_rows = None
+    if method in ("pseudo_gate", "pseudo_appear"):
+        pseudo_fire, pseudo_rows = _eval_pseudo_future(
+            pipeline, output, prefix_latents, conditional_dict,
+            seed, device, search_k, default_shift, default_cfg,
+            prefix_only,
+        )
 
     for ci in range(n_chunks):
         incoming_signals = None
@@ -687,6 +738,7 @@ def generate_chunked_v2v(
         cand_specs, searched, reason = _build_cand_specs(
             method, ci, n_chunks, search_k, search_from_chunk,
             default_shift, default_cfg, incoming_motion, prefix_motion,
+            pseudo_fire=pseudo_fire,
         )
 
         def _score_cand(latents, pixels, cand, shift, cfg, history="full"):
@@ -698,6 +750,7 @@ def generate_chunked_v2v(
             br = score_breakdown(free, nonlocal_ref, seam_weight=seam_weight)
             mscore = motion_pick_score(free, nonlocal_ref)
             hscore = prefix_match_score(free, nonlocal_ref, seam_weight=seam_weight)
+            ascore = appear_score(free, nonlocal_ref, seam_weight=seam_weight)
             return {
                 "cand": cand,
                 "seed": _cand_seed(seed, cand),
@@ -706,6 +759,7 @@ def generate_chunked_v2v(
                 "history": history,
                 "score": br["score"],
                 "hinge_score": hscore,
+                "appear_score": ascore,
                 "motion_score": mscore,
                 "latents": latents,
                 "pixels": pixels,
@@ -727,7 +781,7 @@ def generate_chunked_v2v(
         for spec in cand_specs:
             noise_id = int(spec.get("noise_id", spec["cand"]))
             hist = spec.get("history", "full")
-            latents, pixels = _run_one_chunk(
+            latents, pixels, noise_stats = _run_one_chunk(
                 pipeline, output, committed, chunk_latents,
                 conditional_dict, seed, noise_id, ci, device,
                 spec["shift"], spec["cfg"],
@@ -753,15 +807,42 @@ def generate_chunked_v2v(
                 latents, pixels, spec["cand"], spec["shift"], spec["cfg"],
                 history=hist,
             )
+            rec["noise_stats"] = noise_stats
             cands.append(rec)
+            u = (noise_stats or {}).get("eps_mean_abs")
             print(
                 f"    chunk {ci} cand{spec['cand']} hist={hist} "
                 f"shift={spec['shift']} cfg={spec['cfg']} "
                 f"score={rec['score']:.4f} hinge={rec['hinge_score']:.4f} "
+                f"appear={rec['appear_score']:.4f} "
                 f"motion={rec['free']['temporal_motion']:.4g} "
-                f"motion_pick={rec['motion_score']:.4g}",
+                f"U={u}",
                 flush=True,
             )
+
+        if method == "noise_bon" and cands:
+            u0 = (cands[0].get("noise_stats") or {}).get("eps_mean_abs")
+            if u0 is not None and u0 >= float(_NOISE_TAU):
+                searched, reason = True, "noise_fire"
+                for extra in range(1, search_k):
+                    latents, pixels, noise_stats = _run_one_chunk(
+                        pipeline, output, committed, chunk_latents,
+                        conditional_dict, seed, extra, ci, device,
+                        default_shift, default_cfg,
+                        history="full", prefix_latents=prefix_latents,
+                    )
+                    rec = _score_cand(
+                        latents, pixels, extra, default_shift, default_cfg,
+                    )
+                    rec["noise_stats"] = noise_stats
+                    cands.append(rec)
+                    print(
+                        f"    chunk {ci} cand{extra} noise_fire "
+                        f"appear={rec['appear_score']:.4f} U={u0:.4g}",
+                        flush=True,
+                    )
+            else:
+                reason = "noise_skip"
 
         if method == "motion_bon" or method == "shift_search":
             chosen = max(
@@ -774,6 +855,10 @@ def generate_chunked_v2v(
             )
         elif method in ("hinge_bon", "hist_drop", "live_hist"):
             chosen = min(range(len(cands)), key=lambda i: cands[i]["hinge_score"])
+        elif method in (
+            "appear_bon", "live_appear", "pseudo_appear", "noise_bon",
+        ):
+            chosen = min(range(len(cands)), key=lambda i: cands[i]["appear_score"])
         else:
             chosen = min(range(len(cands)), key=lambda i: cands[i]["score"])
 
@@ -807,7 +892,7 @@ def generate_chunked_v2v(
                     flush=True,
                 )
                 committed -= chunk_latents
-                latents, pixels = _run_one_chunk(
+                latents, pixels, _ns = _run_one_chunk(
                     pipeline, output, committed, chunk_latents,
                     conditional_dict, seed, 1, ci, device,
                     default_shift, default_cfg,
@@ -852,7 +937,7 @@ def generate_chunked_v2v(
                     flush=True,
                 )
                 committed -= chunk_latents
-                latents, pixels = _run_one_chunk(
+                latents, pixels, _ns = _run_one_chunk(
                     pipeline, output, committed, chunk_latents,
                     conditional_dict, seed, 1, ci, device,
                     default_shift, default_cfg,
@@ -914,7 +999,11 @@ def generate_chunked_v2v(
             "cand0_score": _json_float(cand0_score),
             "chosen_score": _json_float(best["score"]),
             "chosen_hinge_score": _json_float(best["hinge_score"]),
+            "chosen_appear_score": _json_float(best.get("appear_score")),
             "chosen_motion_score": _json_float(best["motion_score"]),
+            "chosen_noise_stats": best.get("noise_stats"),
+            "pseudo_fire": bool(pseudo_fire),
+            "pseudo_rows": pseudo_rows if ci == 0 else None,
             "chosen_minus_cand0": _json_float(best["score"] - cand0_score),
             "chosen_breakdown": _json_signals(best["breakdown"]),
             "candidates": [
@@ -926,7 +1015,9 @@ def generate_chunked_v2v(
                     "history": c.get("history", "full"),
                     "score": _json_float(c["score"]),
                     "hinge_score": _json_float(c["hinge_score"]),
+                    "appear_score": _json_float(c.get("appear_score")),
                     "motion_score": _json_float(c["motion_score"]),
+                    "noise_stats": c.get("noise_stats"),
                     "chosen": c["cand"] == best["cand"] and math.isclose(
                         c["shift"], best["shift"],
                     ) and c.get("history", "full") == best.get("history", "full"),
@@ -953,6 +1044,68 @@ def generate_chunked_v2v(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return pixels, tuple(output.shape), ref, chunk_logs, prefix_pix_n
+
+
+def _eval_pseudo_future(
+    pipeline,
+    output,
+    prefix_latents: int,
+    conditional_dict,
+    seed: int,
+    device,
+    search_k: int,
+    default_shift: float,
+    default_cfg: float,
+    prefix_pixels: np.ndarray,
+):
+    """Generate held-out last-3 prefix latents from the first 6. Real B is GT."""
+    import torch
+
+    b_lat = PSEUDO_B_LATENTS
+    a_lat = int(prefix_latents) - b_lat
+    if a_lat < 3 or a_lat % 3 != 0:
+        raise RuntimeError(
+            f"pseudo-future needs prefix={prefix_latents} with A multiple of 3"
+        )
+    a_pix = t2v_pixel_frames(a_lat)
+    b_pix = t2v_pixel_frames(prefix_latents)
+    real_b = prefix_pixels[a_pix:b_pix]
+    saved = output[:, a_lat:a_lat + b_lat].clone()
+    rows = []
+    for c in range(max(1, int(search_k))):
+        latents, pixels, _stats = _run_one_chunk(
+            pipeline, output, a_lat, b_lat, conditional_dict,
+            seed, c, -1, device, default_shift, default_cfg,
+            history="full", prefix_latents=prefix_latents,
+        )
+        gen_b = pixels[a_pix:a_pix + real_b.shape[0]]
+        n = min(gen_b.shape[0], real_b.shape[0])
+        mae = (
+            float(np.mean(np.abs(gen_b[:n] - real_b[:n])))
+            if n >= 1 else float("nan")
+        )
+        rows.append({"cand": c, "mae": mae, "n_pix": int(n)})
+        print(
+            f"    pseudo B cand{c} mae={mae:.5g} vs real last-3 latents",
+            flush=True,
+        )
+        output[:, a_lat:a_lat + b_lat] = saved
+    notta_mae = rows[0]["mae"]
+    best = min(rows, key=lambda r: r["mae"] if r["mae"] == r["mae"] else 1e9)
+    fire = (
+        best["mae"] == best["mae"]
+        and notta_mae == notta_mae
+        and best["mae"] < notta_mae - float(_PSEUDO_GAMMA)
+        and int(best["cand"]) != 0
+    )
+    print(
+        f"  pseudo-future notta_mae={notta_mae:.5g} best={best['mae']:.5g} "
+        f"cand={best['cand']} fire={fire} gamma={_PSEUDO_GAMMA}",
+        flush=True,
+    )
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return fire, rows
 
 
 def _rf_kv(pipeline):
@@ -1164,7 +1317,7 @@ def generate_knob_probe(
             device=device, dtype=torch.bfloat16,
         )
         output[:, :prefix_latents] = prefix[:, :prefix_latents]
-        latents, pixels = _run_one_chunk(
+        latents, pixels, _ns = _run_one_chunk(
             pipeline, output, prefix_latents, chunk_latents,
             conditional_dict, seed, 0, 0, device, shift, cfg,
         )
@@ -1280,6 +1433,8 @@ def main() -> int:
     ap.add_argument("--default-shift", type=float, default=DEFAULT_SHIFT)
     ap.add_argument("--default-cfg", type=float, default=DEFAULT_CFG)
     ap.add_argument("--live-min", type=float, default=LIVE_SEARCH_MIN)
+    ap.add_argument("--pseudo-gamma", type=float, default=PSEUDO_GAMMA)
+    ap.add_argument("--noise-tau", type=float, default=NOISE_TAU)
     ap.add_argument("--sink-size", type=int, default=3)
     ap.add_argument("--local-attn-size", type=int, default=12)
     ap.add_argument("--ll-root", default="")
@@ -1302,8 +1457,10 @@ def main() -> int:
     n_chunks = n_gen // args.chunk_latents
     n_pix = t2v_pixel_frames(args.prefix_latents + n_gen)
     method = "seed_bon" if args.method == "always_bon" else args.method
-    global _LIVE_SEARCH_MIN
+    global _LIVE_SEARCH_MIN, _PSEUDO_GAMMA, _NOISE_TAU
     _LIVE_SEARCH_MIN = float(args.live_min)
+    _PSEUDO_GAMMA = float(args.pseudo_gamma)
+    _NOISE_TAU = float(args.noise_tau)
 
     if method.startswith("longlive"):
         host = "longlive"

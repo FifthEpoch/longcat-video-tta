@@ -186,7 +186,10 @@ def _cache_clean_latents(pipeline, latents, conditional_dict) -> None:
         t += n
 
 
-def _denoise_chunk(pipeline, noise, start_frame, conditional_dict, output, rng) -> None:
+def _denoise_chunk(
+    pipeline, noise, start_frame, conditional_dict, output, rng,
+    stats_out=None,
+) -> None:
     """Official Step 3 loop for one chunk. Writes output[:, start:start+n].
 
     ``rng`` must seed add_noise. Job 15883525 vs 15883526: chunk 0 cand0
@@ -216,6 +219,21 @@ def _denoise_chunk(pipeline, noise, start_frame, conditional_dict, output, rng) 
                 crossattn_cache=pipeline.crossattn_cache,
                 current_start=cur * pipeline.frame_seq_length,
             )
+            if (
+                stats_out is not None
+                and index == 0 and consumed == 0
+            ):
+                resid = (noisy_input.float() - denoised_pred.float())
+                stats_out.append({
+                    "eps_mean": float(resid.mean().item()),
+                    "eps_mean_abs": float(resid.abs().mean().item()),
+                    "eps_std": float(resid.std().item()),
+                    "timestep": float(
+                        current_timestep.item()
+                        if hasattr(current_timestep, "item")
+                        else current_timestep
+                    ),
+                })
             if index < len(pipeline.denoising_step_list) - 1:
                 next_timestep = pipeline.denoising_step_list[index + 1]
                 extra = torch.randn(
