@@ -215,12 +215,12 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-21):** two waves in flight / queued.
-  Wave 1 lineage (`v2v_panda_lineage_8v`, jobs **16140808–816**) —
-  do not scancel. Wave 2 ideas (`v2v_panda_ideas_8v`): `appear_bon`,
-  `live_appear`, `pseudo_gate`, `pseudo_appear`, `noise_probe`,
-  `noise_bon`. Submit: `bash wan_experiment/sbatch/submit_v2v_ideas.sh`.
-  Spec: `paper_tables/2026-08-21_wan_v2v_ideas_submit.md`.
+- **Current next experiment (2026-08-21):** **live_bon N=32 yes/no**
+  (`v2v_panda_live_32v`) vs existing confirm notta. Do not retune
+  `live_min`. Do not fish at N=8. Submit:
+  `bash wan_experiment/sbatch/submit_v2v_live32.sh`. Spec:
+  `paper_tables/2026-08-21_wan_v2v_live32_yesno.md`. Lineage 812–816
+  and ideas 16145125–131 stay queued — do not scancel.
   **No TTC. No hist_drop-32. No I2V scale-up.**
 - **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
   + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.

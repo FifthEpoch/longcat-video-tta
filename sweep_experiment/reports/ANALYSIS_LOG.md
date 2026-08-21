@@ -3029,4 +3029,20 @@ while the rest of the wave is queued. longlive_notta still HOLD
 
 ---
 
+## 2026-08-21 — Stop N=8 fishing; live_bon-32 is the yes/no
+**Tags:** methodology, wan, v2v, submit
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_live32_yesno.md`
+
+User asked for a definite yes/no on a test method ASAP. More N=8
+(threshold, appear, pseudo) cannot give that — seed_bon-8 already
+lied. The test method is **live_bon / live_min=0.012**. One N=32
+job vs existing confirm notta. YES = paired tail > notta AND stills
+not mass-damped AND VBench IQ/subject hold. NO otherwise. No retune
+after the shot. Lineage/ideas stay in the queue; they are not this
+decision.
+
+---
+
+
 
