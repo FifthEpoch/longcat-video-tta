@@ -57,11 +57,18 @@ def _load_vbench(method_dir: Path, clip: str = "full") -> dict[str, float] | Non
             continue
         data = json.loads(p.read_text())
         out = {}
-        src = data.get("medians") or data.get("metrics") or data
+        pop = data.get("population") or {}
+        src = data.get("medians") or data.get("metrics") or {}
         for dim in VBENCH_DIMS:
-            if dim in src and src[dim] is not None:
-                out[dim] = float(src[dim])
-            elif dim in data and data[dim] is not None:
+            cell = pop.get(dim)
+            if isinstance(cell, dict) and cell.get("median") is not None:
+                out[dim] = float(cell["median"])
+            elif dim in src and src[dim] is not None:
+                if isinstance(src[dim], dict) and src[dim].get("median") is not None:
+                    out[dim] = float(src[dim]["median"])
+                else:
+                    out[dim] = float(src[dim])
+            elif dim in data and data[dim] is not None and not isinstance(data[dim], dict):
                 out[dim] = float(data[dim])
         if out:
             return out
