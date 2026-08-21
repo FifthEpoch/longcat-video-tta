@@ -2859,3 +2859,22 @@ hist_drop = seed + tail candidate. tail_hist = different mode (helps
 Next *score*: motion as [0.85, 1.15]×prefix **constraint**, appearance
 as objective; else argmin |motion−prefix|. Resimulate on existing N=8
 candidate logs before any GPU. No hist_drop-32.
+
+---
+
+## 2026-08-21 — Band resim: constraint would freeze still-prefix clips
+**Tags:** finding, methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_band_resim.md`
+
+N=8 cand-log resim. prefix_motion is often 0.0008–0.006 while chunk
+motion is 0.02. Band [0.85, 1.15]×prefix is empty; fallback picks the
+stillest seed (0000/0002/0003). 0007 prefix=0.070 is the real collapse
+(notta 0.012, seed recovered 0.026).
+
+quiet_bon inverted the gate: it searched still prefixes (where matching
+damps) and skipped live ones (where recovery lives). That is the −19%.
+
+Correct policy: search iff prefix is *live* (`>= ~0.012`); else notta.
+Never two-sided-match motion to a still reference. Do not generate the
+band constraint without that gate. Optional next: `live_bon` N=8 only.
