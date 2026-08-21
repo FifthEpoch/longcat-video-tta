@@ -2769,3 +2769,27 @@ hist_drop on the bake-off 8: **6/8 vs notta, 7/8 vs seed_bon** (0000
 exact tie with seed). Losses vs notta are the two hottest prefixes.
 vs seed_bon every non-tie is +0.0008…+0.0043 — increment, not a new
 mode. Not one-clip. VBench still required before any scale-up.
+
+---
+
+## 2026-08-21 — Sidecar N=32: seed_bon −8.8% (12/32); VBench queued
+**Tags:** finding, negative-result, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_confirm_32_sidecar.md`;
+jobs 16122823 / 16122824
+
+Sidecars recover all 32. Paired medians: notta 0.01353, seed_bon
+0.01235 (**−8.8%**), **12/32** wins. Locked promote rule FAILS.
+
+First 8 bit-match the bake-off (+34%, med 0.01675→0.02250). Last 24:
+−19%, 8/24. Hot prefixes (notta≥0.020): **0/7** — two-sided match
+damps already-moving tails. N=8 was two large lifts (0000, 0007) on a
+list that over-weighted mid clips, not a general actuator.
+
+Unpaired summary −26% stays retracted (skip stubs). Qualitative
+conclusion is the same: do not write the paper around seed-BoN.
+
+VBench submitted: 16122823 confirm `{notta,seed_bon}` full;
+16122824 tricks `{hist_drop,hinge_bon}` full. Both PD QOSGrpGRES.
+hist_drop still N=8 only; it increments the picker that just failed
+confirm. No hist_drop-32 until IQ/subject land.
