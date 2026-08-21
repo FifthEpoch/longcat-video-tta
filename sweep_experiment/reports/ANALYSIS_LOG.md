@@ -2649,3 +2649,15 @@ good verifier.”
 Recommend one confirm: N=32, notta vs seed_bon, same V2V protocol. If
 it holds, next method work is cheaper seed search or attention sink.
 If it dies, N=8 was noise. Not submitted until the user says go.
+
+---
+
+## 2026-08-20 — User said go: N=32 notta vs seed_bon
+**Tags:** decision, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-20_wan_v2v_confirm_32_spec.md`;
+`sbatch/submit_v2v_bakeoff.sh` `CONFIRM=1`
+
+User approved the confirm. Two jobs only. No motion_bon / backtrack /
+shift / TTC / I2V-32. First 32 Panda clips (N=8 is the prefix). Cite
+medians after full-clip VBench. If the win dies, N=8 was noise.
