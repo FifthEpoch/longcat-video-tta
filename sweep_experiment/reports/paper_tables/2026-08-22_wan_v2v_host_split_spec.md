@@ -4,7 +4,11 @@
 These four tests ask whether a **cheap** method (no LoRA, no backprop)
 can isolate or reuse that win. Do **not** rebrand RF as AdaSteer / TTA.
 
-## H1 — Split the host win: weights vs sampler (GPU N=8)
+**First GPU run is N=32** (same first 32 as confirm/forward).
+N=8 was the draft and was never launched — seed / live / look all
+printed wins at 8 and died at 32. Do not start another lucky-8.
+
+## H1 — Split the host win: weights vs sampler (GPU N=32)
 
 Crossed pair. Host is the checkpoint; sampler is the unroll.
 `method.startswith("rolling")` no longer implies the RF ckpt.
@@ -14,8 +18,8 @@ Crossed pair. Host is the checkpoint; sampler is the unroll.
 | `sf_roll` | Self-Forcing DMD | RF rolling window | Does the window unroll move SF pixels? |
 | `rf_chunk` | Rolling Forcing DMD | SF 6×21 chunks | Does RF still win without its sampler? |
 
-Compare to bake-off **SF notta** and lineage **`rolling_notta`**.
-Do not scale from this table.
+Compare to confirm **SF notta** and forward **`rolling_notta`**.
+Do not scale to 128 from a weak 32.
 
 | Result | Call |
 |---|---|
@@ -44,7 +48,7 @@ Default RF. Switch to SF only if RF chunk-0 `< 0.8 ×` SF chunk-0
 YES only if veto beats always-RF. A veto that mostly stays on RF is
 a no-op. A veto that throws away RF stills is the prefix gate again.
 
-## H4 — Recache from pixels, not poisoned KV (GPU N=8)
+## H4 — Recache from pixels, not poisoned KV (GPU N=32)
 
 `sink` / `tail_hist` only shortened attention (+0% / +0.8%).
 This decodes the last ~2 s (9 latents), **VAE-encodes**, writes those
@@ -61,7 +65,10 @@ IQ drop ≥1.0 vs host = NO (prefix_sink class). Bit-match = no-op.
 
 ## Series / submit
 
-GPU series: `v2v_panda_host_split_8v`. Same first 8 Panda videos.
+GPU series: `v2v_panda_host_split_32v`. Same first 32 Panda videos
+as `v2v_panda_confirm_32v` / `v2v_panda_forward_32v`.
+Wall 8 h generate / 12 h VBench (N=8 leftovers were 9–11 min; N=32
+rolling was 27 min; SF chunked-32 is the long arm).
 2-way H200: queues behind 128 VBench **16209128** if still running.
 
 ```bash

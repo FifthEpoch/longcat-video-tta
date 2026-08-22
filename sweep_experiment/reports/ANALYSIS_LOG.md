@@ -3235,6 +3235,20 @@ for H1+H4. Do not scale. Do not call RF a controller.
 
 ---
 
+## 2026-08-22 — host-split first run is N=32, not 8
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_host_split_spec.md`
+
+User: N=8 is crazy small. Agreed — seed / live / look all printed
+wins at 8 and died at 32. GPU series renamed
+`v2v_panda_host_split_32v` before any job launched. Same first 32
+as confirm/forward. Walls 8 h / 12 h. H2/H3 stay offline on the
+existing 8/32/128 mp4s (already the right N). Do not launch an
+8-video host-split.
+
+---
+
 
 
 

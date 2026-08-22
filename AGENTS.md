@@ -216,7 +216,7 @@ Per-method `merged_summary.json` lives at:
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **Current next experiment (2026-08-22):** four cheap host
-  hypotheses. GPU N=8: `sf_roll`, `rf_chunk`, `sf_recache`,
+  hypotheses. GPU **N=32**: `sf_roll`, `rf_chunk`, `sf_recache`,
   `rf_recache` (`submit_v2v_host_split.sh`). Login CPU: H2/H3
   `resim_v2v_host_switch.py` on existing 8/32/128 mp4s. Spec:
   `paper_tables/2026-08-22_wan_v2v_host_split_spec.md`.
@@ -277,7 +277,7 @@ Per-method `merged_summary.json` lives at:
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-08-22 18:10):
-  128 VBench **16209128** PENDING. Host-split N=8 not yet
+  128 VBench **16209128** PENDING. Host-split **N=32** not yet
   submitted (H1/H4). H2/H3 is login CPU. Leftovers **DONE**.
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
