@@ -3044,5 +3044,26 @@ decision.
 
 ---
 
+## 2026-08-21 — live_bon N=32 is NO
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_live32_verdict.md`
+
+16147007/008 COMPLETED 0:0, 32 mp4s, VBench done. Script printed
+PROMOTE +6% on “N=32”; that N is confirm summary stubs. Honest
+pair on disk from `pair_v2v_tails` is **0020–0031 only** (n=12).
+On those 12: skips exact notta; every search exact seed_bon; 2
+wins / 4 losses. Mean tail −6%. VBench IQ −0.13 / subject +0.009
+pass; Dyn 0/0.
+
+**NO.** Live prefix ≠ collapse. Hot-live clips (0022/0027/0028)
+are the N=32 damper. The skip is real; the controller is not.
+Do not retune live_min. Do not scale ideas from N=8.
+
+Lineage/ideas N=8 all done: rolling_notta is the only host
+residue (+29%, Dyn 0.5, IQ hold). Not tonight.
+
+---
+
 
 

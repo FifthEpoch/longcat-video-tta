@@ -36,27 +36,51 @@ VBENCH_DIMS = (
 )
 
 
+def _usable(rec: dict) -> bool:
+    return bool(
+        rec.get("ok")
+        and not rec.get("skipped")
+        and rec.get("tail_motion") is not None
+    )
+
+
 def _load_rows(series_dir: Path, method: str, allow_partial: bool = False) -> list[dict]:
+    """Sidecars first. summary.json skip-stubs have ok=True and no tail."""
     rows = []
-    for p in sorted(series_dir.glob(f"{method}_h*s_shard*/summary.json")):
-        data = json.loads(p.read_text())
-        rows.extend(r for r in data.get("rows") or [] if r.get("ok"))
-    if rows or not allow_partial:
-        return rows
-    # Job still running: summary.json is written only at the end.
-    # Each finished clip already has a per-video sidecar.
-    for d in sorted(series_dir.glob(f"{method}_h*s_shard*")):
+    seen: set[str] = set()
+    dirs = sorted(series_dir.glob(f"{method}_h*s_shard*"))
+    for d in dirs:
         for p in sorted(d.glob("*.json")):
-            if p.name in {"summary.json", "joined.json"}:
-                continue
-            if "vbench" in p.name:
+            if p.name in {"summary.json", "joined.json"} or "vbench" in p.name:
                 continue
             try:
                 rec = json.loads(p.read_text())
             except Exception:
                 continue
-            if rec.get("ok") and rec.get("tail_motion") is not None:
-                rows.append(rec)
+            if not _usable(rec):
+                continue
+            key = rec.get("file_name") or rec.get("stem") or p.stem
+            if key in seen:
+                continue
+            seen.add(str(key))
+            rows.append(rec)
+        summary = d / "summary.json"
+        if not summary.is_file():
+            continue
+        try:
+            data = json.loads(summary.read_text())
+        except Exception:
+            continue
+        for rec in data.get("rows") or []:
+            if not _usable(rec):
+                continue
+            key = rec.get("file_name") or rec.get("stem") or rec.get("mp4")
+            if not key or str(key) in seen:
+                continue
+            seen.add(str(key))
+            rows.append(rec)
+    if rows or allow_partial:
+        return rows
     return rows
 
 

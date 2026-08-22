@@ -7,15 +7,41 @@ import json
 from pathlib import Path
 
 
+def _usable(rec: dict) -> bool:
+    return bool(
+        rec.get("ok")
+        and not rec.get("skipped")
+        and rec.get("tail_motion") is not None
+    )
+
+
 def _rows(path: Path) -> dict:
-    data = json.loads(path.read_text())
+    """Prefer per-video sidecars. confirm_32v summary.json is full of skip stubs."""
     out = {}
-    for rec in data.get("rows") or []:
-        if not rec.get("ok") or rec.get("skipped"):
-            continue
-        key = rec.get("file_name") or rec.get("stem") or rec.get("mp4")
-        if key:
+    d = path.parent if path.name == "summary.json" else path
+    if d.is_dir():
+        for p in sorted(d.glob("*.json")):
+            if p.name in {"summary.json", "joined.json"} or "vbench" in p.name:
+                continue
+            try:
+                rec = json.loads(p.read_text())
+            except Exception:
+                continue
+            if not _usable(rec):
+                continue
+            key = rec.get("file_name") or rec.get("stem") or p.stem
             out[str(key)] = rec
+    if path.is_file() and path.name == "summary.json":
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            data = {}
+        for rec in data.get("rows") or []:
+            if not _usable(rec):
+                continue
+            key = rec.get("file_name") or rec.get("stem") or rec.get("mp4")
+            if key and str(key) not in out:
+                out[str(key)] = rec
     return out
 
 

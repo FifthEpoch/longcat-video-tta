@@ -215,13 +215,11 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-21):** **live_bon N=32 yes/no**
-  (`v2v_panda_live_32v`) vs existing confirm notta. Do not retune
-  `live_min`. Do not fish at N=8. Submit:
-  `bash wan_experiment/sbatch/submit_v2v_live32.sh`. Spec:
-  `paper_tables/2026-08-21_wan_v2v_live32_yesno.md`. Lineage 812–816
-  and ideas 16145125–131 stay queued — do not scancel.
-  **No TTC. No hist_drop-32. No I2V scale-up.**
+- **Current next experiment (2026-08-21):** live_bon N=32 is **NO**.
+  Verdict: `paper_tables/2026-08-21_wan_v2v_live32_verdict.md`.
+  Do not retune `live_min`. Do not scale N=8 ideas. Residual only:
+  Rolling Forcing notta looked good at N=8 (host, not our gate).
+  **No TTC. No I2V scale-up.**
 - **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
   + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.
   Memo: `paper_tables/2026-08-18_wan_nonweight_next.md`.
@@ -271,9 +269,8 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-21 12:45):
-  lineage **16140812–816** (808/809/811 DONE); ideas **16145125–131**;
-  live_bon-32 yes/no **16147007** + VBench **16147008**. Do not scancel.
+- **In-flight cluster jobs** (as of 2026-08-21 21:42): **none**.
+  Lineage 808–816, ideas 125–131, live32 47007/008 all COMPLETED 0:0.
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
