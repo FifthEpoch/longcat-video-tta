@@ -3161,6 +3161,21 @@ decide. 200/1000 wait on 128.
 
 ---
 
+## 2026-08-22 — Cover leftover ideas; no weight TTA
+**Tags:** decision, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_leftovers_cover.md`
+
+RF host unlocked idea 4 (sample-specific rolling ρ) and idea 6
+(lookahead). Those go to N=8 vs lineage `rolling_notta`. Trust-region
+(#7) is a picker constraint inside `rolling_look` plus an offline
+resim. Hybrid router (#9) is offline only (oracle + prefix rule).
+Idea 2 is not a distinct GPU on the 9-latent protocol. Idea 8 stays
+dead (`late_bon`). Do not revive appear/live/seed. Do not scale
+leftovers from N=8.
+
+---
+
 
 
 

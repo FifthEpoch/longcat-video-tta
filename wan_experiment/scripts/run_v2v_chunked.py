@@ -26,6 +26,11 @@ Methods:
   longlive_prefix_sink — LongLive notta with sink_size=9 (whole prefix pinned)
   longlive_live_bon — live_bon on the LongLive student
   rolling_notta  — Rolling Forcing native sampler, real prefix, k=1
+  rolling_rho_lo — RF host, per-block init-noise × (h/H)^0.5 (more early noise)
+  rolling_rho_hi — RF host, per-block init-noise × (h/H)^2.0 (cleaner near)
+  rolling_adapt  — RF host, ρ from prefix_motion (still=2, mid=1, hot=0.5)
+  rolling_look   — RF host, k=4 lookahead on new-noise windows; seam pick
+                   with trust reject (motion < 0.8× cand0 stays cand0)
   appear_bon     — k=4, pick lowest appearance/seam (motion dropped)
   live_appear    — appear_bon only if prefix_motion >= 0.012
   pseudo_gate    — generate held-out last-3 prefix latents; search tail iff
@@ -112,6 +117,7 @@ METHODS = (
     "live_bon", "live_hist",
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
+    "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )
@@ -126,6 +132,10 @@ QUIET_SEARCH_MAX = 0.018
 # N=8 cand logs: 0007=0.070 live recovery; 0002/0003≈0.0008 stills.
 LIVE_SEARCH_MIN = 0.012
 _LIVE_SEARCH_MIN = LIVE_SEARCH_MIN
+ROLL_STILL_MIN = 0.012
+ROLL_HOT_MIN = 0.03
+ROLL_TRUST_FRAC = 0.8
+ROLL_LOOK_EVERY_BLOCKS = 7
 PSEUDO_B_LATENTS = 3
 PSEUDO_GAMMA = 0.0
 _PSEUDO_GAMMA = PSEUDO_GAMMA
@@ -1115,6 +1125,76 @@ def _rf_kv(pipeline):
     return pipeline.kv_cache1
 
 
+def _snap_kv(kv):
+    if not kv:
+        return None
+    out = []
+    for item in kv:
+        if isinstance(item, dict):
+            out.append({
+                k: (v.clone() if hasattr(v, "clone") else v)
+                for k, v in item.items()
+            })
+        else:
+            out.append(item)
+    return out
+
+
+def _restore_kv(kv, snap):
+    if not kv or not snap:
+        return
+    for dst, src in zip(kv, snap):
+        if not isinstance(dst, dict) or not isinstance(src, dict):
+            continue
+        for k, v in src.items():
+            if hasattr(v, "clone") and k in dst and hasattr(dst[k], "copy_"):
+                dst[k].copy_(v)
+
+
+def _rho_from_prefix(prefix_motion):
+    if prefix_motion is None or prefix_motion != prefix_motion:
+        return 1.0
+    if prefix_motion < ROLL_STILL_MIN:
+        return 2.0
+    if prefix_motion >= ROLL_HOT_MIN:
+        return 0.5
+    return 1.0
+
+
+def _scale_rf_noise(noise, block: int, rho: float):
+    """Per-block init-noise × (h/H)^ρ, mean-normalized. ρ=1 is a no-op."""
+    import torch
+
+    if abs(float(rho) - 1.0) < 1e-6:
+        return 1.0, []
+    n_gen = int(noise.shape[1])
+    num_blocks = n_gen // block
+    scales = []
+    for bi in range(num_blocks):
+        u = (bi + 1) / max(num_blocks, 1)
+        scales.append(float(u) ** float(rho))
+    mean = sum(scales) / max(len(scales), 1)
+    scales = [s / (mean + 1e-8) for s in scales]
+    for bi, sc in enumerate(scales):
+        noise[:, bi * block:(bi + 1) * block].mul_(sc)
+    return float(rho), scales
+
+
+def _latent_motion_seam(pred, prev_latent):
+    import torch
+
+    x = pred.float()
+    if x.shape[1] >= 2:
+        motion = float((x[:, 1:] - x[:, :-1]).abs().mean().item())
+    else:
+        motion = float("nan")
+    if prev_latent is None:
+        seam = 0.0
+    else:
+        seam = float((x[:, :1] - prev_latent.float()).abs().mean().item())
+    return motion, seam
+
+
 def generate_rolling_v2v(
     pipeline,
     video_path: Path,
@@ -1123,6 +1203,10 @@ def generate_rolling_v2v(
     n_gen: int,
     seed: int,
     device,
+    rho: float = 1.0,
+    rho_mode: str = "fixed",
+    search_k: int = 1,
+    method_name: str = "rolling_notta",
 ):
     """Rolling Forcing tail after a real prefix. Their public
     inference_rolling_forcing() overwrites prefix frames (current_start_frame
@@ -1172,6 +1256,18 @@ def generate_rolling_v2v(
             pipeline.generator(**kwargs)
         t += block
 
+    prefix_pix_early = _decode_pixels(pipeline, output[:, :prefix_latents])
+    prefix_motion_early = (
+        float(np.mean(np.abs(prefix_pix_early[1:] - prefix_pix_early[:-1])))
+        if prefix_pix_early.shape[0] >= 2 else None
+    )
+    used_rho = float(rho)
+    if rho_mode == "adapt":
+        used_rho = _rho_from_prefix(prefix_motion_early)
+    _scale_rf_noise(noise, block, used_rho)
+    look_k = max(1, int(search_k))
+    look_picks = []
+
     num_blocks = n_gen // block
     steps = list(pipeline.denoising_step_list)
     n_step = len(steps)
@@ -1192,27 +1288,113 @@ def generate_rolling_v2v(
         n_frames = cur1 - cur0
         tail0 = cur0 - offset
         tail1 = cur1 - offset
-        if n_frames == n_step * block or start_block == 0:
-            noisy_input = torch.cat([
-                noisy_cache[:, cur0:cur1 - block],
-                noise[:, tail1 - block:tail1],
-            ], dim=1)
-        else:
-            noisy_input = noisy_cache[:, cur0:cur1]
+        inject = n_frames == n_step * block or start_block == 0
         if n_frames == n_step * block:
             current_timestep = shared_timestep
         elif start_block == 0:
             current_timestep = shared_timestep[:, -n_frames:]
         else:
             current_timestep = shared_timestep[:, :n_frames]
-        _, denoised_pred = pipeline.generator(
-            noisy_image_or_video=noisy_input,
-            conditional_dict=conditional_dict,
-            timestep=current_timestep,
-            kv_cache=kv,
-            crossattn_cache=pipeline.crossattn_cache,
-            current_start=cur0 * pipeline.frame_seq_length,
+        look_here = (
+            look_k > 1
+            and inject
+            and start_block % ROLL_LOOK_EVERY_BLOCKS == 0
         )
+        prev = output[:, cur0 - 1:cur0] if cur0 > 0 else None
+        n_try = look_k if look_here else 1
+        kv_snap = _snap_kv(kv) if n_try > 1 else None
+        saved0 = noise[:, tail1 - block:tail1].clone() if inject else None
+        cands = []
+        for ck in range(n_try):
+            if n_try > 1:
+                _restore_kv(kv, kv_snap)
+            if inject:
+                if ck > 0:
+                    rng.manual_seed(int(seed) + 10007 * (window_index + 1) + ck)
+                    noise[:, tail1 - block:tail1] = torch.randn(
+                        noise[:, tail1 - block:tail1].shape,
+                        device=device, dtype=noise.dtype, generator=rng,
+                    )
+                noisy_input = torch.cat([
+                    noisy_cache[:, cur0:cur1 - block],
+                    noise[:, tail1 - block:tail1],
+                ], dim=1)
+            else:
+                noisy_input = noisy_cache[:, cur0:cur1]
+            _, denoised_pred = pipeline.generator(
+                noisy_image_or_video=noisy_input,
+                conditional_dict=conditional_dict,
+                timestep=current_timestep,
+                kv_cache=kv,
+                crossattn_cache=pipeline.crossattn_cache,
+                current_start=cur0 * pipeline.frame_seq_length,
+            )
+            motion, seam = _latent_motion_seam(denoised_pred, prev)
+            cands.append({
+                "cand": ck,
+                "pred": denoised_pred,
+                "motion": motion,
+                "seam": seam,
+            })
+        chosen = 0
+        reason = "rolling_native"
+        if n_try > 1:
+            m0 = cands[0]["motion"]
+            if (
+                prefix_motion_early is None
+                or prefix_motion_early != prefix_motion_early
+                or prefix_motion_early < ROLL_STILL_MIN
+            ):
+                chosen, reason = 0, "look_skip_still"
+            else:
+                feasible = [
+                    c for c in cands
+                    if c["motion"] == c["motion"]
+                    and m0 == m0
+                    and c["motion"] >= ROLL_TRUST_FRAC * m0
+                ]
+                if not feasible:
+                    chosen, reason = 0, "look_trust_reject"
+                else:
+                    best = min(feasible, key=lambda c: c["seam"])
+                    chosen, reason = int(best["cand"]), "look_seam"
+            look_picks.append({
+                "window": window_index,
+                "start_block": start_block,
+                "chosen": chosen,
+                "reason": reason,
+                "motions": [c["motion"] for c in cands],
+                "seams": [c["seam"] for c in cands],
+            })
+            print(
+                f"    look win{window_index} pick={chosen} {reason} "
+                f"m={[round(c['motion'], 5) if c['motion'] == c['motion'] else None for c in cands]}",
+                flush=True,
+            )
+        if n_try > 1:
+            _restore_kv(kv, kv_snap)
+            if inject:
+                if chosen == 0:
+                    noise[:, tail1 - block:tail1] = saved0
+                else:
+                    rng.manual_seed(int(seed) + 10007 * (window_index + 1) + chosen)
+                    noise[:, tail1 - block:tail1] = torch.randn(
+                        noise[:, tail1 - block:tail1].shape,
+                        device=device, dtype=noise.dtype, generator=rng,
+                    )
+            _, denoised_pred = pipeline.generator(
+                noisy_image_or_video=(
+                    torch.cat([
+                        noisy_cache[:, cur0:cur1 - block],
+                        noise[:, tail1 - block:tail1],
+                    ], dim=1) if inject else noisy_cache[:, cur0:cur1]
+                ),
+                conditional_dict=conditional_dict,
+                timestep=current_timestep,
+                kv_cache=kv,
+                crossattn_cache=pipeline.crossattn_cache,
+                current_start=cur0 * pipeline.frame_seq_length,
+            )
         output[:, cur0:cur1] = denoised_pred
         with torch.no_grad():
             for block_idx in range(start_block, end_block + 1):
@@ -1276,14 +1458,21 @@ def generate_rolling_v2v(
         float(np.mean(np.abs(prefix_only[1:] - prefix_only[:-1])))
         if prefix_only.shape[0] >= 2 else None
     )
+    n_div = sum(1 for p in look_picks if int(p.get("chosen", 0)) != 0)
     chunk_logs = [{
         "chunk": 0,
-        "chosen_cand": 0,
-        "search_k": 1,
-        "method": "rolling_notta",
-        "searched": False,
-        "gate_reason": "rolling_native",
+        "chosen_cand": n_div,
+        "search_k": look_k,
+        "method": method_name,
+        "searched": bool(look_k > 1),
+        "gate_reason": (
+            f"rolling_rho={used_rho:.3g}" if look_k <= 1
+            else f"rolling_look n_div={n_div}"
+        ),
         "prefix_motion": _json_float(prefix_motion),
+        "rho": _json_float(used_rho),
+        "rho_mode": rho_mode,
+        "look_picks": look_picks,
         "chosen_score": None,
         "chosen_motion_score": None,
     }]
@@ -1579,10 +1768,21 @@ def main() -> int:
                         flush=True,
                     )
                 else:
-                    if method == "rolling_notta":
+                    if method.startswith("rolling"):
+                        rho, rho_mode, look_k = 1.0, "fixed", 1
+                        if method == "rolling_rho_lo":
+                            rho = 0.5
+                        elif method == "rolling_rho_hi":
+                            rho = 2.0
+                        elif method == "rolling_adapt":
+                            rho_mode = "adapt"
+                        elif method == "rolling_look":
+                            look_k = max(2, int(args.search_k))
                         video, lat_shape, ref, chunk_logs, prefix_pix = generate_rolling_v2v(
                             pipeline, Path(item["video_path"]), item["prompt"],
                             args.prefix_latents, n_gen, args.seed, device,
+                            rho=rho, rho_mode=rho_mode, search_k=look_k,
+                            method_name=method,
                         )
                     else:
                         video, lat_shape, ref, chunk_logs, prefix_pix = generate_chunked_v2v(

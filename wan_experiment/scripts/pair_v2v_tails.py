@@ -63,21 +63,36 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline-dir", type=Path,
                     default=Path("wan_experiment/results/v2v_panda_bakeoff_8v"))
-    ap.add_argument("--series-dir", type=Path,
-                    default=Path("wan_experiment/results/v2v_panda_lineage_8v"))
+    ap.add_argument("--series-dir", type=Path, action="append", dest="series_dirs")
     args = ap.parse_args()
+    series_dirs = args.series_dirs or [
+        Path("wan_experiment/results/v2v_panda_lineage_8v")
+    ]
 
     notta = _rows(args.baseline_dir / "notta_h30s_shard0/summary.json")
     seed = _rows(args.baseline_dir / "seed_bon_h30s_shard0/summary.json")
     methods = []
-    for name in (
-        "live_bon", "live_hist", "longlive_notta",
-        "longlive_sink", "longlive_prefix_sink", "longlive_live_bon",
-        "rolling_notta", "appear_bon",
-    ):
-        p = args.series_dir / f"{name}_h30s_shard0/summary.json"
+    seen = set()
+    for series_dir in series_dirs:
+        for name in (
+            "live_bon", "live_hist", "longlive_notta",
+            "longlive_sink", "longlive_prefix_sink", "longlive_live_bon",
+            "rolling_notta", "rolling_rho_lo", "rolling_rho_hi",
+            "rolling_adapt", "rolling_look", "appear_bon",
+        ):
+            if name in seen:
+                continue
+            p = series_dir / f"{name}_h30s_shard0/summary.json"
+            if p.is_file():
+                methods.append((name, _rows(p)))
+                seen.add(name)
+    for name in ("rolling_notta",):
+        if name in seen:
+            continue
+        p = args.baseline_dir / f"{name}_h30s_shard0/summary.json"
         if p.is_file():
             methods.append((name, _rows(p)))
+            seen.add(name)
 
     hdr = f"{'video':<16} {'notta':>8} {'seed':>8}"
     for name, _ in methods:
