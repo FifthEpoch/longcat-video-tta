@@ -3115,6 +3115,20 @@ fire. Not a 30 s tail.
 
 ---
 
+## 2026-08-22 — Collapse+band does not earn a GPU
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_collapse_band_read.md`
+
+Resim on seed_bon-8/32 and live_bon-32. damp=0 vs cand0. Stills
+skip. 0007-class recovers. 0027/0028 ch0 keep cand0. **0022 ch0
+picks cand1 at 0.061** (prefix 0.068, c0 0.036) — same as seed_bon.
+That is a real collapse + in-band recover, but the locked earn
+rule was stay-cand0. Honor it. No generate. No retcon.
+
+---
+
+
 
 
 
