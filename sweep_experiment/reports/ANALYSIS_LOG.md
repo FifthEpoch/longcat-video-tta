@@ -3206,6 +3206,19 @@ same as N=32. VBench 16209128 still pending. Do not scale leftovers.
 
 ---
 
+## 2026-08-22 — rolling-128 motion bars hold; quality pending
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_rolling128_tails.md`
+
+Honest 128-way sidecar pair. notta 0.01355 / rolling 0.01772.
+Median +31%, mean +23%, 88/40. Stills 40/21, live 48/19. First 32
+reproduce the N=32 pair exactly. Last 96 mean Δ is larger (+26%).
+Worst losses still include 0004 and 0027. VBench 16209128 not in.
+Do not cite YES. No leftover scale-up.
+
+---
+
 
 
 
