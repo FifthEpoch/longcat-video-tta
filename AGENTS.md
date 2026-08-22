@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-21.
+**Date:** Updated 2026-08-22.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
