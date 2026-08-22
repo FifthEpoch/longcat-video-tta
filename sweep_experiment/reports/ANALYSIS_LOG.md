@@ -3128,6 +3128,25 @@ rule was stay-cand0. Honor it. No generate. No retcon.
 
 ---
 
+## 2026-08-22 — rolling-32 YES on locked bars; appear-32 NO
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`
+
+Honest pair N=32 (sidecars). notta median 0.0135.
+
+`appear_bon`: median +3%, mean −2%, 15/17, 12/32 bit-match
+seed_bon, subject +0.065. **NO.** Close the appearance-pick arm.
+
+`rolling_notta`: median +31%, mean +13%, 21/11, IQ +0.79, subject
++0.037, Aes +0.024, Dyn 0/0, 0/32 seed-match. Stills 15/6 not
+mass-damped. **YES on the bars we locked for live_bon-32.** Not a
+Dyn method. Not our controller — the host. First N=32 tail win
+on this V2V protocol. Losses 0004 and 0027 are real.
+
+---
+
+
 
 
 
