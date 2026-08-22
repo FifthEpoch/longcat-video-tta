@@ -3146,6 +3146,21 @@ on this V2V protocol. Losses 0004 and 0027 are real.
 
 ---
 
+## 2026-08-22 — Expand the host, not a controller
+**Tags:** decision, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_rolling128_spec.md`
+
+One method passed N=32 locked bars: `rolling_notta` (Rolling Forcing
+student). That is a host change, not a sampling-space gate. appear /
+live / seed stay closed. Next gate is N=128 on the same sorted Panda
+prefix (32 is a prefix of 128), fresh SF notta + rolling in
+`v2v_panda_rolling_128v`. Kill if median holds but mean or win-rate
+flips. Still-prefix win-rate must stay ≥ 0.5. Dyn 0/0 does not
+decide. 200/1000 wait on 128.
+
+---
+
 
 
 

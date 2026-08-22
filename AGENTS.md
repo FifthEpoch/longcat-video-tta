@@ -215,12 +215,15 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-22):** `appear_bon` N=32 is
-  **NO**. `rolling_notta` N=32 is **YES on locked tail+quality
-  bars** (Dyn still 0). Host, not our controller. Verdict:
-  `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
-  live_bon-32 remains NO. Do not retune `live_min`.
+- **Current next experiment (2026-08-22):** Scale the one N=32
+  host that passed: `rolling_notta` vs fresh SF notta at **N=128**.
+  Series `v2v_panda_rolling_128v`. Spec:
+  `paper_tables/2026-08-22_wan_v2v_rolling128_spec.md`.
+  appear / live / seed stay **NO**. Do not retune `live_min`.
   **No TTC. No I2V scale-up.**
+- **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
+  on locked tail+quality bars (Dyn 0). Host, not our controller.
+  Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
 - **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
   + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.
   Memo: `paper_tables/2026-08-18_wan_nonweight_next.md`.
@@ -270,8 +273,8 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 11:40): **none**.
-  Forward-32 16179112–114 COMPLETED 0:0.
+- **In-flight cluster jobs** (as of 2026-08-22 11:57): **none**
+  until the user sbatches `submit_v2v_rolling128.sh`.
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
