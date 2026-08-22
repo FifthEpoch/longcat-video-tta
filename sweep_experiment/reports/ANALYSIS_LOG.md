@@ -3083,6 +3083,25 @@ only if that paste says the gain is content, not junk.
 
 ---
 
+## 2026-08-21 — Mixed diagnose: close prefix_sink / LL-notta; flicker tautology
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_mixed_diagnose.md`
+
+`diagnose_v2v_mixed.py` printed ρ(d_tail, d_flicker)=−1.0 on
+**every** method. d_flick ≈ −d_tail. VBench flickering is not an
+independent junk sensor. Ignore that READ line.
+
+Independent reads: prefix_sink IQ drop>1 on **5/8** → close, do
+not fix IQ. longlive_notta kills Dyn on every clip that had it →
+close as a Dyn fix. live_hist Dyn 0.5 is 0007 at IQ −7.7 → close.
+rolling 5/3, one IQ drop → N=32 job **16179112** stays.
+appear 4/8 bit-match seed, median Δ tail −0.001 → job
+**16179113** is a kill test, not a belief.
+
+---
+
+
 
 
 
