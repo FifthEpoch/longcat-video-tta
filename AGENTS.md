@@ -216,9 +216,11 @@ Per-method `merged_summary.json` lives at:
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **Current next experiment (2026-08-21):** live_bon N=32 is **NO**.
-  Verdict: `paper_tables/2026-08-21_wan_v2v_live32_verdict.md`.
-  Do not retune `live_min`. Do not scale N=8 ideas. Residual only:
-  Rolling Forcing notta looked good at N=8 (host, not our gate).
+  Forward: `rolling_notta` + `appear_bon` N=32
+  (`submit_v2v_forward.sh`). Mixed LongLive (prefix_sink IQ fail,
+  notta quality↑/motion↓) stays on
+  `diagnose_v2v_mixed.py` — no N=32 until that says the gain is
+  real. Do not retune `live_min`.
   **No TTC. No I2V scale-up.**
 - **Next methods (no weights):** motion verifier + `{shift,cfg}` probe
   + prefix backtrack now live on V2V. CachedSearch / sink / HG-f wait.

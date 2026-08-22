@@ -3065,5 +3065,24 @@ residue (+29%, Dyn 0.5, IQ hold). Not tonight.
 
 ---
 
+## 2026-08-21 — Forward rolling + appear; audit mixed LongLive
+**Tags:** methodology, wan, v2v, submit
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-21_wan_v2v_forward.md`
+
+User asked to move remaining potentials and investigate mixed
+wins. Do **not** revive live_bon / live_hist / pseudo / noise_bon.
+
+GPU forward (N=32 vs confirm notta): `rolling_notta` (host passed
+N=8 on motion+Dyn+IQ) and `appear_bon` (different picker, N=8 Dyn
+0.5 + IQ hold). Series `v2v_panda_forward_32v`.
+
+N=8 diagnose only (no GPU): `longlive_prefix_sink` (is +84%
+flicker?) and `longlive_notta` (is +IQ a freeze?). Fix IQ/motion
+only if that paste says the gain is content, not junk.
+
+---
+
+
 
 
