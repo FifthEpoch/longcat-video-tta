@@ -215,11 +215,15 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-22):** Wait 128 VBench
-  **16209128**. Tail median already +30%. Leftovers N=8 closed
-  (ρ NO vs host IQ; look HOLD only). Native RF schedule stays.
-  appear / live / seed stay **NO**. Do not retune `live_min`.
-  **No TTC. No I2V scale-up.**
+- **Current next experiment (2026-08-22):** four cheap host
+  hypotheses. GPU N=8: `sf_roll`, `rf_chunk`, `sf_recache`,
+  `rf_recache` (`submit_v2v_host_split.sh`). Login CPU: H2/H3
+  `resim_v2v_host_switch.py` on existing 8/32/128 mp4s. Spec:
+  `paper_tables/2026-08-22_wan_v2v_host_split_spec.md`.
+  Leftovers closed (ρ NO, look HOLD). 128 quality still waits
+  on VBench **16209128**. appear / live / seed stay **NO**.
+  Do not retune `live_min`. **No TTC. No I2V scale-up.**
+  Do not rebrand RF as our controller.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -272,9 +276,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 17:28):
-  128 VBench **16209128** PENDING. Generate 126/127 COMPLETED 0:0
-  (128/128 mp4). Leftovers **DONE** (ρ NO vs host IQ; look HOLD N=8).
+- **In-flight cluster jobs** (as of 2026-08-22 18:10):
+  128 VBench **16209128** PENDING. Host-split N=8 not yet
+  submitted (H1/H4). H2/H3 is login CPU. Leftovers **DONE**.
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic

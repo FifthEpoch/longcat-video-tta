@@ -31,6 +31,10 @@ Methods:
   rolling_adapt  — RF host, ρ from prefix_motion (still=2, mid=1, hot=0.5)
   rolling_look   — RF host, k=4 lookahead on new-noise windows; seam pick
                    with trust reject (motion < 0.8× cand0 stays cand0)
+  sf_roll        — SF weights + RF rolling window sampler (H1 cross)
+  rf_chunk       — RF weights + SF chunked sampler (H1 cross)
+  sf_recache     — SF chunked; VAE re-encode last 9 latents each chunk (H4)
+  rf_recache     — RF rolling; VAE re-encode last 9 latents every 21 (H4)
   appear_bon     — k=4, pick lowest appearance/seam (motion dropped)
   live_appear    — appear_bon only if prefix_motion >= 0.012
   pseudo_gate    — generate held-out last-3 prefix latents; search tail iff
@@ -118,6 +122,7 @@ METHODS = (
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
+    "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )
@@ -141,6 +146,25 @@ PSEUDO_GAMMA = 0.0
 _PSEUDO_GAMMA = PSEUDO_GAMMA
 NOISE_TAU = 0.04
 _NOISE_TAU = NOISE_TAU
+RECACHE_LATENTS = 9
+RECACHE_EVERY_LATENTS = 21
+ROLLING_HOST_METHODS = frozenset({"rf_chunk", "rf_recache"})
+ROLLING_SAMPLER_METHODS = frozenset({"sf_roll", "rf_recache"})
+
+
+def _v2v_host_name(method: str) -> str:
+    """Host is the checkpoint, not the method prefix."""
+    if method.startswith("longlive"):
+        return "longlive"
+    if method.startswith("rolling") or method in ROLLING_HOST_METHODS:
+        return "rolling"
+    return "sf"
+
+
+def _uses_rolling_sampler(method: str) -> bool:
+    if method == "rf_chunk":
+        return False
+    return method.startswith("rolling") or method in ROLLING_SAMPLER_METHODS
 
 
 def prefix_pixel_count(n_lat: int) -> int:
@@ -234,12 +258,45 @@ def discover_v2v_items(video_dir: Path, n: int) -> list[dict]:
     return items
 
 
-def encode_prefix_video(pipeline, video_path: Path, n_latents: int, device):
-    """First 1+4*(n-1) frames → [1, n_latents, 16, 60, 104] bf16 latents."""
+def encode_prefix_frames(pipeline, frames, n_latents: int, device):
+    """Pixel frames → [1, n_latents, 16, 60, 104] bf16 latents."""
     import torch
     from PIL import Image
     from torchvision import transforms
 
+    n_pix = prefix_pixel_count(n_latents)
+    if len(frames) < n_pix:
+        raise RuntimeError(
+            f"need {n_pix} frames to encode {n_latents} latents, got {len(frames)}"
+        )
+    tfm = transforms.Compose([
+        transforms.Resize((PIXEL_H, PIXEL_W)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5], [0.5]),
+    ])
+    pix = []
+    for fr in frames[:n_pix]:
+        arr = np.asarray(fr)[..., :3]
+        if arr.dtype != np.uint8:
+            arr = np.clip(np.rint(arr.astype(np.float32) * 255.0), 0, 255).astype(
+                np.uint8
+            )
+        pix.append(tfm(Image.fromarray(arr).convert("RGB")))
+    video = torch.stack(pix, dim=1).unsqueeze(0).to(
+        device=device, dtype=torch.bfloat16,
+    )
+    latent = pipeline.vae.encode_to_latent(video).to(
+        device=device, dtype=torch.bfloat16,
+    )
+    if latent.shape[1] < n_latents:
+        raise RuntimeError(
+            f"VAE returned {latent.shape[1]} latents, wanted {n_latents}"
+        )
+    return latent[:, :n_latents]
+
+
+def encode_prefix_video(pipeline, video_path: Path, n_latents: int, device):
+    """First 1+4*(n-1) frames → [1, n_latents, 16, 60, 104] bf16 latents."""
     n_pix = prefix_pixel_count(n_latents)
     frames = []
     import imageio.v2 as imageio
@@ -259,26 +316,21 @@ def encode_prefix_video(pipeline, video_path: Path, n_latents: int, device):
         raise RuntimeError(
             f"{video_path.name}: need {n_pix} prefix frames, got {len(frames)}"
         )
-    tfm = transforms.Compose([
-        transforms.Resize((PIXEL_H, PIXEL_W)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.5], [0.5]),
-    ])
-    pix = []
-    for fr in frames:
-        img = Image.fromarray(fr.astype(np.uint8)).convert("RGB")
-        pix.append(tfm(img))
-    video = torch.stack(pix, dim=1).unsqueeze(0).to(
-        device=device, dtype=torch.bfloat16,
-    )
-    latent = pipeline.vae.encode_to_latent(video).to(
-        device=device, dtype=torch.bfloat16,
-    )
-    if latent.shape[1] < n_latents:
-        raise RuntimeError(
-            f"VAE returned {latent.shape[1]} latents, wanted {n_latents}"
-        )
-    return latent[:, :n_latents]
+    return encode_prefix_frames(pipeline, frames, n_latents, device)
+
+
+def _recache_recent(pipeline, output, committed: int, n_latents: int, device):
+    """Decode last n latents, VAE-encode, write back. KV is the caller's job."""
+    start = max(0, int(committed) - int(n_latents))
+    n = int(committed) - start
+    if n <= 0:
+        return None
+    pix = _decode_pixels(pipeline, output[:, start:committed])
+    new_lat = encode_prefix_frames(pipeline, pix, n, device)
+    mae = float((output[:, start:committed].float() - new_lat.float()).abs().mean().item())
+    output[:, start:committed] = new_lat
+    print(f"    recache latents {start}:{committed} mae={mae:.5g}", flush=True)
+    return {"start": start, "end": int(committed), "n": n, "mae": mae}
 
 
 def _set_attr_chain(obj, name: str, value) -> bool:
@@ -480,10 +532,14 @@ def _build_cand_specs(
     pseudo_fire: bool = False,
 ):
     base = {"shift": default_shift, "cfg": default_cfg, "history": "full"}
-    if method in ("notta", "longlive_notta", "longlive_prefix_sink") or ci < search_from_chunk:
+    if method in (
+        "notta", "longlive_notta", "longlive_prefix_sink",
+        "rf_chunk", "sf_recache",
+    ) or ci < search_from_chunk:
         reason = (
             "notta" if method in (
                 "notta", "longlive_notta", "longlive_prefix_sink",
+                "rf_chunk", "sf_recache",
             ) and ci >= search_from_chunk
             else "forced_prefix"
         )
@@ -985,6 +1041,12 @@ def generate_chunked_v2v(
         ):
             good_committed = committed
 
+        recache_info = None
+        if method == "sf_recache" and ci < n_chunks - 1:
+            recache_info = _recache_recent(
+                pipeline, output, committed, RECACHE_LATENTS, device,
+            )
+
         cand0_score = cands[0]["score"]
         rec = {
             "chunk": ci,
@@ -1014,6 +1076,7 @@ def generate_chunked_v2v(
             "chosen_noise_stats": best.get("noise_stats"),
             "pseudo_fire": bool(pseudo_fire),
             "pseudo_rows": pseudo_rows if ci == 0 else None,
+            "recache": recache_info,
             "chosen_minus_cand0": _json_float(best["score"] - cand0_score),
             "chosen_breakdown": _json_signals(best["breakdown"]),
             "candidates": [
@@ -1125,6 +1188,37 @@ def _rf_kv(pipeline):
     return pipeline.kv_cache1
 
 
+def _rf_block(pipeline) -> int:
+    return int(getattr(pipeline, "num_frame_per_block", 3))
+
+
+def _rf_replay_clean(pipeline, output, n_latents, conditional_dict, device):
+    """Reset KV and replay clean latents 0:n_latents (prefix warmup / recache)."""
+    import torch
+
+    pipeline._initialize_kv_cache(1, output.dtype, device)
+    pipeline._initialize_crossattn_cache(1, output.dtype, device)
+    kv = _rf_kv(pipeline)
+    block = _rf_block(pipeline)
+    ts0 = torch.ones([1, block], device=device, dtype=torch.int64) * 0
+    t = 0
+    while t < n_latents:
+        kwargs = dict(
+            noisy_image_or_video=output[:, t:t + block],
+            conditional_dict=conditional_dict,
+            timestep=ts0,
+            kv_cache=kv,
+            crossattn_cache=pipeline.crossattn_cache,
+            current_start=t * pipeline.frame_seq_length,
+        )
+        try:
+            pipeline.generator(**kwargs, updating_cache=True)
+        except TypeError:
+            pipeline.generator(**kwargs)
+        t += block
+    return kv
+
+
 def _snap_kv(kv):
     if not kv:
         return None
@@ -1207,6 +1301,7 @@ def generate_rolling_v2v(
     rho_mode: str = "fixed",
     search_k: int = 1,
     method_name: str = "rolling_notta",
+    recache_every_latents: int = 0,
 ):
     """Rolling Forcing tail after a real prefix. Their public
     inference_rolling_forcing() overwrites prefix frames (current_start_frame
@@ -1217,7 +1312,7 @@ def generate_rolling_v2v(
 
     prefix = encode_prefix_video(pipeline, Path(video_path), prefix_latents, device)
     conditional_dict = pipeline.text_encoder(text_prompts=[prompt])
-    block = int(pipeline.num_frame_per_block)
+    block = _rf_block(pipeline)
     if prefix_latents % block != 0 or n_gen % block != 0:
         raise RuntimeError(
             f"rolling V2V needs prefix={prefix_latents} and n_gen={n_gen} "
@@ -1235,26 +1330,10 @@ def generate_rolling_v2v(
         [1, n_gen, LATENT_C, LATENT_H, LATENT_W],
         device=device, dtype=torch.bfloat16, generator=rng,
     )
-    pipeline._initialize_kv_cache(1, noise.dtype, device)
-    pipeline._initialize_crossattn_cache(1, noise.dtype, device)
-    kv = _rf_kv(pipeline)
-
-    t = 0
-    ts0 = torch.ones([1, block], device=device, dtype=torch.int64) * 0
-    while t < prefix_latents:
-        kwargs = dict(
-            noisy_image_or_video=output[:, t:t + block],
-            conditional_dict=conditional_dict,
-            timestep=ts0,
-            kv_cache=kv,
-            crossattn_cache=pipeline.crossattn_cache,
-            current_start=t * pipeline.frame_seq_length,
-        )
-        try:
-            pipeline.generator(**kwargs, updating_cache=True)
-        except TypeError:
-            pipeline.generator(**kwargs)
-        t += block
+    kv = _rf_replay_clean(
+        pipeline, output, prefix_latents, conditional_dict, device,
+    )
+    recache_logs = []
 
     prefix_pix_early = _decode_pixels(pipeline, output[:, :prefix_latents])
     prefix_motion_early = (
@@ -1269,7 +1348,13 @@ def generate_rolling_v2v(
     look_picks = []
 
     num_blocks = n_gen // block
-    steps = list(pipeline.denoising_step_list)
+    raw_steps = pipeline.denoising_step_list
+    steps = [float(s) for s in list(raw_steps)]
+    step_tensor = (
+        raw_steps.to(device=device)
+        if hasattr(raw_steps, "to")
+        else torch.tensor(steps, device=device, dtype=torch.float32)
+    )
     n_step = len(steps)
     window_num = num_blocks + n_step - 1
     noisy_cache = torch.zeros_like(output)
@@ -1402,16 +1487,14 @@ def generate_rolling_v2v(
                 block_time_step = current_timestep[
                     :, rel * block:(rel + 1) * block
                 ].mean().item()
-                matches = torch.abs(
-                    pipeline.denoising_step_list.to(device) - block_time_step
-                ) < 1e-4
+                matches = torch.abs(step_tensor.to(device) - block_time_step) < 1e-4
                 idxs = torch.nonzero(matches, as_tuple=True)[0]
                 if idxs.numel() == 0:
                     continue
                 block_timestep_index = int(idxs[0].item())
                 if block_timestep_index == n_step - 1:
                     continue
-                next_timestep = pipeline.denoising_step_list[block_timestep_index + 1]
+                next_timestep = step_tensor[block_timestep_index + 1]
                 noisy_cache[:, offset + block_idx * block:offset + (block_idx + 1) * block] = (
                     pipeline.scheduler.add_noise(
                         denoised_pred.flatten(0, 1),
@@ -1429,7 +1512,7 @@ def generate_rolling_v2v(
                     ]
                 )
             context_timestep = torch.ones_like(current_timestep) * float(
-                getattr(pipeline.args, "context_noise", 0) or 0
+                getattr(getattr(pipeline, "args", None), "context_noise", 0) or 0
             )
             first = denoised_pred[:, :block]
             ctx = context_timestep[:, :block]
@@ -1450,6 +1533,27 @@ def generate_rolling_v2v(
             f"blocks {start_block}:{end_block} frames {cur0}:{cur1}",
             flush=True,
         )
+        if recache_every_latents > 0:
+            next_start = max(0, (window_index + 1) - n_step + 1)
+            frozen = next_start * block
+            committed = prefix_latents + frozen
+            if (
+                next_start > start_block
+                and frozen > 0
+                and frozen % int(recache_every_latents) == 0
+                and committed < total
+            ):
+                info = _recache_recent(
+                    pipeline, output, committed, RECACHE_LATENTS, device,
+                )
+                kv = _rf_replay_clean(
+                    pipeline, output, committed, conditional_dict, device,
+                )
+                recache_logs.append({
+                    **(info or {}),
+                    "window": window_index,
+                    "frozen_tail": frozen,
+                })
 
     pixels = _decode_pixels(pipeline, output)
     prefix_pix_n = t2v_pixel_frames(prefix_latents)
@@ -1473,6 +1577,7 @@ def generate_rolling_v2v(
         "rho": _json_float(used_rho),
         "rho_mode": rho_mode,
         "look_picks": look_picks,
+        "recache_logs": recache_logs,
         "chosen_score": None,
         "chosen_motion_score": None,
     }]
@@ -1651,14 +1756,12 @@ def main() -> int:
     _PSEUDO_GAMMA = float(args.pseudo_gamma)
     _NOISE_TAU = float(args.noise_tau)
 
-    if method.startswith("longlive"):
-        host = "longlive"
+    host = _v2v_host_name(method)
+    if host == "longlive":
         host_root = Path(args.ll_root or args.sf_root).resolve()
-    elif method.startswith("rolling"):
-        host = "rolling"
+    elif host == "rolling":
         host_root = Path(args.rf_root or args.sf_root).resolve()
     else:
-        host = "sf"
         host_root = Path(args.sf_root).resolve()
 
     out_dir = Path(args.out_dir).resolve()
@@ -1674,7 +1777,8 @@ def main() -> int:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(
         f"device={device} torch={torch.__version__} task=V2V method={method} "
-        f"host={host} horizon={args.horizon_s}s prefix_lat={args.prefix_latents} "
+        f"host={host} sampler={'rolling' if _uses_rolling_sampler(method) else 'chunked'} "
+        f"horizon={args.horizon_s}s prefix_lat={args.prefix_latents} "
         f"n_gen={n_gen} chunk={args.chunk_latents} n_chunks={n_chunks} "
         f"n_pix={n_pix} n_items={len(items)} live_min={_LIVE_SEARCH_MIN}"
     )
@@ -1768,8 +1872,9 @@ def main() -> int:
                         flush=True,
                     )
                 else:
-                    if method.startswith("rolling"):
+                    if _uses_rolling_sampler(method):
                         rho, rho_mode, look_k = 1.0, "fixed", 1
+                        recache_every = 0
                         if method == "rolling_rho_lo":
                             rho = 0.5
                         elif method == "rolling_rho_hi":
@@ -1778,11 +1883,14 @@ def main() -> int:
                             rho_mode = "adapt"
                         elif method == "rolling_look":
                             look_k = max(2, int(args.search_k))
+                        elif method == "rf_recache":
+                            recache_every = RECACHE_EVERY_LATENTS
                         video, lat_shape, ref, chunk_logs, prefix_pix = generate_rolling_v2v(
                             pipeline, Path(item["video_path"]), item["prompt"],
                             args.prefix_latents, n_gen, args.seed, device,
                             rho=rho, rho_mode=rho_mode, search_k=look_k,
                             method_name=method,
+                            recache_every_latents=recache_every,
                         )
                     else:
                         video, lat_shape, ref, chunk_logs, prefix_pix = generate_chunked_v2v(

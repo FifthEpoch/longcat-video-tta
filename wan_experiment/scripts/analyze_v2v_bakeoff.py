@@ -23,6 +23,7 @@ METHODS = (
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
+    "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )

@@ -78,7 +78,9 @@ def main() -> int:
             "live_bon", "live_hist", "longlive_notta",
             "longlive_sink", "longlive_prefix_sink", "longlive_live_bon",
             "rolling_notta", "rolling_rho_lo", "rolling_rho_hi",
-            "rolling_adapt", "rolling_look", "appear_bon",
+            "rolling_adapt", "rolling_look",
+            "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
+            "appear_bon",
         ):
             if name in seen:
                 continue

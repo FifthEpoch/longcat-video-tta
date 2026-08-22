@@ -3219,6 +3219,22 @@ Do not cite YES. No leftover scale-up.
 
 ---
 
+## 2026-08-22 — four cheap host hypotheses (H1–H4)
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_host_split_spec.md`
+
+RF is not our method. Four cheap tests (no LoRA, no backprop).
+H1: crossed pair `sf_roll` (SF θ + rolling window) vs `rf_chunk`
+(RF θ + SF chunks). Host is now the ckpt, not the method prefix.
+H2/H3: offline resim on existing 8/32/128 mp4s — argmax / veto on
+generated chunk-0 motion. Not the prefix-motion gate (already lost).
+H4: VAE re-encode last 9 latents (`sf_recache` / `rf_recache`),
+unlike sink/tail_hist which only shortened attention. GPU N=8 only
+for H1+H4. Do not scale. Do not call RF a controller.
+
+---
+
 
 
 
