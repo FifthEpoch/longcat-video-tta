@@ -73,7 +73,7 @@ def main() -> int:
     for name in (
         "live_bon", "live_hist", "longlive_notta",
         "longlive_sink", "longlive_prefix_sink", "longlive_live_bon",
-        "rolling_notta",
+        "rolling_notta", "appear_bon",
     ):
         p = args.series_dir / f"{name}_h30s_shard0/summary.json"
         if p.is_file():
