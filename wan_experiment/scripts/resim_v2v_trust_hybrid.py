@@ -93,7 +93,7 @@ def trust_resim(method_dir: Path) -> dict:
     n_chunk = n_change = n_reject = n_keep = 0
     for rec in rows.values():
         for ch in rec.get("chunks") or []:
-            cands = ch.get("cands") or []
+            cands = ch.get("candidates") or ch.get("cands") or []
             if len(cands) < 2:
                 continue
             n_chunk += 1

@@ -3176,6 +3176,22 @@ leftovers from N=8.
 
 ---
 
+## 2026-08-22 — Always-rolling beats a live-only gate
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_coverage_audit_read.md`
+
+Coverage audit on disk. rolling N=32 still +31% / still 15/6 /
+bit=notta 0. N=8 search Spearmans (+0.8…+0.9) die at 32. Offline
+router: always rolling +31% vs prefix rule (still→notta,
+live→rolling) **+9%**. The rule throws away the still-prefix host
+wins. Oracle +46% picks seed/appear — not a method. Trust resim hit
+0 chunks (`cands` vs `candidates`). U_t field absent on
+noise_probe sidecars. Jobs 16209126–133 submitted. Do not gate RF
+on live prefixes.
+
+---
+
 
 
 
