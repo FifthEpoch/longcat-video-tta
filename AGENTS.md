@@ -274,9 +274,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 12:25):
-  rolling-128 **16209126–128**; leftovers-8v **16209129–133**
-  (queued behind 128). 2-way H200.
+- **In-flight cluster jobs** (as of 2026-08-22 17:15):
+  128 VBench **16209128** PD Priority. Leftovers 129–133 and
+  128 generate 126/127 off the queue (confirm with sacct).
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
