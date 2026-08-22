@@ -3192,6 +3192,20 @@ on live prefixes.
 
 ---
 
+## 2026-08-22 — leftover ρ fails IQ; 128 tail holds
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_leftovers8_verdict.md`
+
+Leftovers vs lineage rolling_notta (not SF notta). ρ knob moves
+pixels: adapt = hi on stills, native on mid, lo on 0007. `rho_hi`
+IQ −3.8 / flicker 0.971. `rho_lo` / `adapt` IQ −1.7 / −1.4. Idea 4
+**NO**. `rolling_look` +6% tail, IQ +1.3, 5/3, damps 0001/0007.
+N=8 HOLD only. 128 generate done: median 0.0136→0.0177 (+30%),
+same as N=32. VBench 16209128 still pending. Do not scale leftovers.
+
+---
+
 
 
 

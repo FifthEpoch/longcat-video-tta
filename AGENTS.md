@@ -215,11 +215,9 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-22):** (1) `rolling_notta`
-  vs SF notta at **N=128**. (2) RF leftovers N=8: `rolling_rho_*`,
-  `rolling_adapt`, `rolling_look`. (3) Login-node audit of ran
-  tests (`audit_v2v_coverage.py`, `resim_v2v_trust_hybrid.py`).
-  Spec: `paper_tables/2026-08-22_wan_v2v_leftovers_cover.md`.
+- **Current next experiment (2026-08-22):** Wait 128 VBench
+  **16209128**. Tail median already +30%. Leftovers N=8 closed
+  (ρ NO vs host IQ; look HOLD only). Native RF schedule stays.
   appear / live / seed stay **NO**. Do not retune `live_min`.
   **No TTC. No I2V scale-up.**
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
@@ -274,9 +272,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 17:15):
-  128 VBench **16209128** PD Priority. Leftovers 129–133 and
-  128 generate 126/127 off the queue (confirm with sacct).
+- **In-flight cluster jobs** (as of 2026-08-22 17:28):
+  128 VBench **16209128** PENDING. Generate 126/127 COMPLETED 0:0
+  (128/128 mp4). Leftovers **DONE** (ρ NO vs host IQ; look HOLD N=8).
   **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
