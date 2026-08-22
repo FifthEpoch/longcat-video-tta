@@ -3101,6 +3101,21 @@ appear 4/8 bit-match seed, median Δ tail −0.001 → job
 
 ---
 
+## 2026-08-22 — Collapse+band resim (zero GPU)
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_collapse_band_resim.md`
+
+The leftover picker is not another live_min. It is: keep cand0
+unless this chunk undershoots the prefix, then band / nearest
+prefix. Still prefixes never match a hold. Run on existing
+seed_bon-8, seed_bon-32, live_bon-32 sidecars. Earn a GPU only if
+hots 0022/0027/0028 stay cand0 and 0007-class recoveries still
+fire. Not a 30 s tail.
+
+---
+
+
 
 
 
