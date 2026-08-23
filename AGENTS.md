@@ -215,15 +215,14 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-22):** four cheap host
-  hypotheses. GPU **N=32**: `sf_roll`, `rf_chunk`, `sf_recache`,
-  `rf_recache` (`submit_v2v_host_split.sh`). Login CPU: H2/H3
-  `resim_v2v_host_switch.py` on existing 8/32/128 mp4s. Spec:
-  `paper_tables/2026-08-22_wan_v2v_host_split_spec.md`.
-  Leftovers closed (ρ NO, look HOLD). 128 quality still waits
-  on VBench **16209128**. appear / live / seed stay **NO**.
-  Do not retune `live_min`. **No TTC. No I2V scale-up.**
-  Do not rebrand RF as our controller.
+- **Current next experiment (2026-08-22):** wait H1/H4 N=32
+  (**16215197–201**). H2 bake **NO** at 128 (med −5.4% vs RF).
+  H3 veto **NO** (med +0.0%). Do not GPU a chunk-0 router.
+  Do not retune 0.8. 128 quality still waits on VBench
+  **16209128**. Leftovers closed. appear / live / seed stay
+  **NO**. **No TTC. No I2V scale-up.** Do not rebrand RF as
+  our controller. Verdict:
+  `paper_tables/2026-08-22_wan_v2v_host_switch_verdict.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -276,10 +275,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 18:10):
-  128 VBench **16209128** PENDING. Host-split **N=32** not yet
-  submitted (H1/H4). H2/H3 is login CPU. Leftovers **DONE**.
-  **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-22 19:31):
+  128 VBench **16209128** PENDING. Host-split H1/H4
+  **16215197–200** + VBench **16215201** submitted. H2/H3
+  **DONE** (NO). Leftovers **DONE**. **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

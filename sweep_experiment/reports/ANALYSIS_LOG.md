@@ -3249,6 +3249,21 @@ existing 8/32/128 mp4s (already the right N). Do not launch an
 
 ---
 
+## 2026-08-22 — H2 bake NO at 128; H3 veto median-ties RF
+**Tags:** finding, wan, v2v, negative-result
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-22_wan_v2v_host_switch_verdict.md`
+
+Offline chunk-0 switch on existing mp4s. Cite N=128. H2 argmax
+over-picks SF (73/128) and loses the median (−5.4% vs always-RF;
+81/47 vs RF’s 88/40). H3 veto median ties RF; mean +3.4% / 92/36
+is collapse salvage (0004/0027/0035/0044/0087) plus stolen RF
+wins. N=8 +5% and N=32 +3.5/+4.7% are the lucky-N trap. ρ(Δc0,
+Δtail) 0.62→0.51. Do not GPU a host router. Do not retune 0.8.
+H1/H4 jobs 16215197–201 stay. Always-RF remains the host.
+
+---
+
 
 
 
