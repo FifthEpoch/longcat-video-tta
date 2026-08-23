@@ -3264,6 +3264,23 @@ H1/H4 jobs 16215197–201 stay. Always-RF remains the host.
 
 ---
 
+## 2026-08-23 — sf_roll sampler is live; rf_chunk failed; 128 VBench incomplete
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_host_split32_read.md`
+
+H1: SF weights + RF window (`sf_roll`) N=32 tail 0.0281 vs notta
+0.0135 (+108%, 28/4) and vs rolling 0.0178 (+58%, 27/5). IQ/subject
+hold vs SF. Subject **fails vs RF host** (0.666 vs 0.702). Dyn
+median 1.0. Sampler is not a no-op. Do not scale; twitch vs living
+is open; `rf_chunk` FAILED 0 mp4 (H1 cross incomplete). H4:
+`sf_recache` NO (−1%). `rf_recache` +6.6% vs host on 30/2, Dyn 0 —
+VAE grain HOLD. 128 VBench: notta in (subj 0.648 IQ 70.20); rolling
+cancelled at subject 91/128. Do not cite 128 YES.
+
+---
+
+
 
 
 

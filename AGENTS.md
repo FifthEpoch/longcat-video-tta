@@ -215,14 +215,14 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-22):** wait H1/H4 N=32
-  (**16215197–201**). H2 bake **NO** at 128 (med −5.4% vs RF).
-  H3 veto **NO** (med +0.0%). Do not GPU a chunk-0 router.
-  Do not retune 0.8. 128 quality still waits on VBench
-  **16209128**. Leftovers closed. appear / live / seed stay
-  **NO**. **No TTC. No I2V scale-up.** Do not rebrand RF as
-  our controller. Verdict:
-  `paper_tables/2026-08-22_wan_v2v_host_switch_verdict.md`.
+- **Current next experiment (2026-08-23):** (1) dump `rf_chunk`
+  traceback and fix/resubmit. (2) resubmit 128 VBench for
+  `rolling_notta` only (notta joined is in). `sf_roll` sampler
+  is live (+108% vs SF, Dyn 1; subject fail vs RF) — do **not**
+  scale. `sf_recache` NO. `rf_recache` HOLD. H2/H3 NO. Do not
+  retune 0.8 / `live_min`. **No TTC. No I2V scale-up.** Do not
+  rebrand RF as our controller. Read:
+  `paper_tables/2026-08-23_wan_v2v_host_split32_read.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -275,11 +275,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 19:38):
-  All PD. 128 VBench **16209128** Priority. H1/H4
-  **16215197–200** Priority. Host-split VBench **16215201**
-  Dependency. H2/H3 **DONE** (NO). Leftovers **DONE**.
-  **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-23 03:59):
+  128 VBench **16209128 CANCELLED** (notta joined in; rolling
+  incomplete). Host-split 197/199/200 DONE; **198 rf_chunk
+  FAILED**; 201 VBench FAILED (3/4). Need rolling-only VBench
+  + rf_chunk traceback. **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
