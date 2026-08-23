@@ -108,7 +108,7 @@ def _cache_clean_latents_t2v(pipeline, latents, conditional_dict) -> None:
             noisy_image_or_video=latents[:, t:t + block],
             conditional_dict=conditional_dict,
             timestep=ts,
-            kv_cache=pipeline.kv_cache1,
+            kv_cache=getattr(pipeline, "kv_cache_clean", None) or pipeline.kv_cache1,
             crossattn_cache=pipeline.crossattn_cache,
             current_start=t * pipeline.frame_seq_length,
         )
@@ -136,7 +136,7 @@ def _cache_clean_latents_slices(pipeline, latents, conditional_dict, ranges) -> 
                 noisy_image_or_video=latents[:, t:t + block],
                 conditional_dict=conditional_dict,
                 timestep=ts,
-                kv_cache=pipeline.kv_cache1,
+                kv_cache=getattr(pipeline, "kv_cache_clean", None) or pipeline.kv_cache1,
                 crossattn_cache=pipeline.crossattn_cache,
                 current_start=t * pipeline.frame_seq_length,
             )

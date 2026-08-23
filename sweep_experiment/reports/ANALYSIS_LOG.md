@@ -3280,6 +3280,21 @@ cancelled at subject 91/128. Do not cite 128 YES.
 
 ---
 
+## 2026-08-23 — rf_chunk died on kv_cache1; alias RF KV
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `wan_experiment/scripts/run_i2v_chunked.py`
+
+16215198: RF `CausalInferencePipeline` has no `kv_cache1`.
+`_reset_caches` did `if pipeline.kv_cache1 is None` and nn.Module
+`__getattr__` raised. RF cache is `kv_cache_clean`. Fix aliases
+both after first `_initialize_kv_cache`. Resubmit rf_chunk only
+(`submit_v2v_rf_chunk.sh`). 128 rolling VBench resubmitted as
+**16228045**. Do not scale sf_roll while the cross is incomplete.
+
+---
+
+
 
 
 

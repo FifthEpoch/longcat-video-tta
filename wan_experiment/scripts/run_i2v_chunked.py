@@ -136,13 +136,28 @@ def search_while_sick_keep_on(
     return True, None
 
 
+def _active_kv(pipeline):
+    """RF uses kv_cache_clean; SF uses kv_cache1. Alias both after first init."""
+    kv = getattr(pipeline, "kv_cache_clean", None)
+    if kv is None:
+        kv = getattr(pipeline, "kv_cache1", None)
+    return kv
+
+
 def _reset_caches(pipeline, batch_size, dtype, device) -> None:
-    if pipeline.kv_cache1 is None:
+    kv = _active_kv(pipeline)
+    if kv is None:
         pipeline._initialize_kv_cache(batch_size, dtype, device)
-    else:
-        for blk in pipeline.kv_cache1:
-            blk["global_end_index"].zero_()
-            blk["local_end_index"].zero_()
+        kv = _active_kv(pipeline)
+    if kv is None:
+        raise RuntimeError("KV cache missing after _initialize_kv_cache")
+    if getattr(pipeline, "kv_cache1", None) is None:
+        pipeline.kv_cache1 = kv
+    if getattr(pipeline, "kv_cache_clean", None) is None:
+        pipeline.kv_cache_clean = kv
+    for blk in kv:
+        blk["global_end_index"].zero_()
+        blk["local_end_index"].zero_()
     if getattr(pipeline, "crossattn_cache", None) is None:
         pipeline._initialize_crossattn_cache(batch_size, dtype, device)
     else:
@@ -163,7 +178,7 @@ def _cache_clean_latents(pipeline, latents, conditional_dict) -> None:
         noisy_image_or_video=latents[:, :1],
         conditional_dict=conditional_dict,
         timestep=ts1,
-        kv_cache=pipeline.kv_cache1,
+        kv_cache=_active_kv(pipeline),
         crossattn_cache=pipeline.crossattn_cache,
         current_start=0,
     )
@@ -179,7 +194,7 @@ def _cache_clean_latents(pipeline, latents, conditional_dict) -> None:
             noisy_image_or_video=latents[:, t:t + n],
             conditional_dict=conditional_dict,
             timestep=ts,
-            kv_cache=pipeline.kv_cache1,
+            kv_cache=_active_kv(pipeline),
             crossattn_cache=pipeline.crossattn_cache,
             current_start=t * pipeline.frame_seq_length,
         )
@@ -215,7 +230,7 @@ def _denoise_chunk(
                 noisy_image_or_video=noisy_input,
                 conditional_dict=conditional_dict,
                 timestep=timestep,
-                kv_cache=pipeline.kv_cache1,
+                kv_cache=_active_kv(pipeline),
                 crossattn_cache=pipeline.crossattn_cache,
                 current_start=cur * pipeline.frame_seq_length,
             )
@@ -248,12 +263,14 @@ def _denoise_chunk(
                     ),
                 ).unflatten(0, denoised_pred.shape[:2])
         output[:, cur:cur + block] = denoised_pred
-        context_timestep = torch.ones_like(timestep) * pipeline.args.context_noise
+        context_timestep = torch.ones_like(timestep) * float(
+            getattr(getattr(pipeline, "args", None), "context_noise", 0) or 0
+        )
         pipeline.generator(
             noisy_image_or_video=denoised_pred,
             conditional_dict=conditional_dict,
             timestep=context_timestep,
-            kv_cache=pipeline.kv_cache1,
+            kv_cache=_active_kv(pipeline),
             crossattn_cache=pipeline.crossattn_cache,
             current_start=cur * pipeline.frame_seq_length,
         )

@@ -76,6 +76,7 @@ from i2v_verifier import (  # noqa: E402
 )
 from run_i2v_chunked import (  # noqa: E402
     REF_WIN,
+    _active_kv,
     _bootstrap_sf,
     _cand_seed,
     _chunk_rng,
@@ -478,7 +479,7 @@ def _replay_history(
 
 def _snapshot_kv(pipeline):
     kv = []
-    for blk in pipeline.kv_cache1:
+    for blk in _active_kv(pipeline):
         end = max(
             int(blk["global_end_index"].item()),
             int(blk["local_end_index"].item()),
@@ -500,7 +501,7 @@ def _snapshot_kv(pipeline):
 
 
 def _restore_kv(pipeline, snap) -> None:
-    for blk, saved in zip(pipeline.kv_cache1, snap["kv"]):
+    for blk, saved in zip(_active_kv(pipeline), snap["kv"]):
         end = saved["end"]
         if end > 0:
             blk["k"][:, :end].copy_(saved["k"][:, :end])
