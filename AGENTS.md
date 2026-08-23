@@ -273,10 +273,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 12:15):
-  128 rolling VBench **16228045** PD QOSGrpGRES. rf_chunk
-  **16228103** PD QOSGrpGRES; VBench **16228104** Dependency.
-  197/199/200 DONE. **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-23 14:10):
+  squeue empty. 128 rolling VBench **16228045** and rf_chunk
+  **16228103** / VBench **16228104** no longer listed — check
+  sacct. **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
