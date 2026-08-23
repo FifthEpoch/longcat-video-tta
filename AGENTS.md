@@ -275,10 +275,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-22 19:31):
-  128 VBench **16209128** PENDING. Host-split H1/H4
-  **16215197–200** + VBench **16215201** submitted. H2/H3
-  **DONE** (NO). Leftovers **DONE**. **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-22 19:38):
+  All PD. 128 VBench **16209128** Priority. H1/H4
+  **16215197–200** Priority. Host-split VBench **16215201**
+  Dependency. H2/H3 **DONE** (NO). Leftovers **DONE**.
+  **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
