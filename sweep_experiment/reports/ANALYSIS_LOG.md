@@ -3388,3 +3388,19 @@ stops occupying the 2-way H200 cap. Leave 16259396. If pack-2
 OOMs, `VIDEO_WORKERS=1` on that method only.
 
 ---
+
+---
+
+## 2026-08-23 — rolling-128 official VBench 7/7
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_rolling128_vbench7_read.md`
+
+Join-only after 16259396: both methods n=128 on all 7 dims.
+Cite medians. rolling vs SF: subject +0.039, IQ +0.71, aes
++0.033, Dyn 0→1, flicker 0.986→0.982 (−0.0036), smoothness
+−0.0009. Locked bars PASS. Flicker cost is not H1 twitch
+(0.972). Still the RF host, not our controller. Family wave
+is the next method test.
+
+---

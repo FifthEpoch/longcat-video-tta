@@ -220,10 +220,12 @@ Per-method `merged_summary.json` lives at:
   --only all`. Arms: `rf_rewind` / `rf_sick_search` / `rf_pseudo`
   / `rf_sink` on RF, N=32. Paper baseline SF notta; ablation
   `rolling_notta`. Generate packs 2 videos/H200 (`VIDEO_WORKERS=2`).
-  VBench is L40S. Leave **16259396** (128 flickering). H1+H4
-  crosses twitch — do **not** scale. **No TTC. No I2V scale-up.**
+  VBench is L40S. Rolling-128 official 7-dim **DONE** (flicker
+  0.982 vs SF 0.986). H1+H4 crosses twitch — do **not** scale.
+  **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
+  VBench7: `paper_tables/2026-08-23_wan_v2v_rolling128_vbench7_read.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -276,10 +278,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 21:47):
+- **In-flight cluster jobs** (as of 2026-08-23 21:49):
   Family wave **16261273–276** generate + **16261277** VBench
-  on `l40s_mren`. **16259396** COMPLETED 0:0 5m36s — join-only
-  before citing 128 official 7-dim. Do not resubmit.
+  on `l40s_mren`. Rolling-128 VBench **closed**. Do not resubmit.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
