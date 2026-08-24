@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: `submit_v2v_sf_family.sh` (`2026-08-24_wan_v2v_sf_family_spec.md`). T2V 128 is optional. Do **not** add TTC. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: V2V Panda bake-off (`2026-08-20_wan_v2v_sampling_bakeoff_spec.md`). T2V 128 is optional. Do **not** add TTC. |
 
 ## 2. CRITICAL workflow rules
 
@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-24.
+**Date:** Updated 2026-08-23.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -277,12 +277,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 01:03):
-  SF family N=32: **16266878** rewind, **16266879** sick,
-  **16266880** pseudo, **16266881** sink, VBench **16266882**
-  afterok. Cancel this wave only:
-  `scancel 16266878 16266879 16266880 16266881 16266882`.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 01:58):
+  SF family N=32. squeue: **16266879** sick, **16266880**
+  pseudo, **16266881** sink still R ~53–55 min. Rewind
+  **16266878** and VBench **16266882** not in queue — sacct
+  before assuming done or afterok-dropped. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
