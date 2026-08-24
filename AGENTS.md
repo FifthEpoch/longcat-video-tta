@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-23.
+**Date:** Updated 2026-08-24.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -215,14 +215,10 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-23):** family wave
-  (`submit_v2v_family_wave.sh`) + login `resim_v2v_rf_chunk_trace.py
-  --only all`. Arms: `rf_rewind` / `rf_sick_search` / `rf_pseudo`
-  / `rf_sink` on RF, N=32. Paper baseline SF notta; ablation
-  `rolling_notta`. **Pack-2 OOMed** (273–276); resume
-  `VIDEO_WORKERS=1` skip-existing. VBench is L40S `afterok`.
-  Rolling-128 official 7-dim **DONE** (flicker 0.982 vs SF 0.986).
-  H1+H4 crosses twitch — do **not** scale.
+- **Current next experiment (2026-08-24):** harvest family wave
+  (dual submit 007–011 and 080–087 drained). Do not resubmit.
+  Cite vs SF **and** `rolling_notta`. Rolling-128 official 7-dim
+  **DONE**. H1+H4 crosses twitch — do **not** scale.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -279,10 +275,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 22:11):
-  Family resume **16263080–082, 086** + **16263087** VBench
-  afterok. Duplicate **16263007–011** also PD — scancel one
-  set or they race the same dirs. Rolling-128 VBench **closed**.
+- **In-flight cluster jobs** (as of 2026-08-24 00:40):
+  Family waves **16263007–011** and **16263080–087** drained.
+  Both VBench ran ~1.5 h on L40S. Queue empty. Harvest before
+  cite. Do not resubmit. Rolling-128 VBench **closed**.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
