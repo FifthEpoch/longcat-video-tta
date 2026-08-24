@@ -46,6 +46,7 @@ Methods:
   sf_rewind      — SF chunked; resample a chunk if motion < 0.8× previous
   sf_sick_search — SF chunked; k=4 only after a sick freeze; max-motion + trust
   sf_pseudo      — SF chunked; hold out last 3 prefix latents; search if extra seed wins B
+  sf_always_search — SF chunked; always k=4; same motion+trust pick as sf_pseudo (no gate)
   sf_sink        — SF chunked + LongLive-style sink_size (not HG-f). Not sf_roll.
 
 No TTC. Do not scale I2V-32. Do not put these on the RF rolling sampler.
@@ -131,7 +132,7 @@ METHODS = (
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
-    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_sink",
+    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search", "sf_sink",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )
@@ -702,6 +703,12 @@ def _build_cand_specs(
                 "pseudo_fire",
             )
         return [{**base, "cand": 0, "noise_id": 0}], False, "pseudo_skip"
+    if method == "sf_always_search":
+        return (
+            [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+            True,
+            "always_search",
+        )
     if method in ("backtrack", "good_backtrack"):
         return (
             [{**base, "cand": 0, "noise_id": 0}],
@@ -961,7 +968,7 @@ def generate_chunked_v2v(
             else:
                 reason = "noise_skip"
 
-        if method in ("sf_sick_search", "sf_pseudo") and len(cands) > 1:
+        if method in ("sf_sick_search", "sf_pseudo", "sf_always_search") and len(cands) > 1:
             m0 = _cand_temporal_motion(cands[0])
             feasible = []
             for c in cands:

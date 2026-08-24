@@ -3495,3 +3495,15 @@ despite 20/5/7. Do not scale. Next is always-motion-k=4 to
 split gate vs pick.
 
 ---
+
+## 2026-08-24 — GO always-motion-k=4 ablation
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_sf_always_search_spec.md`
+
+User GO. `sf_always_search`: every chunk k=4, same motion+trust
+pick as `sf_pseudo`, no prefix hold-out. Series
+`v2v_panda_sf_always_32v`. Cite vs SF notta and vs pseudo.
+Do not scale. No TTC.
+
+---

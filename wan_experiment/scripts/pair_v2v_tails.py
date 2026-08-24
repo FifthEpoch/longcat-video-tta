@@ -81,7 +81,7 @@ def main() -> int:
             "rolling_adapt", "rolling_look",
             "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
             "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
-            "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_sink",
+            "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search", "sf_sink",
             "appear_bon",
         ):
             if name in seen:

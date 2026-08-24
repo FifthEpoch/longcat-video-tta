@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: V2V Panda bake-off (`2026-08-20_wan_v2v_sampling_bakeoff_spec.md`). T2V 128 is optional. Do **not** add TTC. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: `submit_v2v_sf_always_search.sh` (`2026-08-24_wan_v2v_sf_always_search_spec.md`). T2V 128 is optional. Do **not** add TTC. |
 
 ## 2. CRITICAL workflow rules
 
@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-23.
+**Date:** Updated 2026-08-24.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -215,14 +215,11 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-24):** SF-family N=32
-  **DONE**. Pseudo HOLD +37% vs SF (lead). Rewind HOLD +6%.
-  Sink HOLD no-scale. Sick NO. Do **not** scale to 128.
-  Next (not submitted): always-motion-k=4 ablation to split
-  gate vs pick. Spec:
+- **Current next experiment (2026-08-24):** `sf_always_search`
+  ablation **ready to submit** (`submit_v2v_sf_always_search.sh`).
+  Same pick as pseudo, no gate. Splits the +37% win. Do **not**
+  scale family to 128. Spec:
   `paper_tables/2026-08-24_wan_v2v_sf_always_search_spec.md`.
-  Verdict:
-  `paper_tables/2026-08-24_wan_v2v_sf_family32_verdict.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -279,9 +276,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 11:22):
-  SF family drained (n=32 + VBench). Queue should be empty
-  unless the user has other jobs. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 11:30):
+  SF family drained. Always-search not in queue until the
+  user pastes job IDs. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

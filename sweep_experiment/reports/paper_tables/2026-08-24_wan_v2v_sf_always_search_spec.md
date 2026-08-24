@@ -33,7 +33,12 @@ SF notta **and** vs `sf_pseudo`.
 
 Promote letter still vs **SF notta**. Do not scale tonight.
 
-## Submit (only after GO)
+## Submit
 
-Not written until GO. One generate + VBench afterok. Series
-`v2v_panda_sf_always_32v`.
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_v2v_sf_always_search.sh
+```
+
+Series `v2v_panda_sf_always_32v`. One generate + VBench afterok.
+Reuse scored notta / pseudo / rolling (skip-existing).

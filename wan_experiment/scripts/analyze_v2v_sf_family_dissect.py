@@ -16,7 +16,9 @@ import statistics
 from pathlib import Path
 
 
-FAMILY = ("sf_rewind", "sf_sick_search", "sf_pseudo", "sf_sink")
+FAMILY = (
+    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search", "sf_sink",
+)
 NAMED = ("panda_0004.mp4", "panda_0027.mp4", "0004", "0027")
 H1_FLICKER = 0.972
 EXACT_EPS = 1e-8
@@ -220,9 +222,11 @@ def _fmt(x, nd=4):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--family-dir", type=Path, required=True)
+    ap.add_argument("--also-dir", type=Path, action="append", default=[])
     ap.add_argument("--notta-dir", type=Path, required=True)
     ap.add_argument("--rolling-dir", type=Path, required=True)
     args = ap.parse_args()
+    search_roots = [args.family_dir, *args.also_dir]
 
     notta = _load_dir(args.notta_dir / "notta_h30s_shard0")
     rolling = _load_dir(args.rolling_dir / "rolling_notta_h30s_shard0")
@@ -241,8 +245,18 @@ def main() -> int:
     win_sets = {}
     rows_out = []
 
+    def _find_method(method: str):
+        for root in search_roots:
+            d = root / f"{method}_h30s_shard0"
+            mapping = _load_dir(d)
+            if mapping:
+                return mapping, d
+        return {}, None
+
     for method in FAMILY:
-        mapping = _load_dir(args.family_dir / f"{method}_h30s_shard0")
+        mapping, method_dir = _find_method(method)
+        if not mapping:
+            continue
         keys = sorted(k for k in notta if k in mapping)
         tails_m = [_tail(mapping[k]) for k in keys]
         tails_s = [_tail(notta[k]) for k in keys]
@@ -254,7 +268,7 @@ def main() -> int:
         exact_sf = t_sf
 
         fire_n = act_n = later = 0
-        always_on = method == "sf_sink"
+        always_on = method in ("sf_sink", "sf_always_search")
         for k in keys:
             rec = mapping[k]
             if method == "sf_rewind":
@@ -299,7 +313,7 @@ def main() -> int:
                 dt = (a - b) / b
             (cond_fire if fired else cond_quiet).append(dt)
 
-        vb = _load_vbench(args.family_dir / f"{method}_h30s_shard0")
+        vb = _load_vbench(method_dir) if method_dir is not None else None
         iq_ok = subj_ok = True
         flicker = dyn = None
         if vb and vb_sf:
@@ -419,8 +433,8 @@ def main() -> int:
     print()
     print("## Named + extreme videos (tail)")
     print()
-    print("| Video | SF | RF | rewind | sick | pseudo | sink |")
-    print("|---|---:|---:|---:|---:|---:|---:|")
+    print("| Video | SF | RF | rewind | sick | pseudo | always | sink |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|")
     named_keys = []
     for k in sorted(notta):
         stem = k.lower()
@@ -445,6 +459,7 @@ def main() -> int:
             f"{_t(by_m.get('sf_rewind', {}), k)} | "
             f"{_t(by_m.get('sf_sick_search', {}), k)} | "
             f"{_t(by_m.get('sf_pseudo', {}), k)} | "
+            f"{_t(by_m.get('sf_always_search', {}), k)} | "
             f"{_t(by_m.get('sf_sink', {}), k)} |"
         )
 
