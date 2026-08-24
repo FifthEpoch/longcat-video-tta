@@ -215,14 +215,14 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-24):** SF-hosted family
-  **IN FLIGHT** (`v2v_panda_sf_family_32v`, jobs 16266878–882).
-  Same widgets on SF chunked so the claim is method-on-SF vs SF.
-  RF rolling is comparison only. Do **not** use `sf_roll`. Do
-  not scale RF-hosted 32. Spec:
-  `paper_tables/2026-08-24_wan_v2v_sf_family_spec.md`.
-  Harvest playbook (cell + next action on every arm):
-  `paper_tables/2026-08-24_wan_v2v_sf_family_dissect.md`.
+- **Current next experiment (2026-08-24):** SF-family N=32
+  **DONE**. Pseudo HOLD +37% vs SF (lead). Rewind HOLD +6%.
+  Sink HOLD no-scale. Sick NO. Do **not** scale to 128.
+  Next (not submitted): always-motion-k=4 ablation to split
+  gate vs pick. Spec:
+  `paper_tables/2026-08-24_wan_v2v_sf_always_search_spec.md`.
+  Verdict:
+  `paper_tables/2026-08-24_wan_v2v_sf_family32_verdict.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -279,11 +279,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 02:12):
-  SF family N=32. Rewind resume **16267992** R. sick
-  **16266879** / pseudo **880** R. sink **881** off queue.
-  VBench **16268053** PD afterok 16267992:16266879:16266880 on L40S.
-  Do not resubmit rewind. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 11:22):
+  SF family drained (n=32 + VBench). Queue should be empty
+  unless the user has other jobs. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

@@ -3481,3 +3481,17 @@ tonight. A miss is a sensor or tax, not a dead end. No DROP
 retune. No TTC.
 
 ---
+
+## 2026-08-24 — SF-family N=32: first method-on-SF wins
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_sf_family32_verdict.md`
+
+Pseudo +37% vs SF (25/2/5), Dyn 0.5, IQ/subject hold, tail
+0.0186 vs RF 0.0178. Fire 27/32 — loose gate. Not seed_bon-32
+(drift pick, tail −9%). Rewind +6% with 12 later-freezes.
+Sink +72%, subject −0.0195, flicker 0.977. Sick median −1%
+despite 20/5/7. Do not scale. Next is always-motion-k=4 to
+split gate vs pick.
+
+---
