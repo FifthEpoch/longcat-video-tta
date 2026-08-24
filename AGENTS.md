@@ -277,13 +277,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 02:07):
-  SF family N=32. Rewind resume **16267992**. First-wave
-  **16266879** sick / **880** pseudo / **881** sink. **878**
-  FAILED. VBench **882** cancelled; replacement hit Job
-  dependency problem. Submit VBench only
-  (`submit_v2v_sf_family_vbench.sh`). Do not resubmit rewind.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 02:12):
+  SF family N=32. Rewind resume **16267992** R. sick
+  **16266879** / pseudo **880** R. sink **881** off queue.
+  VBench **16268053** PD afterok 16267992:16266879:16266880 on L40S.
+  Do not resubmit rewind. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
