@@ -3429,3 +3429,17 @@ is impossible and L40S 48 GB cannot host generate. H200 stays
 for generate; VBench stays L40S. Do not retry pack-2.
 
 ---
+
+## 2026-08-24 — family N=32: beat SF, not a scale-up vs RF
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_family32_verdict.md`
+
+32/32 + official 7-dim. Analyzer PROMOTE vs SF is the RF host.
+vs rolling_notta: rewind +7.7% HOLD (0027 recover, Dyn 0→1),
+sick +6.5% HOLD, pseudo +1.3% / 18 exact **NO**, sink +24%
+HOLD no-scale (subj −0.016, flicker 0.977, not HG-f). Locked
+letter vs RF passes for all four; still do not scale. No TTC.
+No I2V.
+
+---

@@ -215,10 +215,11 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-24):** harvest family wave
-  (dual submit 007–011 and 080–087 drained). Do not resubmit.
-  Cite vs SF **and** `rolling_notta`. Rolling-128 official 7-dim
-  **DONE**. H1+H4 crosses twitch — do **not** scale.
+- **Current next experiment (2026-08-24):** family N=32 **DONE**.
+  vs RF: rewind/sick HOLD, pseudo NO, sink HOLD no-scale.
+  Do not scale to 128. Rolling-128 official 7-dim **DONE**.
+  H1+H4 crosses twitch — do **not** scale. Verdict:
+  `paper_tables/2026-08-24_wan_v2v_family32_verdict.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -275,11 +276,8 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 00:40):
-  Family waves **16263007–011** and **16263080–087** drained.
-  Both VBench ran ~1.5 h on L40S. Queue empty. Harvest before
-  cite. Do not resubmit. Rolling-128 VBench **closed**.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 00:43):
+  Queue empty. Family N=32 closed. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
