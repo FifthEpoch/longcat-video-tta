@@ -310,6 +310,91 @@ def _pop(values: List[float]) -> dict:
     }
 
 
+def join_existing_results(
+    video_dir: Path,
+    out_dir: Path,
+    dimensions: List[str],
+    clip: str,
+    mode: str,
+) -> int:
+    """Write joined.json from already-saved per-dim eval_results. No GPU."""
+    video_dir = video_dir.resolve()
+    out_dir = out_dir.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    n_mp4 = len(_mp4s(video_dir))
+    print(f"video_dir : {video_dir}")
+    print(f"out_dir   : {out_dir}")
+    print(f"clip      : {clip}")
+    print(f"dims      : {dimensions}")
+    print(f"mp4s      : {n_mp4} (join-only, no clip extract)")
+
+    per_dim: Dict[str, Dict[str, float]] = {}
+    missing = []
+    incomplete = []
+    for dim in dimensions:
+        res_path = _result_file(out_dir, dim)
+        if not res_path.is_file():
+            print(f"  {dim:24s}  MISSING")
+            missing.append(dim)
+            continue
+        try:
+            parsed = json.loads(res_path.read_text())
+        except Exception as exc:
+            print(f"  {dim:24s}  PARSE FAIL {exc}")
+            missing.append(dim)
+            continue
+        by_stem = extract_per_video(parsed, dim)
+        per_dim[dim] = by_stem
+        flag = ""
+        if n_mp4 and len(by_stem) < n_mp4:
+            flag = f"  INCOMPLETE (want {n_mp4})"
+            incomplete.append(dim)
+        print(f"  {dim:24s}  n={len(by_stem):>3}{flag}")
+
+    rows = _load_summary_rows(video_dir)
+    joined = join_rows(rows, per_dim)
+    population = {
+        dim: _pop([rec["vbench"][dim] for rec in joined if dim in rec["vbench"]])
+        for dim in dimensions
+    }
+    summary = {
+        "video_dir": str(video_dir),
+        "score_dir": str(video_dir),
+        "out_dir": str(out_dir),
+        "clip": clip,
+        "mode": mode,
+        "n_mp4": n_mp4,
+        "n_joined": len(joined),
+        "dimensions": dimensions,
+        "population": population,
+        "ran": 0,
+        "skipped": len(per_dim),
+        "failed": 0,
+        "failures": [],
+        "join_only": True,
+        "missing_dims": missing,
+        "incomplete_dims": incomplete,
+        "per_video": joined,
+    }
+    (out_dir / "joined.json").write_text(json.dumps(summary, indent=2))
+    print()
+    print("=" * 70)
+    print(f"VBench {clip}  {video_dir.name}  (join-only)")
+    print("=" * 70)
+    for dim in dimensions:
+        pop = population.get(dim) or {}
+        print(f"  {dim:24s}  n={pop.get('n', 0):>3}  "
+              f"mean={pop.get('mean')}  median={pop.get('median')}")
+    print(f"  wrote {out_dir / 'joined.json'}")
+    if incomplete:
+        print(f"INCOMPLETE dims (n < {n_mp4} mp4): {incomplete}")
+        return 3
+    if missing:
+        print(f"MISSING dims: {missing}")
+        return 0
+    return 0
+
+
 def score_dir(
     video_dir: Path,
     out_dir: Path,
@@ -319,6 +404,7 @@ def score_dir(
     force: bool,
     fps: float,
     tail_s: float,
+    join_only: bool = False,
 ) -> int:
     video_dir = video_dir.resolve()
     out_dir = out_dir.resolve()
@@ -329,6 +415,8 @@ def score_dir(
     print(f"clip      : {clip}")
     print(f"dims      : {dimensions}")
     print(f"mode      : {mode}")
+    if join_only:
+        return join_existing_results(video_dir, out_dir, dimensions, clip, mode)
 
     score_dir_path = ensure_clip_dir(video_dir, clip, fps=fps, tail_s=tail_s)
     mp4s = _mp4s(score_dir_path)
@@ -443,6 +531,11 @@ def main() -> int:
     ap.add_argument("--mode", default="custom_input",
                     choices=["custom_input", "i2v", "t2v"])
     ap.add_argument("--force", action="store_true")
+    ap.add_argument(
+        "--join-only", action="store_true",
+        help="Write joined.json from existing per-dim eval_results. "
+             "No GPU, no VBench import. Use after a preempted score job.",
+    )
     args = ap.parse_args()
     unknown = [d for d in args.dimensions if d in I2V_DIMS]
     if unknown:
@@ -470,6 +563,7 @@ def main() -> int:
         rc = score_dir(
             args.video_dir, out_dir, args.dimensions, clip,
             args.mode, args.force, args.fps, args.tail_s,
+            join_only=args.join_only,
         )
         if rc != 0:
             status = rc

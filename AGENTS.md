@@ -189,7 +189,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-22.
+**Date:** Updated 2026-08-23.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -215,12 +215,12 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-23):** resubmit `rf_chunk`
-  after KV alias fix (`submit_v2v_rf_chunk.sh`). 128 rolling
-  VBench **16228045** in. `sf_roll` live — do **not** scale.
-  `sf_recache` NO. `rf_recache` HOLD. H2/H3 NO. **No TTC. No
-  I2V scale-up.** Read:
-  `paper_tables/2026-08-23_wan_v2v_host_split32_read.md`.
+- **Current next experiment (2026-08-23):** resume 128 rolling
+  VBench only (`submit_v2v_rolling128_vbench.sh`). H1+H4 N=32
+  **DONE**: both crosses twitch (tail 0.028 / Dyn 1) — do **not**
+  scale `sf_roll` / `rf_chunk`. `sf_recache` NO. `rf_recache` HOLD.
+  H2/H3 NO. **No TTC. No I2V scale-up.** Read:
+  `paper_tables/2026-08-23_wan_v2v_host_split32_h1_read.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -273,10 +273,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 14:10):
-  squeue empty. 128 rolling VBench **16228045** and rf_chunk
-  **16228103** / VBench **16228104** no longer listed — check
-  sacct. **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-23 20:08):
+  none. rf_chunk **16228103/104 DONE**. 128 rolling VBench
+  **16228045 CANCELLED+** at flickering. Resubmit remaining
+  dims. **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

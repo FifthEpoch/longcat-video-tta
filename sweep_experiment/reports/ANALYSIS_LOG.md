@@ -3294,12 +3294,22 @@ both after first `_initialize_kv_cache`. Resubmit rf_chunk only
 
 ---
 
+## 2026-08-23 — H1 complete: mismatch twitch; 128 VBench preempts at 2h
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_host_split32_h1_read.md`
 
+rf_chunk retry **16228103** 32/32; VBench **16228104** 7/7.
+H1 crossed pair at N=32: `sf_roll` and `rf_chunk` both median tail
+0.0281 vs SF 0.0135 (+108%) and vs RF host 0.0178 (+58%). W/L
+28/4 and 30/2 vs SF; 27/5 and 29/3 vs RF. 0 exact bit-matches.
+Both Dyn median 1.0, flicker 0.972. Subject fails vs rolling
+(0.666 / 0.676 vs 0.702). Sampler is live; ckpt is not the only
+knob; mismatching them is twitch, not a quality method. Matched
+native RF remains the object. Do not scale either cross.
+H4 unchanged (`sf_recache` NO, `rf_recache` HOLD). 128 VBench
+**16228045** CANCELLED+ at 2h07 on flickering (same as 09128).
+Resume skip-existing; join six written dims on login. Do not cite
+128 YES.
 
-
-
-
-
-
-
-
+---
