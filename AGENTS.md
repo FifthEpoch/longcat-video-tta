@@ -216,9 +216,10 @@ Per-method `merged_summary.json` lives at:
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **Current next experiment (2026-08-24):** SF-hosted family
-  (`submit_v2v_sf_family.sh`). Same widgets on SF chunked so the
-  claim is method-on-SF vs SF. RF rolling is comparison only.
-  Do **not** use `sf_roll`. Do not scale RF-hosted 32. Spec:
+  **IN FLIGHT** (`v2v_panda_sf_family_32v`, jobs 16266878–882).
+  Same widgets on SF chunked so the claim is method-on-SF vs SF.
+  RF rolling is comparison only. Do **not** use `sf_roll`. Do
+  not scale RF-hosted 32. Spec:
   `paper_tables/2026-08-24_wan_v2v_sf_family_spec.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
@@ -276,9 +277,12 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 00:56):
-  Queue empty. SF family not submitted until the user pastes
-  job IDs. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 01:03):
+  SF family N=32: **16266878** rewind, **16266879** sick,
+  **16266880** pseudo, **16266881** sink, VBench **16266882**
+  afterok. Cancel this wave only:
+  `scancel 16266878 16266879 16266880 16266881 16266882`.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
