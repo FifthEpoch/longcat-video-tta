@@ -36,4 +36,10 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_v2v_sf_family.sh
 ```
 
+**16266878 rewind FAILED** 8/32: accepted resample then scored
+with `committed` already advanced (`gen_only` empty → IndexError).
+Fixed: score before increment. Resume
+`submit_v2v_sf_rewind_resume.sh` (skip-existing keeps 8 mp4s).
+Leave 16266879–881. VBench 882 was afterok-cancelled.
+
 No TTC. No I2V. Do not resubmit the RF family.

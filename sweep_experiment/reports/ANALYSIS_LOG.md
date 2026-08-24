@@ -3455,3 +3455,16 @@ sf_sick_search / sf_pseudo / sf_sink on native SF chunked.
 Promote vs SF notta. RF rolling is a comparison row. No
 sf_roll (H1). VIDEO_WORKERS=1. Do not scale RF family.
 
+
+## 2026-08-24 — sf_rewind 16266878: score after increment
+**Tags:** bug, wan, v2v
+**Owner:** agent
+**Refs:** job 16266878, `submit_v2v_sf_rewind_resume.sh`
+
+Exit 2, n_ok=8/32. Accepted rewind scored `_score_cand` after
+`committed += chunk_latents`, so `gen_only` was empty (numpy
+empty-slice + IndexError on seam). The 8 survivors never
+accepted. VBench 882 afterok cancelled. Fixed call order.
+Leave sick/pseudo/sink (879–881). Resume rewind skip-existing.
+
+---

@@ -1056,18 +1056,20 @@ def generate_chunked_v2v(
                 )
                 if accepted:
                     output[:, committed:committed + chunk_latents] = latents
-                    committed += chunk_latents
                     committed_pixels = pixels
                     chunk_mot = mot2
                     outgoing_motion = mot2
                     searched = True
                     reason = "sf_rewind_accept"
+                    # Score while committed is still chunk_start. Incrementing
+                    # first made gen_only empty (16266878: 24 IndexError).
                     rec2 = _score_cand(
                         latents, pixels, 1, default_shift, default_cfg,
                     )
                     cands.append(rec2)
                     chosen = len(cands) - 1
                     best = rec2
+                    committed += chunk_latents
                 else:
                     output[:, committed:committed + chunk_latents] = saved_lat
                     committed += chunk_latents
