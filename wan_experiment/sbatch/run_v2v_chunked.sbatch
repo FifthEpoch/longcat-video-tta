@@ -51,10 +51,9 @@ PSEUDO_GAMMA="${PSEUDO_GAMMA:-0.0}"
 NOISE_TAU="${NOISE_TAU:-0.04}"
 SINK_SIZE="${SINK_SIZE:-3}"
 LOCAL_ATTN_SIZE="${LOCAL_ATTN_SIZE:-12}"
-# Two independent videos on one H200. Candidate tensor-batch is off
-# (137-frame KV ≈ 39 GB; k=4 copies miss 141 GB). L40S is 48 GB — too
-# small for that KV. VIDEO_WORKERS=1 if this OOMs.
-VIDEO_WORKERS="${VIDEO_WORKERS:-2}"
+# Pack-2 OOMed on family wave 16261273–276 (second 39 GB KV).
+# Stay at 1 until a measured peak says two copies fit.
+VIDEO_WORKERS="${VIDEO_WORKERS:-1}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/wan_experiment/results/${SERIES}/${METHOD}_h${HORIZON_S}s_shard${SHARD_ID}}"
 
 export PYTHONHASHSEED="${SEED}"

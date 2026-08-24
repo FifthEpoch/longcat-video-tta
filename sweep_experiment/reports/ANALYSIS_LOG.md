@@ -3404,3 +3404,16 @@ Cite medians. rolling vs SF: subject +0.039, IQ +0.71, aes
 is the next method test.
 
 ---
+
+## 2026-08-23 — family pack-2 OOM; resume workers=1
+**Tags:** methodology, wan, cluster
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_gpu_pack2_oom.md`
+
+16261273–276 FAILED. mp4 15/16/16/5. Pattern = one of two
+video-workers died (2×39 GB KV). 277 VBench afterany started
+on incomplete dirs — scancel. Default VIDEO_WORKERS=1. VBench
+dependency is afterok. Skip-existing resumes remaining videos.
+Do not delete mp4s. Do not retry pack-2.
+
+---

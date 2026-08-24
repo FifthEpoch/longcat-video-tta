@@ -22,7 +22,8 @@ VBENCH_WALL="${VBENCH_WALL:-12:00:00}"
 ROLL_BASE="${ROLL_BASE:-${PROJECT_ROOT}/wan_experiment/results/v2v_panda_forward_32v/rolling_notta_h30s_shard0}"
 NOTTA_DIR="${NOTTA_DIR:-${PROJECT_ROOT}/wan_experiment/results/v2v_panda_confirm_32v/notta_h30s_shard0}"
 
-COMMON="HORIZON_S=30,N_VIDEOS=${N_VIDEOS},SEED=0,SEARCH_FROM=0,PREFIX_LATENTS=9,CHUNK_LATENTS=21,SERIES=${SERIES},NUM_SHARDS=1,VIDEO_DIR=${VIDEO_DIR}"
+# VIDEO_WORKERS=1: pack-2 OOMed (16261273–276). Skip-existing resumes mp4s.
+COMMON="HORIZON_S=30,N_VIDEOS=${N_VIDEOS},SEED=0,SEARCH_FROM=0,PREFIX_LATENTS=9,CHUNK_LATENTS=21,SERIES=${SERIES},NUM_SHARDS=1,VIDEO_DIR=${VIDEO_DIR},VIDEO_WORKERS=1"
 
 mkdir -p "${PROJECT_ROOT}/wan_experiment/slurm_log"
 
@@ -57,14 +58,14 @@ ROOT="${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
 VIDEO_DIRS="${ROOT}/rf_rewind_h30s_shard0 ${ROOT}/rf_sick_search_h30s_shard0 ${ROOT}/rf_pseudo_h30s_shard0 ${ROOT}/rf_sink_h30s_shard0 ${ROLL_BASE} ${NOTTA_DIR}"
 DEPS=$(IFS=:; echo "${JOBS[*]}")
 VB=$(sbatch --parsable --account="${ACCOUNT}" --time="${VBENCH_WALL}" \
-    --dependency="afterany:${DEPS}" \
+    --dependency="afterok:${DEPS}" \
     --export=ALL,SERIES_DIR="${ROOT}",VIDEO_DIRS="${VIDEO_DIRS}",CLIPS=full \
     "${SB}/run_i2v_vbench.sbatch")
-echo "VBench full-clip job ${VB} afterany ${DEPS}"
+echo "VBench full-clip job ${VB} afterok ${DEPS}"
 JOBS+=("${VB}")
 
-echo "Family wave N=32 on RF. Generate stays H200 (39 GB KV) with VIDEO_WORKERS=2."
-echo "VBench is L40S — not on the 2-way H200 cap. Leave 16259396 alone."
+echo "Family wave N=32 on RF. VIDEO_WORKERS=1 (pack-2 OOM). VBench afterok on L40S."
+echo "Skip-existing resumes the 5–16 mp4s already on disk. Do not scancel those dirs."
 echo "A rewind k=1 · B sick_search k=4 · D pseudo k=4 · C sink k=1 (HG-f is not this)."
 echo "When generate finishes:"
 echo "  python3 -u wan_experiment/scripts/analyze_v2v_bakeoff.py \\"
