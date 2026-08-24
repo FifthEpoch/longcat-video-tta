@@ -25,6 +25,7 @@ METHODS = (
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
+    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_sink",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )

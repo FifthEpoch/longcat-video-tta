@@ -3443,3 +3443,15 @@ letter vs RF passes for all four; still do not scale. No TTC.
 No I2V.
 
 ---
+
+## 2026-08-24 — SF-hosted family: cite SF, implement on SF
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_sf_family_spec.md`
+
+User: if SF is the paper baseline, the method must run on SF.
+RF-hosted +X vs SF is the host. Next wave: sf_rewind /
+sf_sick_search / sf_pseudo / sf_sink on native SF chunked.
+Promote vs SF notta. RF rolling is a comparison row. No
+sf_roll (H1). VIDEO_WORKERS=1. Do not scale RF family.
+

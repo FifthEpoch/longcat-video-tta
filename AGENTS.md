@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: V2V Panda bake-off (`2026-08-20_wan_v2v_sampling_bakeoff_spec.md`). T2V 128 is optional. Do **not** add TTC. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: `submit_v2v_sf_family.sh` (`2026-08-24_wan_v2v_sf_family_spec.md`). T2V 128 is optional. Do **not** add TTC. |
 
 ## 2. CRITICAL workflow rules
 
@@ -215,11 +215,11 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-24):** family N=32 **DONE**.
-  vs RF: rewind/sick HOLD, pseudo NO, sink HOLD no-scale.
-  Do not scale to 128. Rolling-128 official 7-dim **DONE**.
-  H1+H4 crosses twitch — do **not** scale. Verdict:
-  `paper_tables/2026-08-24_wan_v2v_family32_verdict.md`.
+- **Current next experiment (2026-08-24):** SF-hosted family
+  (`submit_v2v_sf_family.sh`). Same widgets on SF chunked so the
+  claim is method-on-SF vs SF. RF rolling is comparison only.
+  Do **not** use `sf_roll`. Do not scale RF-hosted 32. Spec:
+  `paper_tables/2026-08-24_wan_v2v_sf_family_spec.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -276,8 +276,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 00:43):
-  Queue empty. Family N=32 closed. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 00:56):
+  Queue empty. SF family not submitted until the user pastes
+  job IDs. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

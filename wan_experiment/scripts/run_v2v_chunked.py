@@ -43,8 +43,12 @@ Methods:
   noise_probe    — k=1 notta, log first-step residual stats (U_t)
   noise_bon      — search extra seeds iff cand0 U_t >= tau; appear pick
   knob_probe     — first gen chunk only; grid shift × cfg; no 30 s write
+  sf_rewind      — SF chunked; resample a chunk if motion < 0.8× previous
+  sf_sick_search — SF chunked; k=4 only after a sick freeze; max-motion + trust
+  sf_pseudo      — SF chunked; hold out last 3 prefix latents; search if extra seed wins B
+  sf_sink        — SF chunked + LongLive-style sink_size (not HG-f). Not sf_roll.
 
-No TTC. Do not scale I2V-32.
+No TTC. Do not scale I2V-32. Do not put these on the RF rolling sampler.
 
     python wan_experiment/scripts/run_v2v_chunked.py \
         --method notta --horizon-s 30 --n 2 --video-dir datasets/panda_1000_480p
@@ -127,6 +131,7 @@ METHODS = (
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
+    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_sink",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )
@@ -538,16 +543,17 @@ def _build_cand_specs(
     incoming_motion: float | None,
     prefix_motion: float | None,
     pseudo_fire: bool = False,
+    last_sick: bool = False,
 ):
     base = {"shift": default_shift, "cfg": default_cfg, "history": "full"}
     if method in (
         "notta", "longlive_notta", "longlive_prefix_sink",
-        "rf_chunk", "sf_recache",
+        "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
     ) or ci < search_from_chunk:
         reason = (
             "notta" if method in (
                 "notta", "longlive_notta", "longlive_prefix_sink",
-                "rf_chunk", "sf_recache",
+                "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
             ) and ci >= search_from_chunk
             else "forced_prefix"
         )
@@ -680,6 +686,22 @@ def _build_cand_specs(
             {**base, "cand": 3, "noise_id": 2, "history": "full"},
         ]
         return specs[: max(2, search_k)], True, "hist_drop"
+    if method == "sf_sick_search":
+        if last_sick:
+            return (
+                [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+                True,
+                "sick_search",
+            )
+        return [{**base, "cand": 0, "noise_id": 0}], False, "sick_skip"
+    if method == "sf_pseudo":
+        if pseudo_fire:
+            return (
+                [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
+                True,
+                "pseudo_fire",
+            )
+        return [{**base, "cand": 0, "noise_id": 0}], False, "pseudo_skip"
     if method in ("backtrack", "good_backtrack"):
         return (
             [{**base, "cand": 0, "noise_id": 0}],
@@ -687,6 +709,23 @@ def _build_cand_specs(
             f"{method}_first",
         )
     return [{**base, "cand": 0, "noise_id": 0}], False, "notta"
+
+
+def _chunk_pixel_motion(pixels, committed_before: int, chunk_latents: int):
+    start = t2v_pixel_frames(committed_before)
+    end = t2v_pixel_frames(committed_before + chunk_latents)
+    win = pixels[start:end] if pixels is not None else None
+    if win is None or win.shape[0] < 2:
+        return None
+    return float(np.mean(np.abs(win[1:] - win[:-1])))
+
+
+def _cand_temporal_motion(rec: dict):
+    free = rec.get("free") or {}
+    m = free.get("temporal_motion")
+    if m is None:
+        m = rec.get("motion_score")
+    return m
 
 
 def _run_one_chunk(
@@ -784,7 +823,10 @@ def generate_chunked_v2v(
     good_committed = prefix_latents
     pseudo_fire = False
     pseudo_rows = None
-    if method in ("pseudo_gate", "pseudo_appear"):
+    last_sick = False
+    rewind_logs = []
+    prev_chunk_mot = prefix_motion
+    if method in ("pseudo_gate", "pseudo_appear", "sf_pseudo"):
         pseudo_fire, pseudo_rows = _eval_pseudo_future(
             pipeline, output, prefix_latents, conditional_dict,
             seed, device, search_k, default_shift, default_cfg,
@@ -813,6 +855,7 @@ def generate_chunked_v2v(
             method, ci, n_chunks, search_k, search_from_chunk,
             default_shift, default_cfg, incoming_motion, prefix_motion,
             pseudo_fire=pseudo_fire,
+            last_sick=last_sick,
         )
 
         def _score_cand(latents, pixels, cand, shift, cfg, history="full"):
@@ -918,7 +961,27 @@ def generate_chunked_v2v(
             else:
                 reason = "noise_skip"
 
-        if method == "motion_bon" or method == "shift_search":
+        if method in ("sf_sick_search", "sf_pseudo") and len(cands) > 1:
+            m0 = _cand_temporal_motion(cands[0])
+            feasible = []
+            for c in cands:
+                m = _cand_temporal_motion(c)
+                if (
+                    m is not None and m == m
+                    and m0 is not None and m0 == m0
+                    and m >= ROLL_TRUST_FRAC * m0
+                ):
+                    feasible.append(c)
+            if not feasible:
+                chosen, reason = 0, "look_trust_reject"
+            else:
+                best_c = max(
+                    feasible,
+                    key=lambda c: _cand_temporal_motion(c) or -1e9,
+                )
+                chosen = cands.index(best_c)
+                reason = "sick_motion"
+        elif method == "motion_bon" or method == "shift_search":
             chosen = max(
                 range(len(cands)),
                 key=lambda i: (
@@ -952,6 +1015,73 @@ def generate_chunked_v2v(
         outgoing_motion = (
             outgoing_signals.get("temporal_motion") if outgoing_signals else None
         )
+        chunk_start = committed - chunk_latents
+        chunk_mot = _chunk_pixel_motion(
+            committed_pixels, chunk_start, chunk_latents,
+        )
+        if method == "sf_rewind" and ci >= search_from_chunk:
+            ref_m = prev_chunk_mot
+            sick = bool(
+                chunk_mot is not None and chunk_mot == chunk_mot
+                and ref_m is not None and ref_m == ref_m
+                and ref_m > 0
+                and chunk_mot < RF_SICK_DROP * ref_m
+            )
+            if sick:
+                saved_lat = output[:, chunk_start:committed].clone()
+                saved_pix = committed_pixels
+                saved_mot = chunk_mot
+                committed = chunk_start
+                latents, pixels, _ns = _run_one_chunk(
+                    pipeline, output, committed, chunk_latents,
+                    conditional_dict, seed, 1, ci, device,
+                    default_shift, default_cfg,
+                    history="full", prefix_latents=prefix_latents,
+                )
+                mot2 = _chunk_pixel_motion(pixels, committed, chunk_latents)
+                accepted = (
+                    mot2 is not None and mot2 == mot2 and mot2 >= saved_mot
+                )
+                rewind_logs.append({
+                    "chunk": ci,
+                    "mot0": saved_mot,
+                    "mot1": mot2,
+                    "ref": ref_m,
+                    "accepted": bool(accepted),
+                })
+                print(
+                    f"    sf_rewind chunk={ci} mot {saved_mot:.5g}->"
+                    f"{mot2} accept={accepted}",
+                    flush=True,
+                )
+                if accepted:
+                    output[:, committed:committed + chunk_latents] = latents
+                    committed += chunk_latents
+                    committed_pixels = pixels
+                    chunk_mot = mot2
+                    outgoing_motion = mot2
+                    searched = True
+                    reason = "sf_rewind_accept"
+                    rec2 = _score_cand(
+                        latents, pixels, 1, default_shift, default_cfg,
+                    )
+                    cands.append(rec2)
+                    chosen = len(cands) - 1
+                    best = rec2
+                else:
+                    output[:, committed:committed + chunk_latents] = saved_lat
+                    committed += chunk_latents
+                    committed_pixels = saved_pix
+                    chunk_mot = saved_mot
+                    reason = "sf_rewind_reject"
+        last_sick = bool(
+            chunk_mot is not None and chunk_mot == chunk_mot
+            and prev_chunk_mot is not None and prev_chunk_mot == prev_chunk_mot
+            and prev_chunk_mot > 0
+            and chunk_mot < RF_SICK_DROP * prev_chunk_mot
+        )
+        if chunk_mot is not None:
+            prev_chunk_mot = chunk_mot
         backtracked = False
         backtrack_reason = None
         if method == "backtrack" and ci >= search_from_chunk:
@@ -1084,6 +1214,13 @@ def generate_chunked_v2v(
             "chosen_noise_stats": best.get("noise_stats"),
             "pseudo_fire": bool(pseudo_fire),
             "pseudo_rows": pseudo_rows if ci == 0 else None,
+            "last_sick": bool(last_sick),
+            "chunk_motion": _json_float(chunk_mot),
+            "rewind": (
+                rewind_logs[-1]
+                if rewind_logs and rewind_logs[-1].get("chunk") == ci
+                else None
+            ),
             "recache": recache_info,
             "chosen_minus_cand0": _json_float(best["score"] - cand0_score),
             "chosen_breakdown": _json_signals(best["breakdown"]),
@@ -2186,6 +2323,13 @@ def main() -> int:
             device, n_cache_frames=n_cache,
             independent_first_frame=False,
         )
+        if method == "sf_sink":
+            if str(_SCRIPTS) not in sys.path:
+                sys.path.insert(0, str(_SCRIPTS))
+            from v2v_hosts import apply_sink_size
+            apply_sink_size(
+                pipeline, int(args.sink_size), int(args.local_attn_size),
+            )
     if int(pipeline.frame_seq_length) != FRAME_SEQ_PER_LATENT:
         raise RuntimeError(
             f"pipeline.frame_seq_length={pipeline.frame_seq_length} "
