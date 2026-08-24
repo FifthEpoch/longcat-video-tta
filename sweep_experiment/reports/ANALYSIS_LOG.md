@@ -3530,3 +3530,17 @@ Anyone-readable walk-through of I2V discovery, failed prefix-match
 search, RF host, SF-family widgets, gates, and locked metrics.
 Always-search 16288113–115 not cited. RF 114 left squeue — sacct.
 
+---
+
+## 2026-08-24 — V2V text prompt was “panda NNNN”
+**Tags:** bug, methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_panda_stem_prompt.md`
+
+confirm_32v sidecars: `prompt_source=stem`, prompt `panda 0013`
+etc. No captions.json in panda_1000_480p. Filename fallback
+conditioned T5 on the dataset index. Pandas in the tail are
+text takeover. Same-prompt method deltas still valid. Refuse
+stem prompts for panda_*. Do not cite as caption-conditioned
+V2V. Re-run only after real captions + GO.
+

@@ -272,6 +272,18 @@ def discover_v2v_items(video_dir: Path, n: int) -> list[dict]:
         })
         if len(items) >= n:
             break
+    stem_prompts = [it for it in items if it["prompt_source"] == "stem"]
+    panda_stems = [
+        it for it in stem_prompts
+        if it["file_name"].lower().startswith("panda_")
+    ]
+    if panda_stems:
+        raise RuntimeError(
+            "V2V captions missing for Panda files; refusing filename "
+            "prompts like 'panda 0013' (confirm_32v sidecars were "
+            "prompt_source=stem). Add captions.json next to the videos. "
+            f"loaded={len(captions)} missing={len(panda_stems)}"
+        )
     return items
 
 
