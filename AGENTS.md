@@ -244,6 +244,10 @@ Per-method `merged_summary.json` lives at:
 - **Week briefing (2026-08-18):** model + dataset switch with citations,
   plus long-horizon concepts. Setup talk, not the method talk.
   `paper_tables/2026-08-18_week_switch_briefing.md`.
+- **Methods-since-switch talk (2026-08-24):** every widget, question,
+  hypothesis, papers, gates, and real N=32 numbers. Anyone-readable.
+  `paper_tables/2026-08-24_wan_methods_since_switch.md`. Canvas:
+  `wan-methods-since-switch`.
 - **Wan drift (2026-08-17, N=16):** 5 s median sharp +11% / motion −14%
   (mild). **30 s median sharp +167% / motion −60%** (15/16 each).
   Signature = sharpen + freeze. Table:
@@ -287,9 +291,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 11:33):
-  Always-search wave not in queue until the user pastes
-  job IDs. If they already submitted SF-only, add RF only.
+- **In-flight cluster jobs** (as of 2026-08-24 14:16):
+  Always-search: **16288113** SF R ~2h14. **16288114** RF
+  off queue (sacct). VBench **16288115** PD afterok.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic

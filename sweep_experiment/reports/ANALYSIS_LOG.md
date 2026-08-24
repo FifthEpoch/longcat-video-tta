@@ -3520,3 +3520,13 @@ RF always was missing; added `rf_always_search`. k=8 is a later
 width sweep.
 
 ---
+
+## 2026-08-24 — Methods-since-switch talk locked
+**Tags:** methodology, wan, briefing
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_methods_since_switch.md`
+
+Anyone-readable walk-through of I2V discovery, failed prefix-match
+search, RF host, SF-family widgets, gates, and locked metrics.
+Always-search 16288113–115 not cited. RF 114 left squeue — sacct.
+
