@@ -226,13 +226,14 @@ Per-method `merged_summary.json` lives at:
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **V2V caption bug (2026-08-24):** Panda pool had
-  `metadata.csv` (357 KB) but no `captions.json`. The runner
-  only loaded JSON, so every V2V arm used filename stems
-  (`panda 0013`). Tail→panda is T5 takeover. Same-prompt
-  deltas still hold. Runner now reads `metadata.csv` and
-  refuses the stem fallback. Do not cite as caption-
-  conditioned until a GO re-run.
-  `paper_tables/2026-08-24_wan_v2v_panda_stem_prompt.md`.
+  `metadata.csv` (1000/1000 list captions). The runner only
+  loaded JSON, so every finished V2V arm used filename stems
+  (`panda 0013`). Real 0013 caption is a bathroom stain.
+  Tail→panda is T5 takeover. Same-prompt deltas still hold.
+  Runner now reads `metadata.csv`. Caption-conditioned N=32
+  **WAITING GO**
+  (`paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`).
+  Do not mix stem-prompt numbers into that table.
 - **Current next experiment (2026-08-24):** always-search on
   **both hosts** (`submit_v2v_always_search_wave.sh`). k=4.
   If SF always is already queued, RF-only:

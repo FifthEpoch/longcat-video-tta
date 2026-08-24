@@ -3560,3 +3560,16 @@ stems have real scene text, then GO a caption-conditioned re-run.
 Always-search still the same-prompt ablation; do not scancel.
 
 ---
+
+## 2026-08-24 — Panda V2V captions confirmed (first segment)
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`
+
+`metadata.csv` 1000/1000 list captions, 0 empty. Freeze stems are
+kitchen / tomatoes / bathroom moisture / flashlight — not pandas.
+First-segment resolve matches LongCat TTA. Caption-conditioned N=32
+of notta + rolling + sf_pseudo + both always-search is WAITING GO.
+Do not mix stem-prompt numbers into that table. No TTC. No I2V.
+
+---

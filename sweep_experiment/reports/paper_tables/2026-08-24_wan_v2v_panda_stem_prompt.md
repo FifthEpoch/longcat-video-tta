@@ -37,12 +37,24 @@ They all heard the same bad string.
 - Reading a panda morph as the freeze attractor alone.
 - A paper sentence that we continued “the video’s caption.”
 
-## Next (not submitted)
+## Confirmed 16:56 — real scene captions exist
 
-1. Confirm `metadata.csv` maps `panda_0001` etc. to real scene text
-   (list captions → first segment, same as LongCat TTA).
-2. Runner now **reads metadata.csv** and still refuses `panda_*` stems.
-3. Re-run the paper baseline + lead methods only after GO.
-4. Do not scancel always-search; it is the same-prompt ablation.
+`metadata.csv`: 1000 rows, 1000 list captions, 0 empty. First-segment
+resolution (LongCat TTA rule). 1000 mp4s.
 
-No TTC. No I2V scale-up.
+| stem | first-segment caption | old stem prompt |
+|---|---|---|
+| panda_0001 | A young woman is standing in front of a kitchen counter. she has tattoos on her arms and is wearing a black tank top. | `panda 0001` |
+| panda_0005 | The person is holding a plastic bowl filled with cherry tomatoes on a kitchen counter. | `panda 0005` |
+| panda_0013 | There is a small spot on the ceiling of a bathroom caused by an accumulation of moisture due to insufficient ventilation. | `panda 0013` |
+| panda_0020 | A close up of a flashlight in a box. | `panda 0020` |
+
+0013 is a bathroom stain, not a panda. The morph-to-panda in the
+downloaded freeze demos is T5 takeover from the filename string.
+
+## Next (WAITING GO)
+
+Caption-conditioned N=32 of the paper arms. Spec:
+`2026-08-24_wan_v2v_caption_rerun_spec.md`. Do not submit until GO.
+Do not scancel always-search (stem-prompt ablation). No TTC. No I2V
+scale-up.
