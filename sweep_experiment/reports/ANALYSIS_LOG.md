@@ -3468,3 +3468,16 @@ accepted. VBench 882 afterok cancelled. Fixed call order.
 Leave sick/pseudo/sink (879–881). Resume rewind skip-existing.
 
 ---
+
+## 2026-08-24 — SF-family dissection locked before harvest
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_sf_family_dissect.md`
+
+Every arm gets a cell (A dead gate … H always-on harm) and a
+next action. Coverage / conditional / quality / named wounds
+before promote. A win is HOLD + invention sentence, not 128
+tonight. A miss is a sensor or tax, not a dead end. No DROP
+retune. No TTC.
+
+---

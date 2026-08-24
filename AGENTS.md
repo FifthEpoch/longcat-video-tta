@@ -221,6 +221,8 @@ Per-method `merged_summary.json` lives at:
   RF rolling is comparison only. Do **not** use `sf_roll`. Do
   not scale RF-hosted 32. Spec:
   `paper_tables/2026-08-24_wan_v2v_sf_family_spec.md`.
+  Harvest playbook (cell + next action on every arm):
+  `paper_tables/2026-08-24_wan_v2v_sf_family_dissect.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.

@@ -29,6 +29,10 @@ Promote an arm if median tail beats **SF notta** and IQ not worse
 by ≥1.0 and subject not worse by ≥0.02. Also print vs RF so we
 do not confuse a host-gap close with a method win.
 
+Harvest is not just promote. Every arm gets a mechanism cell
+(A–H) and a next action, including a clean miss. Playbook:
+[`2026-08-24_wan_v2v_sf_family_dissect.md`](2026-08-24_wan_v2v_sf_family_dissect.md).
+
 ## Submit
 
 ```bash
