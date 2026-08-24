@@ -71,9 +71,16 @@ from pathlib import Path
 import numpy as np
 
 _SCRIPTS = Path(__file__).resolve().parent
+_REPO = _SCRIPTS.parents[1]
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
+from scripts.caption_utils import (  # noqa: E402
+    canonical_video_id,
+    load_resolved_captions_csv,
+)
 from i2v_verifier import (  # noqa: E402
     appear_score,
     gen_free_signals,
@@ -190,9 +197,24 @@ def prefix_pixel_count(n_lat: int) -> int:
     return 1 + 4 * (n_lat - 1)
 
 
-def _load_v2v_captions(video_dir: Path) -> dict[str, str]:
-    """Best-effort file_name / stem → caption."""
+def _index_caption(out: dict[str, str], src: dict[str, str], key: str, cap: str, source: str) -> None:
+    if not key or not cap:
+        return
+    out[key] = cap
+    src[key] = source
+    stem = Path(key).stem
+    out[stem] = cap
+    src[stem] = source
+    cid = canonical_video_id(key)
+    if cid:
+        out[cid] = cap
+        src[cid] = source
+
+
+def _load_v2v_captions(video_dir: Path) -> tuple[dict[str, str], dict[str, str]]:
+    """Best-effort file_name / stem → caption. Also reads metadata.csv."""
     out: dict[str, str] = {}
+    src: dict[str, str] = {}
     hits = []
     for name in (
         "captions.json", "caption_embeddings.json", "metadata.json",
@@ -216,8 +238,7 @@ def _load_v2v_captions(video_dir: Path) -> dict[str, str]:
                 rows = data["captions"]
             elif all(isinstance(v, str) for v in data.values()):
                 for k, v in data.items():
-                    out[Path(str(k)).name] = v
-                    out[Path(str(k)).stem] = v
+                    _index_caption(out, src, str(k), str(v), "caption_json")
                 continue
             else:
                 rows = data.get("items") or data.get("videos") or []
@@ -233,16 +254,23 @@ def _load_v2v_captions(video_dir: Path) -> dict[str, str]:
             )
             cap = item.get("caption") or item.get("prompt") or item.get("text")
             if fn and cap:
-                out[Path(str(fn)).name] = str(cap)
-                out[Path(str(fn)).stem] = str(cap)
-    return out
+                _index_caption(out, src, str(fn), str(cap), "caption_json")
+    for csv_path in (video_dir / "metadata.csv", video_dir.parent / "metadata.csv"):
+        if not csv_path.is_file():
+            continue
+        csv_caps = load_resolved_captions_csv(csv_path, warn_missing=False)
+        for vid, cap in csv_caps.items():
+            if not cap or vid in out:
+                continue
+            _index_caption(out, src, vid, cap, "metadata_csv")
+    return out, src
 
 
 def discover_v2v_items(video_dir: Path, n: int) -> list[dict]:
     video_dir = video_dir.resolve()
     if not video_dir.is_dir():
         raise FileNotFoundError(f"video dir missing: {video_dir}")
-    captions = _load_v2v_captions(video_dir)
+    captions, caption_src = _load_v2v_captions(video_dir)
     vids = sorted(
         p for p in video_dir.rglob("*")
         if p.is_file() and p.suffix.lower() in VIDEO_EXTS
@@ -256,19 +284,22 @@ def discover_v2v_items(video_dir: Path, n: int) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        prompt = (
-            captions.get(key)
-            or captions.get(p.stem)
-            or p.stem.replace("_", " ")
-        )
+        cid = canonical_video_id(key)
+        prompt = None
+        source = "stem"
+        for cand in (key, p.stem, cid):
+            if cand and cand in captions:
+                prompt = captions[cand]
+                source = caption_src.get(cand, "caption_json")
+                break
+        if prompt is None:
+            prompt = p.stem.replace("_", " ")
         items.append({
             "video_path": str(p),
             "file_name": key,
             "stem": p.stem[:80].replace(" ", "_"),
             "prompt": prompt,
-            "prompt_source": "caption_json" if (
-                key in captions or p.stem in captions
-            ) else "stem",
+            "prompt_source": source,
         })
         if len(items) >= n:
             break
@@ -281,8 +312,9 @@ def discover_v2v_items(video_dir: Path, n: int) -> list[dict]:
         raise RuntimeError(
             "V2V captions missing for Panda files; refusing filename "
             "prompts like 'panda 0013' (confirm_32v sidecars were "
-            "prompt_source=stem). Add captions.json next to the videos. "
-            f"loaded={len(captions)} missing={len(panda_stems)}"
+            "prompt_source=stem). Need metadata.csv or captions.json "
+            f"keys matching panda_*. loaded={len(captions)} "
+            f"missing={len(panda_stems)}"
         )
     return items
 

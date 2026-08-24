@@ -3544,3 +3544,19 @@ text takeover. Same-prompt method deltas still valid. Refuse
 stem prompts for panda_*. Do not cite as caption-conditioned
 V2V. Re-run only after real captions + GO.
 
+
+---
+
+## 2026-08-24 — V2V missed metadata.csv, not missing captions
+**Tags:** bug, methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_panda_stem_prompt.md`
+
+`panda_1000_480p/metadata.csv` is 357525 bytes (Apr 1). Videos are
+under `videos/`. Runner only loaded JSON so sidecars stayed
+`prompt_source=stem`. Hunt script stopped at empty `panda_100`
+header CSV — ignore that 0-match. Next: confirm the four freeze
+stems have real scene text, then GO a caption-conditioned re-run.
+Always-search still the same-prompt ablation; do not scancel.
+
+---

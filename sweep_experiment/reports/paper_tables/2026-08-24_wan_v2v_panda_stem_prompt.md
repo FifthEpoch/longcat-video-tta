@@ -9,8 +9,14 @@
 | 020_panda_0020 | stem | `panda 0020` |
 | 005_panda_0005 | stem | `panda 0005` |
 
-`datasets/panda_1000_480p/` has **no** `captions.json`. Only
-`dynamic_degree.json` / `dynamic_degree_long.json`.
+`datasets/panda_1000_480p/` has **no** `captions.json`. The 2026-08-24
+16:41 `ls *caption* *.json` also missed `metadata.csv` (357525 bytes,
+same size as `datasets/panda_1000/metadata.csv`). Videos live in
+`videos/`. The runner only loaded JSON, so it never saw the CSV.
+
+A later hunt script printed `panda_100/metadata.csv` first (79-byte
+header, 0 matches) and stopped. **Do not treat that as “no captions.”**
+Peek `panda_1000_480p/metadata.csv` before a re-run.
 
 `discover_v2v_items` falls back to `stem.replace("_", " ")`. Every
 V2V arm on this pool (notta, seed_bon, RF rolling, SF/RF family,
@@ -33,9 +39,9 @@ They all heard the same bad string.
 
 ## Next (not submitted)
 
-1. Find or write real captions →
-   `datasets/panda_1000_480p/captions.json`.
-2. Runner now **refuses** `panda_*` stem prompts.
+1. Confirm `metadata.csv` maps `panda_0001` etc. to real scene text
+   (list captions → first segment, same as LongCat TTA).
+2. Runner now **reads metadata.csv** and still refuses `panda_*` stems.
 3. Re-run the paper baseline + lead methods only after GO.
 4. Do not scancel always-search; it is the same-prompt ablation.
 
