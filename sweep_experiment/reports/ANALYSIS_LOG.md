@@ -3358,3 +3358,17 @@ GPU job only if RF-losses vs SF are enriched for a late motion drop
 (c5 < 0.8×c0). DROP is pre-registered. No retune. No look/recache/ρ.
 
 ---
+
+## 2026-08-23 — family wave: test A/B/C/D at once
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`
+
+User asked to test all four families together, not sequential GO.
+Login: chunk-trace --only all (8/32/128). GPU N=32:
+rf_rewind, rf_sick_search k=4, rf_pseudo k=4, rf_sink.
+C is an RF sink pixel probe — not HG-f (not in repo).
+Paper baseline stays SF. Ablation zero is rolling_notta.
+DROP=0.8 pre-registered. 2-way H200 will queue.
+
+---

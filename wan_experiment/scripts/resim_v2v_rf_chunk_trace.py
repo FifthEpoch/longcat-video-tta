@@ -221,7 +221,7 @@ def run_pair(label: str, sf_dir: Path, rf_dir: Path, drop: float) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=("n8", "n32", "n128", "all"), default="n128")
+    ap.add_argument("--only", choices=("n8", "n32", "n128", "all"), default="all")
     ap.add_argument("--drop", type=float, default=DROP)
     args = ap.parse_args()
     print(
