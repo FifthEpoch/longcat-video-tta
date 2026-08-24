@@ -279,10 +279,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 22:05):
-  Family wave **16261273–276 FAILED** (pack-2 OOM, 15/16/16/5
-  mp4). **16261277** afterany — scancel. Resume workers=1.
-  Rolling-128 VBench **closed**. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-23 22:11):
+  Family resume **16263080–082, 086** + **16263087** VBench
+  afterok. Duplicate **16263007–011** also PD — scancel one
+  set or they race the same dirs. Rolling-128 VBench **closed**.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
