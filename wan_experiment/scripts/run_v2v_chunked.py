@@ -47,6 +47,7 @@ Methods:
   sf_sick_search — SF chunked; k=4 only after a sick freeze; max-motion + trust
   sf_pseudo      — SF chunked; hold out last 3 prefix latents; search if extra seed wins B
   sf_always_search — SF chunked; always k=4; same motion+trust pick as sf_pseudo (no gate)
+  rf_always_search — RF rolling; always k=4; same motion+trust pick as rf_sick/rf_pseudo (no gate)
   sf_sink        — SF chunked + LongLive-style sink_size (not HG-f). Not sf_roll.
 
 No TTC. Do not scale I2V-32. Do not put these on the RF rolling sampler.
@@ -132,7 +133,8 @@ METHODS = (
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
-    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search", "sf_sink",
+    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
+    "rf_always_search", "sf_sink",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
 )
@@ -161,6 +163,7 @@ RECACHE_EVERY_LATENTS = 21
 RF_SICK_DROP = 0.8
 RF_CONTROLLER_METHODS = frozenset({
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
+    "rf_always_search",
 })
 ROLLING_HOST_METHODS = frozenset({"rf_chunk", "rf_recache"}) | RF_CONTROLLER_METHODS
 ROLLING_SAMPLER_METHODS = frozenset({"sf_roll", "rf_recache"}) | RF_CONTROLLER_METHODS
@@ -1763,7 +1766,9 @@ def generate_rolling_v2v(
                 ]
                 if not feasible:
                     chosen, reason = 0, "look_trust_reject"
-                elif method_name in ("rf_sick_search", "rf_pseudo"):
+                elif method_name in (
+                    "rf_sick_search", "rf_pseudo", "rf_always_search",
+                ):
                     best = max(feasible, key=lambda c: c["motion"])
                     chosen, reason = int(best["cand"]), "sick_motion"
                 else:
@@ -2408,7 +2413,9 @@ def main() -> int:
                             look_k = max(2, int(args.search_k))
                         elif method == "rf_recache":
                             recache_every = RECACHE_EVERY_LATENTS
-                        elif method in ("rf_sick_search", "rf_pseudo"):
+                        elif method in (
+                            "rf_sick_search", "rf_pseudo", "rf_always_search",
+                        ):
                             look_k = max(2, int(args.search_k))
                         video, lat_shape, ref, chunk_logs, prefix_pix = generate_rolling_v2v(
                             pipeline, Path(item["video_path"]), item["prompt"],

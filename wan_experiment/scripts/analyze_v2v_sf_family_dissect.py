@@ -17,7 +17,8 @@ from pathlib import Path
 
 
 FAMILY = (
-    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search", "sf_sink",
+    "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
+    "rf_always_search", "sf_sink",
 )
 NAMED = ("panda_0004.mp4", "panda_0027.mp4", "0004", "0027")
 H1_FLICKER = 0.972
@@ -268,7 +269,9 @@ def main() -> int:
         exact_sf = t_sf
 
         fire_n = act_n = later = 0
-        always_on = method in ("sf_sink", "sf_always_search")
+        always_on = method in (
+            "sf_sink", "sf_always_search", "rf_always_search",
+        )
         for k in keys:
             rec = mapping[k]
             if method == "sf_rewind":

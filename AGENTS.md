@@ -60,6 +60,16 @@ When the user pastes terminal/cluster output:
 If the date file doesn't exist yet, create it with the standard header
 template in §4.
 
+### 2b-ter. Same-wave ablations (ADDED 2026-08-24)
+
+When submitting a **gated** method, the same paste must also
+launch the obvious twins: **always-on** (no gate) and the
+**other host** if the claim is host-specific. Do not wait for
+harvest to invent the ablation. Harvest still decides the call.
+k stays locked to the family width (k=4) unless a dated spec
+says otherwise. CachedSearch headline N=8 is a later width
+sweep, not a harvest retune.
+
 ### 2b-bis. Record-keeping commandments (ADDED 2026-06-08 after the user
 called out repeated record-keeping failures)
 
@@ -215,11 +225,12 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-24):** `sf_always_search`
-  ablation **ready to submit** (`submit_v2v_sf_always_search.sh`).
-  Same pick as pseudo, no gate. Splits the +37% win. Do **not**
-  scale family to 128. Spec:
-  `paper_tables/2026-08-24_wan_v2v_sf_always_search_spec.md`.
+- **Current next experiment (2026-08-24):** always-search on
+  **both hosts** (`submit_v2v_always_search_wave.sh`). k=4.
+  If SF always is already queued, RF-only:
+  `SF_JOB=<id> bash submit_v2v_rf_always_search.sh`.
+  Do **not** start a second SF job. Do not scale to 128.
+  k note: `paper_tables/2026-08-24_wan_v2v_always_search_k.md`.
   **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -276,9 +287,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 11:30):
-  SF family drained. Always-search not in queue until the
-  user pastes job IDs. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 11:33):
+  Always-search wave not in queue until the user pastes
+  job IDs. If they already submitted SF-only, add RF only.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

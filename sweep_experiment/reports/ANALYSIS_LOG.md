@@ -3507,3 +3507,16 @@ pick as `sf_pseudo`, no prefix hold-out. Series
 Do not scale. No TTC.
 
 ---
+
+## 2026-08-24 — Same-wave ablations + RF always + k=4
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_always_search_k.md`
+
+User: launch obvious ablations in the same paste, not after
+harvest. Gated ⇒ always-on + other-host twin. CachedSearch on
+Wan 1.3B: BoN-4 budget, BoN-8 headline. This split stays k=4.
+RF always was missing; added `rf_always_search`. k=8 is a later
+width sweep.
+
+---
