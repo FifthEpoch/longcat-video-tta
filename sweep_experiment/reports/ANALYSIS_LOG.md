@@ -3587,3 +3587,15 @@ WAVE=3 leftover 8, WAVE=4 hosts 128 after harvest. New series
 names. Stem always-search stays. No TTC. No I2V.
 
 ---
+
+## 2026-08-24 — Caption WAVE=1 queued 16310318–330
+**Tags:** jobs, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`
+
+Preflight passed (truck / kitchen / bookshelf / game cop).
+12 generate + VBench afterok. Stem always-search 16288113–115
+absent from this squeue — harvest later, keep as stem audit.
+No WAVE=2 until a running sidecar shows metadata_csv.
+
+---

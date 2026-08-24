@@ -41,6 +41,13 @@ WAVE=all unless the queue is empty.
 Skip: shift_search (dead), knob_probe (no 30 s write), analysis-only
 scripts, I2V, TTC.
 
+## Status
+
+**IN FLIGHT 2026-08-24 18:28.** Preflight `mapped=1000 bad=0`.
+Generate **16310318–329** (PD h200). VBench **16310330** afterok
+L40S. Stem always-search not in this `squeue`. Do not submit WAVE=2
+until WAVE=1 is running and the first sidecar is `metadata_csv`.
+
 ## Harvest
 
 Cite vs `v2v_panda_caption_32v/notta`. Pair tails with the matching

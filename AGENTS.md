@@ -22,7 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper LaTeX** | `paper/main.tex`, `paper/sections/*.tex`, `paper/refs.bib` | Real submission source |
 | **Run registry** | `experiment_tracker/run_registry.yaml` | Job-ID ↔ result-dir mapping |
 | **Cluster repo root** | `/scratch/wc3013/longcat-video-tta/` | All results & raw data live here. Local repo is mostly views. |
-| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: `submit_v2v_sf_always_search.sh` (`2026-08-24_wan_v2v_sf_always_search_spec.md`). T2V 128 is optional. Do **not** add TTC. |
+| **Wan 1.3B / Self-Forcing setup** | `wan_experiment/README.md` | I2V-32 is **discovery only**. Official VBench **DONE** (full-clip tie). **Do not scale I2V-32.** Current next: V2V Panda bake-off (`2026-08-20_wan_v2v_sampling_bakeoff_spec.md`). T2V 128 is optional. Do **not** add TTC. |
 
 ## 2. CRITICAL workflow rules
 
@@ -199,7 +199,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-24.
+**Date:** Updated 2026-08-23.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -230,15 +230,13 @@ Per-method `merged_summary.json` lives at:
   loaded JSON, so every finished V2V arm used filename stems
   (`panda 0013`). Real 0013 caption is a bathroom stain.
   Tail→panda is T5 takeover. Same-prompt deltas still hold.
-  Runner now reads `metadata.csv`. Caption replay is
-  **SUBMIT-READY** (`submit_v2v_caption_rerun.sh` WAVE=1).
-  Stem always-search 16288113–115 stays; do not scancel.
+  Runner now reads `metadata.csv`. Caption WAVE=1 is
+  **IN FLIGHT** (**16310318–329** generate, **16310330** VBench).
   Do not mix stem-prompt numbers into caption tables.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-24):** caption-conditioned
-  replay WAVE=1 (`submit_v2v_caption_rerun.sh`). Do not start a
-  second stem SF always-search. WAVE=4 (N=128) waits until WAVE=1
-  harvest. **No TTC. No I2V scale-up.**
+- **Current next experiment (2026-08-24):** wait for caption
+  WAVE=1. Confirm first sidecar `prompt_source=metadata_csv`.
+  Then WAVE=2. WAVE=4 after WAVE=1 harvest. **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -296,10 +294,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 14:23):
-  Always-search: **16288113** SF R 2h40 mp4=26/32.
-  **16288114** RF COMPLETED 0:0 53m 32/32. VBench
-  **16288115** waits on 113. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 18:28):
+  Caption WAVE=1 **16310318–329** PD h200; VBench **16310330**
+  afterok. Stem always-search 16288113–115 not in this squeue.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
