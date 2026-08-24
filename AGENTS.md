@@ -276,11 +276,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 21:41):
-  Family wave **16261273–276** generate (273–275 R on H200;
-  276 sink PD GRES) + **16261277** VBench on `l40s_mren`
-  (Dependency). **16259396** gone from squeue — sacct before
-  citing 128 flickering. Do not resubmit. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-23 21:47):
+  Family wave **16261273–276** generate + **16261277** VBench
+  on `l40s_mren`. **16259396** COMPLETED 0:0 5m36s — join-only
+  before citing 128 official 7-dim. Do not resubmit.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
