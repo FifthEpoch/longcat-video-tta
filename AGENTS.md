@@ -230,20 +230,16 @@ Per-method `merged_summary.json` lives at:
   loaded JSON, so every finished V2V arm used filename stems
   (`panda 0013`). Real 0013 caption is a bathroom stain.
   Tail→panda is T5 takeover. Same-prompt deltas still hold.
-  Runner now reads `metadata.csv`. Caption-conditioned N=32
-  **WAITING GO**
-  (`paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`).
-  Do not mix stem-prompt numbers into that table.
-- **Current next experiment (2026-08-24):** always-search on
-  **both hosts** (`submit_v2v_always_search_wave.sh`). k=4.
-  If SF always is already queued, RF-only:
-  `SF_JOB=<id> bash submit_v2v_rf_always_search.sh`.
-  Do **not** start a second SF job. Do not scale to 128.
-  k note: `paper_tables/2026-08-24_wan_v2v_always_search_k.md`.
-  **No TTC. No I2V scale-up.**
-  Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
+  Runner now reads `metadata.csv`. Caption replay is
+  **SUBMIT-READY** (`submit_v2v_caption_rerun.sh` WAVE=1).
+  Stem always-search 16288113–115 stays; do not scancel.
+  Do not mix stem-prompt numbers into caption tables.
+  Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
+- **Current next experiment (2026-08-24):** caption-conditioned
+  replay WAVE=1 (`submit_v2v_caption_rerun.sh`). Do not start a
+  second stem SF always-search. WAVE=4 (N=128) waits until WAVE=1
+  harvest. **No TTC. No I2V scale-up.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
-  VBench7: `paper_tables/2026-08-23_wan_v2v_rolling128_vbench7_read.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.

@@ -3573,3 +3573,17 @@ of notta + rolling + sf_pseudo + both always-search is WAITING GO.
 Do not mix stem-prompt numbers into that table. No TTC. No I2V.
 
 ---
+
+## 2026-08-24 — Caption replay GO (all prior V2V, waved)
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`
+
+User: rerun every prior V2V generate with real captions; stem
+text likely hurt even the baseline. Hypothesis accepted: T5
+“panda NNNN” fights kitchen/bathroom/flashlight prefixes.
+WAVE=1 now (12 N=32 generate + VBench). WAVE=2 closed 32,
+WAVE=3 leftover 8, WAVE=4 hosts 128 after harvest. New series
+names. Stem always-search stays. No TTC. No I2V.
+
+---

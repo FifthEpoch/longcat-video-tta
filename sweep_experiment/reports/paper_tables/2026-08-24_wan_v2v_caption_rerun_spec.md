@@ -1,42 +1,51 @@
-# Caption-conditioned V2V N=32 — WAITING GO (2026-08-24)
+# Caption-conditioned V2V replay — SUBMIT-READY (2026-08-24)
 
-Every finished V2V arm on `panda_1000_480p` used filename stems
-(`panda 0013`). Real first-segment captions are in
-`datasets/panda_1000_480p/metadata.csv` (1000/1000, 0 empty). Runner
-now loads that CSV and refuses panda stems.
-
-This re-run is the first caption-conditioned protocol. Same-prompt
-stem tables stay as a confound audit, not the paper caption claim.
+Stem prompts (`panda 0013`) fought the real prefix. 0013 is a
+bathroom stain; 0001/0005 are kitchen; 0020 is a flashlight. T5
+heard “panda,” so even SF do-nothing could morph or freeze instead
+of continuing the scene. Same-prompt stem tables stay an **audit**.
+This replay is the first caption-conditioned protocol.
 
 ## Lock
 
-- N=32, same first-32 paths as confirm_32v (sorted `rglob`).
-- Prefix 9 latents, 6 × 21 tail, 30 s.
-- Prompt = first list caption from `metadata.csv`.
-- Sidecar must show `prompt_source=metadata_csv` (or `caption_json`).
-- k=4. No TTC. No I2V. Do not scale to 128 tonight.
+- Prompt = first list caption from `metadata.csv` (`prompt_source=metadata_csv`).
+- Same first-N path order as before (sorted `rglob`).
+- Prefix 9 / chunk 21 / 30 s. k=4 on search arms.
+- New series names. Do **not** overwrite stem dirs.
+- Do **not** mix stem numbers into caption tables.
+- Do **not** scancel stem always-search 16288113–115.
+- No TTC. No I2V. `VIDEO_WORKERS=1`. VBench `afterok` full clip.
 
-## Arms (same-wave)
+## Hypothesis (baseline too)
 
-If GO includes a gated method, launch the twins in the same paste.
+On clips whose caption is not “panda,” the old string pulled the
+tail off the prefix. Caption-conditioned SF notta should keep
+identity / scene better (subject, IQ) and may also raise tail
+motion if the morph-or-freeze path was text-driven. Method deltas
+can shrink or grow; harvest vs **caption** notta only.
 
-| method | host | why |
-|---|---|---|
-| `notta` | SF | paper baseline |
-| `rolling_notta` | RF | host comparison row |
-| `sf_pseudo` | SF | gated lead on stem tables |
-| `sf_always_search` | SF | always-on twin |
-| `rf_always_search` | RF | other-host always twin |
+## Waves
 
-Do **not** add `sf_sink` to this wave (subject on the −0.02 line;
-no-scale). Do not add rewind/sick.
+Submit script: `wan_experiment/sbatch/submit_v2v_caption_rerun.sh`
 
-Series: `v2v_panda_caption_32v`.
+| WAVE | Series | What | N |
+|---|---|---|---:|
+| **1 (now)** | `v2v_panda_caption_32v` | notta, rolling_notta, SF family 4, RF family 4, both always-search | 32 |
+| 2 | `v2v_panda_caption_closed_32v` | seed/quiet/live/appear + H1/H4 host split | 32 |
+| 3 | `v2v_panda_caption_8v` | remaining N=8 discovery (no shift_search / knob_probe) | 8 |
+| 4 | `v2v_panda_caption_128v` | notta + rolling_notta only | 128 |
 
-Cite vs caption-conditioned SF notta. Do not mix stem-prompt numbers
-into the caption table.
+Wave 1 is 12 generate + 1 VBench. H200 extras queue. Do not dump
+WAVE=all unless the queue is empty.
 
-## Status
+Skip: shift_search (dead), knob_probe (no 30 s write), analysis-only
+scripts, I2V, TTC.
 
-**WAITING GO.** Always-search 16288113–115 is the stem-prompt
-ablation; let it finish.
+## Harvest
+
+Cite vs `v2v_panda_caption_32v/notta`. Pair tails with the matching
+stem run only as a **confound delta** (same method, stem vs caption),
+never as the paper method table.
+
+First sidecar on wave 1 must not be `prompt_source=stem`. If it is,
+scancel that wave only.
