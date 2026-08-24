@@ -3599,3 +3599,13 @@ absent from this squeue — harvest later, keep as stem audit.
 No WAVE=2 until a running sidecar shows metadata_csv.
 
 ---
+
+## 2026-08-24 — Hold WAVE=2 (QOS cap + no sidecar)
+**Tags:** jobs, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`
+
+18:44: 318/319 R 11m; 320–329 QOSMaxGRESPerUser. Do not submit
+WAVE=2. First check notta sidecar prompt_source.
+
+---

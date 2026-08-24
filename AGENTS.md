@@ -236,7 +236,7 @@ Per-method `merged_summary.json` lives at:
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-24):** wait for caption
   WAVE=1. Confirm first sidecar `prompt_source=metadata_csv`.
-  Then WAVE=2. WAVE=4 after WAVE=1 harvest. **No TTC. No I2V.**
+  **No WAVE=2** until sidecar. WAVE=4 after WAVE=1 harvest. **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -294,10 +294,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 18:28):
-  Caption WAVE=1 **16310318–329** PD h200; VBench **16310330**
-  afterok. Stem always-search 16288113–115 not in this squeue.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 18:44):
+  Caption WAVE=1: **16310318** notta R / **16310319** rolling R.
+  Rest PD `QOSMaxGRESPerUser`. VBench **16310330** afterok.
+  No WAVE=2 until sidecar `metadata_csv`. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
