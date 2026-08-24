@@ -215,12 +215,12 @@ Per-method `merged_summary.json` lives at:
   `SMOKE=1 bash wan_experiment/sbatch/submit_t2v_bon128.sh` then
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
-- **Current next experiment (2026-08-23):** wait for 128
-  flickering **16259396**. Locked bars already **PASS** at N=128
-  (subj +0.039 / IQ +0.71 / tail +31%). Dyn first32 med **0** /
-  last96 med **1**. H1+H4 crosses twitch — do **not**
-  scale. Host, not our controller. **No TTC. No I2V scale-up.**
-  Read: `paper_tables/2026-08-23_wan_v2v_rolling128_vbench6_read.md`.
+- **Current next experiment (2026-08-23):** Family A offline —
+  `resim_v2v_rf_chunk_trace.py --only n128`. No GPU until GO.
+  Paper baseline stays SF notta. RF is the comparison + ablation
+  zero if we rewind. Flickering **16259396** may still be queued.
+  **No TTC. No I2V scale-up.** Spec:
+  `paper_tables/2026-08-23_wan_v2v_rf_sick_rewind_spec.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.

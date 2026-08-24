@@ -3344,3 +3344,17 @@ crosses 50%. SF notta 128 Dyn median stays 0. Flickering job
 16259396 PD QOSMaxGRESPerUser. Do not resubmit.
 
 ---
+
+## 2026-08-23 — Family A rewind: offline first; SF stays the paper baseline
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_rf_sick_rewind_spec.md`
+
+Do not drop Self-Forcing as the field baseline (Relax / Deep / Freq
+ablate vs SF). RF native is a required comparison and the ablation
+zero only if the method is a controller on RF. Next step is login
+`resim_v2v_rf_chunk_trace.py` on the existing 128 pair: rewind has a
+GPU job only if RF-losses vs SF are enriched for a late motion drop
+(c5 < 0.8×c0). DROP is pre-registered. No retune. No look/recache/ρ.
+
+---
