@@ -3417,3 +3417,15 @@ dependency is afterok. Skip-existing resumes remaining videos.
 Do not delete mp4s. Do not retry pack-2.
 
 ---
+## 2026-08-23 — pack-2 OOM smoking gun: 127 GiB + 13 GiB
+**Tags:** finding, wan, cluster
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_gpu_pack2_oom.md`
+
+16261275.err: process 1841066 held 126.97 GiB; the sibling had
+12.74 GiB and OOM'd on `module.to`. A single V2V generate
+already fills the H200 (KV + activations + cache), so pack-2
+is impossible and L40S 48 GB cannot host generate. H200 stays
+for generate; VBench stays L40S. Do not retry pack-2.
+
+---
