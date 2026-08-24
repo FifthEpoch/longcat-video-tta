@@ -5,7 +5,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24GB
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:1
+#SBATCH --constraint=l40s
 #SBATCH --time=08:00:00
 #SBATCH --output=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_i2v_vbench_%j.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_i2v_vbench_%j.err
@@ -13,6 +14,11 @@
 
 # Official VBench quality scoring on already-generated Wan I2V mp4s.
 # Uses vbench-backfill (NOT self_forcing, NOT longcat).
+#
+# L40S on purpose. VBench is CLIP/DINO/RAFT — it does not fill an H200
+# and must not sit on the 2-way H200 cap. Override with
+#   sbatch --constraint=h200 --gres=gpu:h200:1
+# only if L40S is denied. Leave 16259396 (already on H200) alone.
 #
 # Do NOT pass comma-separated paths via sbatch --export. SLURM splits
 # --export values on commas, which is why job 15959601 only scored notta.
@@ -89,6 +95,7 @@ echo "  MODE       : ${MODE}"
 echo "  Python     : ${PYTHON}"
 echo "  Job        : ${SLURM_JOB_ID:-(not slurm)}"
 echo "=============================================================================="
+nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader || true
 "${PYTHON}" -c "
 import numpy, torch, vbench, cv2
 print('  numpy', numpy.__version__)

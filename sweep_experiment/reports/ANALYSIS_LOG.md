@@ -3372,3 +3372,19 @@ Paper baseline stays SF. Ablation zero is rolling_notta.
 DROP=0.8 pre-registered. 2-way H200 will queue.
 
 ---
+
+## 2026-08-23 — H200 pack-2; VBench off H200
+**Tags:** methodology, wan, cluster
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_gpu_batch_policy.md`
+
+User asked again to fill the H200 or request a lesser GPU.
+Candidate tensor-batch is off: 137-frame KV ≈ 39 GB, k=4 copies
+miss 141 GB, and KV end-index is scalar. Do not shrink the cache
+(H1 twitch). Generate stays H200 with `VIDEO_WORKERS=2` (two
+independent videos, same pixels, MPS on). L40S is 48 GB — too
+small for that KV. VBench moves to `--constraint=l40s` so it
+stops occupying the 2-way H200 cap. Leave 16259396. If pack-2
+OOMs, `VIDEO_WORKERS=1` on that method only.
+
+---

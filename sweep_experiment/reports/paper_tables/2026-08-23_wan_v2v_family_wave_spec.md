@@ -1,7 +1,9 @@
 # Family wave — A/B/C/D at once (2026-08-23)
 
 One login paste: offline chunk-trace on 8/32/128 **and** N=32 GPU
-jobs for all four families. 2-way H200 will queue them.
+jobs for all four families. Generate packs **2 videos / H200**.
+VBench is **L40S** (not on the 2-way H200 cap). See
+`2026-08-23_wan_gpu_batch_policy.md`.
 
 ## Baselines
 

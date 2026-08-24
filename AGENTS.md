@@ -216,9 +216,14 @@ Per-method `merged_summary.json` lives at:
   `bash wan_experiment/sbatch/submit_t2v_bon128.sh`. Spec:
   `paper_tables/2026-08-18_wan_t2v_vbenchlong_128_spec.md`.
 - **Current next experiment (2026-08-23):** family wave
-  `submit_v2v_family_wave.sh` + offline `--only all`.
-  **16259396** may still be PD. **No TTC. No I2V.**
+  (`submit_v2v_family_wave.sh`) + login `resim_v2v_rf_chunk_trace.py
+  --only all`. Arms: `rf_rewind` / `rf_sick_search` / `rf_pseudo`
+  / `rf_sink` on RF, N=32. Paper baseline SF notta; ablation
+  `rolling_notta`. Generate packs 2 videos/H200 (`VIDEO_WORKERS=2`).
+  VBench is L40S. Leave **16259396** (128 flickering). H1+H4
+  crosses twitch — do **not** scale. **No TTC. No I2V scale-up.**
   Spec: `paper_tables/2026-08-23_wan_v2v_family_wave_spec.md`.
+  GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -271,9 +276,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-23 20:59):
-  **16259396** PD QOSMaxGRESPerUser (flickering only).
-  Do not resubmit. **No I2V scale-up. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-23 21:26):
+  **16259396** rolling-128 flickering only. Do not resubmit.
+  Family wave not submitted until the user pastes job IDs.
+  **No I2V scale-up. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

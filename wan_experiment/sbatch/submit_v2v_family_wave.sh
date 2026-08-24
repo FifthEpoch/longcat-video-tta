@@ -63,7 +63,8 @@ VB=$(sbatch --parsable --account="${ACCOUNT}" --time="${VBENCH_WALL}" \
 echo "VBench full-clip job ${VB} afterany ${DEPS}"
 JOBS+=("${VB}")
 
-echo "Family wave N=32 on RF. 2-way H200: these queue."
+echo "Family wave N=32 on RF. Generate stays H200 (39 GB KV) with VIDEO_WORKERS=2."
+echo "VBench is L40S — not on the 2-way H200 cap. Leave 16259396 alone."
 echo "A rewind k=1 · B sick_search k=4 · D pseudo k=4 · C sink k=1 (HG-f is not this)."
 echo "When generate finishes:"
 echo "  python3 -u wan_experiment/scripts/analyze_v2v_bakeoff.py \\"

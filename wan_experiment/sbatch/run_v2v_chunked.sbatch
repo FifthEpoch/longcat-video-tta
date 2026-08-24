@@ -3,13 +3,13 @@
 #SBATCH --account=torch_pr_36_mren
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:h200:1
 #SBATCH --time=04:00:00
 #SBATCH --output=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_v2v_chunk_%j.out
 #SBATCH --error=/scratch/%u/longcat-video-tta/wan_experiment/slurm_log/wan_v2v_chunk_%j.err
-#SBATCH --comment="preemption=yes;requeue=true"
+#SBATCH --comment="preemption=yes;requeue=true;gpu_mps=yes"
 
 # Chunked Wan V2V: METHOD=notta|seed_bon|hinge_bon|late_bon|hist_drop|
 #   good_backtrack|cached_bon|sink|motion_bon|shift_search|backtrack|knob_probe
@@ -51,6 +51,10 @@ PSEUDO_GAMMA="${PSEUDO_GAMMA:-0.0}"
 NOISE_TAU="${NOISE_TAU:-0.04}"
 SINK_SIZE="${SINK_SIZE:-3}"
 LOCAL_ATTN_SIZE="${LOCAL_ATTN_SIZE:-12}"
+# Two independent videos on one H200. Candidate tensor-batch is off
+# (137-frame KV ≈ 39 GB; k=4 copies miss 141 GB). L40S is 48 GB — too
+# small for that KV. VIDEO_WORKERS=1 if this OOMs.
+VIDEO_WORKERS="${VIDEO_WORKERS:-2}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/wan_experiment/results/${SERIES}/${METHOD}_h${HORIZON_S}s_shard${SHARD_ID}}"
 
 export PYTHONHASHSEED="${SEED}"
@@ -69,8 +73,10 @@ echo "  horizon : ${HORIZON_S}s  n=${N_VIDEOS}  seed=${SEED}  k=${SEARCH_K}"
 echo "  prefix  : ${PREFIX_LATENTS} lat  chunk=${CHUNK_LATENTS}  search_from=${SEARCH_FROM}"
 echo "  series  : ${SERIES}  shard=${SHARD_ID}/${NUM_SHARDS}"
 echo "  videos  : ${VIDEO_DIR}"
+echo "  workers : ${VIDEO_WORKERS} packed videos / H200 (not k-batch)"
 echo "  out     : ${OUT_DIR}"
 echo "=============================================================================="
+nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader || true
 
 module purge
 module load anaconda3/2025.06
@@ -120,7 +126,8 @@ cd "${PROJECT_ROOT}"
     --sink-size "${SINK_SIZE}" \
     --local-attn-size "${LOCAL_ATTN_SIZE}" \
     --shard-id "${SHARD_ID}" \
-    --num-shards "${NUM_SHARDS}"
+    --num-shards "${NUM_SHARDS}" \
+    --video-workers "${VIDEO_WORKERS}"
 
 echo "=============================================================================="
 echo "Wrote ${OUT_DIR}/summary.json  $(date)"

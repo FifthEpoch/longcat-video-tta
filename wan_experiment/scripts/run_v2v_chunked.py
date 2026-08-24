@@ -55,6 +55,8 @@ import argparse
 import itertools
 import json
 import math
+import os
+import subprocess
 import sys
 import time
 import traceback
@@ -1930,6 +1932,89 @@ def generate_knob_probe(
     }
 
 
+def _video_worker_count(args) -> int:
+    raw = os.environ.get("VIDEO_WORKERS")
+    if raw:
+        return max(1, int(raw))
+    return max(1, int(getattr(args, "video_workers", 1) or 1))
+
+
+def _wait_gpu_slot(out_dir: Path, worker_id: int) -> None:
+    if worker_id <= 0:
+        return
+    prev = out_dir / f".gpu_slot_{worker_id - 1}.ready"
+    print(f"video-worker {worker_id} waiting for {prev.name}", flush=True)
+    t0 = time.time()
+    while not prev.is_file():
+        if time.time() - t0 > 1800:
+            raise RuntimeError(f"timed out waiting for {prev}")
+        time.sleep(2)
+
+
+def _mark_gpu_slot(out_dir: Path, worker_id: int) -> None:
+    (out_dir / f".gpu_slot_{worker_id}.ready").write_text("loaded\n")
+
+
+def _merge_worker_summaries(out_dir: Path, workers: int) -> int:
+    rows = []
+    template = None
+    missing = []
+    for w in range(workers):
+        path = out_dir / f"summary.w{w}.json"
+        if not path.is_file():
+            missing.append(str(path))
+            continue
+        blob = json.loads(path.read_text())
+        if template is None:
+            template = {k: v for k, v in blob.items() if k != "rows"}
+        rows.extend(blob.get("rows") or [])
+    if template is None:
+        raise RuntimeError(
+            f"no worker summaries under {out_dir} (missing {missing})"
+        )
+    rows.sort(key=lambda r: int(r.get("item_index", 10**9)))
+    template["n"] = len(rows)
+    template["n_ok"] = sum(1 for r in rows if r.get("ok"))
+    template["video_workers"] = workers
+    template["rows"] = rows
+    (out_dir / "summary.json").write_text(json.dumps(template, indent=2))
+    print(json.dumps({k: template[k] for k in template if k != "rows"}, indent=2))
+    if missing:
+        print(f"WARNING: missing worker summaries: {missing}", flush=True)
+        return 2
+    return 0 if template["n_ok"] == template["n"] else 2
+
+
+def _spawn_video_workers(workers: int, out_dir: Path) -> int:
+    """Two (or more) independent processes on one GPU. Same pixels as serial.
+
+    Tensor-batching k candidates is blocked: the 137-frame KV cache is
+    ~39 GB, so k=4 copies miss an H200. Videos do not share state, so
+    packing them is the H200 fill that does not change the sampler.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob(".gpu_slot_*.ready"):
+        stale.unlink()
+    procs = []
+    print(
+        f"packing {workers} video workers on this GPU "
+        f"(candidate tensor-batch is off; KV is ~39 GB)",
+        flush=True,
+    )
+    for w in range(workers):
+        env = os.environ.copy()
+        env["V2V_WORKER_ID"] = str(w)
+        env["VIDEO_WORKERS"] = str(workers)
+        procs.append(subprocess.Popen([sys.executable, *sys.argv], env=env))
+    rc = 0
+    for p in procs:
+        p.wait()
+        if p.returncode not in (0, None) and rc == 0:
+            rc = int(p.returncode)
+    merged = _merge_worker_summaries(out_dir, workers)
+    return rc or merged
+
+
 def _record_common(args, item, extra: dict) -> dict:
     rec = {
         "ok": True,
@@ -1978,6 +2063,11 @@ def main() -> int:
     ap.add_argument("--rf-ckpt", default="")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
+    ap.add_argument(
+        "--video-workers", type=int, default=1,
+        help="Independent videos packed on one GPU. Default 1; sbatch "
+             "sets 2 on H200. Do not tensor-batch candidates (39 GB KV).",
+    )
     args = ap.parse_args()
 
     if args.prefix_latents % 3 != 0:
@@ -2012,9 +2102,37 @@ def main() -> int:
         print("shard is empty; nothing to do")
         return 0
 
+    workers = _video_worker_count(args)
+    worker_id_env = os.environ.get("V2V_WORKER_ID")
+    if workers > 1 and worker_id_env is None and len(items) > 1:
+        return _spawn_video_workers(workers, out_dir)
+
+    if worker_id_env is not None:
+        worker_id = int(worker_id_env)
+        n_all = len(items)
+        items_indexed = [
+            (i, it) for i, it in enumerate(items) if i % workers == worker_id
+        ]
+        print(
+            f"video-worker {worker_id}/{workers} "
+            f"n={len(items_indexed)}/{n_all}",
+            flush=True,
+        )
+        _wait_gpu_slot(out_dir, worker_id)
+    else:
+        worker_id = None
+        items_indexed = list(enumerate(items))
+
     torch = _bootstrap_sf(host_root)
     _seed_torch(torch, args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda":
+        prop = torch.cuda.get_device_properties(0)
+        print(
+            f"gpu={torch.cuda.get_device_name(0)} "
+            f"mem={prop.total_memory / 1e9:.1f}G",
+            flush=True,
+        )
     print(
         f"device={device} torch={torch.__version__} task=V2V method={method} "
         f"host={host} sampler={'rolling' if _uses_rolling_sampler(method) else 'chunked'} "
@@ -2077,10 +2195,13 @@ def main() -> int:
     apply_shift(pipeline, args.default_shift)
     apply_guidance(pipeline, args.default_cfg)
     print(f"pipeline loaded in {time.time() - t_load:.1f}s")
+    _cuda_mem("after_pipeline_load")
+    if worker_id is not None:
+        _mark_gpu_slot(out_dir, worker_id)
 
     rows = []
     probe_aggregate = []
-    for i, item in enumerate(items):
+    for i, item in items_indexed:
         stem = (
             f"{i:03d}_{item['stem']}_h{int(args.horizon_s)}s_"
             f"{method}_s{args.seed}"
@@ -2089,7 +2210,10 @@ def main() -> int:
         meta_path = out_dir / f"{stem}.json"
         if method != "knob_probe" and mp4.is_file() and mp4.stat().st_size > 10_000:
             print(f"skip existing {mp4.name}")
-            rows.append({"ok": True, "skipped": True, "mp4": str(mp4), **item})
+            rows.append({
+                "ok": True, "skipped": True, "item_index": i,
+                "mp4": str(mp4), **item,
+            })
             continue
         print(f"[{i+1}/{len(items)}] V2V {method} {item['file_name']}")
         _seed_torch(torch, args.seed)
@@ -2104,6 +2228,7 @@ def main() -> int:
                         args.default_shift, args.default_cfg,
                     )
                     rec = _record_common(args, item, {
+                        "item_index": i,
                         "seconds": round(time.time() - t0, 2),
                         "probe": probe,
                         "shift_live": probe["shift_live"],
@@ -2156,6 +2281,7 @@ def main() -> int:
                         if tail.shape[0] >= 2 else float("nan")
                     )
                     rec = _record_common(args, item, {
+                        "item_index": i,
                         "seconds": round(time.time() - t0, 2),
                         "mp4": str(mp4),
                         "n_frames": int(video.shape[0]),
@@ -2194,6 +2320,7 @@ def main() -> int:
             rec = {
                 "ok": False,
                 "task": "v2v",
+                "item_index": i,
                 "error": f"{type(e).__name__}: {e}",
                 "traceback": traceback.format_exc(),
                 "seconds": round(time.time() - t0, 2),
@@ -2210,6 +2337,7 @@ def main() -> int:
             _cuda_mem("after_fail")
         meta_path.write_text(json.dumps(rec, indent=2))
         rows.append(rec)
+        _cuda_mem(f"after_video_{i:03d}")
 
     shift_live = any(r.get("shift_live") for r in rows if r.get("ok"))
     cfg_live = any(r.get("cfg_live") for r in rows if r.get("ok"))
@@ -2230,13 +2358,16 @@ def main() -> int:
         "seed": args.seed,
         "shard_id": args.shard_id,
         "num_shards": args.num_shards,
+        "video_workers": workers,
+        "video_worker_id": worker_id,
         "video_dir": str(Path(args.video_dir).resolve()),
         "sampling_hooks": hooks,
         "shift_live": bool(shift_live) if method == "knob_probe" else None,
         "cfg_live": bool(cfg_live) if method == "knob_probe" else None,
         "rows": rows,
     }
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    sum_name = f"summary.w{worker_id}.json" if worker_id is not None else "summary.json"
+    (out_dir / sum_name).write_text(json.dumps(summary, indent=2))
     print(json.dumps({k: summary[k] for k in summary if k != "rows"}, indent=2))
     return 0 if summary["n_ok"] == summary["n"] else 2
 
