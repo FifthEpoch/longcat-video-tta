@@ -291,10 +291,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 14:16):
-  Always-search: **16288113** SF R ~2h14. **16288114** RF
-  off queue (sacct). VBench **16288115** PD afterok.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 14:23):
+  Always-search: **16288113** SF R 2h40 mp4=26/32.
+  **16288114** RF COMPLETED 0:0 53m 32/32. VBench
+  **16288115** waits on 113. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
