@@ -3313,3 +3313,20 @@ Resume skip-existing; join six written dims on login. Do not cite
 128 YES.
 
 ---
+
+## 2026-08-23 — rolling-128 locked bars pass on 6/7 VBench
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_rolling128_vbench6_read.md`
+
+Login join after 16228045: subject/bg/aes/IQ/motion/dynamic all
+n=128. Flickering still missing; GPU **16259396** submitted
+(skip-existing). Medians vs SF notta: subject 0.687 vs 0.648
+(+0.039), IQ 70.91 vs 70.20 (+0.71), aes 0.540 vs 0.507, Dyn
+median 1.0 (mean 0.531) vs notta 0. Tails already +31% 88/40.
+Locked promote rule PASSES. Official 7-dim waits on flickering.
+N=32 rolling Dyn 0 does not automatically carry — first-32 vs
+last-96 Dyn split still open. Still someone else's host. Do not
+scale sf_roll / rf_chunk / leftovers. Do not resubmit 16259396.
+
+---
