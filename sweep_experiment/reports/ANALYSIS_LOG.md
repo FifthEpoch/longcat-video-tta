@@ -3330,3 +3330,17 @@ last-96 Dyn split still open. Still someone else's host. Do not
 scale sf_roll / rf_chunk / leftovers. Do not resubmit 16259396.
 
 ---
+
+## 2026-08-23 — rolling-128 Dyn median 1 is the last-96 slice
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-23_wan_v2v_rolling128_dyn_split.md`
+
+joined.json: 68/128 VBench-dynamic, mean 0.531, median 1.0.
+first32: 14/32, mean 0.438, median 0.0 — matches the N=32
+forward “Dyn 0” cite (14 < 16). last96: 54/96, mean 0.562,
+median 1.0. N=32 was not “RF never dynamic”; the larger pool
+crosses 50%. SF notta 128 Dyn median stays 0. Flickering job
+16259396 PD QOSMaxGRESPerUser. Do not resubmit.
+
+---
