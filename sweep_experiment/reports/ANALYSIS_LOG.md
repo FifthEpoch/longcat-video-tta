@@ -3717,3 +3717,13 @@ opens `inference_mode(False)` + `enable_grad`, clones the prefix, and
 errors if the loss still has no grad_fn. Resubmit N=8 after pull.
 
 ---
+
+## 2026-08-24 — AdaSteer N=8 resubmitted 16321558–563
+**Tags:** jobs, wan, v2v, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`
+
+Cluster pulled `385f21a`. New jobs PD behind caption pseudo /
+always. First R must print `|δ|=`. No N=32. No WAVE=2.
+
+---

@@ -234,9 +234,9 @@ Per-method `merged_summary.json` lives at:
   **protocol PASS** (`prompt_source=metadata_csv`, 0 stem).
   Hosts + rewind + sick + sink + RF family generate-done.
   Pseudo **16310322** 27/32 R; SF always **9/32**. VBench
-  **16310330** waits. AdaSteer **16314667–669 FAILED** because
-  fit ran under `inference_mode`. Fix on main. Resubmit N=8
-  after pull. Do not mix stem-prompt numbers into caption tables.
+  **16310330** waits. AdaSteer resubmit **16321558 / 560 / 562**,
+  VBench **16321563**, PD behind WAVE=1. Old fail **16314667–670**
+  closed. Do not mix stem-prompt numbers into caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-24):** wait for caption
@@ -301,10 +301,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 22:45):
-  Caption WAVE=1: most generate 32/32. **16310322** pseudo
-  27/32 R; SF always 9/32. VBench **16310330** PD. AdaSteer
-  **16314667–669 FAILED**; **16314670** cancelled. **No I2V.
+- **In-flight cluster jobs** (as of 2026-08-24 22:50):
+  Caption WAVE=1: **16310322** pseudo R 2h28; **16310324**
+  SF always R 1h06. VBench **16310330** PD. AdaSteer
+  **16321558 / 560 / 562** PD; VBench **16321563**. **No I2V.
   No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
