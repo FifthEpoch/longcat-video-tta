@@ -153,15 +153,47 @@ futures; a cheap check that decides whether those extra tries
 are worth paying for; keep the opening frames in memory.
 Paper citations live on the per-method slides, not on the roster.
 
-| Method | What we actually do | Call |
-|---|---|---|
-| Prefix-match (seed / live / appear) | Four futures; keep the one closest to the real 2 s opening | NO — damps moving clips |
-| Rewind | If the chunk froze, try one other seed; keep it only if it moved more | HOLD +6% |
-| Sick-search | One try until a freeze, then four tries | NO — too late |
-| Pseudo | Hide the last bit of the opening; search the tail only if another seed predicts it better | HOLD +37% |
-| Sink | Keep opening tokens in attention; no search | HOLD / no-scale +72% |
-| Always-search | Four tries every chunk; no “should we search?” check | In flight |
-| Crossed host (H1) | SF student + RF window (or reverse) | NO — twitch |
+| Method | What we actually do |
+|---|---|
+| Prefix-match (seed / live / appear) | Four futures; keep the one closest to the real 2 s opening |
+| Rewind | If the chunk froze, try one other seed; keep it only if it moved more |
+| Sick-search | One try until a freeze, then four tries |
+| Pseudo | Hide the last bit of the opening; search the tail only if another seed predicts it better |
+| Sink | Keep opening tokens in attention; no search |
+| Always-search | Four tries every chunk; no “should we search?” check |
+| Crossed host (H1) | SF student + RF window (or reverse) |
+
+### 5.0b Experimental settings (sampling-space N=32)
+
+| Item | Setting |
+|---|---|
+| Model | Wan2.1-T2V-1.3B + Self-Forcing causal DMD. RF is comparison only. |
+| Dataset | First 32 of `datasets/panda_1000_480p` (Panda-70M 480p), sorted |
+| Task | V2V prefix continuation, not I2V-from-still |
+| Geometry | 480×832, 16 fps. Prefix 9 latents / 33 frames / 2.06 s. Generate 6×21 latents (~30 s). Full clip 537 frames. |
+| Sampler | shift=8, CFG=1.0, seed=0. Search k=4. Sink 3 / local attn 12. |
+| Evaluator | VBench / VBench++ **full clip** (Huang et al. 2023) |
+
+These 32 used stem prompts. Caption WAVE=1 will replace the table.
+
+### 5.0c Outcomes — official VBench only
+
+Subject consistency, imaging quality, dynamic degree, temporal
+flickering. Not our pixel-tail diagnostic.
+
+| Method | Subject | IQ | Dyn | Flicker |
+|---|---:|---:|---:|---:|
+| SF do-nothing | 0.665 | 69.65 | 0 | 0.986 |
+| RF (other host) | 0.702 | 70.44 | 0 | 0.983 |
+| seed_bon | 0.705 | 68.88 | 0 | 0.988 |
+| appear | 0.730 | 69.06 | 0 | — |
+| rewind | 0.680 | 69.44 | 0 | 0.985 |
+| sick | 0.669 | 69.13 | 0 | 0.986 |
+| pseudo | 0.691 | 69.83 | **0.50** | 0.982 |
+| sink | 0.646 | 69.98 | 0 | 0.977 |
+
+Only pseudo moves official dynamic degree. Prefix-match raises
+identity and stays at Dyn 0. Sink pays subject / flicker.
 
 ### 5.1 Do-nothing SF (`notta`) — the baseline
 
@@ -288,15 +320,19 @@ author of the future.
 
 ## 8. Scoreboard (SF-hosted family, the claim)
 
-| Method | Tail | vs SF | W/L/tie | Subject | IQ | Dyn | Flicker | Call |
-|---|---:|---:|---|---:|---:|---:|---:|---|
-| SF notta | 0.0135 | — | — | 0.665 | 69.65 | 0 | 0.986 | baseline |
-| RF rolling | 0.0178 | +31% | 21/11 | 0.702 | 70.44 | 0 | 0.983 | host |
-| seed_bon | 0.0124 | −9% | 12/20 | 0.705 | 68.88 | 0 | 0.988 | NO |
-| sf_rewind | 0.0143 | +6% | 19/5/8 | 0.680 | 69.44 | 0 | 0.985 | HOLD |
-| sf_sick | 0.0134 | −1% | 20/5/7 | 0.669 | 69.13 | 0 | 0.986 | NO |
-| sf_pseudo | **0.0186** | **+37%** | **25/2/5** | 0.691 | 69.83 | **0.50** | 0.982 | **HOLD** |
-| sf_sink | **0.0232** | **+72%** | **30/2** | 0.646 | 69.98 | 0 | 0.977 | HOLD / no-scale |
+Official numbers are the VBench full-clip table in §5.0c. The
+tail / W/L columns below are an internal diagnostic only — not
+what we put on the outcome slide.
+
+| Method | Subject | IQ | Dyn | Flicker |
+|---|---:|---:|---:|---:|
+| SF notta | 0.665 | 69.65 | 0 | 0.986 |
+| RF rolling | 0.702 | 70.44 | 0 | 0.983 |
+| seed_bon | 0.705 | 68.88 | 0 | 0.988 |
+| sf_rewind | 0.680 | 69.44 | 0 | 0.985 |
+| sf_sick | 0.669 | 69.13 | 0 | 0.986 |
+| sf_pseudo | 0.691 | 69.83 | **0.50** | 0.982 |
+| sf_sink | 0.646 | 69.98 | 0 | 0.977 |
 | always-search | — | — | — | — | — | — | — | **in flight** |
 
 ---
