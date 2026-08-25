@@ -241,12 +241,10 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** caption Prefix-match
-  N=32 (`WAVE=prefix`: seed_bon / live_bon / appear_bon) to
-  replace stem slide scores. WAVE=1 family already caption
-  32/32 — wait **16310330**. AdaSteer N=8 is **NO**. Spec:
-  `paper_tables/2026-08-25_wan_v2v_caption_prefix32_spec.md`.
-  **No TTC. No I2V. No WAVE=2 dump. No AdaSteer N=32.**
+- **Current next experiment (2026-08-25):** wait. Caption
+  VBench **16310330** R. Prefix-match **16328464–467** queued.
+  AdaSteer N=8 is **NO**. Do not submit more tonight.
+  **No TTC. No I2V. No WAVE=2. No AdaSteer N=32.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -304,9 +302,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 02:34):
-  Caption VBench **16310330** R ~1h22. Everything else
-  COMPLETED 0:0. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 02:52):
+  Caption VBench **16310330** R 1h38 gl020. Prefix-match
+  **16328464** seed_bon / **465** live_bon / **466** appear_bon
+  PD h200. VBench **16328467** afterok. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

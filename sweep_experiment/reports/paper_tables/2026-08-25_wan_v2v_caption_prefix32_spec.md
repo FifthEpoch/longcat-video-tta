@@ -34,8 +34,11 @@ WAVE=prefix bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 squeue -u $USER
 ```
 
-3 generate + 1 VBench. H200 2-way cap: one job waits. Leave
-**16310330** alone.
+**IN FLIGHT 2026-08-25 02:52.** Preflight `mapped=1000 bad=0`.
+**16328464** seed_bon, **16328465** live_bon, **16328466**
+appear_bon (PD h200_cour None). VBench **16328467** afterok.
+Leave **16310330** alone. Cancel this wave only:
+`scancel 16328464 16328465 16328466 16328467`.
 
 ## After first R
 

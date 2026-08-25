@@ -3801,3 +3801,15 @@ quiet, host-split). Do not scale AdaSteer. Submit only
 `seed_bon` / `live_bon` / `appear_bon` as `v2v_panda_caption_prefix_32v`.
 
 ---
+
+## 2026-08-25 — Prefix wave queued 16328464–467
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_prefix32_spec.md`
+
+Submitted. Preflight truck/kitchen/bookshelf/cop, 0 stem.
+PD (None) not QOS. 330 left running. Bedtime: nothing else to
+submit. Morning: sidecar `metadata_csv`, then harvest vs caption
+notta. Do not scancel 16288113–115.
+
+---
