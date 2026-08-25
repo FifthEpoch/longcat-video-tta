@@ -3668,3 +3668,15 @@ though the median gap shrank (+22% vs +31%). Rewind still small
 plus, fewer ties than stem 19/5/8. No VBench. No method call.
 
 ---
+
+## 2026-08-24 — Caption search arms smoke (sick 6 / pseudo 3)
+**Tags:** jobs, wan, v2v, captions
+**Owner:** agent
+**Refs:** experiment_outputs/2026-08-24.md 20:46
+
+Both search jobs write `metadata_csv`. Sick gate skip-then-fire
+is visible (0000: skip chunks 0–1, `sick_motion` pick 3/4). Pseudo
+fires from the prefix (`pseudo_fire=True`, 6/6 chunks searched).
+Not a harvest. Do not pair vs SF at n=6/3.
+
+---
