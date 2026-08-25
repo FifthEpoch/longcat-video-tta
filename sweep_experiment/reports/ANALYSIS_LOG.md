@@ -3632,3 +3632,13 @@ updates (retrieval, ES, Delta-B/C, LoRA, TTC) stay parked. Cite vs
 caption notta. Do not scale a null. Queues behind caption WAVE=1.
 
 ---
+
+## 2026-08-24 — AdaSteer 8v queued 16314667–670
+**Tags:** jobs, wan, v2v, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`
+
+ada_fixed/stream/resid PD. Caption notta 318 still R 47m.
+Rolling 319 left squeue. Do not harvest until metadata_csv + |δ|.
+
+---

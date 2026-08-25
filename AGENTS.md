@@ -236,9 +236,9 @@ Per-method `merged_summary.json` lives at:
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-24):** wait for caption
   WAVE=1 sidecar `metadata_csv`. AdaSteer confirmation is
-  **SUBMIT-READY** (`submit_v2v_adasteer.sh`, N=8): ada_fixed /
-  ada_stream / ada_resid. Queues behind WAVE=1. Cite vs caption
-  notta. Spec:
+  **IN FLIGHT** (**16314667–669** generate, **16314670** VBench):
+  ada_fixed / ada_stream / ada_resid. Queues behind WAVE=1. Cite
+  vs caption notta. Spec:
   `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
   **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -298,10 +298,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 18:44):
-  Caption WAVE=1: **16310318** notta R / **16310319** rolling R.
-  Rest PD `QOSMaxGRESPerUser`. VBench **16310330** afterok.
-  No WAVE=2 until sidecar `metadata_csv`. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 19:20):
+  Caption WAVE=1: **16310318** notta R 47m; **16310320** rewind R
+  (h200_cds); 319 rolling left squeue; rest PD QOS. VBench
+  **16310330**. AdaSteer 8v **16314667–669** PD; VBench
+  **16314670**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

@@ -51,4 +51,6 @@ inside locked bars. Else **NO**. Do not scale a null.
 
 Submit: `bash wan_experiment/sbatch/submit_v2v_adasteer.sh`
 
-Queues behind caption WAVE=1 (`QOSMaxGRESPerUser`). No TTC. No I2V.
+**IN FLIGHT 2026-08-24 19:20.** **16314667** ada_fixed, **16314668**
+ada_stream, **16314669** ada_resid, VBench **16314670** afterok.
+Queues behind caption WAVE=1. No TTC. No I2V.
