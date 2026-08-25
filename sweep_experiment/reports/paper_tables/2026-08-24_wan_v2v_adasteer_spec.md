@@ -58,3 +58,18 @@ all three left squeue after R ~8–10 min; 036 gone. Harvest +
 sacct before crash vs 8/8. First sidecar must show `|δ|=`, not
 inplace-IM. Do not write “dead on Wan.” Do not submit N=32.
 Closed: **16314667–670**, **16321558–563**.
+
+## Result (2026-08-25 02:34) — NO
+
+033–035 COMPLETED 0:0 18–21 min, 8/8 mp4, `metadata_csv`,
+`|δ|` ≈ 0.84–0.95. VBench **16326036** COMPLETED 20 min.
+
+| Arm | vs caption notta first 8 (tail 0.01291) | IQ | Call |
+|---|---|---:|---|
+| ada_fixed | −22% (5/3) | 42.67 | **NO** |
+| ada_stream | +11% (5/3) | 51.48 | **NO** |
+| ada_resid | −49% (2/6) | 17.75 | **NO** |
+
+δ fits and wrecks imaging. Do not submit N=32. Do not retune
+S/LR on this harvest. Full table:
+`2026-08-25_wan_v2v_caption_always_adasteer.md`.

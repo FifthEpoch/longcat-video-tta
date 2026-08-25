@@ -3773,3 +3773,18 @@ AdaSteer **16326033–035** left after Always 3h08 / Ada ~8–10 min.
 then sacct. Do not swap stem VBench into caption tables. No WAVE=2.
 
 ---
+
+## 2026-08-25 — Caption Always +39%; AdaSteer Wan NO; RF host flips
+**Tags:** results, wan, v2v, caption, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_always_adasteer.md`
+
+Always 32/32 tail 0.01623 **+39%** 30/2 vs caption SF. Pseudo
++28% 23/0/9. Gate is not inert; no Always call until 330.
+Provisional caption VBench: SF 0.700/71.54/0/0.989. RF
+0.694/70.22 (−1.32 IQ, fails −1 bar). Stem “RF is the better
+host on quality” does not copy under real captions. AdaSteer
+8/8 `|δ|`≈0.84: IQ 42.7 / 51.5 / 17.8. **NO.** Do not scale.
+This is a Wan measurement, not LongCat leakage.
+
+---

@@ -232,20 +232,21 @@ Per-method `merged_summary.json` lives at:
   Tail→panda is T5 takeover. Same-prompt deltas still hold.
   Runner now reads `metadata.csv`. Caption WAVE=1
   **protocol PASS** (`prompt_source=metadata_csv`, 0 stem).
-  Hosts + rewind + sick + sink + RF family generate-done.
-  Pseudo **16310322** COMPLETED 32/32 tail +28% 23/0/9. SF
-  always **16310324** left queue after R 3h08 (was 29/32).
-  VBench **16310330** R 1h10. AdaSteer resubmit **16326033–035**
-  left queue after ~8–10 min; VBench **16326036** gone — sacct.
-  Prior fails **16314667–670** / **16321558–563** closed. Do not mix stem-prompt numbers into caption tables.
+  WAVE=1 generate **32/32** all arms. Always **16310324**
+  COMPLETED tail **+39%** 30/2 (Pseudo +28% 23/0/9). VBench
+  **16310330** still R; notta/rolling/rewind written (SF
+  0.700/71.54/0/0.989; RF IQ −1.32 vs SF). AdaSteer N=8
+  **NO** (16326033–036 COMPLETED): `|δ|`≈0.84, IQ 43/51/18.
+  Do not scale AdaSteer. Do not mix stem-prompt numbers into
+  caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** harvest Always
-  **16310324** + AdaSteer **16326033–035** (`harvest_caption_wave1.py`).
-  Wait for caption VBench **16310330** (R). Do not replace stem
-  VBench talk numbers until 330 finishes. Cite AdaSteer vs
-  caption notta first 8. Spec:
-  `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
+- **Current next experiment (2026-08-25):** wait for caption
+  VBench **16310330** to finish, then fill remaining official
+  dims (sick / pseudo / sink / always / RF family). Always
+  generate is +39% — no call until those dims. AdaSteer N=8
+  is **NO**. Table:
+  `paper_tables/2026-08-25_wan_v2v_caption_always_adasteer.md`.
   **No TTC. No I2V. No WAVE=2. No AdaSteer N=32.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
@@ -304,11 +305,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 02:23):
-  Caption VBench **16310330** R 1h10 gl020. Generate wave
-  including always **16310324** and AdaSteer **16326033–035**
-  off queue. AdaSteer VBench **16326036** not in squeue.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 02:34):
+  Caption VBench **16310330** R ~1h22. Everything else
+  COMPLETED 0:0. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
