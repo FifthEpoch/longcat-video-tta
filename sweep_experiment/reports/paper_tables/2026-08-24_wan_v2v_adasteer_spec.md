@@ -53,6 +53,8 @@ Submit: `bash wan_experiment/sbatch/submit_v2v_adasteer.sh`
 
 **RESUBMITTED 2026-08-25 00:43** after the IM-cache fix
 (`a1d294c`). **16326033** ada_fixed, **16326034** ada_stream,
-**16326035** ada_resid, VBench **16326036** afterok. First R log
-must show `|δ|=`, not inplace-IM. Do not write “dead on Wan.” Do
-not submit N=32. Closed: **16314667–670**, **16321558–563**.
+**16326035** ada_resid, VBench **16326036** afterok. **02:23:**
+all three left squeue after R ~8–10 min; 036 gone. Harvest +
+sacct before crash vs 8/8. First sidecar must show `|δ|=`, not
+inplace-IM. Do not write “dead on Wan.” Do not submit N=32.
+Closed: **16314667–670**, **16321558–563**.

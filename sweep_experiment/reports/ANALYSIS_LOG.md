@@ -3761,3 +3761,15 @@ Cluster pulled `a1d294c`. New jobs 033/034/035 + VBench 036.
 First R must print `|δ|=`. No N=32. No WAVE=2.
 
 ---
+
+## 2026-08-25 — Caption generate off queue; VBench 330 scoring
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`
+
+squeue 02:23: only **16310330** R 1h10. Always **16310324** and
+AdaSteer **16326033–035** left after Always 3h08 / Ada ~8–10 min.
+036 gone. Do not fill Always-32 or AdaSteer from squeue. Harvest
+then sacct. Do not swap stem VBench into caption tables. No WAVE=2.
+
+---

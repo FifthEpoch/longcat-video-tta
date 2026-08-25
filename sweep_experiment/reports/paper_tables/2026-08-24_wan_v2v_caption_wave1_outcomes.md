@@ -5,9 +5,12 @@ caption (`prompt_source=metadata_csv` on every harvested sidecar).
 Do **not** mix with stem-prompt tables.
 
 Official quality is VBench / VBench++ on the **full clip** after
-**16310330**. That job is still waiting on `sf_pseudo` and
-`sf_always_search`. Subject / IQ / dynamic degree / flickering stay
-blank. Tails below are a generate diagnostic only.
+**16310330**. That job is **R** (1h10 on `l40s_cour` / gl020 as of
+2026-08-25 02:23). Generate including `sf_always_search` **16310324**
+left the queue — harvest n before citing Always as 32/32. Subject /
+IQ / dynamic degree / flickering stay blank until 330 finishes.
+Tails below are a generate diagnostic only. Do **not** replace stem
+VBench talk numbers with this table yet.
 
 ## Jobs
 
@@ -19,12 +22,14 @@ blank. Tails below are a generate diagnostic only.
 | **16310321** | sf_sick_search | COMPLETED 0:0 1h37 | **32/32** |
 | **16310322** | sf_pseudo | COMPLETED 0:0 2h44 | **32/32** |
 | **16310323** | sf_sink | generate 32/32 in harvest | **32/32** |
-| **16310324** | sf_always_search | R ~2h55 | **29/32** |
+| **16310324** | sf_always_search | left queue after R 3h08 (was 29/32) | harvest |
 | **16310325–329** | RF always / rewind / sick / pseudo / sink | generate 32/32 in harvest | **32/32** |
-| **16310330** | VBench full clip | PD (Dependency) | — |
+| **16310330** | VBench full clip | **R 1h10** gl020 | scoring |
 | **16314667–669** | AdaSteer 8v (first) | FAILED 2:0 inference_mode | closed |
 | **16321558 / 560 / 562** | AdaSteer 8v (retry) | **FAILED 2:0** inplace IM cache | crash |
 | **16321563** | AdaSteer VBench | CANCELLED | — |
+| **16326033–035** | AdaSteer 8v (IM-cache fix) | left queue after R ~8–10 min | harvest |
+| **16326036** | AdaSteer VBench | gone from squeue | sacct |
 
 ## vs caption Self-Forcing (SF-hosted)
 
@@ -36,7 +41,7 @@ blank. Tails below are a generate diagnostic only.
 | sf_sick_search | 32 | 0.01164 | **+0%** | 19/4/9 | pending |
 | sf_pseudo | 32 | 0.01492 | **+28%** | **23/0/9** | pending |
 | sf_sink | 32 | 0.01907 | +64% | 31/1/0 | pending |
-| sf_always_search | **29** | 0.01591 | +36% | 27/2/0 | running |
+| sf_always_search | **29** | 0.01591 | +36% | 27/2/0 | generate left queue; harvest |
 
 `notta` “fire 28” in the harvest script is a false count (`last_sick`
 on do-nothing chunks). Ignore it.

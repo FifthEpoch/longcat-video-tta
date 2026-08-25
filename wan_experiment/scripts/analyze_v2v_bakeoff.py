@@ -29,6 +29,7 @@ METHODS = (
     "rf_always_search", "sf_sink",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
+    "ada_fixed", "ada_stream", "ada_resid",
 )
 VBENCH_DIMS = (
     "subject_consistency",
