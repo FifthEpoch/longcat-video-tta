@@ -148,20 +148,24 @@ vs dynamics).
 
 **Protocol:** 9 real latents + 6 × 21 generated. Same first 32.
 
-Weights stay frozen. Three knobs only: try several random
-futures; a cheap check that decides whether those extra tries
-are worth paying for; keep the opening frames in memory.
-Paper citations live on the per-method slides, not on the roster.
+**Ours:** Prefix-match, Rewind, Sick-search, Pseudo, Always-search
+(ablation of Pseudo).
 
-| Method | What we actually do |
-|---|---|
-| Prefix-match | Four futures; keep the one closest to the real 2 s opening |
-| Rewind | If the chunk froze, try one other seed; keep it only if it moved more |
-| Sick-search | One try until a freeze, then four tries |
-| Pseudo | Hide the last bit of the opening; search the tail only if another seed predicts it better |
-| Sink | Keep opening tokens in attention; no search |
-| Always-search | Four tries every chunk; no “should we search?” check |
-| Crossed host (H1) | SF student + RF window (or reverse) |
+**Not ours:** Self-Forcing do-nothing (paper baseline); Rolling
+Forcing (comparison host); Sink (LongLive); Crossed host (SF×RF
+swap).
+
+| Method | Whose | What we actually do |
+|---|---|---|
+| Prefix-match | Ours | Four futures; keep the one closest to the real 2 s opening |
+| Rewind | Ours | If the chunk froze, try one other seed; keep it only if it moved more |
+| Sick-search | Ours | One try until a freeze, then four tries |
+| Pseudo | Ours | Hide the last bit of the opening; search the tail only if another seed predicts it better |
+| Always-search | Ours (ablation) | Four tries every chunk; no “should we search?” check |
+| Self-Forcing do-nothing | Baseline (Huang et al.) | Default seed every chunk |
+| Rolling Forcing | Other host | Published student + overlapping window |
+| Sink | LongLive | Keep opening tokens in attention; no search |
+| Crossed host | Their pieces | SF student + RF window (or reverse) |
 
 ### 5.0b Experimental settings (sampling-space N=32)
 
