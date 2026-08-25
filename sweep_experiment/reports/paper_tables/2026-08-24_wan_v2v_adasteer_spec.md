@@ -51,16 +51,8 @@ inside locked bars. Else **NO**. Do not scale a null.
 
 Submit: `bash wan_experiment/sbatch/submit_v2v_adasteer.sh`
 
-**RETRY FAILED 2026-08-25 00:15–00:35.** **16321558 / 560 / 562**
-exit 2:0, 0 mp4. New error: inplace update to an inference-mode
-KV cache after leaving IM. Second fix: AdaSteer generate is not
-wrapped in `inference_mode`; caches dropped and re-allocated;
-cond/prefix cloned. Resubmit **N=8 only** after pull:
-
-```
-cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-bash wan_experiment/sbatch/submit_v2v_adasteer.sh
-```
-
-First log must show `|δ|=`. Do not write “dead on Wan.” Do not
-submit N=32. Closed: **16314667–670**, **16321558–563**.
+**RESUBMITTED 2026-08-25 00:43** after the IM-cache fix
+(`a1d294c`). **16326033** ada_fixed, **16326034** ada_stream,
+**16326035** ada_resid, VBench **16326036** afterok. First R log
+must show `|δ|=`, not inplace-IM. Do not write “dead on Wan.” Do
+not submit N=32. Closed: **16314667–670**, **16321558–563**.

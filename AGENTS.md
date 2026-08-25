@@ -235,13 +235,14 @@ Per-method `merged_summary.json` lives at:
   Hosts + rewind + sick + sink + RF family generate-done.
   Pseudo **16310322** COMPLETED 32/32 tail +28% 23/0/9. SF
   always **16310324** 29/32 R. VBench **16310330** waits on 324.
-  AdaSteer retry **16321558–563 FAILED** (inplace IM cache).
-  Second fix on main. Old fails closed. Do not mix stem-prompt numbers into caption tables.
+  AdaSteer resubmit **16326033–035**, VBench **16326036**.
+  Prior fails **16314667–670** / **16321558–563** closed. Do not mix stem-prompt numbers into caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-25):** wait for always
-  **16310324** + VBench **16310330**. AdaSteer: pull the IM-cache
-  fix and resubmit N=8 only. Cite vs caption notta. Spec:
+  **16310324** + VBench **16310330**. AdaSteer N=8 queued
+  (**16326033–036**); first R log must show `|δ|=`. Cite vs
+  caption notta. Spec:
   `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
   **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -301,9 +302,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 00:39):
+- **In-flight cluster jobs** (as of 2026-08-25 00:43):
   Caption WAVE=1: **16310324** SF always 29/32 R. VBench
-  **16310330** PD. AdaSteer retry FAILED. **No I2V. No TTC.**
+  **16310330** PD. AdaSteer **16326033–035** + VBench
+  **16326036**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

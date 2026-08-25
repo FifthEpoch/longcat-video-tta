@@ -3751,3 +3751,13 @@ IM for AdaSteer methods and drops caches before fit. Resubmit N=8
 after pull. No HOLD. No N=32.
 
 ---
+
+## 2026-08-25 — AdaSteer N=8 resubmitted 16326033–036
+**Tags:** jobs, wan, v2v, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`
+
+Cluster pulled `a1d294c`. New jobs 033/034/035 + VBench 036.
+First R must print `|δ|=`. No N=32. No WAVE=2.
+
+---
