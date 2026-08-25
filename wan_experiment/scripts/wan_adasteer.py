@@ -112,18 +112,28 @@ class WanAdaSteer:
         opt = AdamW([self.delta], lr=float(lr), betas=(0.9, 0.999), eps=1e-15)
         losses: list[float] = []
         raw_norms: list[float] = []
-        for _ in range(int(steps)):
-            opt.zero_grad(set_to_none=True)
-            loss = _student_x0_loss(
-                self.pipeline, clean_latents, conditional_dict, device,
-            )
-            loss.backward()
-            raw = float(torch.nn.utils.clip_grad_norm_([self.delta], float("inf")).item())
-            raw_norms.append(raw)
-            if raw > 1.0 and self.delta.grad is not None:
-                self.delta.grad.mul_(1.0 / (raw + 1e-6))
-            opt.step()
-            losses.append(float(loss.detach().item()))
+        # generate_chunked_v2v is called under inference_mode. Tensors
+        # created there cannot grow a graph. Exit IM, clone the prefix,
+        # then fit δ.
+        with torch.inference_mode(False), torch.enable_grad():
+            clean = clean_latents.detach().clone()
+            for _ in range(int(steps)):
+                opt.zero_grad(set_to_none=True)
+                loss = _student_x0_loss(
+                    self.pipeline, clean, conditional_dict, device,
+                )
+                if not loss.requires_grad:
+                    raise RuntimeError(
+                        "AdaSteer loss has no grad_fn after leaving "
+                        "inference_mode. generator forward is detached."
+                    )
+                loss.backward()
+                raw = float(torch.nn.utils.clip_grad_norm_([self.delta], float("inf")).item())
+                raw_norms.append(raw)
+                if raw > 1.0 and self.delta.grad is not None:
+                    self.delta.grad.mul_(1.0 / (raw + 1e-6))
+                opt.step()
+                losses.append(float(loss.detach().item()))
         info = {
             "tag": tag,
             "placement": self.placement,

@@ -52,8 +52,15 @@ inside locked bars. Else **NO**. Do not scale a null.
 Submit: `bash wan_experiment/sbatch/submit_v2v_adasteer.sh`
 
 **FAILED 2026-08-24 22:48.** **16314667–669** exit 2:0 in ~3 m,
-0 mp4, 8 error sidecars + summary (`n_ok=0`). Captions were
-`metadata_csv`. VBench **16314670** cancelled. This is a crash,
-not a measured null. Do not write “AdaSteer is dead on Wan.” Do
-not resubmit N=8 or N=32 until the first error json / slurm
-traceback is read.
+0 mp4. Cause: `loss.backward()` under the runner’s
+`torch.inference_mode()` — no `grad_fn`. Fixed in
+`wan_adasteer.optimize` (leave IM, clone prefix, refuse a no-grad
+loss). Resubmit **N=8 only** after `git pull`:
+
+```
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_v2v_adasteer.sh
+```
+
+First log must show `adasteer prefix … |δ|=` not the old
+RuntimeError. Do not write “dead on Wan.” Do not submit N=32.

@@ -3705,3 +3705,15 @@ FAILED 2:0 in 3m, 0 mp4, metadata_csv loaded. Exit 2 = n_ok≠n.
 Crash, not a Wan null. VBench still pending. No HOLD/NO.
 
 ---
+
+## 2026-08-24 — AdaSteer crash was inference_mode
+**Tags:** bug, wan, adasteer
+**Owner:** agent
+**Refs:** `wan_experiment/scripts/wan_adasteer.py`
+
+16314667–669: `element 0 of tensors does not require grad`. Fit sat
+inside `run_v2v_chunked`’s `torch.inference_mode()`. optimize() now
+opens `inference_mode(False)` + `enable_grad`, clones the prefix, and
+errors if the loss still has no grad_fn. Resubmit N=8 after pull.
+
+---
