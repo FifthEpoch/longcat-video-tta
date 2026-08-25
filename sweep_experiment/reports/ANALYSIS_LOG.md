@@ -3389,8 +3389,6 @@ OOMs, `VIDEO_WORKERS=1` on that method only.
 
 ---
 
----
-
 ## 2026-08-23 — rolling-128 official VBench 7/7
 **Tags:** finding, wan, v2v
 **Owner:** agent
@@ -3417,6 +3415,7 @@ dependency is afterok. Skip-existing resumes remaining videos.
 Do not delete mp4s. Do not retry pack-2.
 
 ---
+
 ## 2026-08-23 — pack-2 OOM smoking gun: 127 GiB + 13 GiB
 **Tags:** finding, wan, cluster
 **Owner:** agent
@@ -3455,6 +3454,7 @@ sf_sick_search / sf_pseudo / sf_sink on native SF chunked.
 Promote vs SF notta. RF rolling is a comparison row. No
 sf_roll (H1). VIDEO_WORKERS=1. Do not scale RF family.
 
+---
 
 ## 2026-08-24 — sf_rewind 16266878: score after increment
 **Tags:** bug, wan, v2v
@@ -3544,7 +3544,6 @@ text takeover. Same-prompt method deltas still valid. Refuse
 stem prompts for panda_*. Do not cite as caption-conditioned
 V2V. Re-run only after real captions + GO.
 
-
 ---
 
 ## 2026-08-24 — V2V missed metadata.csv, not missing captions
@@ -3607,5 +3606,17 @@ No WAVE=2 until a running sidecar shows metadata_csv.
 
 18:44: 318/319 R 11m; 320–329 QOSMaxGRESPerUser. Do not submit
 WAVE=2. First check notta sidecar prompt_source.
+
+---
+
+## 2026-08-24 — V2V gray flash is latent 21 (81-frame horizon)
+**Tags:** bug, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_gray_flash.md`
+
+Freeze-demo mp4s flash gray at 5.06–5.25 s on every clip. Pixel
+MAE/sat drop on frames 81–84 = first VAE group past the native
+21-latent / 81-frame / 5 s unit. Not prefix seam, not chunk seam,
+not x264. In the file, not only the player.
 
 ---
