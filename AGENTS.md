@@ -240,8 +240,9 @@ Per-method `merged_summary.json` lives at:
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-24):** wait for caption
-  pseudo + always + VBench. AdaSteer: read first error json
-  before any resubmit. Cite vs caption notta. Spec:
+  pseudo + always + VBench. AdaSteer N=8 is queued
+  (**16321558–563**); first R log must show `|δ|=`. Cite vs
+  caption notta. Spec:
   `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
   **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
