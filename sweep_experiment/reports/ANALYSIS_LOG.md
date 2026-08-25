@@ -3680,3 +3680,15 @@ fires from the prefix (`pseudo_fire=True`, 6/6 chunks searched).
 Not a harvest. Do not pair vs SF at n=6/3.
 
 ---
+
+## 2026-08-24 — Caption outcomes table opened
+**Tags:** results, wan, v2v, captions
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`
+
+Started filling caption WAVE=1 from finished generate. Hosts+rewind
+N=32 tails are in. VBench columns blank until 16310330. Sick 321
+left the queue — next harvest. AdaSteer 667–670 missing from 22:41
+squeue; do not call. No HOLD/NO from tails. No WAVE=2.
+
+---

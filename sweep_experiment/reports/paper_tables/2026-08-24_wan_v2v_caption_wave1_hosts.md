@@ -16,7 +16,7 @@ Protocol check **PASS:** every sidecar `prompt_source=metadata_csv`,
 | **16310318** | notta | COMPLETED 0:0 | 1h47 | 32/32 |
 | **16310319** | rolling_notta | COMPLETED 0:0 | 27m | 32/32 |
 | **16310320** | sf_rewind | COMPLETED 0:0 | 1h13 | 32/32 |
-| **16310321** | sf_sick_search | RUNNING | — | — |
+| **16310321** | sf_sick_search | left squeue 22:41 | — | harvest |
 
 ## Caption tails (median, N=32)
 

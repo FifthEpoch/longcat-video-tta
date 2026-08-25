@@ -43,12 +43,10 @@ scripts, I2V, TTC.
 
 ## Status
 
-**PROTOCOL PASS 2026-08-24 20:26.** All three finished arms are
-`prompt_source=metadata_csv`, 32/32, 0 stem. notta/rolling/rewind
-**16310318–320** COMPLETED 0:0. **16310321** sick running. 322–329
-PD. VBench **16310330** still afterok remaining generate. Handcrafted
-peek: [`hosts`](2026-08-24_wan_v2v_caption_wave1_hosts.md). Do not
-submit WAVE=2.
+**PROTOCOL PASS 2026-08-24 22:41.** Hosts+rewind 32/32 in
+[`outcomes`](2026-08-24_wan_v2v_caption_wave1_outcomes.md). Sick
+**16310321** left squeue. **16310322–329** running. VBench
+**16310330** still afterok. Do not submit WAVE=2.
 
 ## Harvest
 
