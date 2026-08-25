@@ -43,11 +43,12 @@ scripts, I2V, TTC.
 
 ## Status
 
-**IN FLIGHT 2026-08-24 20:18.** Preflight `mapped=1000 bad=0`.
-**16310318** notta still R 1h44. Rolling **16310319** and rewind
-**16310320** left squeue — inspect those sidecars now. 321–329 PD
-QOS. VBench **16310330** afterok all generate. Do not harvest vs
-caption notta until 318 finishes. Do not submit WAVE=2.
+**PROTOCOL PASS 2026-08-24 20:26.** All three finished arms are
+`prompt_source=metadata_csv`, 32/32, 0 stem. notta/rolling/rewind
+**16310318–320** COMPLETED 0:0. **16310321** sick running. 322–329
+PD. VBench **16310330** still afterok remaining generate. Handcrafted
+peek: [`hosts`](2026-08-24_wan_v2v_caption_wave1_hosts.md). Do not
+submit WAVE=2.
 
 ## Harvest
 

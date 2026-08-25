@@ -3642,3 +3642,17 @@ ada_fixed/stream/resid PD. Caption notta 318 still R 47m.
 Rolling 319 left squeue. Do not harvest until metadata_csv + |δ|.
 
 ---
+
+## 2026-08-24 — Caption WAVE=1 protocol PASS
+**Tags:** jobs, wan, v2v, captions
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_wave1_hosts.md`
+
+notta / rolling / rewind 32/32 COMPLETED 0:0. Every sidecar
+`prompt_source=metadata_csv`. First prompt is the truck hood, not
+`panda 0000`. Caption SF notta tail median 0.01164 (stem was
+0.0135). Rolling 0.01423 (+22%). Rewind 0.01262 (+8%). Handcrafted
+only — no VBench, no HOLD/NO. Stem tables stay audit. Sick-search
+321 running. No WAVE=2. AdaSteer still cites this caption notta.
+
+---

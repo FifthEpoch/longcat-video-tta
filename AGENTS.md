@@ -230,15 +230,17 @@ Per-method `merged_summary.json` lives at:
   loaded JSON, so every finished V2V arm used filename stems
   (`panda 0013`). Real 0013 caption is a bathroom stain.
   Tail→panda is T5 takeover. Same-prompt deltas still hold.
-  Runner now reads `metadata.csv`. Caption WAVE=1 is
-  **IN FLIGHT** (**16310318–329** generate, **16310330** VBench).
+  Runner now reads `metadata.csv`. Caption WAVE=1
+  **protocol PASS** (`prompt_source=metadata_csv`, 0 stem).
+  Hosts + rewind generate-done **16310318–320** 32/32 0:0.
+  Remaining generate **16310321–329**; VBench **16310330**.
   Do not mix stem-prompt numbers into caption tables.
+  Peek: `paper_tables/2026-08-24_wan_v2v_caption_wave1_hosts.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-24):** wait for caption
-  WAVE=1 sidecar `metadata_csv`. AdaSteer confirmation is
-  **SUBMIT-READY** (`submit_v2v_adasteer.sh`, N=8): ada_fixed /
-  ada_stream / ada_resid. Queues behind WAVE=1. Cite vs caption
-  notta. Spec:
+- **Current next experiment (2026-08-24):** wait for remaining
+  WAVE=1 generate + VBench. AdaSteer 8v **16314667–669** still
+  PD; cite vs caption notta (first 8 of
+  `v2v_panda_caption_32v/notta`). Spec:
   `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
   **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -298,12 +300,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 20:18):
-  Caption WAVE=1: **16310318** notta R 1h44 gh125. Rolling
-  **16310319** and rewind **16310320** left squeue — sidecar
-  `prompt_source` is checkable now. 321–329 PD QOS. VBench
-  **16310330**. AdaSteer 8v **16314667–669** PD; VBench
-  **16314670**. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 20:26):
+  Caption WAVE=1 protocol PASS. notta/rolling/rewind
+  **16310318–320** COMPLETED 0:0 32/32. **16310321** sick R
+  3m gh131. 322–329 + AdaSteer **16314667–669** PD QOS.
+  VBench **16310330** / **16314670**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
