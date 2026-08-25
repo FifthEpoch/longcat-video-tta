@@ -49,6 +49,10 @@ VIDEO_DIR="${VIDEO_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
 LIVE_MIN="${LIVE_MIN:-0.012}"
 PSEUDO_GAMMA="${PSEUDO_GAMMA:-0.0}"
 NOISE_TAU="${NOISE_TAU:-0.04}"
+ADA_STEPS="${ADA_STEPS:-10}"
+ADA_LR="${ADA_LR:-5e-3}"
+ADA_BLEND="${ADA_BLEND:-0.5}"
+ADA_REFIT_STEPS="${ADA_REFIT_STEPS:-5}"
 SINK_SIZE="${SINK_SIZE:-3}"
 LOCAL_ATTN_SIZE="${LOCAL_ATTN_SIZE:-12}"
 # Pack-2 OOMed on family wave 16261273–276 (second 39 GB KV).
@@ -122,6 +126,10 @@ cd "${PROJECT_ROOT}"
     --live-min "${LIVE_MIN}" \
     --pseudo-gamma "${PSEUDO_GAMMA}" \
     --noise-tau "${NOISE_TAU}" \
+    --ada-steps "${ADA_STEPS}" \
+    --ada-lr "${ADA_LR}" \
+    --ada-blend "${ADA_BLEND}" \
+    --ada-refit-steps "${ADA_REFIT_STEPS}" \
     --sink-size "${SINK_SIZE}" \
     --local-attn-size "${LOCAL_ATTN_SIZE}" \
     --shard-id "${SHARD_ID}" \

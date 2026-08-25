@@ -49,6 +49,9 @@ Methods:
   sf_always_search — SF chunked; always k=4; same motion+trust pick as sf_pseudo (no gate)
   rf_always_search — RF rolling; always k=4; same motion+trust pick as rf_sick/rf_pseudo (no gate)
   sf_sink        — SF chunked + LongLive-style sink_size (not HG-f). Not sf_roll.
+  ada_fixed      — AdaSteer: δ on time_embedding, fit once on prefix, hold
+  ada_stream     — AdaSteer: refit each chunk, blend toward prefix δ0
+  ada_resid      — AdaSteer: δ on mid-late residual blocks, fit once
 
 No TTC. Do not scale I2V-32. Do not put these on the RF rolling sampler.
 
@@ -80,6 +83,14 @@ if str(_REPO) not in sys.path:
 from scripts.caption_utils import (  # noqa: E402
     canonical_video_id,
     load_resolved_captions_csv,
+)
+from wan_adasteer import (  # noqa: E402
+    ADASTEER_METHODS,
+    DEFAULT_BLEND,
+    DEFAULT_LR,
+    DEFAULT_REFIT_STEPS,
+    DEFAULT_STEPS,
+    fit_for_method,
 )
 from i2v_verifier import (  # noqa: E402
     appear_score,
@@ -144,6 +155,7 @@ METHODS = (
     "rf_always_search", "sf_sink",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
+    "ada_fixed", "ada_stream", "ada_resid",
 )
 TAIL_HISTORY_LATENTS = 3
 SINK_WINDOW_LATENTS = 21
@@ -165,6 +177,10 @@ PSEUDO_GAMMA = 0.0
 _PSEUDO_GAMMA = PSEUDO_GAMMA
 NOISE_TAU = 0.04
 _NOISE_TAU = NOISE_TAU
+_ADA_STEPS = DEFAULT_STEPS
+_ADA_LR = DEFAULT_LR
+_ADA_BLEND = DEFAULT_BLEND
+_ADA_REFIT_STEPS = DEFAULT_REFIT_STEPS
 RECACHE_LATENTS = 9
 RECACHE_EVERY_LATENTS = 21
 RF_SICK_DROP = 0.8
@@ -850,6 +866,7 @@ def generate_chunked_v2v(
 
     if method == "always_bon":
         method = "seed_bon"
+    ada_kind = method if method in ADASTEER_METHODS else None
     n_chunks = n_gen // chunk_latents
     prefix = encode_prefix_video(pipeline, Path(video_path), prefix_latents, device)
     conditional_dict = pipeline.text_encoder(text_prompts=[prompt])
@@ -861,6 +878,17 @@ def generate_chunked_v2v(
     output[:, :prefix_latents] = prefix[:, :prefix_latents]
     apply_shift(pipeline, default_shift)
     apply_guidance(pipeline, default_cfg)
+
+    ada_ctl = None
+    ada_logs: list[dict] = []
+    if ada_kind is not None:
+        ada_ctl = fit_for_method(
+            pipeline, ada_kind, output[:, :prefix_latents],
+            conditional_dict, device,
+            steps=_ADA_STEPS, lr=_ADA_LR,
+        )
+        ada_logs.append(dict(ada_ctl.fit_log))
+        method = "notta"
 
     committed = prefix_latents
     prefix_pix_n = t2v_pixel_frames(prefix_latents)
@@ -1057,6 +1085,14 @@ def generate_chunked_v2v(
         output[:, committed:committed + chunk_latents] = best["latents"]
         committed += chunk_latents
         committed_pixels = best["pixels"]
+        if ada_kind == "ada_stream" and ada_ctl is not None:
+            win = min(int(prefix_latents), int(committed))
+            ada_logs.append(ada_ctl.stream_update(
+                output[:, committed - win:committed],
+                conditional_dict,
+                steps=_ADA_REFIT_STEPS, lr=_ADA_LR, blend=_ADA_BLEND,
+                device=device, chunk=ci,
+            ))
         apply_shift(pipeline, default_shift)
         apply_guidance(pipeline, default_cfg)
 
@@ -1314,6 +1350,13 @@ def generate_chunked_v2v(
 
     apply_shift(pipeline, default_shift)
     apply_guidance(pipeline, default_cfg)
+    if ada_ctl is not None:
+        if chunk_logs:
+            chunk_logs[0]["adasteer"] = {
+                "method": ada_kind,
+                "fits": ada_logs,
+            }
+        ada_ctl.remove()
     pixels = _decode_pixels(pipeline, output)
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -2249,6 +2292,10 @@ def main() -> int:
     ap.add_argument("--live-min", type=float, default=LIVE_SEARCH_MIN)
     ap.add_argument("--pseudo-gamma", type=float, default=PSEUDO_GAMMA)
     ap.add_argument("--noise-tau", type=float, default=NOISE_TAU)
+    ap.add_argument("--ada-steps", type=int, default=DEFAULT_STEPS)
+    ap.add_argument("--ada-lr", type=float, default=DEFAULT_LR)
+    ap.add_argument("--ada-blend", type=float, default=DEFAULT_BLEND)
+    ap.add_argument("--ada-refit-steps", type=int, default=DEFAULT_REFIT_STEPS)
     ap.add_argument("--sink-size", type=int, default=3)
     ap.add_argument("--local-attn-size", type=int, default=12)
     ap.add_argument("--ll-root", default="")
@@ -2277,9 +2324,14 @@ def main() -> int:
     n_pix = t2v_pixel_frames(args.prefix_latents + n_gen)
     method = "seed_bon" if args.method == "always_bon" else args.method
     global _LIVE_SEARCH_MIN, _PSEUDO_GAMMA, _NOISE_TAU
+    global _ADA_STEPS, _ADA_LR, _ADA_BLEND, _ADA_REFIT_STEPS
     _LIVE_SEARCH_MIN = float(args.live_min)
     _PSEUDO_GAMMA = float(args.pseudo_gamma)
     _NOISE_TAU = float(args.noise_tau)
+    _ADA_STEPS = int(args.ada_steps)
+    _ADA_LR = float(args.ada_lr)
+    _ADA_BLEND = float(args.ada_blend)
+    _ADA_REFIT_STEPS = int(args.ada_refit_steps)
 
     host = _v2v_host_name(method)
     if host == "longlive":

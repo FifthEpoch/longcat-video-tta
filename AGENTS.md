@@ -235,8 +235,12 @@ Per-method `merged_summary.json` lives at:
   Do not mix stem-prompt numbers into caption tables.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-24):** wait for caption
-  WAVE=1. Confirm first sidecar `prompt_source=metadata_csv`.
-  **No WAVE=2** until sidecar. WAVE=4 after WAVE=1 harvest. **No TTC. No I2V.**
+  WAVE=1 sidecar `metadata_csv`. AdaSteer confirmation is
+  **SUBMIT-READY** (`submit_v2v_adasteer.sh`, N=8): ada_fixed /
+  ada_stream / ada_resid. Queues behind WAVE=1. Cite vs caption
+  notta. Spec:
+  `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
+  **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.

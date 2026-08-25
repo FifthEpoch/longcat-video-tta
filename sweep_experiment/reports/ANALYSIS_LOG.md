@@ -3620,3 +3620,15 @@ MAE/sat drop on frames 81–84 = first VAE group past the native
 not x264. In the file, not only the player.
 
 ---
+
+## 2026-08-24 — AdaSteer confirmation on Wan SF V2V
+**Tags:** methodology, wan, v2v, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`
+
+Port paper AdaSteer (t′=t+δ) onto CausalWan time_embedding.
+Confirmation N=8: ada_fixed / ada_stream / ada_resid. Other LongCat
+updates (retrieval, ES, Delta-B/C, LoRA, TTC) stay parked. Cite vs
+caption notta. Do not scale a null. Queues behind caption WAVE=1.
+
+---
