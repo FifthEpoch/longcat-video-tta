@@ -155,7 +155,7 @@ Paper citations live on the per-method slides, not on the roster.
 
 | Method | What we actually do |
 |---|---|
-| Prefix-match (seed / live / appear) | Four futures; keep the one closest to the real 2 s opening |
+| Prefix-match | Four futures; keep the one closest to the real 2 s opening |
 | Rewind | If the chunk froze, try one other seed; keep it only if it moved more |
 | Sick-search | One try until a freeze, then four tries |
 | Pseudo | Hide the last bit of the opening; search the tail only if another seed predicts it better |
@@ -185,8 +185,7 @@ flickering. Not our pixel-tail diagnostic.
 |---|---:|---:|---:|---:|
 | SF do-nothing | 0.665 | 69.65 | 0 | 0.986 |
 | RF (other host) | 0.702 | 70.44 | 0 | 0.983 |
-| seed_bon | 0.705 | 68.88 | 0 | 0.988 |
-| appear | 0.730 | 69.06 | 0 | — |
+| Prefix-match | 0.705 | 68.88 | 0 | 0.988 |
 | rewind | 0.680 | 69.44 | 0 | 0.985 |
 | sick | 0.669 | 69.13 | 0 | 0.986 |
 | pseudo | 0.691 | 69.83 | **0.50** | 0.982 |
