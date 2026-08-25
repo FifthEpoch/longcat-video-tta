@@ -17,9 +17,9 @@ blank. Tails below are a generate diagnostic only.
 | **16310319** | rolling_notta | COMPLETED 0:0 27m | **32/32** |
 | **16310320** | sf_rewind | COMPLETED 0:0 1h13 | **32/32** |
 | **16310321** | sf_sick_search | COMPLETED 0:0 1h37 | **32/32** |
-| **16310322** | sf_pseudo | RUNNING 2h22 | **27/32** |
+| **16310322** | sf_pseudo | left squeue 00:37 — harvest | was 27/32 |
 | **16310323** | sf_sink | generate 32/32 in harvest | **32/32** |
-| **16310324** | sf_always_search | still writing | **9/32** |
+| **16310324** | sf_always_search | R 2h51 gh119 | was 9/32 |
 | **16310325–329** | RF always / rewind / sick / pseudo / sink | generate 32/32 in harvest | **32/32** |
 | **16310330** | VBench full clip | PD (Dependency) | — |
 | **16314667–669** | AdaSteer 8v | **FAILED 2:0** (~3m, 0 mp4) | crash |

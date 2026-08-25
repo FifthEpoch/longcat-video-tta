@@ -3727,3 +3727,14 @@ Cluster pulled `385f21a`. New jobs PD behind caption pseudo /
 always. First R must print `|δ|=`. No N=32. No WAVE=2.
 
 ---
+
+## 2026-08-25 — WAVE=1 down to always-search; AdaSteer left queue
+**Tags:** jobs, wan, v2v, captions
+**Owner:** agent
+**Refs:** experiment_outputs/2026-08-25.md
+
+squeue is only **16310324** (SF always R 2h51) and VBench 330.
+Pseudo 322 and AdaSteer 558–563 are gone. Harvest 322. sacct
+AdaSteer before calling a crash or a result. No WAVE=2.
+
+---
