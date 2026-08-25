@@ -89,14 +89,20 @@ submit_vbench() {
     local root="${PROJECT_ROOT}/wan_experiment/results/${series}"
     local VIDEO_DIRS
     VIDEO_DIRS=$(printf '%s ' "${dirs[@]}")
-    local DEPS
-    DEPS=$(IFS=:; echo "${JOBS[*]}")
+    local extra=()
+    local dep_msg="no dep (skip-existing)"
+    if ((${#JOBS[@]})); then
+        local DEPS
+        DEPS=$(IFS=:; echo "${JOBS[*]}")
+        extra+=(--dependency="afterok:${DEPS}")
+        dep_msg="afterok ${DEPS}"
+    fi
     local VB
     VB=$(sbatch --parsable --account="${ACCOUNT}" --time="${VBENCH_WALL}" \
-        --dependency="afterok:${DEPS}" \
+        "${extra[@]}" \
         --export=ALL,SERIES_DIR="${root}",VIDEO_DIRS="${VIDEO_DIRS}",CLIPS=full \
         "${SB}/run_i2v_vbench.sbatch")
-    echo "VBench ${series} job ${VB} afterok ${DEPS}"
+    echo "VBench ${series} job ${VB} ${dep_msg}"
     JOBS+=("${VB}")
 }
 
@@ -250,9 +256,34 @@ run_wave4() {
     echo "WAVE=4 caption N=128 hosts only. Do not mix with stem rolling-128."
 }
 
+run_wave_leftover() {
+    # 16310330 CANCELLED after SF-family VBench. RF + always still blank.
+    # appear_bon CANCELLED at 27/32. Prefix VBench 467 never started.
+    local S1="v2v_panda_caption_32v"
+    local R1="${PROJECT_ROOT}/wan_experiment/results/${S1}"
+    JOBS=()
+    submit_vbench "${S1}" \
+        "${R1}/sf_always_search_h30s_shard0" \
+        "${R1}/rf_always_search_h30s_shard0" \
+        "${R1}/rf_rewind_h30s_shard0" \
+        "${R1}/rf_sick_search_h30s_shard0" \
+        "${R1}/rf_pseudo_h30s_shard0" \
+        "${R1}/rf_sink_h30s_shard0"
+    local S2="v2v_panda_caption_prefix_32v"
+    local R2="${PROJECT_ROOT}/wan_experiment/results/${S2}"
+    JOBS=()
+    submit_method "${S2}" appear_bon 4 32 "${SEARCH_WALL}"
+    submit_vbench "${S2}" \
+        "${R2}/seed_bon_h30s_shard0" \
+        "${R2}/live_bon_h30s_shard0" \
+        "${R2}/appear_bon_h30s_shard0"
+    echo "WAVE=leftover. VBench skip-existing on scored SF family. Resume appear_bon."
+}
+
 case "${WAVE}" in
     1) run_wave1 ;;
     prefix) run_wave_prefix ;;
+    leftover) run_wave_leftover ;;
     cross) run_wave_cross ;;
     2) run_wave2 ;;
     3) run_wave3 ;;
@@ -268,7 +299,7 @@ case "${WAVE}" in
         run_wave4
         ;;
     *)
-        echo "ERROR: WAVE must be 1, prefix, cross, 2, 3, 4, or all (got ${WAVE})" >&2
+        echo "ERROR: WAVE must be 1, prefix, leftover, cross, 2, 3, 4, or all (got ${WAVE})" >&2
         exit 2
         ;;
 esac

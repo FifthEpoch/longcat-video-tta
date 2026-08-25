@@ -3838,3 +3838,16 @@ replacing stem method cards. Do not invent dims from an empty
 queue.
 
 ---
+
+## 2026-08-25 — Caption Pseudo Dyn 0; 330 cancelled; leftover VBench
+**Tags:** results, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_vbench_read.md`
+
+16310330 CANCELLED after writing SF family n=32. Caption Pseudo
+**Dyn 0** (stem was 0.50) with tail +28% and IQ/subject hold.
+Sink subject 0.672 fails −0.02. Prefix seed −18%. Cross NO
+(rf_chunk flick 0.975). Resume appear + leftover VBench only.
+Do not cite stem Dyn 0.50 as caption.
+
+---

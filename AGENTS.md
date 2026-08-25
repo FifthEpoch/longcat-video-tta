@@ -241,12 +241,11 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** wait 330 + prefix
-  464–467. Optional bedtime paste: `WAVE=cross` (sf_roll /
-  rf_chunk) — only slide method with no caption job. AdaSteer
-  N=8 is **NO**. Audit:
-  `paper_tables/2026-08-25_wan_v2v_slide_caption_audit.md`.
-  **No TTC. No I2V. No WAVE=2 dump. No AdaSteer N=32.**
+- **Current next experiment (2026-08-25):** `WAVE=leftover` —
+  VBench always + RF family; resume appear_bon 27→32 + Prefix
+  VBench. Caption Pseudo Dyn is **0**. AdaSteer N=8 **NO**.
+  Table: `paper_tables/2026-08-25_wan_v2v_caption_vbench_read.md`.
+  **No TTC. No I2V. No AdaSteer N=32.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -304,9 +303,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 16:31):
-  `squeue` empty. Harvest WAVE=1 VBench **16310330**, Prefix
-  **16328464–467**, Cross **16328612–614**. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 16:36):
+  Queue empty until `WAVE=leftover`. 330/466/467 CANCELLED.
+  Cross DONE. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
