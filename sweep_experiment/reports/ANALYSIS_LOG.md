@@ -3826,3 +3826,15 @@ only if they want that row overnight; it shares the 2-H200 cap
 with prefix. Do not scale AdaSteer. Do not dump WAVE=2.
 
 ---
+
+## 2026-08-25 — Caption queue empty; harvest before slide swap
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_slide_caption_audit.md`
+
+Cross **16328612–614** submitted (preflight metadata_csv). Later
+squeue empty. Sacct + harvest prefix/cross/WAVE=1 VBench before
+replacing stem method cards. Do not invent dims from an empty
+queue.
+
+---

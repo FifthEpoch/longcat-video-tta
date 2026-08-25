@@ -14,6 +14,8 @@ from pathlib import Path
 ROOT = Path("/scratch/wc3013/longcat-video-tta/wan_experiment/results")
 CAP = ROOT / "v2v_panda_caption_32v"
 ADA = ROOT / "v2v_panda_adasteer_8v"
+PREFIX = ROOT / "v2v_panda_caption_prefix_32v"
+CROSS = ROOT / "v2v_panda_caption_cross_32v"
 
 CAP_METHODS = (
     "notta",
@@ -30,6 +32,8 @@ CAP_METHODS = (
     "rf_sink",
 )
 ADA_METHODS = ("ada_fixed", "ada_stream", "ada_resid")
+PREFIX_METHODS = ("seed_bon", "live_bon", "appear_bon")
+CROSS_METHODS = ("sf_roll", "rf_chunk")
 VB_DIMS = (
     "subject_consistency",
     "imaging_quality",
@@ -110,6 +114,14 @@ def _vbench(d: Path) -> dict | None:
             if isinstance(cell, dict) and cell.get("median") is not None:
                 out[dim] = float(cell["median"])
         if out:
+            n = None
+            for dim in VB_DIMS:
+                cell = pop.get(dim)
+                if isinstance(cell, dict):
+                    n = cell.get("n") or cell.get("count") or cell.get("num_videos")
+                    if n is not None:
+                        break
+            out["_n"] = n
             return out
     return None
 
@@ -128,8 +140,10 @@ def _print_vbench(label: str, d: Path, vb: dict | None) -> None:
     if not vb:
         print(f"  {label:18} VBench —")
         return
+    n = vb.get("_n")
+    n_s = "" if n is None else f" n={n}"
     print(
-        f"  {label:18} VBench subj={_fmt(vb.get('subject_consistency'), 3)} "
+        f"  {label:18} VBench{n_s} subj={_fmt(vb.get('subject_consistency'), 3)} "
         f"IQ={_fmt(vb.get('imaging_quality'), 2)} "
         f"Dyn={_fmt(vb.get('dynamic_degree'), 2)} "
         f"flick={_fmt(vb.get('temporal_flickering'), 3)}"
@@ -246,6 +260,47 @@ def main() -> int:
         w, l, t = _wl(keys, rows, notta8)
         print(f"{m:18} paired={len(keys)} tail={_fmt(med)} vsSF8={_pct(med, bmed)} {w}/{l}/{t}")
     peek_errors(ADA, ADA_METHODS)
+
+    notta = _rows(_dir(CAP, "notta"))
+    print("\n== Prefix-match vs caption notta ==")
+    print(f"path {PREFIX} exists={PREFIX.is_dir()}")
+    for m in PREFIX_METHODS:
+        d = _dir(PREFIX, m)
+        rows = _rows(d)
+        keys = sorted(set(rows) & set(notta))
+        med = _median([float(rows[k]["tail_motion"]) for k in keys])
+        bmed = _median([float(notta[k]["tail_motion"]) for k in keys])
+        w, l, t = _wl(keys, rows, notta)
+        mp4 = len(list(d.glob("*.mp4"))) if d.is_dir() else 0
+        src = ",".join(_sources(rows)) or "?"
+        print(
+            f"{m:18} n={len(rows):2d} mp4={mp4:2d} {src:16} "
+            f"tail={_fmt(med)} vsSF={_pct(med, bmed)} {w}/{l}/{t}"
+        )
+        _print_vbench(m, d, _vbench(d))
+        if rows:
+            sample = next(iter(rows.values()))
+            print(f"  {m:18} prompt_source={sample.get('prompt_source')} "
+                  f"prompt={(sample.get('prompt') or '')[:80]}")
+
+    print("\n== Crossed host vs caption notta ==")
+    print(f"path {CROSS} exists={CROSS.is_dir()}")
+    for m in CROSS_METHODS:
+        d = _dir(CROSS, m)
+        rows = _rows(d)
+        keys = sorted(set(rows) & set(notta))
+        med = _median([float(rows[k]["tail_motion"]) for k in keys])
+        bmed = _median([float(notta[k]["tail_motion"]) for k in keys])
+        w, l, t = _wl(keys, rows, notta)
+        mp4 = len(list(d.glob("*.mp4"))) if d.is_dir() else 0
+        src = ",".join(_sources(rows)) or "?"
+        print(
+            f"{m:18} n={len(rows):2d} mp4={mp4:2d} {src:16} "
+            f"tail={_fmt(med)} vsSF={_pct(med, bmed)} {w}/{l}/{t}"
+        )
+        _print_vbench(m, d, _vbench(d))
+    peek_errors(PREFIX, PREFIX_METHODS)
+    peek_errors(CROSS, CROSS_METHODS)
     return 0
 
 

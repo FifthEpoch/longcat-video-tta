@@ -304,10 +304,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 02:52):
-  Caption VBench **16310330** R 1h38 gl020. Prefix-match
-  **16328464** seed_bon / **465** live_bon / **466** appear_bon
-  PD h200. VBench **16328467** afterok. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 16:31):
+  `squeue` empty. Harvest WAVE=1 VBench **16310330**, Prefix
+  **16328464–467**, Cross **16328612–614**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
