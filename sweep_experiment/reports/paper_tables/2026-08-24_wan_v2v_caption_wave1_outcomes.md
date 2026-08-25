@@ -17,13 +17,14 @@ blank. Tails below are a generate diagnostic only.
 | **16310319** | rolling_notta | COMPLETED 0:0 27m | **32/32** |
 | **16310320** | sf_rewind | COMPLETED 0:0 1h13 | **32/32** |
 | **16310321** | sf_sick_search | COMPLETED 0:0 1h37 | **32/32** |
-| **16310322** | sf_pseudo | left squeue 00:37 — harvest | was 27/32 |
+| **16310322** | sf_pseudo | COMPLETED 0:0 2h44 | **32/32** |
 | **16310323** | sf_sink | generate 32/32 in harvest | **32/32** |
-| **16310324** | sf_always_search | R 2h51 gh119 | was 9/32 |
+| **16310324** | sf_always_search | R ~2h55 | **29/32** |
 | **16310325–329** | RF always / rewind / sick / pseudo / sink | generate 32/32 in harvest | **32/32** |
 | **16310330** | VBench full clip | PD (Dependency) | — |
-| **16314667–669** | AdaSteer 8v | **FAILED 2:0** (~3m, 0 mp4) | crash |
-| **16314670** | AdaSteer VBench | CANCELLED (afterok) | — |
+| **16314667–669** | AdaSteer 8v (first) | FAILED 2:0 inference_mode | closed |
+| **16321558 / 560 / 562** | AdaSteer 8v (retry) | **FAILED 2:0** inplace IM cache | crash |
+| **16321563** | AdaSteer VBench | CANCELLED | — |
 
 ## vs caption Self-Forcing (SF-hosted)
 
@@ -33,9 +34,9 @@ blank. Tails below are a generate diagnostic only.
 | rolling_notta (RF host) | 32 | 0.01423 | +22% | 23/9/0 | pending |
 | sf_rewind | 32 | 0.01262 | +8% | 23/5/4 | pending |
 | sf_sick_search | 32 | 0.01164 | **+0%** | 19/4/9 | pending |
-| sf_pseudo | **27** | 0.01494 | +28% | 19/0/8 | running |
+| sf_pseudo | 32 | 0.01492 | **+28%** | **23/0/9** | pending |
 | sf_sink | 32 | 0.01907 | +64% | 31/1/0 | pending |
-| sf_always_search | **9** | 0.01494 | +22% | 9/0/0 | running |
+| sf_always_search | **29** | 0.01591 | +36% | 27/2/0 | running |
 
 `notta` “fire 28” in the harvest script is a false count (`last_sick`
 on do-nothing chunks). Ignore it.
@@ -63,22 +64,24 @@ RF-paired W/L was not in this paste.
 - **Rewind** still a small typical plus (+8%, 23/5/4).
 - **Sink** is still the large tail mover on both hosts (+64% SF /
   +42% vs RF). Official identity / flicker unknown until VBench.
-- **Pseudo** is incomplete (27). Partial +28% / 19/0/8. Do not
-  compare to stem +37% until 32.
-- **Always-search** is n=9. Same partial median as the 27-video
-  pseudo (0.01494). Not a gate-vs-pick call.
+- **Pseudo** is now 32/32: +28% vs caption SF, **23/0/9**.
+  Stem was +37% / 25/2/5. Caption win set is all wins or ties,
+  no losses. VBench still required.
+- **Always-search** is 29/32, +36% / 27/2. Not a gate-vs-pick
+  call until 32.
 - **RF host** still beats caption SF (+22%). RF sick is a wash vs
   that host. RF always +25% vs rolling is the first caption look at
   “gate vs pick” on RF — VBench still required.
 - Caption SF baseline is lower than stem SF (0.01164 vs 0.0135).
 
-## AdaSteer — crashed, not a null
+## AdaSteer — second crash, still not a null
 
-All three arms **FAILED 2:0** in ~3 minutes. 0 mp4. 9 json = 8
-per-video error stubs + `summary.json` (`n_ok != n` → exit 2).
-Captions loaded (`metadata_csv`). VBench 670 cancelled. This is a
-hook / fit crash, **not** “AdaSteer is dead on Wan.” Do not scale.
-Do not resubmit until the first error json is read.
+Retry **16321558 / 560 / 562** FAILED 2:0 in ~2 m. 0 mp4.
+`Inplace update to inference tensor outside InferenceMode` — KV
+caches were allocated under the runner’s IM, then written after we
+left IM. Fix: AdaSteer generate is not wrapped in IM; caches are
+dropped and re-allocated; inputs cloned. Resubmit N=8 after pull.
+Do not write “dead on Wan.” Do not submit N=32.
 
 ## Do not
 

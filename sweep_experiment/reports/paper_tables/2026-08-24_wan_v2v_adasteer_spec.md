@@ -51,10 +51,16 @@ inside locked bars. Else **NO**. Do not scale a null.
 
 Submit: `bash wan_experiment/sbatch/submit_v2v_adasteer.sh`
 
-**RESUBMITTED 2026-08-24 22:50** after the inference_mode fix
-(`385f21a`). **16321558** ada_fixed, **16321560** ada_stream,
-**16321562** ada_resid, VBench **16321563** afterok. PD behind
-caption WAVE=1 (322 / 324 still R). First R log must show
-`adasteer prefix … |δ|=`, not the old RuntimeError. Do not write
-“dead on Wan.” Do not submit N=32. Old fail jobs **16314667–670**
-are closed.
+**RETRY FAILED 2026-08-25 00:15–00:35.** **16321558 / 560 / 562**
+exit 2:0, 0 mp4. New error: inplace update to an inference-mode
+KV cache after leaving IM. Second fix: AdaSteer generate is not
+wrapped in `inference_mode`; caches dropped and re-allocated;
+cond/prefix cloned. Resubmit **N=8 only** after pull:
+
+```
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_v2v_adasteer.sh
+```
+
+First log must show `|δ|=`. Do not write “dead on Wan.” Do not
+submit N=32. Closed: **16314667–670**, **16321558–563**.

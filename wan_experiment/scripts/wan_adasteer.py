@@ -23,6 +23,20 @@ DEFAULT_BLEND = 0.5
 DEFAULT_REFIT_STEPS = 5
 
 
+def _clone_cond(conditional_dict: dict) -> dict:
+    out = {}
+    for key, val in conditional_dict.items():
+        out[key] = val.detach().clone() if torch.is_tensor(val) else val
+    return out
+
+
+def _drop_kv_caches(pipeline) -> None:
+    """Caches allocated under inference_mode cannot be updated outside it."""
+    for name in ("kv_cache1", "kv_cache2", "crossattn_cache"):
+        if hasattr(pipeline, name):
+            setattr(pipeline, name, None)
+
+
 def _causal_model(pipeline) -> nn.Module:
     gen = getattr(pipeline, "generator", None)
     model = getattr(gen, "model", gen)
@@ -112,15 +126,17 @@ class WanAdaSteer:
         opt = AdamW([self.delta], lr=float(lr), betas=(0.9, 0.999), eps=1e-15)
         losses: list[float] = []
         raw_norms: list[float] = []
-        # generate_chunked_v2v is called under inference_mode. Tensors
-        # created there cannot grow a graph. Exit IM, clone the prefix,
-        # then fit δ.
+        # Never fit under the runner's inference_mode. Prefix / KV
+        # caches created there are inference tensors; inplace updates
+        # then raise. Drop caches, clone inputs, then fit.
         with torch.inference_mode(False), torch.enable_grad():
             clean = clean_latents.detach().clone()
+            cond = _clone_cond(conditional_dict)
+            _drop_kv_caches(self.pipeline)
             for _ in range(int(steps)):
                 opt.zero_grad(set_to_none=True)
                 loss = _student_x0_loss(
-                    self.pipeline, clean, conditional_dict, device,
+                    self.pipeline, clean, cond, device,
                 )
                 if not loss.requires_grad:
                     raise RuntimeError(
@@ -197,6 +213,7 @@ def _student_x0_loss(pipeline, clean, conditional_dict, device) -> torch.Tensor:
     noisy = pipeline.scheduler.add_noise(
         clean.flatten(0, 1), noise.flatten(0, 1), t_flat,
     ).unflatten(0, clean.shape[:2])
+    _drop_kv_caches(pipeline)
     pipeline._initialize_kv_cache(1, clean.dtype, device)
     pipeline._initialize_crossattn_cache(1, clean.dtype, device)
     timestep = torch.ones([1, n], device=device, dtype=torch.float32) * float(tval)

@@ -3738,3 +3738,16 @@ Pseudo 322 and AdaSteer 558–563 are gone. Harvest 322. sacct
 AdaSteer before calling a crash or a result. No WAVE=2.
 
 ---
+
+## 2026-08-25 — Caption pseudo 32/32; AdaSteer IM-cache crash
+**Tags:** results, bug, wan, v2v, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`
+
+Pseudo COMPLETED: tail 0.01492 **+28%** vs caption SF, 23/0/9.
+Always 29/32 still R. AdaSteer 558/560/562 FAILED: inplace update
+to inference tensor (KV cache allocated under IM). Runner now skips
+IM for AdaSteer methods and drops caches before fit. Resubmit N=8
+after pull. No HOLD. No N=32.
+
+---

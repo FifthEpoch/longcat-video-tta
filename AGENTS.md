@@ -233,16 +233,15 @@ Per-method `merged_summary.json` lives at:
   Runner now reads `metadata.csv`. Caption WAVE=1
   **protocol PASS** (`prompt_source=metadata_csv`, 0 stem).
   Hosts + rewind + sick + sink + RF family generate-done.
-  Pseudo **16310322** left squeue 00:37 (harvest). SF always
-  **16310324** R 2h51. VBench **16310330** waits on 324.
-  AdaSteer **16321558–563** also left squeue — sacct. Old fail
-  **16314667–670** closed. Do not mix stem-prompt numbers into caption tables.
+  Pseudo **16310322** COMPLETED 32/32 tail +28% 23/0/9. SF
+  always **16310324** 29/32 R. VBench **16310330** waits on 324.
+  AdaSteer retry **16321558–563 FAILED** (inplace IM cache).
+  Second fix on main. Old fails closed. Do not mix stem-prompt numbers into caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** harvest caption
-  pseudo 322; wait for always **16310324** + VBench **16310330**.
-  AdaSteer 558–563 left the queue — sacct + `|δ|` / mp4 before
-  calling. Cite vs caption notta. Spec:
+- **Current next experiment (2026-08-25):** wait for always
+  **16310324** + VBench **16310330**. AdaSteer: pull the IM-cache
+  fix and resubmit N=8 only. Cite vs caption notta. Spec:
   `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
   **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -302,10 +301,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 00:37):
-  Caption WAVE=1: **16310324** SF always R 2h51 gh119.
-  VBench **16310330** PD. Pseudo 322 and AdaSteer 558–563
-  left squeue. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 00:39):
+  Caption WAVE=1: **16310324** SF always 29/32 R. VBench
+  **16310330** PD. AdaSteer retry FAILED. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

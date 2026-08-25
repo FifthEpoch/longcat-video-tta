@@ -65,6 +65,7 @@ import itertools
 import json
 import math
 import os
+import contextlib
 import subprocess
 import sys
 import time
@@ -2473,7 +2474,12 @@ def main() -> int:
         _seed_torch(torch, args.seed)
         t0 = time.time()
         try:
-            with torch.inference_mode():
+            gen_ctx = (
+                contextlib.nullcontext()
+                if method in ADASTEER_METHODS
+                else torch.inference_mode()
+            )
+            with gen_ctx:
                 if method == "knob_probe":
                     probe = generate_knob_probe(
                         pipeline, Path(item["video_path"]), item["prompt"],
