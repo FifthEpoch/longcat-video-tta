@@ -269,6 +269,7 @@ run_wave_leftover() {
         "${R1}/rf_sick_search_h30s_shard0" \
         "${R1}/rf_pseudo_h30s_shard0" \
         "${R1}/rf_sink_h30s_shard0"
+    local VB1="${JOBS[-1]}"
     local S2="v2v_panda_caption_prefix_32v"
     local R2="${PROJECT_ROOT}/wan_experiment/results/${S2}"
     JOBS=()
@@ -278,6 +279,7 @@ run_wave_leftover() {
         "${R2}/live_bon_h30s_shard0" \
         "${R2}/appear_bon_h30s_shard0"
     echo "WAVE=leftover. VBench skip-existing on scored SF family. Resume appear_bon."
+    echo "Cancel leftover only:  scancel ${VB1} ${JOBS[*]}"
 }
 
 case "${WAVE}" in

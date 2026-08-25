@@ -51,13 +51,9 @@ IQ ≥ 70.54, subject ≥ 0.680.
 
 ## Leftover submit
 
-```bash
-cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-WAVE=leftover bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
-squeue -u $USER
-```
-
-Scores remaining WAVE=1 VBench (always + RF family; skip-existing
-on written SF rows). Resumes `appear_bon` (skip 27 mp4s) then
-Prefix VBench on seed/live/appear. Do not resubmit WAVE=1 generate.
-Do not scale AdaSteer.
+**IN FLIGHT 2026-08-25 16:42.** Preflight `mapped=1000 bad=0`.
+**16350479** WAVE=1 VBench (always + RF family, no dep).
+**16350480** appear_bon resume PD h200. **16350481** Prefix
+VBench afterok 480. Confirm 479 is actually queued (`squeue -j
+16350479`). Cancel leftover only:
+`scancel 16350479 16350480 16350481`.

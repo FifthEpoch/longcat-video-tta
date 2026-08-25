@@ -303,9 +303,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 16:36):
-  Queue empty until `WAVE=leftover`. 330/466/467 CANCELLED.
-  Cross DONE. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 16:42):
+  **16350479** WAVE=1 leftover VBench (confirm in squeue).
+  **16350480** appear_bon resume PD. **16350481** Prefix
+  VBench afterok. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

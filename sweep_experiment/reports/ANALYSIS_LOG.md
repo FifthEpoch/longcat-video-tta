@@ -3851,3 +3851,15 @@ Sink subject 0.672 fails −0.02. Prefix seed −18%. Cross NO
 Do not cite stem Dyn 0.50 as caption.
 
 ---
+
+## 2026-08-25 — Leftover jobs 16350479–481
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_vbench_read.md`
+
+Submitted. 479 = Always + RF VBench (no dep). 480 = appear
+resume. 481 = Prefix VBench afterok 480. This squeue paste
+omitted 479 — confirm it exists. Cancel leftover only:
+16350479 16350480 16350481.
+
+---
