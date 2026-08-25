@@ -5,6 +5,7 @@
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 #   bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh          # WAVE=1
 #   WAVE=prefix bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
+#   WAVE=cross bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=2 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=3 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=4 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
@@ -146,6 +147,18 @@ run_wave_prefix() {
     echo "WAVE=prefix N=32. seed_bon / live_bon / appear_bon. Cite vs caption notta."
 }
 
+run_wave_cross() {
+    # Slide "Crossed host" only. Same-wave twins. Not a controller of ours.
+    local S="v2v_panda_caption_cross_32v"
+    local R="${PROJECT_ROOT}/wan_experiment/results/${S}"
+    submit_method "${S}" sf_roll 1 32 "${GEN_WALL}"
+    submit_method "${S}" rf_chunk 1 32 "${GEN_WALL}"
+    submit_vbench "${S}" \
+        "${R}/sf_roll_h30s_shard0" \
+        "${R}/rf_chunk_h30s_shard0"
+    echo "WAVE=cross N=32. sf_roll / rf_chunk. Cite vs caption notta. Expect H1 twitch."
+}
+
 run_wave2() {
     local S="v2v_panda_caption_closed_32v"
     local R="${PROJECT_ROOT}/wan_experiment/results/${S}"
@@ -240,6 +253,7 @@ run_wave4() {
 case "${WAVE}" in
     1) run_wave1 ;;
     prefix) run_wave_prefix ;;
+    cross) run_wave_cross ;;
     2) run_wave2 ;;
     3) run_wave3 ;;
     4) run_wave4 ;;
@@ -254,7 +268,7 @@ case "${WAVE}" in
         run_wave4
         ;;
     *)
-        echo "ERROR: WAVE must be 1, prefix, 2, 3, 4, or all (got ${WAVE})" >&2
+        echo "ERROR: WAVE must be 1, prefix, cross, 2, 3, 4, or all (got ${WAVE})" >&2
         exit 2
         ;;
 esac

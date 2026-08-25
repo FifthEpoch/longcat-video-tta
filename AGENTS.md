@@ -241,10 +241,12 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** wait. Caption
-  VBench **16310330** R. Prefix-match **16328464–467** queued.
-  AdaSteer N=8 is **NO**. Do not submit more tonight.
-  **No TTC. No I2V. No WAVE=2. No AdaSteer N=32.**
+- **Current next experiment (2026-08-25):** wait 330 + prefix
+  464–467. Optional bedtime paste: `WAVE=cross` (sf_roll /
+  rf_chunk) — only slide method with no caption job. AdaSteer
+  N=8 is **NO**. Audit:
+  `paper_tables/2026-08-25_wan_v2v_slide_caption_audit.md`.
+  **No TTC. No I2V. No WAVE=2 dump. No AdaSteer N=32.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.

@@ -3813,3 +3813,16 @@ submit. Morning: sidecar `metadata_csv`, then harvest vs caption
 notta. Do not scancel 16288113–115.
 
 ---
+
+## 2026-08-25 — Slide caption audit; only crossed-host missing
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_slide_caption_audit.md`
+
+Every slide controller is caption-submitted or has caption
+metrics except Crossed host. AdaSteer has caption N=8. Prefix
+16328464–467 queued. Family VBench 330 R. Submit `WAVE=cross`
+only if they want that row overnight; it shares the 2-H200 cap
+with prefix. Do not scale AdaSteer. Do not dump WAVE=2.
+
+---
