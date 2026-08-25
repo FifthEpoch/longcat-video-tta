@@ -148,6 +148,21 @@ vs dynamics).
 
 **Protocol:** 9 real latents + 6 × 21 generated. Same first 32.
 
+Weights stay frozen. Three knobs only: try several random
+futures; a cheap check that decides whether those extra tries
+are worth paying for; keep the opening frames in memory.
+Paper citations live on the per-method slides, not on the roster.
+
+| Method | What we actually do | Call |
+|---|---|---|
+| Prefix-match (seed / live / appear) | Four futures; keep the one closest to the real 2 s opening | NO — damps moving clips |
+| Rewind | If the chunk froze, try one other seed; keep it only if it moved more | HOLD +6% |
+| Sick-search | One try until a freeze, then four tries | NO — too late |
+| Pseudo | Hide the last bit of the opening; search the tail only if another seed predicts it better | HOLD +37% |
+| Sink | Keep opening tokens in attention; no search | HOLD / no-scale +72% |
+| Always-search | Four tries every chunk; no “should we search?” check | In flight |
+| Crossed host (H1) | SF student + RF window (or reverse) | NO — twitch |
+
 ### 5.1 Do-nothing SF (`notta`) — the baseline
 
 Just write the default seed every chunk. Tail **0.0135**. Subject
