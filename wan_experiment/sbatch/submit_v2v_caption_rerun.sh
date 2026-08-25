@@ -4,6 +4,7 @@
 #
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 #   bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh          # WAVE=1
+#   WAVE=prefix bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=2 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=3 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=4 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
@@ -130,6 +131,21 @@ run_wave1() {
     echo "WAVE=1 paper N=32. Cite vs caption notta. Stem tables stay audit."
 }
 
+run_wave_prefix() {
+    # Slide Prefix-match only. WAVE=1 already has hosts + family.
+    # Do not dump quiet_bon / sf_roll / host-split.
+    local S="v2v_panda_caption_prefix_32v"
+    local R="${PROJECT_ROOT}/wan_experiment/results/${S}"
+    submit_method "${S}" seed_bon 4 32 "${SEARCH_WALL}"
+    submit_method "${S}" live_bon 4 32 "${SEARCH_WALL}"
+    submit_method "${S}" appear_bon 4 32 "${SEARCH_WALL}"
+    submit_vbench "${S}" \
+        "${R}/seed_bon_h30s_shard0" \
+        "${R}/live_bon_h30s_shard0" \
+        "${R}/appear_bon_h30s_shard0"
+    echo "WAVE=prefix N=32. seed_bon / live_bon / appear_bon. Cite vs caption notta."
+}
+
 run_wave2() {
     local S="v2v_panda_caption_closed_32v"
     local R="${PROJECT_ROOT}/wan_experiment/results/${S}"
@@ -223,6 +239,7 @@ run_wave4() {
 
 case "${WAVE}" in
     1) run_wave1 ;;
+    prefix) run_wave_prefix ;;
     2) run_wave2 ;;
     3) run_wave3 ;;
     4) run_wave4 ;;
@@ -237,7 +254,7 @@ case "${WAVE}" in
         run_wave4
         ;;
     *)
-        echo "ERROR: WAVE must be 1, 2, 3, 4, or all (got ${WAVE})" >&2
+        echo "ERROR: WAVE must be 1, prefix, 2, 3, 4, or all (got ${WAVE})" >&2
         exit 2
         ;;
 esac

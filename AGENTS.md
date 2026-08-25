@@ -241,13 +241,12 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** wait for caption
-  VBench **16310330** to finish, then fill remaining official
-  dims (sick / pseudo / sink / always / RF family). Always
-  generate is +39% — no call until those dims. AdaSteer N=8
-  is **NO**. Table:
-  `paper_tables/2026-08-25_wan_v2v_caption_always_adasteer.md`.
-  **No TTC. No I2V. No WAVE=2. No AdaSteer N=32.**
+- **Current next experiment (2026-08-25):** caption Prefix-match
+  N=32 (`WAVE=prefix`: seed_bon / live_bon / appear_bon) to
+  replace stem slide scores. WAVE=1 family already caption
+  32/32 — wait **16310330**. AdaSteer N=8 is **NO**. Spec:
+  `paper_tables/2026-08-25_wan_v2v_caption_prefix32_spec.md`.
+  **No TTC. No I2V. No WAVE=2 dump. No AdaSteer N=32.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.

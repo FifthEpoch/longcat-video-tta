@@ -3788,3 +3788,16 @@ host on quality” does not copy under real captions. AdaSteer
 This is a Wan measurement, not LongCat leakage.
 
 ---
+
+## 2026-08-25 — Caption Prefix-match N=32 only (not a full relaunch)
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_prefix32_spec.md`
+
+Slide VBench is stem except AdaSteer / Always tails / 3 provisional
+caption host rows. WAVE=1 already has caption N=32 for SF/RF/family/
+always. Do not resubmit those. Do not dump WAVE=2 (`sf_roll`,
+quiet, host-split). Do not scale AdaSteer. Submit only
+`seed_bon` / `live_bon` / `appear_bon` as `v2v_panda_caption_prefix_32v`.
+
+---

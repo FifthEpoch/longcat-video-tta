@@ -46,7 +46,8 @@ scripts, I2V, TTC.
 **GENERATE HARVEST 2026-08-24 22:45.** Most arms 32/32 in
 [`outcomes`](2026-08-24_wan_v2v_caption_wave1_outcomes.md). Pseudo
 27 + SF always 9 still running. VBench **16310330** afterok those.
-Do not submit WAVE=2.
+Do not submit full WAVE=2. Prefix-match slide rows: `WAVE=prefix`
+(`2026-08-25_wan_v2v_caption_prefix32_spec.md`).
 
 ## Harvest
 
