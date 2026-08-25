@@ -43,10 +43,11 @@ scripts, I2V, TTC.
 
 ## Status
 
-**IN FLIGHT 2026-08-24 18:28.** Preflight `mapped=1000 bad=0`.
-Generate **16310318–329** (PD h200). VBench **16310330** afterok
-L40S. Stem always-search not in this `squeue`. Do not submit WAVE=2
-until WAVE=1 is running and the first sidecar is `metadata_csv`.
+**IN FLIGHT 2026-08-24 20:18.** Preflight `mapped=1000 bad=0`.
+**16310318** notta still R 1h44. Rolling **16310319** and rewind
+**16310320** left squeue — inspect those sidecars now. 321–329 PD
+QOS. VBench **16310330** afterok all generate. Do not harvest vs
+caption notta until 318 finishes. Do not submit WAVE=2.
 
 ## Harvest
 
