@@ -20,15 +20,16 @@ Protocol check **PASS:** every sidecar `prompt_source=metadata_csv`,
 
 ## Caption tails (median, N=32)
 
-| Method | tail | vs caption SF | vs stem same-method |
-|---|---:|---:|---:|
-| notta (SF, caption) | **0.01164** | — | stem was 0.0135 (−14%) |
-| rolling_notta | 0.01423 | **+22%** | stem was 0.0178 |
-| sf_rewind | 0.01262 | **+8%** | stem was 0.0143 |
+| Method | tail | vs caption SF | W/L/tie | paired Δ med | stem (audit) |
+|---|---:|---:|---|---:|---:|
+| notta (SF, caption) | **0.01164** | — | — | — | 0.0135 (−14%) |
+| rolling_notta | 0.01423 | **+22%** | **23/9/0** | +0.00273 | 0.0178; stem W/L 21/11 |
+| sf_rewind | 0.01262 | **+8%** | **23/5/4** | +0.00075 | 0.0143; stem W/L 19/5/8 |
 
 Stem deltas were rolling +31% / rewind +6% vs **stem** notta.
-On captions, rolling still wins the host gap; the gap shrank.
-Rewind is still a small plus. No win/loss counts in this paste.
+On captions, rolling still wins the host gap; the **median** gap
+shrank (+22% vs +31%) but the **win set** got wider (23 vs 21).
+Rewind is still a small median plus; fewer ties than stem.
 
 ## What this does / does not say
 

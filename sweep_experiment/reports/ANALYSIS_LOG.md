@@ -3656,3 +3656,15 @@ only — no VBench, no HOLD/NO. Stem tables stay audit. Sick-search
 321 running. No WAVE=2. AdaSteer still cites this caption notta.
 
 ---
+
+## 2026-08-24 — Caption host pair W/L
+**Tags:** results, wan, v2v, captions
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_wave1_hosts.md`
+
+Paired vs caption SF: rolling 23/9/0 Δmed +0.00273; rewind
+23/5/4 Δmed +0.00075. Rolling win set wider than stem 21/11 even
+though the median gap shrank (+22% vs +31%). Rewind still small
+plus, fewer ties than stem 19/5/8. No VBench. No method call.
+
+---
