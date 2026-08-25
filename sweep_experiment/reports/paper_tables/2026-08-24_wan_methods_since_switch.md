@@ -4,8 +4,10 @@ Audience: anyone. Not a methods paper. Interactive walk-through:
 `~/.cursor/projects/Users-macrohard-Desktop-longcat-video-tta/canvases/wan-methods-since-switch.canvas.tsx`
 
 Cite **medians**. Official quality = **full-clip VBench**. Paper
-baseline now = Self-Forcing do-nothing. Always-search wave
-(16288113–115) is still running — those rows are blank on purpose.
+baseline now = Self-Forcing do-nothing. Canvas expanded 2026-08-24
+evening: AdaSteer LongCat-vs-Wan + per-method sampling-space
+slides. Caption WAVE=1 and AdaSteer 8v are **in flight** — Wan
+AdaSteer is not called dead. Stem-prompt V2V tables stay an audit.
 
 ---
 
@@ -79,6 +81,28 @@ then spend k. Otherwise write the default seed (same as do-nothing).
 | **Full clip, not last 5 s** | That is the comparable VBench++ number. last5 lied to us on I2V. | |
 
 We cite medians because one video (I2V #26) already pulled a mean.
+
+---
+
+## 3b. AdaSteer — LongCat closed, Wan unconfirmed
+
+**Question:** Does a single activation residual δ (t′ = t + δ)
+help a *smaller* causal student on *30 s* AR, given it was
+saturated on LongCat 14→14?
+
+**Hypothesis:** Wan 1.3B + 30 s is more headroom than LongCat
+13.6B + 14 frames. Streaming refit might matter here even though
+it was NULL on LongCat native AR.
+
+**Papers:** Our AdaSteer method tex; Huang et al. Self Forcing
+limitation (quality drop past 5 s). Not LoRA. Not TTC.
+
+**LongCat outcome (closed):** ADA ≈ NOTTA at Panda 999 / UCF 932.
+Stream δ NULL (N=8). Placement adaln = residual, both lost.
+
+**Wan confirmation (IN FLIGHT):** `ada_fixed` / `ada_stream` /
+`ada_resid` N=8, jobs **16314667–669**. Cite vs caption notta.
+Do not call Wan dead from the LongCat table.
 
 ---
 
