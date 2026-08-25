@@ -51,6 +51,9 @@ inside locked bars. Else **NO**. Do not scale a null.
 
 Submit: `bash wan_experiment/sbatch/submit_v2v_adasteer.sh`
 
-**IN FLIGHT 2026-08-24 19:20.** **16314667** ada_fixed, **16314668**
-ada_stream, **16314669** ada_resid, VBench **16314670** afterok.
-Queues behind caption WAVE=1. No TTC. No I2V.
+**FAILED 2026-08-24 22:48.** **16314667–669** exit 2:0 in ~3 m,
+0 mp4, 8 error sidecars + summary (`n_ok=0`). Captions were
+`metadata_csv`. VBench **16314670** cancelled. This is a crash,
+not a measured null. Do not write “AdaSteer is dead on Wan.” Do
+not resubmit N=8 or N=32 until the first error json / slurm
+traceback is read.

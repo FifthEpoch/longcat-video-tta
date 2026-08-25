@@ -43,10 +43,10 @@ scripts, I2V, TTC.
 
 ## Status
 
-**PROTOCOL PASS 2026-08-24 22:41.** Hosts+rewind 32/32 in
-[`outcomes`](2026-08-24_wan_v2v_caption_wave1_outcomes.md). Sick
-**16310321** left squeue. **16310322–329** running. VBench
-**16310330** still afterok. Do not submit WAVE=2.
+**GENERATE HARVEST 2026-08-24 22:45.** Most arms 32/32 in
+[`outcomes`](2026-08-24_wan_v2v_caption_wave1_outcomes.md). Pseudo
+27 + SF always 9 still running. VBench **16310330** afterok those.
+Do not submit WAVE=2.
 
 ## Harvest
 

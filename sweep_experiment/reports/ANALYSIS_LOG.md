@@ -3692,3 +3692,16 @@ left the queue — next harvest. AdaSteer 667–670 missing from 22:41
 squeue; do not call. No HOLD/NO from tails. No WAVE=2.
 
 ---
+
+## 2026-08-24 — Caption WAVE=1 generate harvest + AdaSteer crash
+**Tags:** results, wan, v2v, captions, adasteer
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`
+
+Caption SF notta 0.01164. Sick **+0%** 19/4/9 (tie). Rewind +8%.
+Sink +64% 31/1. RF host +22%. RF sick −1% vs host. RF always +25%
+vs rolling. Pseudo 27/32 +28% — incomplete. AdaSteer 667–669
+FAILED 2:0 in 3m, 0 mp4, metadata_csv loaded. Exit 2 = n_ok≠n.
+Crash, not a Wan null. VBench still pending. No HOLD/NO.
+
+---

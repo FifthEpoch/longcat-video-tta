@@ -232,16 +232,16 @@ Per-method `merged_summary.json` lives at:
   Tail→panda is T5 takeover. Same-prompt deltas still hold.
   Runner now reads `metadata.csv`. Caption WAVE=1
   **protocol PASS** (`prompt_source=metadata_csv`, 0 stem).
-  Hosts + rewind generate-done **16310318–320** 32/32 0:0.
-  Sick **16310321** left squeue (harvest). **16310322–329**
-  still R. VBench **16310330**. AdaSteer **16314667–670**
-  missing from 22:41 squeue — sacct. Do not mix stem-prompt
-  numbers into caption tables.
+  Hosts + rewind + sick + sink + RF family generate-done.
+  Pseudo **16310322** 27/32 R; SF always **9/32**. VBench
+  **16310330** waits. AdaSteer **16314667–669 FAILED** 2:0
+  (0 mp4) — crash, not a null. Do not mix stem-prompt numbers
+  into caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-24):** harvest caption
-  sick 321; wait for remaining WAVE=1 + VBench. AdaSteer
-  status unknown until sacct. Cite vs caption notta. Spec:
+- **Current next experiment (2026-08-24):** wait for caption
+  pseudo + always + VBench. AdaSteer: read first error json
+  before any resubmit. Cite vs caption notta. Spec:
   `paper_tables/2026-08-24_wan_v2v_adasteer_spec.md`.
   **No TTC. No I2V.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -301,12 +301,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 22:41):
-  Caption WAVE=1 protocol PASS. notta/rolling/rewind
-  **16310318–320** 32/32 harvested. Sick **16310321** left
-  squeue. Pseudo **16310322** R 1h49; sink + always + RF
-  family **16310323–329** R 27m. VBench **16310330** PD.
-  AdaSteer **16314667–670** not in squeue. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-24 22:45):
+  Caption WAVE=1: most generate 32/32. **16310322** pseudo
+  27/32 R; SF always 9/32. VBench **16310330** PD. AdaSteer
+  **16314667–669 FAILED**; **16314670** cancelled. **No I2V.
+  No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
