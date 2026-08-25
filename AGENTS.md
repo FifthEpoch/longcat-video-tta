@@ -300,11 +300,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-24 20:26):
+- **In-flight cluster jobs** (as of 2026-08-24 20:37):
   Caption WAVE=1 protocol PASS. notta/rolling/rewind
-  **16310318–320** COMPLETED 0:0 32/32. **16310321** sick R
-  3m gh131. 322–329 + AdaSteer **16314667–669** PD QOS.
-  VBench **16310330** / **16314670**. **No I2V. No TTC.**
+  **16310318–320** COMPLETED 0:0 32/32. **16310321** sick +
+  **16310322** pseudo R 12m. 323–329 + AdaSteer **16314667–669**
+  PD QOS. VBench **16310330** / **16314670**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
