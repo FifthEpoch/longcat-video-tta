@@ -113,6 +113,9 @@ def _vbench(d: Path) -> dict | None:
             cell = pop.get(dim)
             if isinstance(cell, dict) and cell.get("median") is not None:
                 out[dim] = float(cell["median"])
+            if dim == "dynamic_degree" and isinstance(cell, dict):
+                if cell.get("mean") is not None:
+                    out["dynamic_degree_mean"] = float(cell["mean"])
         if out:
             n = None
             for dim in VB_DIMS:
@@ -142,10 +145,20 @@ def _print_vbench(label: str, d: Path, vb: dict | None) -> None:
         return
     n = vb.get("_n")
     n_s = "" if n is None else f" n={n}"
+    dyn_mean = vb.get("dynamic_degree_mean")
+    if dyn_mean is not None:
+        n_dyn = None
+        if n is not None:
+            n_dyn = int(round(float(dyn_mean) * int(n)))
+        dyn_s = f"{100.0 * float(dyn_mean):.1f}%"
+        if n_dyn is not None:
+            dyn_s += f" ({n_dyn}/{int(n)})"
+    else:
+        dyn_s = _fmt(vb.get("dynamic_degree"), 2)
     print(
         f"  {label:18} VBench{n_s} subj={_fmt(vb.get('subject_consistency'), 3)} "
         f"IQ={_fmt(vb.get('imaging_quality'), 2)} "
-        f"Dyn={_fmt(vb.get('dynamic_degree'), 2)} "
+        f"Dyn={dyn_s} "
         f"flick={_fmt(vb.get('temporal_flickering'), 3)}"
     )
 
