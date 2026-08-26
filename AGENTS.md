@@ -241,12 +241,12 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** `WAVE=rfsink` only
-  — last missing official row. Caption Pseudo Dyn **0**. Always
-  HOLD ablation. Prefix-match NO (identity damper). AdaSteer
-  N=8 **NO**. Table:
-  `paper_tables/2026-08-25_wan_v2v_caption_official.md`.
-  **No TTC. No I2V. No AdaSteer N=32.**
+- **Current next experiment (2026-08-25):** Caption official
+  N=32 **DONE**. `rf_sink` VBench **16358585** COMPLETED 0:0:
+  0.709 / 70.15 / 0 / 0.980. IQ −1.39 vs SF. Pseudo Dyn **0**.
+  Always HOLD ablation. Prefix-match NO. AdaSteer N=8 **NO**.
+  Table: `paper_tables/2026-08-25_wan_v2v_caption_official_complete.md`.
+  **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -304,9 +304,8 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 20:07):
-  `WAVE=rfsink` **16358585** left the queue (was PD). Harvest
-  before calling COMPLETED. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 20:26):
+  Queue empty. Caption official N=32 complete. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

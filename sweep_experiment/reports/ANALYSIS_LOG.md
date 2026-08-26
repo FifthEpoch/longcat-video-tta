@@ -3888,3 +3888,16 @@ empty. Harvest before writing official dims. Do not fill from
 stem flicker 0.977.
 
 ---
+
+## 2026-08-25 — Caption official complete; rf_sink VBench in
+**Tags:** results, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_official_complete.md`
+
+16358585 COMPLETED 0:0 11m. rf_sink n=32 metadata_csv:
+subject 0.709, IQ 70.15, Dyn 0, flicker 0.980. Tail +73% vs
+SF (29/3), +42% vs RF. Subject holds vs SF; IQ −1.39 fails.
+Opposite of SF sink (subject 0.672). Caption official N=32
+complete. Do not cite stem flicker 0.977. No WAVE=2.
+
+---
