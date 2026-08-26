@@ -3901,3 +3901,17 @@ Opposite of SF sink (subject 0.672). Caption official N=32
 complete. Do not cite stem flicker 0.977. No WAVE=2.
 
 ---
+
+## 2026-08-25 — Dyn is percent of clips, not median
+**Tags:** methodology, results, wan, vbench, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_dyn_percent.md`
+
+VBench authors: official Dynamic Degree = mean of per-clip 0/1
+= percent dynamic. We had been citing median (all 0). Caption
+N=32 means: SF 7/32 (21.9%), Always 14/32 (43.8%), Pseudo 13/32
+(40.6%), RF sink 5/32 (15.6%), crossed rf_chunk 24/32 (75.0%).
+Do not cite caption Pseudo as Dyn 0. Subject/IQ/flicker stay
+medians.
+
+---

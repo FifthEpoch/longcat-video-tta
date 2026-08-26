@@ -242,10 +242,11 @@ Per-method `merged_summary.json` lives at:
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
 - **Current next experiment (2026-08-25):** Caption official
-  N=32 **DONE**. `rf_sink` VBench **16358585** COMPLETED 0:0:
-  0.709 / 70.15 / 0 / 0.980. IQ −1.39 vs SF. Pseudo Dyn **0**.
-  Always HOLD ablation. Prefix-match NO. AdaSteer N=8 **NO**.
-  Table: `paper_tables/2026-08-25_wan_v2v_caption_official_complete.md`.
+  N=32 **DONE**. Cite Dyn as **percent of clips** (VBench official),
+  not median. SF 21.9% (7/32), Pseudo **40.6%** (13/32), Always
+  **43.8%** (14/32). `rf_sink` 0.709 / 70.15 / 15.6% / 0.980.
+  Prefix-match NO. AdaSteer N=8 **NO**. Table:
+  `paper_tables/2026-08-25_wan_v2v_caption_dyn_percent.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
