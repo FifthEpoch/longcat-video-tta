@@ -15,6 +15,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Master experiment index** | `sweep_experiment/reports/INDEX.md` | **Single source of truth** for what experiments exist + cluster paths. Read this first when picking up work. |
 | **Analysis log (decisions/findings)** | `sweep_experiment/reports/ANALYSIS_LOG.md` | Append-only log of paper-relevant findings and decisions. NEVER edit past entries. |
 | **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
+| **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
 | **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-06-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
 | **Canonical results memory (legacy)** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Superseded by INDEX.md + ANALYSIS_LOG.md as of 2026-06-08, but kept for history. |
@@ -247,6 +248,9 @@ Per-method `merged_summary.json` lives at:
   **43.8%** (14/32). `rf_sink` 0.709 / 70.15 / 15.6% / 0.980.
   Prefix-match NO. AdaSteer N=8 **NO**. Table:
   `paper_tables/2026-08-25_wan_v2v_caption_dyn_percent.md`.
+  Method note (name + related work + intra-chunk hole):
+  `paper_tables/2026-08-25_pseudo_future_search.md`.
+  Paper name: **Pseudo-future Search** (code `sf_pseudo`).
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES

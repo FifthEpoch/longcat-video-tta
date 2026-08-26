@@ -3927,3 +3927,20 @@ notta mean 196 s is 0002/0019 outliers. RF family 63–82 s.
 Examples copied: panda_0000–0004, 0006 × {notta, always, pseudo}.
 
 ---
+
+## 2026-08-25 — Pseudo-future Search name + related work
+**Tags:** paper-narrative, methodology, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_pseudo_future_search.md`
+
+Paper name is **Pseudo-future Search** (short: Pseudo). The
+held-out last 0.7 s of the real opening is a pseudo-future: a
+stand-in label because we have no GT for the invented 30 s. Code
+stays `sf_pseudo`. Neighbors: Early Failure Detection (when to
+spend; mid-denoise RGB), CachedSearch (always search, cheaper
+tries), speculative decode / LatSearch (verify inside one
+generation). Intra-chunk abort is a real hole — we commit 21
+latents sealed — and is a limitation paragraph, not the 2-month
+method. Do not retune γ. Do not rename sidecars.
+
+---
