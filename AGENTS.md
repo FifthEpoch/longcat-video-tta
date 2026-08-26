@@ -251,7 +251,10 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
+  Intra-chunk probe **SUBMIT-READY** (caption N=8):
+  `paper_tables/2026-08-25_wan_v2v_intra_chunk_spec.md`.
+  `SMOKE=1 bash wan_experiment/sbatch/submit_v2v_intra8.sh`
+  then the same without SMOKE. **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.

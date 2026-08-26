@@ -27,6 +27,7 @@ METHODS = (
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
     "rf_always_search", "sf_sink",
+    "sf_intra", "sf_intra_always", "rf_intra", "rf_intra_always",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
     "ada_fixed", "ada_stream", "ada_resid",

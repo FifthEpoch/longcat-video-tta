@@ -49,6 +49,11 @@ Methods:
   sf_always_search — SF chunked; always k=4; same motion+trust pick as sf_pseudo (no gate)
   rf_always_search — RF rolling; always k=4; same motion+trust pick as rf_sick/rf_pseudo (no gate)
   sf_sink        — SF chunked + LongLive-style sink_size (not HG-f). Not sf_roll.
+  sf_intra       — after each 3-latent block, resample rest if motion OR
+                   appear (sharp / color / sat vs prefix) degrades
+  sf_intra_always — k=4 every block; no sick gate (same-wave always-on)
+  rf_intra       — RF span rewind if motion OR appear sick (host twin)
+  rf_intra_always — RF always try an alt seed on every 21-latent span
   ada_fixed      — AdaSteer: δ on time_embedding, fit once on prefix, hold
   ada_stream     — AdaSteer: refit each chunk, blend toward prefix δ0
   ada_resid      — AdaSteer: δ on mid-late residual blocks, fit once
@@ -154,6 +159,7 @@ METHODS = (
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
     "rf_always_search", "sf_sink",
+    "sf_intra", "sf_intra_always", "rf_intra", "rf_intra_always",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
     "ada_fixed", "ada_stream", "ada_resid",
@@ -185,9 +191,13 @@ _ADA_REFIT_STEPS = DEFAULT_REFIT_STEPS
 RECACHE_LATENTS = 9
 RECACHE_EVERY_LATENTS = 21
 RF_SICK_DROP = 0.8
+INTRA_MOTION_FRAC = 0.8
+INTRA_SHARP_MULT = 1.5
+INTRA_COLOR_MULT = 1.5
+INTRA_SAT_MULT = 1.5
 RF_CONTROLLER_METHODS = frozenset({
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
-    "rf_always_search",
+    "rf_always_search", "rf_intra", "rf_intra_always",
 })
 ROLLING_HOST_METHODS = frozenset({"rf_chunk", "rf_recache"}) | RF_CONTROLLER_METHODS
 ROLLING_SAMPLER_METHODS = frozenset({"sf_roll", "rf_recache"}) | RF_CONTROLLER_METHODS
@@ -845,6 +855,268 @@ def _run_one_chunk(
     return latents, pixels, noise_stats
 
 
+def _mean_saturation(frames: np.ndarray) -> float:
+    """Mean chroma (max-min)/max on RGB[0,1]. Proxy for the sat punch."""
+    frames = np.clip(frames.astype(np.float32), 0.0, 1.0)
+    mx = frames.max(axis=-1)
+    mn = frames.min(axis=-1)
+    return float(np.mean((mx - mn) / np.maximum(mx, 1e-6)))
+
+
+def _intra_ref_from_pixels(frames: np.ndarray) -> dict:
+    sig = gen_free_signals(frames, frames[0])
+    sig["saturation"] = _mean_saturation(frames)
+    return sig
+
+
+def _intra_flags(sig: dict, ref: dict, prev_mot) -> dict:
+    mot = sig.get("temporal_motion")
+    motion_sick = bool(
+        mot is not None and mot == mot
+        and prev_mot is not None and prev_mot == prev_mot and prev_mot > 0
+        and mot < INTRA_MOTION_FRAC * prev_mot
+    )
+
+    def _over(key, mult):
+        cur = sig.get(key)
+        base = ref.get(key)
+        return bool(
+            cur is not None and cur == cur
+            and base is not None and base == base and base > 0
+            and cur > mult * base
+        )
+
+    sharp_sick = _over("sharpness", INTRA_SHARP_MULT)
+    color_sick = _over("colorfulness", INTRA_COLOR_MULT)
+    sat_sick = _over("saturation", INTRA_SAT_MULT)
+    appear_sick = bool(sharp_sick or color_sick or sat_sick)
+    return {
+        "motion_sick": motion_sick,
+        "appear_sick": appear_sick,
+        "sharp_sick": sharp_sick,
+        "color_sick": color_sick,
+        "sat_sick": sat_sick,
+        "fire": bool(motion_sick or appear_sick),
+        "motion": mot,
+        "sharpness": sig.get("sharpness"),
+        "colorfulness": sig.get("colorfulness"),
+        "saturation": sig.get("saturation"),
+    }
+
+
+def _block_signals(pipeline, output, start: int, n_lat: int) -> dict:
+    end = start + n_lat
+    pix = _decode_pixels(pipeline, output[:, :end])
+    n_new = t2v_pixel_frames(end) - t2v_pixel_frames(start)
+    if n_new < 1 or pix.shape[0] < n_new + 1:
+        sig = gen_free_signals(pix[-max(n_new, 1):], pix[0])
+    else:
+        gen = pix[-n_new:]
+        last_cond = pix[-(n_new + 1)]
+        sig = gen_free_signals(gen, last_cond)
+    sig["saturation"] = _mean_saturation(pix[-max(n_new, 1):])
+    return sig
+
+
+def _span_intra_flags(pipeline, output, start: int, n: int, prefix_pix) -> dict:
+    pix = _decode_pixels(pipeline, output[:, start:start + n])
+    if pix.shape[0] < 2:
+        return {
+            "motion_sick": False, "appear_sick": False, "fire": False,
+            "motion": float("nan"),
+        }
+    sig = _intra_ref_from_pixels(pix)
+    ref = _intra_ref_from_pixels(prefix_pix)
+    return _intra_flags(sig, ref, ref.get("temporal_motion"))
+
+
+def _fill_sf_intra_chunk(
+    pipeline,
+    output,
+    committed: int,
+    chunk_latents: int,
+    conditional_dict,
+    seed: int,
+    ci: int,
+    device,
+    search_k: int,
+    default_shift: float,
+    default_cfg: float,
+    prefix_latents: int,
+    prefix_pixels: np.ndarray,
+    prefix_motion,
+    method: str,
+    prev_chunk_mot,
+    ref,
+):
+    """Write one 21-latent chunk a 3-latent block at a time. May resample."""
+    import torch
+
+    block = int(pipeline.num_frame_per_block)
+    if chunk_latents % block != 0:
+        raise RuntimeError(
+            f"intra chunk {chunk_latents} not divisible by block={block}"
+        )
+    n_blocks = chunk_latents // block
+    apply_shift(pipeline, default_shift)
+    apply_guidance(pipeline, default_cfg)
+    _reset_caches(pipeline, 1, output.dtype, device)
+    if committed > 0:
+        _replay_history(
+            pipeline, output, committed, conditional_dict,
+            "full", prefix_latents,
+        )
+    intra_ref = _intra_ref_from_pixels(prefix_pixels)
+    if ref is None:
+        ref_win = (
+            prefix_pixels[:REF_WIN]
+            if prefix_pixels.shape[0] >= REF_WIN
+            else prefix_pixels
+        )
+        ref = reference_signals(ref_win)
+    prev_mot = prev_chunk_mot if prev_chunk_mot is not None else prefix_motion
+    block_logs = []
+    searched = False
+    k = max(1, int(search_k))
+    always = method == "sf_intra_always"
+
+    for bi in range(n_blocks):
+        start = committed + bi * block
+        snap = _snapshot_kv(pipeline)
+        saved = output[:, start:start + block].clone()
+        rows = []
+        n_try = k if always else 1
+        for cand in range(n_try):
+            if cand > 0:
+                _restore_kv(pipeline, snap)
+                output[:, start:start + block] = saved
+            rng = _chunk_rng(device, seed, cand, ci * 100 + bi)
+            noise = torch.randn(
+                [1, block, LATENT_C, LATENT_H, LATENT_W],
+                device=device, dtype=torch.bfloat16, generator=rng,
+            )
+            _denoise_chunk(
+                pipeline, noise, start, conditional_dict, output, rng,
+            )
+            sig = _block_signals(pipeline, output, start, block)
+            flags = _intra_flags(sig, intra_ref, prev_mot)
+            rows.append({
+                "cand": cand, "flags": flags,
+                "latents": output[:, start:start + block].detach().clone(),
+                "snap_after": _snapshot_kv(pipeline),
+            })
+            print(
+                f"    intra c{ci}b{bi} cand{cand} mot={flags['motion']} "
+                f"sharp={flags['sharpness']} sat={flags['saturation']} "
+                f"fire={flags['fire']}",
+                flush=True,
+            )
+        if always:
+            healthy = [r for r in rows if not r["flags"]["fire"]]
+            pool = healthy or rows
+            best = max(
+                pool,
+                key=lambda r: (
+                    r["flags"]["motion"]
+                    if r["flags"]["motion"] == r["flags"]["motion"]
+                    else -1e9
+                ),
+            )
+            searched = True
+            reason = "intra_always"
+        else:
+            best = rows[0]
+            reason = "intra_ok"
+            if best["flags"]["fire"]:
+                searched = True
+                for cand in range(1, k):
+                    _restore_kv(pipeline, snap)
+                    output[:, start:start + block] = saved
+                    rng = _chunk_rng(device, seed, cand, ci * 100 + bi)
+                    noise = torch.randn(
+                        [1, block, LATENT_C, LATENT_H, LATENT_W],
+                        device=device, dtype=torch.bfloat16, generator=rng,
+                    )
+                    _denoise_chunk(
+                        pipeline, noise, start, conditional_dict, output, rng,
+                    )
+                    sig = _block_signals(pipeline, output, start, block)
+                    flags = _intra_flags(sig, intra_ref, prev_mot)
+                    rec = {
+                        "cand": cand, "flags": flags,
+                        "latents": output[:, start:start + block].detach().clone(),
+                        "snap_after": _snapshot_kv(pipeline),
+                    }
+                    rows.append(rec)
+                    print(
+                        f"    intra c{ci}b{bi} cand{cand} mot={flags['motion']} "
+                        f"sharp={flags['sharpness']} sat={flags['saturation']} "
+                        f"fire={flags['fire']}",
+                        flush=True,
+                    )
+                    if not flags["fire"]:
+                        best = rec
+                        reason = "intra_recover"
+                        break
+                else:
+                    healthy = [r for r in rows if not r["flags"]["appear_sick"]]
+                    pool = healthy or rows
+                    best = max(
+                        pool,
+                        key=lambda r: (
+                            r["flags"]["motion"]
+                            if r["flags"]["motion"] == r["flags"]["motion"]
+                            else -1e9
+                        ),
+                    )
+                    reason = "intra_best_of_sick"
+        output[:, start:start + block] = best["latents"]
+        _restore_kv(pipeline, best["snap_after"])
+        mot = best["flags"]["motion"]
+        if mot is not None and mot == mot:
+            prev_mot = mot
+        block_logs.append({
+            "block": bi,
+            "chosen": int(best["cand"]),
+            "reason": reason,
+            "n_try": len(rows),
+            "flags": {
+                k: (_json_float(v) if not isinstance(v, bool) else v)
+                for k, v in best["flags"].items()
+            },
+        })
+
+    end = committed + chunk_latents
+    pixels = _decode_pixels(pipeline, output[:, :end])
+    chunk_mot = _chunk_pixel_motion(pixels, committed, chunk_latents)
+    log = {
+        "chunk": ci,
+        "chosen_cand": int(block_logs[-1]["chosen"]) if block_logs else 0,
+        "search_k": k,
+        "method": method,
+        "searched": bool(searched),
+        "gate_reason": "sf_intra",
+        "prefix_motion": _json_float(prefix_motion),
+        "chunk_motion": _json_float(chunk_mot),
+        "intra_blocks": block_logs,
+        "candidates": [],
+        "chosen_score": None,
+        "hinge_score": None,
+        "appear_score": None,
+        "motion_score": None,
+        "score": None,
+        "breakdown": {},
+        "free": {},
+    }
+    return {
+        "pixels": pixels,
+        "ref": ref,
+        "chunk_motion": chunk_mot,
+        "log": log,
+        "searched": searched,
+    }
+
+
 def generate_chunked_v2v(
     pipeline,
     video_path: Path,
@@ -933,6 +1205,28 @@ def generate_chunked_v2v(
                 incoming_motion = incoming_signals.get("temporal_motion")
                 if incoming_prev is not None:
                     incoming_delta = incoming_drift - incoming_prev
+
+        if method in ("sf_intra", "sf_intra_always"):
+            intra = _fill_sf_intra_chunk(
+                pipeline, output, committed, chunk_latents,
+                conditional_dict, seed, ci, device, search_k,
+                default_shift, default_cfg, prefix_latents,
+                prefix_only, prefix_motion, method, prev_chunk_mot, ref,
+            )
+            committed += chunk_latents
+            committed_pixels = intra["pixels"]
+            ref = intra["ref"]
+            if intra["chunk_motion"] is not None:
+                prev_chunk_mot = intra["chunk_motion"]
+            intra["log"]["incoming_motion"] = _json_float(incoming_motion)
+            intra["log"]["incoming_drift"] = _json_float(incoming_drift)
+            chunk_logs.append(intra["log"])
+            print(
+                f"  chunk {ci}: intra searched={intra['searched']} "
+                f"mot={intra['chunk_motion']}",
+                flush=True,
+            )
+            continue
 
         cand_specs, searched, reason = _build_cand_specs(
             method, ci, n_chunks, search_k, search_from_chunk,
@@ -1991,7 +2285,23 @@ def generate_rolling_v2v(
                 mot == mot and ref_m is not None and ref_m == ref_m
                 and ref_m > 0 and mot < RF_SICK_DROP * ref_m
             )
-            if method_name == "rf_rewind" and last_sick:
+            intra_flags = None
+            if method_name in ("rf_intra", "rf_intra_always"):
+                intra_flags = _span_intra_flags(
+                    pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+                    prefix_pix_early,
+                )
+                last_sick = bool(last_sick or intra_flags.get("appear_sick"))
+            do_rewind = (
+                (method_name == "rf_rewind" and last_sick)
+                or (
+                    method_name == "rf_intra"
+                    and intra_flags is not None
+                    and intra_flags.get("fire")
+                )
+                or method_name == "rf_intra_always"
+            )
+            if do_rewind:
                 import torch as _torch
                 saved = output[:, chunk0:committed].clone()
                 tail0 = chunk0 - prefix_latents
@@ -2017,10 +2327,12 @@ def generate_rolling_v2v(
                     "mot1": mot2,
                     "ref": ref_m,
                     "accepted": bool(accepted),
+                    "intra": intra_flags,
+                    "method": method_name,
                 })
                 print(
-                    f"    rf_rewind frozen={frozen} mot {mot:.5g}->{mot2:.5g} "
-                    f"accept={accepted}",
+                    f"    {method_name} frozen={frozen} mot {mot:.5g}->{mot2:.5g} "
+                    f"accept={accepted} intra={intra_flags}",
                     flush=True,
                 )
                 if not accepted:

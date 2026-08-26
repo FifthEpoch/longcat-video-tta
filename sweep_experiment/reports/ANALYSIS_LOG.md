@@ -3928,6 +3928,20 @@ Examples copied: panda_0000–0004, 0006 × {notta, always, pseudo}.
 
 ---
 
+## 2026-08-25 — Intra-chunk motion+appear probe spec
+**Tags:** methodology, wan, v2v, intra-chunk
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_intra_chunk_spec.md`
+
+User saw sat/sharpen inside a denoising chunk. We cannot abort after
+a seed is locked. New methods: `sf_intra` (3-latent block; fire if
+motion < 0.8× prev OR sharp/color/sat > 1.5× prefix),
+`sf_intra_always` (k=4 every block), RF twins at 21-latent span
+(`rf_intra` / `rf_intra_always`). Caption N=8. Thresholds
+pre-registered. Do not retune on the same 8. Not mid-step EFD.
+
+---
+
 ## 2026-08-25 — Pseudo-future Search name + related work
 **Tags:** paper-narrative, methodology, wan, v2v
 **Owner:** agent
