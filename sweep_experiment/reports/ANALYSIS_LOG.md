@@ -3863,3 +3863,16 @@ omitted 479 — confirm it exists. Cancel leftover only:
 16350479 16350480 16350481.
 
 ---
+
+## 2026-08-25 — Caption official almost complete; Always + Prefix in
+**Tags:** results, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_official.md`
+
+479 CANCELLED 2h17 after Always + RF (no rf_sink). Always
+0.687/71.16/0, tail +39%, letter holds. Prefix seed subject
+0.746 / tail −18% — identity damper under captions. live/appear
+Dyn 0. Only `rf_sink` official dims missing. Do not cite stem
+Pseudo Dyn 0.50.
+
+---

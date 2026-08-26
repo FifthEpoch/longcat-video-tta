@@ -282,10 +282,19 @@ run_wave_leftover() {
     echo "Cancel leftover only:  scancel ${VB1} ${JOBS[*]}"
 }
 
+run_wave_rfsink() {
+    local S="v2v_panda_caption_32v"
+    local R="${PROJECT_ROOT}/wan_experiment/results/${S}"
+    JOBS=()
+    submit_vbench "${S}" "${R}/rf_sink_h30s_shard0"
+    echo "WAVE=rfsink. Official VBench for caption rf_sink only."
+}
+
 case "${WAVE}" in
     1) run_wave1 ;;
     prefix) run_wave_prefix ;;
     leftover) run_wave_leftover ;;
+    rfsink) run_wave_rfsink ;;
     cross) run_wave_cross ;;
     2) run_wave2 ;;
     3) run_wave3 ;;
@@ -301,7 +310,7 @@ case "${WAVE}" in
         run_wave4
         ;;
     *)
-        echo "ERROR: WAVE must be 1, prefix, leftover, cross, 2, 3, 4, or all (got ${WAVE})" >&2
+        echo "ERROR: WAVE must be 1, prefix, leftover, rfsink, cross, 2, 3, 4, or all (got ${WAVE})" >&2
         exit 2
         ;;
 esac
