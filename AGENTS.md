@@ -304,9 +304,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 19:08):
-  Queue empty. Submit `WAVE=rfsink` for caption `rf_sink`
-  VBench only. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-25 20:07):
+  `WAVE=rfsink` **16358585** left the queue (was PD). Harvest
+  before calling COMPLETED. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

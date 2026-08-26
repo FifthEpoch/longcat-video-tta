@@ -3876,3 +3876,15 @@ Dyn 0. Only `rf_sink` official dims missing. Do not cite stem
 Pseudo Dyn 0.50.
 
 ---
+
+## 2026-08-25 — WAVE=rfsink job 16358585
+**Tags:** jobs, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_official.md`
+
+Submitted after pull to `32bf3a6`. Preflight metadata_csv,
+bad=0. One L40S VBench on caption `rf_sink` only. Second squeue
+empty. Harvest before writing official dims. Do not fill from
+stem flicker 0.977.
+
+---
