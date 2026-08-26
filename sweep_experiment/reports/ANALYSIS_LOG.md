@@ -3915,3 +3915,15 @@ Do not cite caption Pseudo as Dyn 0. Subject/IQ/flicker stay
 medians.
 
 ---
+
+## 2026-08-25 — Caption wall time; Always is 3.1× SF
+**Tags:** results, wan, v2v, caption
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-25_wan_v2v_caption_wall_time.md`
+
+Sidecar seconds, n=32. Cite medians. SF 113 s, Always 348 s
+(flat), Pseudo 357 s with ~9 skips at 113 s (the exact-SF ties).
+notta mean 196 s is 0002/0019 outliers. RF family 63–82 s.
+Examples copied: panda_0000–0004, 0006 × {notta, always, pseudo}.
+
+---
