@@ -3957,6 +3957,17 @@ RF helper reused the name and expected a KV list. Renamed to
 
 ---
 
+## 2026-08-27 — WAVE=sf intra resubmitted 16471672–677
+**Tags:** in-flight, wan, v2v, intra-chunk
+**Owner:** agent
+**Refs:** user paste squeue
+
+Smoke 672/673 + N=8 675/676 PD on H200 `QOSMaxGRESPerUser`.
+VBench 674/677 wait. Pull was `183dfaf..db4fe2e`. Do not scancel.
+Do not launch RF again.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

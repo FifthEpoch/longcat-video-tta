@@ -251,9 +251,9 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  Intra-chunk N=8: RF **NO** (identical twins, IQ 66.33). SF crash
-  was `_restore_kv` shadowed by the RF list helper. Fix on main.
-  Resubmit `WAVE=sf` only. Do not rerun RF. Do not retune 1.5×.
+  Intra-chunk N=8: RF **NO**. SF `WAVE=sf` **IN FLIGHT**
+  16471672–677 (smoke + N=8 PD `QOSMaxGRESPerUser`). Do not
+  scancel. Do not rerun RF. Do not retune 1.5×.
   `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -313,8 +313,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-25 20:26):
-  Queue empty. Caption official N=32 complete. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-27 11:15):
+  SF intra `WAVE=sf` **16471672–677** PD (`QOSMaxGRESPerUser` /
+  VBench dep). RF intra already NO. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
