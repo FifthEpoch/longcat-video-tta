@@ -109,7 +109,7 @@ def main() -> int:
         n = notta[key]
         s = seed.get(key) or {}
         line = f"{key:<16} {_fmt(n.get('tail_motion'))} {_fmt(s.get('tail_motion'))}"
-        first = methods[0][1].get(key) if methods else {}
+        first = (methods[0][1].get(key) if methods else None) or {}
         c0 = _chunk0(first)
         for _, mapping in methods:
             rec = mapping.get(key) or {}

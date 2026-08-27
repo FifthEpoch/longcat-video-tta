@@ -3928,6 +3928,22 @@ Examples copied: panda_0000–0004, 0006 × {notta, always, pseudo}.
 
 ---
 
+## 2026-08-27 — Intra N=8: SF crash, RF twins NO
+**Tags:** results, negative-result, wan, v2v, intra-chunk
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`
+
+Jobs 16371523–536. SF `sf_intra` / `sf_intra_always` FAILED exit
+2:0 in ~3 min (smoke + N=8): 8 error json, 0 mp4. RF 8/8
+`metadata_csv`. `rf_intra` ≡ `rf_intra_always` on every official
+dim (subj 0.645, IQ 66.33, Dyn median 1, flick 0.983, tail 0.0169)
+vs caption SF 0.700 / 71.54 / 0 / 0.989 / 0.0129. **NO.** Do not
+retune 1.5×. Do not scale. VBench jobs failed (empty SF) but RF
+joined.json exists. Need SF sidecar `error`/`traceback` before
+resubmit.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
