@@ -251,9 +251,9 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  Intra-chunk N=8 **HARVEST 2026-08-27:** SF generate **FAILED**
-  (8 json / 0 mp4). RF twins identical 0.645 / 66.33 / Dyn 1
-  **NO** vs caption SF. Do not retune. Do not scale.
+  Intra-chunk N=8: RF **NO** (identical twins, IQ 66.33). SF crash
+  was `_restore_kv` shadowed by the RF list helper. Fix on main.
+  Resubmit `WAVE=sf` only. Do not rerun RF. Do not retune 1.5×.
   `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.

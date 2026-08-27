@@ -4,6 +4,7 @@
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 #   SMOKE=1 bash wan_experiment/sbatch/submit_v2v_intra8.sh
 #   bash wan_experiment/sbatch/submit_v2v_intra8.sh
+#   WAVE=sf bash wan_experiment/sbatch/submit_v2v_intra8.sh   # SF only after KV fix
 #
 # sf_intra         — after each 3-latent block, resample if freeze OR
 #                    sharp/color/sat punch vs prefix (1.5× / 0.8×)
@@ -58,10 +59,19 @@ submit_method() {
     JOBS+=("${J}")
 }
 
-submit_method sf_intra 4 "${SEARCH_WALL}"
-submit_method sf_intra_always 4 "${ALWAYS_WALL}"
-submit_method rf_intra 4 "${SEARCH_WALL}"
-submit_method rf_intra_always 4 "${ALWAYS_WALL}"
+WAVE="${WAVE:-all}"
+if [[ "${WAVE}" == "sf" ]]; then
+    submit_method sf_intra 4 "${SEARCH_WALL}"
+    submit_method sf_intra_always 4 "${ALWAYS_WALL}"
+elif [[ "${WAVE}" == "all" ]]; then
+    submit_method sf_intra 4 "${SEARCH_WALL}"
+    submit_method sf_intra_always 4 "${ALWAYS_WALL}"
+    submit_method rf_intra 4 "${SEARCH_WALL}"
+    submit_method rf_intra_always 4 "${ALWAYS_WALL}"
+else
+    echo "ERROR: WAVE=${WAVE} (use all|sf)" >&2
+    exit 1
+fi
 
 ROOT="${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
 VIDEO_DIRS="${ROOT}/sf_intra_h30s_shard0 ${ROOT}/sf_intra_always_h30s_shard0 ${ROOT}/rf_intra_h30s_shard0 ${ROOT}/rf_intra_always_h30s_shard0 ${SF_CAP}"

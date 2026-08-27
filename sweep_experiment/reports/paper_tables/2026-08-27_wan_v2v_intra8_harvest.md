@@ -46,4 +46,17 @@ ls -t wan_experiment/slurm_log/wan_v2v_chunk_16371530.* 2>/dev/null | head
 tail -80 wan_experiment/slurm_log/wan_v2v_chunk_16371530.err
 ```
 
-No resubmit until that paste. No WAVE=2. No I2V. No TTC.
+## Fix (2026-08-27 11:11)
+
+Traceback: `_restore_kv(pipeline, snap)` hit the RF list restorer
+(`zip(kv, snap)`). Renamed that helper to `_restore_rf_kv`.
+
+Resubmit **SF only** (RF already NO; do not rerun):
+
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+SMOKE=1 WAVE=sf bash wan_experiment/sbatch/submit_v2v_intra8.sh
+WAVE=sf bash wan_experiment/sbatch/submit_v2v_intra8.sh
+```
+
+Error jsons have no mp4, so the runner will overwrite them. No WAVE=2. No I2V. No TTC. Do not retune 1.5×.

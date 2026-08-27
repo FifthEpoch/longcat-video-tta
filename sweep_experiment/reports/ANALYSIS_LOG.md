@@ -3944,6 +3944,19 @@ resubmit.
 
 ---
 
+## 2026-08-27 — SF intra crash: RF _restore_kv shadowed pipeline
+**Tags:** bug, wan, v2v, intra-chunk
+**Owner:** agent
+**Refs:** sidecar 16371530; `run_v2v_chunked.py` `_restore_rf_kv`
+
+`TypeError: CausalInferencePipeline is not iterable` at
+`_restore_kv(pipeline, snap)` inside `_fill_sf_intra_chunk`. A later
+RF helper reused the name and expected a KV list. Renamed to
+`_restore_rf_kv`. `cached_bon` had the same trap. Resubmit
+`WAVE=sf` only. RF harvest stays NO.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

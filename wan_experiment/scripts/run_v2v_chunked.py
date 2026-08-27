@@ -1773,7 +1773,8 @@ def _snap_kv(kv):
     return out
 
 
-def _restore_kv(kv, snap):
+def _restore_rf_kv(kv, snap):
+    """Restore a Rolling Forcing KV list. Do not shadow _restore_kv(pipeline)."""
     if not kv or not snap:
         return
     for dst, src in zip(kv, snap):
@@ -2096,7 +2097,7 @@ def generate_rolling_v2v(
         cands = []
         for ck in range(n_try):
             if n_try > 1:
-                _restore_kv(kv, kv_snap)
+                _restore_rf_kv(kv, kv_snap)
             if inject:
                 if ck > 0:
                     rng.manual_seed(int(seed) + 10007 * (window_index + 1) + ck)
@@ -2170,7 +2171,7 @@ def generate_rolling_v2v(
                 flush=True,
             )
         if n_try > 1:
-            _restore_kv(kv, kv_snap)
+            _restore_rf_kv(kv, kv_snap)
             if inject:
                 if chosen == 0:
                     noise[:, tail1 - block:tail1] = saved0
