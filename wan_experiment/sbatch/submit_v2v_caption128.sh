@@ -9,7 +9,8 @@
 # WAVE=cite  — Pseudo + Always only. Reuses hosts notta. Do not resubmit notta.
 # WAVE=all   — hosts + cite in one paste (one notta).
 #
-# First 128 of panda_1000_480p = prefix of the caption-32 set.
+# Reuses caption N=32: hardlink mp4+json for indices 000–031, then the
+# runner skip-existing generates only 32..127. Does not copy vbench.
 # Do not mix with stem `v2v_panda_rolling_128v`.
 # Do not scancel lastmix 16505827–837. No TTC. No I2V. VIDEO_WORKERS=1.
 
@@ -21,9 +22,12 @@ ACCOUNT="${ACCOUNT:-torch_pr_36_mren}"
 SB="${PROJECT_ROOT}/wan_experiment/sbatch"
 VIDEO_DIR="${VIDEO_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
 SERIES="${SERIES:-v2v_panda_caption_128v}"
+SRC32="${SRC32:-${PROJECT_ROOT}/wan_experiment/results/v2v_panda_caption_32v}"
 N_VIDEOS="${N_VIDEOS:-128}"
+KEEP32="${KEEP32:-32}"
 if [[ "${SMOKE:-0}" == "1" ]]; then
     N_VIDEOS=2
+    KEEP32=2
     SERIES="${SERIES}_smoke"
 fi
 HOST_WALL="${HOST_WALL:-16:00:00}"
@@ -42,18 +46,29 @@ if [[ ! -f "${VIDEO_DIR}/metadata.csv" ]]; then
     echo "ERROR: ${VIDEO_DIR}/metadata.csv missing." >&2
     exit 1
 fi
+if [[ ! -d "${SRC32}" ]]; then
+    echo "ERROR: caption N=32 missing at ${SRC32}" >&2
+    exit 1
+fi
 
+ROOT="${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
 JOBS=()
 METHODS_RUN=()
+seed_n32() {
+    local method="$1"
+    python3 -u "${PROJECT_ROOT}/wan_experiment/scripts/seed_v2v_caption32.py" \
+        --src "${SRC32}" --dst "${ROOT}" --method "${method}" --keep "${KEEP32}"
+}
 submit_method() {
     local method="$1"
     local k="$2"
     local wall="$3"
+    seed_n32 "${method}"
     local J
     J=$(sbatch --parsable --account="${ACCOUNT}" --time="${wall}" \
         --export=ALL,METHOD="${method}",SEARCH_K="${k}",${COMMON} \
         "${SB}/run_v2v_chunked.sbatch")
-    echo "V2V ${SERIES} ${method} k=${k} n=${N_VIDEOS} job ${J}"
+    echo "V2V ${SERIES} ${method} k=${k} n=${N_VIDEOS} (reuse ${KEEP32}) job ${J}"
     JOBS+=("${J}")
     METHODS_RUN+=("${method}")
 }
@@ -75,7 +90,6 @@ else
     exit 1
 fi
 
-ROOT="${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
 VIDEO_DIRS=""
 for m in "${METHODS_RUN[@]}"; do
     VIDEO_DIRS="${VIDEO_DIRS} ${ROOT}/${m}_h30s_shard0"
@@ -91,7 +105,8 @@ VB=$(sbatch --parsable --account="${ACCOUNT}" --time="${VBENCH_WALL}" \
 echo "VBench full-clip job ${VB} afterany ${DEPS}"
 JOBS+=("${VB}")
 
-echo "Caption N=${N_VIDEOS} WAVE=${WAVE}. Sidecar must be prompt_source=metadata_csv."
+echo "Caption N=${N_VIDEOS} WAVE=${WAVE}. Reused first ${KEEP32} from ${SRC32}."
+echo "Sidecar must be prompt_source=metadata_csv."
 echo "Cite vs this series notta, not stem rolling-128."
 echo "When generate finishes:"
 echo "  python3 -u wan_experiment/scripts/analyze_v2v_bakeoff.py \\"

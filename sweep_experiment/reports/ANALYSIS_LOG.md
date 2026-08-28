@@ -4029,6 +4029,19 @@ Paste `WAVE=hosts` (notta + rolling). Pseudo/Always may queue as
 
 ---
 
+## 2026-08-28 — N=128 reuses caption-32 mp4s (generate 96)
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** `seed_v2v_caption32.py`, user 03:52
+
+User asked not to regenerate the first 32. Same sorted Panda
+pool: indices 0–31 of N=128 are the caption-32 set. Submit
+hardlinks those mp4+json into `v2v_panda_caption_128v`. Runner
+`skip existing` writes nothing new. VBench is not copied — score
+the full 128. Stem-prompt sidecars are refused.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

@@ -263,7 +263,8 @@ Per-method `merged_summary.json` lives at:
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   N=32 caption is **discovery**. Field long table is **N≈128**.
   Paste **WAVE=hosts** tonight (`submit_v2v_caption128.sh`):
-  caption SF + RF do-nothing. `WAVE=cite` = Pseudo + Always.
+  caption SF + RF do-nothing, **reuse caption-32** (generate 96).
+  `WAVE=cite` = Pseudo + Always (same reuse).
   GRES only queues; do not scancel lastmix. Note:
   `paper_tables/2026-08-28_hold_vs_n128.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
