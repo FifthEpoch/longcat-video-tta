@@ -3999,6 +3999,22 @@ controller. Pseudo N=128 is a later paper-size call, not this week.
 
 ---
 
+## 2026-08-28 — HOLD ≠ skip N=128; field long table is 128
+**Tags:** methodology, paper-narrative, wan, v2v
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-28_hold_vs_n128.md`, user question
+
+User asked why HOLD methods are not promoted. Correction: we were
+using HOLD as “not tonight / not the NOs.” That is not the same as
+“N=32 is the paper table.” Long-horizon papers on this stack cite
+~128 MovieGen + VBench-Long (Relax / SF++ / Freq / SGF). Caption
+N=32 is discovery. Promote only SF + Pseudo + Always on caption
+V2V (same-wave). T2V MovieGen-128 stays the optional field compare.
+Do not submit 128 while lastmix 827–837 is on GRES. Do not promote
+NOs.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

@@ -261,6 +261,9 @@ Per-method `merged_summary.json` lives at:
   paste `WAVE=bpseudo` / `WAVE=restep` yet. Spec:
   `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
+  N=32 caption is **discovery**. Field long table is **N≈128**.
+  Promote later: SF + Pseudo + Always only. Not while lastmix
+  is on GRES. Note: `paper_tables/2026-08-28_hold_vs_n128.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
