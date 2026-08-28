@@ -262,11 +262,10 @@ Per-method `merged_summary.json` lives at:
   `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   N=32 caption is **discovery**. Field long table is **N≈128**.
-  Paste **WAVE=hosts** tonight (`submit_v2v_caption128.sh`):
-  caption SF + RF do-nothing, **reuse caption-32** (generate 96).
-  `WAVE=cite` = Pseudo + Always (same reuse).
-  GRES only queues; do not scancel lastmix. Note:
-  `paper_tables/2026-08-28_hold_vs_n128.md`.
+  Caption N=128 hosts **IN FLIGHT**: seeded 32/32.
+  **16506077** notta / **078** rolling PD GRES; VBench **079**.
+  `WAVE=cite` (Pseudo + Always) still optional. Do not scancel
+  lastmix. Note: `paper_tables/2026-08-28_hold_vs_n128.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -324,11 +323,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-28 03:34):
-  lastmix smoke **16505827/829** R; RF smoke + lastmix N=8
-  **830/831/833–836** PD GRES; VBench 832/837. Intra
-  16471672–677 not on this squeue paste — harvest if COMPLETED;
-  do not scancel. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-28 03:54):
+  lastmix N=8 **16505833** R; 834–836 PD. Smoke VBench **832** R.
+  Caption-128 hosts **16506077/078** PD; VBench 079. Intra
+  16471672–677 still off this squeue. Do not scancel.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

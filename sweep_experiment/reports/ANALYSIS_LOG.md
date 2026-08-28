@@ -4042,6 +4042,17 @@ the full 128. Stem-prompt sidecars are refused.
 
 ---
 
+## 2026-08-28 — caption-128 hosts queued; seed 32/32
+**Tags:** wan, v2v
+**Owner:** agent
+**Refs:** user paste 03:54, jobs 16506077–079
+
+Pull `84bfb1d`. Seed printed 32/32 for notta and rolling_notta.
+Jobs PD on GRES behind lastmix 833. Reuse path is live. Do not
+scancel lastmix. WAVE=cite not launched.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
