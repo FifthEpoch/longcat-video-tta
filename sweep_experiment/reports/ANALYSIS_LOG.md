@@ -4015,6 +4015,20 @@ NOs.
 
 ---
 
+## 2026-08-28 — GRES is not a reason to hold N=128 baselines
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user question 03:43, `submit_v2v_caption128.sh`
+
+User asked why not tonight, and said baselines at least should
+be 128. Agreed. The only delay was H200 QOS — that is queue
+position, not a protocol lock. Caption SF N=32 already finished;
+N=128 is the same method on the next 96 videos of the same pool.
+Paste `WAVE=hosts` (notta + rolling). Pseudo/Always may queue as
+`WAVE=cite` without waiting for lastmix. Do not scancel 827–837.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
