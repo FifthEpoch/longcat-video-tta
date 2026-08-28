@@ -3985,6 +3985,20 @@ NO as `rf_intra_always`). Appear 1.5× locked. Do not scancel intra
 
 ---
 
+## 2026-08-28 — lastmix submitted; do not scale prior NOs
+**Tags:** methodology, wan, v2v, N-lock
+**Owner:** agent
+**Refs:** user paste squeue 16505827–837
+
+Smoke lastmix 827/829 R; rest PD GRES. Official cite set is already
+caption N=32 (SF / Always / Pseudo). Do not scale AdaSteer, Prefix,
+sick, sink, RF intra, RF pseudo, appear, live, I2V, or TTC.
+Intra and lastmix stay N=8 until harvest HOLD. The only pre-registered
+larger-N is optional caption hosts N=128 (notta + rolling), not our
+controller. Pseudo N=128 is a later paper-size call, not this week.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

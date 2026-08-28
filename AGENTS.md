@@ -256,9 +256,10 @@ Per-method `merged_summary.json` lives at:
   16471672–677 (smoke + N=8 PD `QOSMaxGRESPerUser`). Do not
   scancel. Do not rerun RF. Do not retune 1.5×.
   `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`.
-  Denoise hooks **SUBMIT-READY**: lastmix / bpseudo / restep
-  (`v2v_panda_caption_denoise_8v`). Paste `WAVE=lastmix` first.
-  Spec: `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`.
+  Denoise hooks `WAVE=lastmix` **IN FLIGHT**: smoke **16505827/829**
+  R; 830/831 + N=8 **833–836** PD GRES; VBench 832/837. Do not
+  paste `WAVE=bpseudo` / `WAVE=restep` yet. Spec:
+  `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
@@ -317,10 +318,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-28):
-  SF intra `WAVE=sf` **16471672–677** PD (`QOSMaxGRESPerUser` /
-  VBench dep). RF intra already NO. Denoise hooks not launched.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-28 03:34):
+  lastmix smoke **16505827/829** R; RF smoke + lastmix N=8
+  **830/831/833–836** PD GRES; VBench 832/837. Intra
+  16471672–677 not on this squeue paste — harvest if COMPLETED;
+  do not scancel. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
