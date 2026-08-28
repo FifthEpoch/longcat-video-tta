@@ -16,6 +16,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Analysis log (decisions/findings)** | `sweep_experiment/reports/ANALYSIS_LOG.md` | Append-only log of paper-relevant findings and decisions. NEVER edit past entries. |
 | **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
 | **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
+| **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
 | **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-06-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
 | **Canonical results memory (legacy)** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Superseded by INDEX.md + ANALYSIS_LOG.md as of 2026-06-08, but kept for history. |
@@ -255,6 +256,9 @@ Per-method `merged_summary.json` lives at:
   16471672–677 (smoke + N=8 PD `QOSMaxGRESPerUser`). Do not
   scancel. Do not rerun RF. Do not retune 1.5×.
   `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`.
+  Denoise hooks **SUBMIT-READY**: lastmix / bpseudo / restep
+  (`v2v_panda_caption_denoise_8v`). Paste `WAVE=lastmix` first.
+  Spec: `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`.
   **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
@@ -313,9 +317,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-27 11:15):
+- **In-flight cluster jobs** (as of 2026-08-28):
   SF intra `WAVE=sf` **16471672–677** PD (`QOSMaxGRESPerUser` /
-  VBench dep). RF intra already NO. **No I2V. No TTC.**
+  VBench dep). RF intra already NO. Denoise hooks not launched.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

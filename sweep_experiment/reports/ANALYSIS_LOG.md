@@ -3968,6 +3968,23 @@ Do not launch RF again.
 
 ---
 
+## 2026-08-28 — In-chunk denoise hooks (lastmix / bpseudo / restep)
+**Tags:** methodology, wan, v2v, denoise
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`
+
+User asked to implement the three in-chunk tests, not CachedSearch.
+`sf_lastmix`: if the last of 4 DMD steps punches sharp/sat, keep
+`0.5 * step3 + 0.5 * step4`. `sf_bpseudo`: hide the last committed
+**block** (3 latents; DMD cannot write one latent), extra seed
+rewrites B, restore, next block uses that seed if MAE wins.
+`sf_restep`: if punch (or always), redo the last 2 of 4 steps.
+Same-wave always-on + RF span twins. No `rf_bpseudo_always` (already
+NO as `rf_intra_always`). Appear 1.5× locked. Do not scancel intra
+16471672–677. Submit `WAVE=lastmix` first if GRES is tight.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

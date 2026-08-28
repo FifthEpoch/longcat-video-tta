@@ -54,6 +54,17 @@ Methods:
   sf_intra_always — k=4 every block; no sick gate (same-wave always-on)
   rf_intra       — RF span rewind if motion OR appear sick (host twin)
   rf_intra_always — RF always try an alt seed on every 21-latent span
+  sf_lastmix     — if last DMD step punches sharp/sat, 0.5-mix with step-3
+  sf_lastmix_always — always 0.5-mix the last DMD step
+  sf_bpseudo     — hide last committed latent; extra seed writes next block if it wins B
+  sf_bpseudo_always — always pick the seed that best rewrites last latent
+  sf_restep      — if last step punches, redo last 2 DMD steps with extra seeds
+  sf_restep_always — always redo last 2 steps, k=4, keep least-punch
+  rf_lastmix     — if span appear-punches, 0.5-mix last 3 latents with previous 3
+  rf_lastmix_always — always mix last 3 with previous 3 each span
+  rf_bpseudo     — hold out last 3 of the span; keep alt seed if MAE wins
+  rf_restep      — if span appear-punches, reroll last 3 latents
+  rf_restep_always — always reroll last 3 of each span
   ada_fixed      — AdaSteer: δ on time_embedding, fit once on prefix, hold
   ada_stream     — AdaSteer: refit each chunk, blend toward prefix δ0
   ada_resid      — AdaSteer: δ on mid-late residual blocks, fit once
@@ -160,6 +171,10 @@ METHODS = (
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
     "rf_always_search", "sf_sink",
     "sf_intra", "sf_intra_always", "rf_intra", "rf_intra_always",
+    "sf_lastmix", "sf_lastmix_always", "sf_bpseudo", "sf_bpseudo_always",
+    "sf_restep", "sf_restep_always",
+    "rf_lastmix", "rf_lastmix_always", "rf_bpseudo",
+    "rf_restep", "rf_restep_always",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
     "ada_fixed", "ada_stream", "ada_resid",
@@ -198,6 +213,13 @@ INTRA_SAT_MULT = 1.5
 RF_CONTROLLER_METHODS = frozenset({
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "rf_always_search", "rf_intra", "rf_intra_always",
+    "rf_lastmix", "rf_lastmix_always", "rf_bpseudo",
+    "rf_restep", "rf_restep_always",
+})
+SF_DENOISE_METHODS = frozenset({
+    "sf_lastmix", "sf_lastmix_always",
+    "sf_bpseudo", "sf_bpseudo_always",
+    "sf_restep", "sf_restep_always",
 })
 ROLLING_HOST_METHODS = frozenset({"rf_chunk", "rf_recache"}) | RF_CONTROLLER_METHODS
 ROLLING_SAMPLER_METHODS = frozenset({"sf_roll", "rf_recache"}) | RF_CONTROLLER_METHODS
@@ -1117,6 +1139,358 @@ def _fill_sf_intra_chunk(
     }
 
 
+def _appear_flags_from_latents(pipeline, latents, appear_ref: dict) -> dict:
+    pix = _decode_pixels(pipeline, latents)
+    sig = _intra_ref_from_pixels(pix)
+    return _intra_flags(sig, appear_ref, None)
+
+
+def _run_last_two_steps(
+    pipeline, mid_pred, start: int, conditional_dict, rng, device,
+):
+    """From the halfway denoised pred, run the last two DMD steps."""
+    import torch
+
+    steps = list(pipeline.denoising_step_list)
+    if len(steps) < 3:
+        return mid_pred
+    block = int(mid_pred.shape[1])
+    bsz = int(mid_pred.shape[0])
+    pred = mid_pred
+    for index in range(len(steps) - 2, len(steps)):
+        next_timestep = steps[index]
+        extra = torch.randn(
+            pred.flatten(0, 1).shape,
+            device=device, dtype=pred.dtype, generator=rng,
+        )
+        noisy_input = pipeline.scheduler.add_noise(
+            pred.flatten(0, 1),
+            extra,
+            next_timestep * torch.ones(
+                [bsz * block], device=device, dtype=torch.long
+            ),
+        ).unflatten(0, pred.shape[:2])
+        timestep = torch.ones(
+            [bsz, block], device=device, dtype=torch.int64
+        ) * next_timestep
+        _, pred = pipeline.generator(
+            noisy_image_or_video=noisy_input,
+            conditional_dict=conditional_dict,
+            timestep=timestep,
+            kv_cache=_active_kv(pipeline),
+            crossattn_cache=pipeline.crossattn_cache,
+            current_start=start * pipeline.frame_seq_length,
+        )
+    return pred
+
+
+def _denoise_one_block_guided(
+    pipeline,
+    noise,
+    start: int,
+    conditional_dict,
+    output,
+    rng,
+    device,
+    lastmix: str,
+    restep: str,
+    appear_ref,
+    search_k: int,
+    seed: int,
+    ci: int,
+    bi: int,
+):
+    """One 3-latent block with optional last-step mix and last-2-step restart."""
+    import torch
+
+    block = int(noise.shape[1])
+    bsz = int(noise.shape[0])
+    steps = list(pipeline.denoising_step_list)
+    n_step = len(steps)
+    noisy_input = noise
+    prev_pred = None
+    mid_pred = None
+    mid_kv = None
+    log = {"block": bi, "mix": False, "restep": False, "punch": False}
+    for index, current_timestep in enumerate(steps):
+        timestep = torch.ones(
+            [bsz, block], device=device, dtype=torch.int64
+        ) * current_timestep
+        _, denoised_pred = pipeline.generator(
+            noisy_image_or_video=noisy_input,
+            conditional_dict=conditional_dict,
+            timestep=timestep,
+            kv_cache=_active_kv(pipeline),
+            crossattn_cache=pipeline.crossattn_cache,
+            current_start=start * pipeline.frame_seq_length,
+        )
+        if n_step >= 3 and index == n_step - 3:
+            mid_pred = denoised_pred.detach().clone()
+            mid_kv = _snapshot_kv(pipeline)
+        if index == n_step - 1:
+            punch = False
+            flags = {}
+            if appear_ref is not None and (lastmix != "off" or restep != "off"):
+                flags = _appear_flags_from_latents(
+                    pipeline, denoised_pred, appear_ref,
+                )
+                punch = bool(flags.get("appear_sick"))
+            log["punch"] = punch
+            log["flags"] = {
+                k: (_json_float(v) if not isinstance(v, bool) else v)
+                for k, v in flags.items()
+            } if flags else {}
+            do_mix = lastmix == "always" or (lastmix == "gate" and punch)
+            if do_mix and prev_pred is not None:
+                denoised_pred = 0.5 * denoised_pred + 0.5 * prev_pred
+                log["mix"] = True
+            do_restep = restep == "always" or (restep == "gate" and punch)
+            if do_restep and mid_pred is not None and int(search_k) > 1:
+                snap0 = _snapshot_kv(pipeline)
+                pool = [{
+                    "cand": 0,
+                    "pred": denoised_pred,
+                    "sick": bool(flags.get("appear_sick")) if flags else False,
+                    "sharp": flags.get("sharpness") if flags else None,
+                    "snap": snap0,
+                }]
+                for extra in range(1, int(search_k)):
+                    if mid_kv is not None:
+                        _restore_kv(pipeline, mid_kv)
+                    rng2 = _chunk_rng(
+                        device, seed, extra, ci * 1000 + bi * 10 + extra,
+                    )
+                    pred2 = _run_last_two_steps(
+                        pipeline, mid_pred, start, conditional_dict, rng2, device,
+                    )
+                    fl2 = _appear_flags_from_latents(pipeline, pred2, appear_ref)
+                    pool.append({
+                        "cand": extra,
+                        "pred": pred2,
+                        "sick": bool(fl2.get("appear_sick")),
+                        "sharp": fl2.get("sharpness"),
+                        "snap": _snapshot_kv(pipeline),
+                    })
+                healthy = [r for r in pool if not r["sick"]]
+                use = healthy or pool
+
+                def _restep_key(r):
+                    s = r["sharp"]
+                    sharp = s if s is not None and s == s else 1e9
+                    return (int(r["sick"]), sharp)
+
+                best = min(use, key=_restep_key)
+                _restore_kv(pipeline, best["snap"])
+                if int(best["cand"]) != 0:
+                    denoised_pred = best["pred"]
+                    log["restep"] = True
+                    log["restep_cand"] = int(best["cand"])
+        if index < n_step - 1:
+            next_timestep = steps[index + 1]
+            extra = torch.randn(
+                denoised_pred.flatten(0, 1).shape,
+                device=device, dtype=denoised_pred.dtype, generator=rng,
+            )
+            noisy_input = pipeline.scheduler.add_noise(
+                denoised_pred.flatten(0, 1),
+                extra,
+                next_timestep * torch.ones(
+                    [bsz * block], device=device, dtype=torch.long
+                ),
+            ).unflatten(0, denoised_pred.shape[:2])
+        prev_pred = denoised_pred.detach().clone()
+    output[:, start:start + block] = denoised_pred
+    context_timestep = torch.ones(
+        [bsz, block], device=device, dtype=torch.int64
+    ) * float(getattr(getattr(pipeline, "args", None), "context_noise", 0) or 0)
+    pipeline.generator(
+        noisy_image_or_video=denoised_pred,
+        conditional_dict=conditional_dict,
+        timestep=context_timestep,
+        kv_cache=_active_kv(pipeline),
+        crossattn_cache=pipeline.crossattn_cache,
+        current_start=start * pipeline.frame_seq_length,
+    )
+    return log
+
+
+def _eval_block_pseudo(
+    pipeline, output, committed, conditional_dict, seed, device,
+    search_k, prefix_latents, always: bool,
+):
+    """Hold out the last committed latent. Extra seed wins → fire / pick."""
+    import torch
+
+    block = int(pipeline.num_frame_per_block)
+    b_lat = int(block)
+    if committed < b_lat:
+        return 0, False, []
+    a = committed - b_lat
+    saved = output[:, a:committed].clone()
+    rows = []
+    snap = _snapshot_kv(pipeline)
+    for c in range(max(1, int(search_k))):
+        _restore_kv(pipeline, snap)
+        output[:, a:committed] = saved
+        rng = _chunk_rng(device, seed, c, 9000 + committed)
+        noise = torch.randn(
+            [1, b_lat, LATENT_C, LATENT_H, LATENT_W],
+            device=device, dtype=torch.bfloat16, generator=rng,
+        )
+        # Replay only to `a` so we regenerate the held-out latent.
+        _reset_caches(pipeline, 1, output.dtype, device)
+        if a > 0:
+            _replay_history(
+                pipeline, output, a, conditional_dict, "full", prefix_latents,
+            )
+        _denoise_chunk(
+            pipeline, noise, a, conditional_dict, output, rng,
+        )
+        mae = float(
+            (output[:, a:committed].float() - saved.float()).abs().mean().item()
+        )
+        rows.append({"cand": c, "mae": mae})
+        print(f"    bpseudo last-block cand{c} mae={mae:.5g}", flush=True)
+    output[:, a:committed] = saved
+    _reset_caches(pipeline, 1, output.dtype, device)
+    if committed > 0:
+        _replay_history(
+            pipeline, output, committed, conditional_dict, "full", prefix_latents,
+        )
+    notta = rows[0]["mae"]
+    best = min(rows, key=lambda r: r["mae"] if r["mae"] == r["mae"] else 1e9)
+    fire = (
+        best["mae"] == best["mae"]
+        and notta == notta
+        and best["mae"] < notta - float(_PSEUDO_GAMMA)
+        and int(best["cand"]) != 0
+    )
+    pick = int(best["cand"]) if (always or fire) else 0
+    return pick, fire, rows
+
+
+def _fill_sf_denoise_chunk(
+    pipeline,
+    output,
+    committed: int,
+    chunk_latents: int,
+    conditional_dict,
+    seed: int,
+    ci: int,
+    device,
+    search_k: int,
+    default_shift: float,
+    default_cfg: float,
+    prefix_latents: int,
+    prefix_pixels: np.ndarray,
+    prefix_motion,
+    method: str,
+    prev_chunk_mot,
+    ref,
+):
+    """Write one chunk with lastmix / block-pseudo / restep inside denoising."""
+    import torch
+
+    block = int(pipeline.num_frame_per_block)
+    if chunk_latents % block != 0:
+        raise RuntimeError(f"denoise chunk {chunk_latents} % {block}")
+    n_blocks = chunk_latents // block
+    lastmix = "off"
+    restep = "off"
+    bpseudo = "off"
+    if method == "sf_lastmix":
+        lastmix = "gate"
+    elif method == "sf_lastmix_always":
+        lastmix = "always"
+    elif method == "sf_restep":
+        restep = "gate"
+    elif method == "sf_restep_always":
+        restep = "always"
+    elif method == "sf_bpseudo":
+        bpseudo = "gate"
+    elif method == "sf_bpseudo_always":
+        bpseudo = "always"
+    apply_shift(pipeline, default_shift)
+    apply_guidance(pipeline, default_cfg)
+    _reset_caches(pipeline, 1, output.dtype, device)
+    if committed > 0:
+        _replay_history(
+            pipeline, output, committed, conditional_dict,
+            "full", prefix_latents,
+        )
+    appear_ref = _intra_ref_from_pixels(prefix_pixels)
+    if ref is None:
+        ref_win = (
+            prefix_pixels[:REF_WIN]
+            if prefix_pixels.shape[0] >= REF_WIN
+            else prefix_pixels
+        )
+        ref = reference_signals(ref_win)
+    block_logs = []
+    searched = False
+    for bi in range(n_blocks):
+        start = committed + bi * block
+        pick = 0
+        fire = False
+        brows = None
+        if bpseudo != "off" and start > 0:
+            pick, fire, brows = _eval_block_pseudo(
+                pipeline, output, start, conditional_dict, seed, device,
+                search_k, prefix_latents, always=(bpseudo == "always"),
+            )
+            searched = searched or fire or (bpseudo == "always" and pick != 0)
+        rng = _chunk_rng(device, seed, pick, ci * 100 + bi)
+        noise = torch.randn(
+            [1, block, LATENT_C, LATENT_H, LATENT_W],
+            device=device, dtype=torch.bfloat16, generator=rng,
+        )
+        blog = _denoise_one_block_guided(
+            pipeline, noise, start, conditional_dict, output, rng, device,
+            lastmix, restep, appear_ref, search_k, seed, ci, bi,
+        )
+        blog["bpseudo_pick"] = pick
+        blog["bpseudo_fire"] = fire
+        blog["bpseudo_rows"] = brows
+        if blog.get("mix") or blog.get("restep"):
+            searched = True
+        block_logs.append(blog)
+        print(
+            f"    denoise c{ci}b{bi} mix={blog.get('mix')} "
+            f"restep={blog.get('restep')} punch={blog.get('punch')} "
+            f"bpseudo={pick}/{fire}",
+            flush=True,
+        )
+    end = committed + chunk_latents
+    pixels = _decode_pixels(pipeline, output[:, :end])
+    chunk_mot = _chunk_pixel_motion(pixels, committed, chunk_latents)
+    log = {
+        "chunk": ci,
+        "chosen_cand": 0,
+        "search_k": int(search_k),
+        "method": method,
+        "searched": bool(searched),
+        "gate_reason": method,
+        "prefix_motion": _json_float(prefix_motion),
+        "chunk_motion": _json_float(chunk_mot),
+        "denoise_blocks": block_logs,
+        "candidates": [],
+        "chosen_score": None,
+        "hinge_score": None,
+        "appear_score": None,
+        "motion_score": None,
+        "score": None,
+        "breakdown": {},
+        "free": {},
+    }
+    return {
+        "pixels": pixels,
+        "ref": ref,
+        "chunk_motion": chunk_mot,
+        "log": log,
+        "searched": searched,
+    }
+
+
 def generate_chunked_v2v(
     pipeline,
     video_path: Path,
@@ -1205,6 +1579,28 @@ def generate_chunked_v2v(
                 incoming_motion = incoming_signals.get("temporal_motion")
                 if incoming_prev is not None:
                     incoming_delta = incoming_drift - incoming_prev
+
+        if method in SF_DENOISE_METHODS:
+            den = _fill_sf_denoise_chunk(
+                pipeline, output, committed, chunk_latents,
+                conditional_dict, seed, ci, device, search_k,
+                default_shift, default_cfg, prefix_latents,
+                prefix_only, prefix_motion, method, prev_chunk_mot, ref,
+            )
+            committed += chunk_latents
+            committed_pixels = den["pixels"]
+            ref = den["ref"]
+            if den["chunk_motion"] is not None:
+                prev_chunk_mot = den["chunk_motion"]
+            den["log"]["incoming_motion"] = _json_float(incoming_motion)
+            den["log"]["incoming_drift"] = _json_float(incoming_drift)
+            chunk_logs.append(den["log"])
+            print(
+                f"  chunk {ci}: denoise {method} searched={den['searched']} "
+                f"mot={den['chunk_motion']}",
+                flush=True,
+            )
+            continue
 
         if method in ("sf_intra", "sf_intra_always"):
             intra = _fill_sf_intra_chunk(
@@ -2013,6 +2409,7 @@ def generate_rolling_v2v(
     look_k = max(1, int(search_k))
     look_picks = []
     rewind_logs = []
+    denoise_logs = []
     last_sick = False
     last_chunk_motion = None
     pseudo_fire = False
@@ -2344,6 +2741,145 @@ def generate_rolling_v2v(
                     )
                     last_sick = False
                     last_chunk_motion = mot
+            last3 = int(_rf_block(pipeline))
+            last0 = committed - last3
+            if (
+                method_name in (
+                    "rf_lastmix", "rf_lastmix_always",
+                    "rf_restep", "rf_restep_always", "rf_bpseudo",
+                )
+                and last0 >= prefix_latents
+                and last3 > 0
+            ):
+                last_flags = _span_intra_flags(
+                    pipeline, output, last0, last3, prefix_pix_early,
+                )
+                punch = bool(last_flags.get("appear_sick"))
+                dlog = {
+                    "frozen": int(frozen),
+                    "method": method_name,
+                    "punch": punch,
+                    "last_flags": last_flags,
+                }
+                if method_name in ("rf_lastmix", "rf_lastmix_always"):
+                    do_mix = method_name == "rf_lastmix_always" or punch
+                    prev0 = last0 - last3
+                    if do_mix and prev0 >= 0:
+                        output[:, last0:committed] = (
+                            0.5 * output[:, last0:committed]
+                            + 0.5 * output[:, prev0:last0]
+                        )
+                        kv = _rf_replay_clean(
+                            pipeline, output, committed, conditional_dict, device,
+                        )
+                        dlog["mix"] = True
+                if method_name in ("rf_restep", "rf_restep_always"):
+                    do_redo = method_name == "rf_restep_always" or punch
+                    if do_redo:
+                        import torch as _torch
+                        saved = output[:, last0:committed].clone()
+                        tail0 = last0 - prefix_latents
+                        tail1 = committed - prefix_latents
+                        saved_noise = noise[:, tail0:tail1].clone()
+                        rng.manual_seed(int(seed) + 91000 + int(frozen))
+                        noise[:, tail0:tail1] = _torch.randn(
+                            saved_noise.shape, device=device, dtype=noise.dtype,
+                            generator=rng,
+                        )
+                        kv = _rf_roll_span(
+                            pipeline, output, last0, last3,
+                            noise[:, tail0:tail1], conditional_dict, device,
+                            int(seed) + 91000 + int(frozen),
+                        )
+                        flags2 = _span_intra_flags(
+                            pipeline, output, last0, last3, prefix_pix_early,
+                        )
+                        accept = (not flags2.get("appear_sick")) or (
+                            punch and flags2.get("sharpness") is not None
+                            and last_flags.get("sharpness") is not None
+                            and flags2["sharpness"] == flags2["sharpness"]
+                            and last_flags["sharpness"] == last_flags["sharpness"]
+                            and flags2["sharpness"] < last_flags["sharpness"]
+                        )
+                        dlog["restep"] = True
+                        dlog["accepted"] = bool(accept)
+                        dlog["flags2"] = flags2
+                        if not accept:
+                            output[:, last0:committed] = saved
+                            noise[:, tail0:tail1] = saved_noise
+                            kv = _rf_replay_clean(
+                                pipeline, output, committed,
+                                conditional_dict, device,
+                            )
+                if method_name == "rf_bpseudo":
+                    import torch as _torch
+                    saved = output[:, last0:committed].clone()
+                    maes = []
+                    for ck in range(2):
+                        tmp = output.clone()
+                        bnoise = _torch.randn(
+                            [1, last3, LATENT_C, LATENT_H, LATENT_W],
+                            device=device, dtype=output.dtype,
+                            generator=_torch.Generator(device=device).manual_seed(
+                                int(seed) + 333 * ck + int(frozen)
+                            ),
+                        )
+                        _rf_roll_span(
+                            pipeline, tmp, last0, last3, bnoise,
+                            conditional_dict, device,
+                            int(seed) + 333 * ck + int(frozen),
+                        )
+                        mae = float(
+                            (tmp[:, last0:committed].float() - saved.float())
+                            .abs().mean().item()
+                        )
+                        maes.append(mae)
+                    output[:, last0:committed] = saved
+                    kv = _rf_replay_clean(
+                        pipeline, output, committed, conditional_dict, device,
+                    )
+                    fire = (
+                        len(maes) == 2
+                        and maes[0] == maes[0]
+                        and maes[1] == maes[1]
+                        and maes[1] < maes[0] - float(_PSEUDO_GAMMA)
+                    )
+                    dlog["mae0"] = maes[0] if maes else None
+                    dlog["mae1"] = maes[1] if len(maes) > 1 else None
+                    dlog["fire"] = bool(fire)
+                    if fire:
+                        saved_span = output[:, chunk0:committed].clone()
+                        tail0 = chunk0 - prefix_latents
+                        tail1 = committed - prefix_latents
+                        saved_noise = noise[:, tail0:tail1].clone()
+                        rng.manual_seed(int(seed) + 92000 + int(frozen))
+                        noise[:, tail0:tail1] = _torch.randn(
+                            saved_noise.shape, device=device, dtype=noise.dtype,
+                            generator=rng,
+                        )
+                        kv = _rf_roll_span(
+                            pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+                            noise[:, tail0:tail1], conditional_dict, device,
+                            int(seed) + 92000 + int(frozen),
+                        )
+                        mot2 = _span_pixel_motion(
+                            pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+                        )
+                        accept = mot2 == mot2 and mot is not None and mot == mot and mot2 >= mot
+                        dlog["span_accepted"] = bool(accept)
+                        dlog["mot1"] = mot2
+                        if not accept:
+                            output[:, chunk0:committed] = saved_span
+                            noise[:, tail0:tail1] = saved_noise
+                            kv = _rf_replay_clean(
+                                pipeline, output, committed,
+                                conditional_dict, device,
+                            )
+                denoise_logs.append(dlog)
+                print(
+                    f"    {method_name} frozen={frozen} punch={punch} {dlog}",
+                    flush=True,
+                )
 
     pixels = _decode_pixels(pipeline, output)
     prefix_pix_n = t2v_pixel_frames(prefix_latents)
@@ -2369,6 +2905,7 @@ def generate_rolling_v2v(
         "look_picks": look_picks,
         "recache_logs": recache_logs,
         "rewind_logs": rewind_logs,
+        "denoise_logs": denoise_logs,
         "last_chunk_motion": _json_float(last_chunk_motion),
         "pseudo_fire": bool(pseudo_fire),
         "pseudo_rows": pseudo_rows,

@@ -84,6 +84,10 @@ def main() -> int:
             "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
             "rf_always_search", "sf_sink",
             "sf_intra", "sf_intra_always", "rf_intra", "rf_intra_always",
+            "sf_lastmix", "sf_lastmix_always", "sf_bpseudo", "sf_bpseudo_always",
+            "sf_restep", "sf_restep_always",
+            "rf_lastmix", "rf_lastmix_always", "rf_bpseudo",
+            "rf_restep", "rf_restep_always",
             "appear_bon",
         ):
             if name in seen:
