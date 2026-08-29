@@ -4068,6 +4068,21 @@ slurm tails + intra traceback.
 
 ---
 
+## 2026-08-29 — 128 and lastmix videos exist; intra is OOM
+**Tags:** wan, v2v, harvest
+**Owner:** agent
+**Refs:** user paste 02:30
+
+`find` from repo root: caption-128 **256** mp4, lastmix N=8 **32**,
+smoke **8**. notta summary n_ok=128. sf_lastmix n_ok=8; appear
+punch fired and last-step mix ran. Intra 675 `.err` is CUDA OOM
+(~0.88 GB alloc, 0.35 GB free on an H200) — leak/fragment after
+~55 min, not the `_restore_kv` TypeError. Do not relaunch intra.
+Do not regenerate 128. Resubmit 128 VBench only. Analyze lastmix
+before any new denoise WAVE.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

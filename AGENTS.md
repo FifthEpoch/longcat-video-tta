@@ -252,13 +252,11 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  Intra-chunk N=8: RF **NO**. SF resubmit **16471672–677 FAILED
-  2:0**. Do not relaunch without traceback. Do not retune 1.5×.
-  `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`.
-  Lastmix generate **0:0** (827–837). Caption-128 generate **0:0**
-  (077/078); VBench **079 CANCELLED**. Relative ls showed mp4=0
-  including hardlinks — confirm with absolute `find` before any
-  call or VBench resubmit. Do not paste bpseudo/restep yet.
+  Intra-chunk N=8: RF **NO**. SF resubmit **OOM** (16471675).
+  Do not relaunch. Do not retune 1.5×.
+  Lastmix **8/8 on disk**, punch/mix fired. Analyze vs caption SF
+  before bpseudo/restep. Caption-128 hosts **256 mp4**; resubmit
+  VBench only (079 cancelled). Do not regenerate 128.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -316,10 +314,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-29 02:25): none on
-  squeue. Intra SF **FAILED**. Lastmix + caption-128 generate
-  **COMPLETED 0:0**; 128 VBench cancelled. Find mp4s before
-  harvest. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-29 02:30): none.
+  Caption-128 VBench needs resubmit. Lastmix analyze pending.
+  Intra SF OOM — do not relaunch. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
