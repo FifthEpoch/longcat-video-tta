@@ -4053,6 +4053,21 @@ scancel lastmix. WAVE=cite not launched.
 
 ---
 
+## 2026-08-29 — sacct: intra dead again; lastmix/128 0:0; ls mp4=0
+**Tags:** wan, v2v, harvest
+**Owner:** agent
+**Refs:** user paste 02:25
+
+SF intra 672–677 FAILED 2:0 (54 min at N=8 — not the 3-min
+TypeError). Lastmix 827–837 COMPLETED 0:0. Caption-128 077/078
+COMPLETED (2h53 / 1h15); VBench 079 CANCELLED. Harvest `mp4=0`
+on every relative path, including the 32 hardlinks we seeded —
+cwd is probably not the repo. Do not regenerate 128. Do not
+relaunch intra. Do not call lastmix. Next: absolute find +
+slurm tails + intra traceback.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

@@ -252,20 +252,13 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  Intra-chunk N=8: RF **NO**. SF `WAVE=sf` **IN FLIGHT**
-  16471672–677 (smoke + N=8 PD `QOSMaxGRESPerUser`). Do not
-  scancel. Do not rerun RF. Do not retune 1.5×.
+  Intra-chunk N=8: RF **NO**. SF resubmit **16471672–677 FAILED
+  2:0**. Do not relaunch without traceback. Do not retune 1.5×.
   `paper_tables/2026-08-27_wan_v2v_intra8_harvest.md`.
-  Denoise hooks `WAVE=lastmix` **IN FLIGHT**: smoke **16505827/829**
-  R; 830/831 + N=8 **833–836** PD GRES; VBench 832/837. Do not
-  paste `WAVE=bpseudo` / `WAVE=restep` yet. Spec:
-  `paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md`.
-  **No TTC. No I2V. No AdaSteer N=32. No WAVE=2.**
-  N=32 caption is **discovery**. Field long table is **N≈128**.
-  Caption N=128 hosts **IN FLIGHT**: seeded 32/32.
-  **16506077** notta / **078** rolling PD GRES; VBench **079**.
-  `WAVE=cite` (Pseudo + Always) still optional. Do not scancel
-  lastmix. Note: `paper_tables/2026-08-28_hold_vs_n128.md`.
+  Lastmix generate **0:0** (827–837). Caption-128 generate **0:0**
+  (077/078); VBench **079 CANCELLED**. Relative ls showed mp4=0
+  including hardlinks — confirm with absolute `find` before any
+  call or VBench resubmit. Do not paste bpseudo/restep yet.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -323,11 +316,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-28 03:54):
-  lastmix N=8 **16505833** R; 834–836 PD. Smoke VBench **832** R.
-  Caption-128 hosts **16506077/078** PD; VBench 079. Intra
-  16471672–677 still off this squeue. Do not scancel.
-  **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-29 02:25): none on
+  squeue. Intra SF **FAILED**. Lastmix + caption-128 generate
+  **COMPLETED 0:0**; 128 VBench cancelled. Find mp4s before
+  harvest. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
