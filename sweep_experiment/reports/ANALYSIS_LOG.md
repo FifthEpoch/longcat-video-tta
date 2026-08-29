@@ -4110,6 +4110,17 @@ stays closed. Paste WAVE=sf + bpseudo + restep. Do not scancel
 
 ---
 
+## 2026-08-29 — intra/bpseudo/restep jobs 16546045–068
+**Tags:** wan, v2v
+**Owner:** agent
+**Refs:** user paste 02:47
+
+Submitted after `2d84a74`. 128 VBench 806 still R. Do not
+scancel. Harvest smoke 045/046 first if they die 2:0 (OOM
+not actually fixed).
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

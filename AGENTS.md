@@ -252,14 +252,9 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  Intra-chunk: RF **NO**. SF OOM **fixed** (one KV snap). Paste
-  `WAVE=sf`. Also paste `WAVE=bpseudo` and `WAVE=restep`.
-  Do not retune 1.5×. Note:
-  `paper_tables/2026-08-29_sf_intra_oom_fix.md`.
-  Lastmix **NO** (subj 0.629 / IQ 69.63). Do not scale. Do not
-  paste bpseudo/restep on top of caption-128 VBench **16545806**.
-  Caption-128 hosts **256 mp4**. Do not regenerate 128.
-  Harvest: `paper_tables/2026-08-29_wan_v2v_lastmix8_harvest.md`.
+  Intra SF OOM-fix **IN FLIGHT** 16546045–050. bpseudo 051–058.
+  restep 059–068. Lastmix **NO**. Caption-128 VBench **16545806**
+  R — do not scancel. Do not regenerate 128. Do not retune 1.5×.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -317,9 +312,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-29 02:32):
-  caption-128 VBench **16545806**. Lastmix **NO**. Intra OOM —
-  do not relaunch. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-29 02:47):
+  caption-128 VBench **16545806** R. Intra SF **16546045–050**.
+  bpseudo **051–058**. restep **059–068**. Do not scancel 806.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
