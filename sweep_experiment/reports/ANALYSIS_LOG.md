@@ -4083,6 +4083,20 @@ before any new denoise WAVE.
 
 ---
 
+## 2026-08-29 — lastmix NO; 128 VBench 16545806
+**Tags:** wan, v2v, harvest
+**Owner:** agent
+**Refs:** `paper_tables/2026-08-29_wan_v2v_lastmix8_harvest.md`
+
+Appear punch fires; 0.5-mix of the last DMD step collapses
+identity. SF lastmix subject 0.629 / IQ 69.63 vs bars 0.680 /
+70.54. Always-on is the same row (only 0007 splits). RF worse
+IQ 65.53. Tail +5% is not a motion win. Do not scale. Do not
+retune 1.5×. bpseudo/restep stay unlaunched until 128 VBench
+lands. Job **16545806** is score-only.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
