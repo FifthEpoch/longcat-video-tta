@@ -4,7 +4,7 @@
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 #   SMOKE=1 bash wan_experiment/sbatch/submit_v2v_intra8.sh
 #   bash wan_experiment/sbatch/submit_v2v_intra8.sh
-#   WAVE=sf bash wan_experiment/sbatch/submit_v2v_intra8.sh   # SF only after KV fix
+#   WAVE=sf bash wan_experiment/sbatch/submit_v2v_intra8.sh   # SF only (OOM fix)
 #
 # sf_intra         — after each 3-latent block, resample if freeze OR
 #                    sharp/color/sat punch vs prefix (1.5× / 0.8×)
@@ -12,8 +12,9 @@
 # rf_intra         — RF 21-latent span rewind if motion OR appear sick
 # rf_intra_always  — RF always try an alt seed on every span
 #
+# Default WAVE=sf (OOM fix: one live KV snap per block). Do not rerun RF.
 # Thresholds pre-registered. Do not retune after N=8.
-# No TTC. No I2V. No WAVE=2 leftovers. VIDEO_WORKERS=1.
+# No TTC. No I2V. Do not scancel 16545806. VIDEO_WORKERS=1.
 
 set -euo pipefail
 
@@ -59,7 +60,7 @@ submit_method() {
     JOBS+=("${J}")
 }
 
-WAVE="${WAVE:-all}"
+WAVE="${WAVE:-sf}"
 if [[ "${WAVE}" == "sf" ]]; then
     submit_method sf_intra 4 "${SEARCH_WALL}"
     submit_method sf_intra_always 4 "${ALWAYS_WALL}"

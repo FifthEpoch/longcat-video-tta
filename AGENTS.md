@@ -252,8 +252,10 @@ Per-method `merged_summary.json` lives at:
   Method note (name + related work + intra-chunk hole):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
-  Intra-chunk N=8: RF **NO**. SF resubmit **OOM** (16471675).
-  Do not relaunch. Do not retune 1.5×.
+  Intra-chunk: RF **NO**. SF OOM **fixed** (one KV snap). Paste
+  `WAVE=sf`. Also paste `WAVE=bpseudo` and `WAVE=restep`.
+  Do not retune 1.5×. Note:
+  `paper_tables/2026-08-29_sf_intra_oom_fix.md`.
   Lastmix **NO** (subj 0.629 / IQ 69.63). Do not scale. Do not
   paste bpseudo/restep on top of caption-128 VBench **16545806**.
   Caption-128 hosts **256 mp4**. Do not regenerate 128.

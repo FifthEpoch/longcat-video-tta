@@ -4097,6 +4097,19 @@ lands. Job **16545806** is score-only.
 
 ---
 
+## 2026-08-29 — fix SF intra OOM; launch bpseudo/restep
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 02:44, `paper_tables/2026-08-29_sf_intra_oom_fix.md`
+
+User asked why we were not fixing crashes or testing unlaunched
+hooks. Agreed: lastmix NO is not a reason to skip the rest. Intra
+OOM was k=4 full KV clones per block. Fix keeps one snap. RF intra
+stays closed. Paste WAVE=sf + bpseudo + restep. Do not scancel
+16545806.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

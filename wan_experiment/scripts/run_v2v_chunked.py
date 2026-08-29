@@ -1006,12 +1006,10 @@ def _fill_sf_intra_chunk(
         start = committed + bi * block
         snap = _snapshot_kv(pipeline)
         saved = output[:, start:start + block].clone()
-        rows = []
-        n_try = k if always else 1
-        for cand in range(n_try):
-            if cand > 0:
-                _restore_kv(pipeline, snap)
-                output[:, start:start + block] = saved
+        best = None
+        n_try = 0
+
+        def _run_cand(cand: int) -> dict:
             rng = _chunk_rng(device, seed, cand, ci * 100 + bi)
             noise = torch.randn(
                 [1, block, LATENT_C, LATENT_H, LATENT_W],
@@ -1022,86 +1020,99 @@ def _fill_sf_intra_chunk(
             )
             sig = _block_signals(pipeline, output, start, block)
             flags = _intra_flags(sig, intra_ref, prev_mot)
-            rows.append({
-                "cand": cand, "flags": flags,
-                "latents": output[:, start:start + block].detach().clone(),
-                "snap_after": _snapshot_kv(pipeline),
-            })
             print(
                 f"    intra c{ci}b{bi} cand{cand} mot={flags['motion']} "
                 f"sharp={flags['sharpness']} sat={flags['saturation']} "
                 f"fire={flags['fire']}",
                 flush=True,
             )
+            return {
+                "cand": cand,
+                "flags": flags,
+                "latents": output[:, start:start + block].detach().clone(),
+                "snap_after": _snapshot_kv(pipeline),
+            }
+
+        def _keep(rec: dict, reason: str) -> None:
+            nonlocal best
+            old = best
+            best = {**rec, "reason": reason}
+            if old is not None and old.get("snap_after") is not rec.get("snap_after"):
+                del old["snap_after"]
+                del old["latents"]
+
+        def _mot_key(rec: dict):
+            mot = rec["flags"]["motion"]
+            return mot if mot is not None and mot == mot else -1e9
+
         if always:
-            healthy = [r for r in rows if not r["flags"]["fire"]]
-            pool = healthy or rows
-            best = max(
-                pool,
-                key=lambda r: (
-                    r["flags"]["motion"]
-                    if r["flags"]["motion"] == r["flags"]["motion"]
-                    else -1e9
-                ),
-            )
             searched = True
-            reason = "intra_always"
+            for cand in range(k):
+                if cand > 0:
+                    _restore_kv(pipeline, snap)
+                    output[:, start:start + block] = saved
+                rec = _run_cand(cand)
+                n_try += 1
+                if best is None:
+                    _keep(rec, "intra_always")
+                    continue
+                best_fire = bool(best["flags"]["fire"])
+                rec_fire = bool(rec["flags"]["fire"])
+                take = (
+                    (not rec_fire and best_fire)
+                    or (rec_fire == best_fire and _mot_key(rec) > _mot_key(best))
+                )
+                if take:
+                    _keep(rec, "intra_always")
+                else:
+                    del rec["snap_after"]
+                    del rec["latents"]
         else:
-            best = rows[0]
-            reason = "intra_ok"
+            rec0 = _run_cand(0)
+            n_try = 1
+            _keep(rec0, "intra_ok")
             if best["flags"]["fire"]:
                 searched = True
+                recovered = False
                 for cand in range(1, k):
                     _restore_kv(pipeline, snap)
                     output[:, start:start + block] = saved
-                    rng = _chunk_rng(device, seed, cand, ci * 100 + bi)
-                    noise = torch.randn(
-                        [1, block, LATENT_C, LATENT_H, LATENT_W],
-                        device=device, dtype=torch.bfloat16, generator=rng,
-                    )
-                    _denoise_chunk(
-                        pipeline, noise, start, conditional_dict, output, rng,
-                    )
-                    sig = _block_signals(pipeline, output, start, block)
-                    flags = _intra_flags(sig, intra_ref, prev_mot)
-                    rec = {
-                        "cand": cand, "flags": flags,
-                        "latents": output[:, start:start + block].detach().clone(),
-                        "snap_after": _snapshot_kv(pipeline),
-                    }
-                    rows.append(rec)
-                    print(
-                        f"    intra c{ci}b{bi} cand{cand} mot={flags['motion']} "
-                        f"sharp={flags['sharpness']} sat={flags['saturation']} "
-                        f"fire={flags['fire']}",
-                        flush=True,
-                    )
-                    if not flags["fire"]:
-                        best = rec
-                        reason = "intra_recover"
+                    rec = _run_cand(cand)
+                    n_try += 1
+                    if not rec["flags"]["fire"]:
+                        _keep(rec, "intra_recover")
+                        recovered = True
                         break
-                else:
-                    healthy = [r for r in rows if not r["flags"]["appear_sick"]]
-                    pool = healthy or rows
-                    best = max(
-                        pool,
-                        key=lambda r: (
-                            r["flags"]["motion"]
-                            if r["flags"]["motion"] == r["flags"]["motion"]
-                            else -1e9
-                        ),
-                    )
-                    reason = "intra_best_of_sick"
+                    if (
+                        not rec["flags"]["appear_sick"]
+                        and best["flags"]["appear_sick"]
+                    ) or (
+                        rec["flags"]["appear_sick"]
+                        == best["flags"]["appear_sick"]
+                        and _mot_key(rec) > _mot_key(best)
+                    ):
+                        _keep(rec, "intra_best_of_sick")
+                    else:
+                        del rec["snap_after"]
+                        del rec["latents"]
+                if not recovered and best["reason"] == "intra_ok":
+                    best["reason"] = "intra_best_of_sick"
+
         output[:, start:start + block] = best["latents"]
         _restore_kv(pipeline, best["snap_after"])
+        del snap
+        del best["snap_after"]
+        del best["latents"]
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         mot = best["flags"]["motion"]
         if mot is not None and mot == mot:
             prev_mot = mot
         block_logs.append({
             "block": bi,
             "chosen": int(best["cand"]),
-            "reason": reason,
-            "n_try": len(rows),
+            "reason": best["reason"],
+            "n_try": n_try,
             "flags": {
                 k: (_json_float(v) if not isinstance(v, bool) else v)
                 for k, v in best["flags"].items()
@@ -1246,14 +1257,19 @@ def _denoise_one_block_guided(
                 log["mix"] = True
             do_restep = restep == "always" or (restep == "gate" and punch)
             if do_restep and mid_pred is not None and int(search_k) > 1:
-                snap0 = _snapshot_kv(pipeline)
-                pool = [{
+                best = {
                     "cand": 0,
                     "pred": denoised_pred,
                     "sick": bool(flags.get("appear_sick")) if flags else False,
                     "sharp": flags.get("sharpness") if flags else None,
-                    "snap": snap0,
-                }]
+                    "snap": _snapshot_kv(pipeline),
+                }
+
+                def _restep_key(r):
+                    s = r["sharp"]
+                    sharp = s if s is not None and s == s else 1e9
+                    return (int(r["sick"]), sharp)
+
                 for extra in range(1, int(search_k)):
                     if mid_kv is not None:
                         _restore_kv(pipeline, mid_kv)
@@ -1264,23 +1280,22 @@ def _denoise_one_block_guided(
                         pipeline, mid_pred, start, conditional_dict, rng2, device,
                     )
                     fl2 = _appear_flags_from_latents(pipeline, pred2, appear_ref)
-                    pool.append({
+                    rec = {
                         "cand": extra,
                         "pred": pred2,
                         "sick": bool(fl2.get("appear_sick")),
                         "sharp": fl2.get("sharpness"),
                         "snap": _snapshot_kv(pipeline),
-                    })
-                healthy = [r for r in pool if not r["sick"]]
-                use = healthy or pool
-
-                def _restep_key(r):
-                    s = r["sharp"]
-                    sharp = s if s is not None and s == s else 1e9
-                    return (int(r["sick"]), sharp)
-
-                best = min(use, key=_restep_key)
+                    }
+                    if _restep_key(rec) < _restep_key(best):
+                        del best["snap"]
+                        best = rec
+                    else:
+                        del rec["snap"]
                 _restore_kv(pipeline, best["snap"])
+                del best["snap"]
+                if mid_kv is not None:
+                    del mid_kv
                 if int(best["cand"]) != 0:
                     denoised_pred = best["pred"]
                     log["restep"] = True
@@ -1366,6 +1381,8 @@ def _eval_block_pseudo(
         and int(best["cand"]) != 0
     )
     pick = int(best["cand"]) if (always or fire) else 0
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return pick, fire, rows
 
 
@@ -1453,6 +1470,8 @@ def _fill_sf_denoise_chunk(
         blog["bpseudo_rows"] = brows
         if blog.get("mix") or blog.get("restep"):
             searched = True
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         block_logs.append(blog)
         print(
             f"    denoise c{ci}b{bi} mix={blog.get('mix')} "

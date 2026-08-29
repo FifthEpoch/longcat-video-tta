@@ -12,7 +12,8 @@
 # bpseudo  — hide last committed block; extra seed writes the next if it wins
 # restep   — redo last 2 of 4 DMD steps if appear-punch / always
 #
-# Do not scancel intra 16471672–677. Do not rerun RF intra.
+# lastmix is NO (2026-08-29). Paste WAVE=bpseudo and WAVE=restep.
+# Do not relaunch RF intra. Do not scancel 16545806.
 # Thresholds pre-registered. Do not retune 1.5×. VIDEO_WORKERS=1.
 
 set -euo pipefail
@@ -61,7 +62,7 @@ submit_method() {
     METHODS_RUN+=("${method}")
 }
 
-WAVE="${WAVE:-lastmix}"
+WAVE="${WAVE:-bpseudo}"
 if [[ "${WAVE}" == "lastmix" ]]; then
     submit_method sf_lastmix 4 "${SEARCH_WALL}"
     submit_method sf_lastmix_always 4 "${ALWAYS_WALL}"
