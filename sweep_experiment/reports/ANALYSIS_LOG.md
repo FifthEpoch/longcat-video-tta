@@ -4233,6 +4233,23 @@ scancel RF keep or cite 748–750.
 
 ---
 
+## 2026-08-30 — success is RF quality at less than search cost
+**Tags:** paper-narrative, methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 17:36,
+`paper_tables/2026-08-30_wan_success_and_neighbors.md`
+
+User locked: cheaper than Rolling, comparable to Rolling. Mid-chunk
+rewrite closed unless keep-picture passes. CFG/shift closed. Weights
+closed but AdaSteer + Pathwise-TTO failure must be written.
+Intra-chunk is an experiment paragraph. Neighbor stack: SAVi-DNO,
+TANGO, Pathwise TTC, latent beam, Video-T1, VISTA, Diffusion Tree,
+Reward Forcing. Honest tension: RF is 45 s, Pseudo is ~350 s. Next
+method if 128 quality holds is cheapen (Video-T1 prune / search-once),
+not another rewrite. Do not launch TTC / LoRA / VISTA.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
