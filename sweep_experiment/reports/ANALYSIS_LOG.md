@@ -4280,3 +4280,21 @@ latents sealed — and is a limitation paragraph, not the 2-month
 method. Do not retune γ. Do not rename sidecars.
 
 ---
+
+## 2026-08-30 — beat RF by intervening like RF
+**Tags:** paper-narrative, methodology, wan, v2v, rolling
+**Owner:** agent
+**Refs:** user 17:44,
+`paper_tables/2026-08-30_wan_rf_intervene.md`
+
+User: do not stay boxed in seed search. Understand Rolling
+Forcing and intervene in the same place — maybe beat it.
+RF = overlapping window, staggered noise, lock only at window
+exit, trained sink. Official 128 gap is Dyn% (28.9 vs SF 32.8)
+and a bit of IQ, not tail/subject. Already-tried RF levers
+(cross, global ρ, extra sink, recache, rewind, RF-pseudo, intra)
+stay closed. Next ideas: context_noise on the KV write (today 0);
+online next-block noise if the just-locked block died; soften
+native sink after that. Not a submit tonight.
+
+---

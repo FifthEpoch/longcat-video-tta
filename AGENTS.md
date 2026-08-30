@@ -268,6 +268,9 @@ Per-method `merged_summary.json` lives at:
   Success bar + neighbors (2026-08-30): RF quality, cost <<
   always-search; mid-chunk rewrite closed.
   `paper_tables/2026-08-30_wan_success_and_neighbors.md`.
+  Beat-RF path (2026-08-30): not seed search. Intervene at
+  window-exit (context noise / next-block noise / softer sink).
+  `paper_tables/2026-08-30_wan_rf_intervene.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
