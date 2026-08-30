@@ -586,7 +586,20 @@ def _replay_history(
     )
 
 
+def _to_cpu(val):
+    """Host copy of a tensor. View → CPU, no extra GPU clone."""
+    if hasattr(val, "detach"):
+        return val.detach().to("cpu")
+    return val
+
+
 def _snapshot_kv(pipeline):
+    """Used-prefix KV + crossattn on CPU.
+
+    A GPU clone of the live cache is a second ~40 GB tensor. Intra / restep
+    also keep a pre-block snap, so three GPU copies miss an H200 once the
+    30 s cache fills (16546045 / 048 / 059).
+    """
     kv = []
     for blk in _active_kv(pipeline):
         end = max(
@@ -597,14 +610,14 @@ def _snapshot_kv(pipeline):
             "end": end,
             "local_end": int(blk["local_end_index"].item()),
             "global_end": int(blk["global_end_index"].item()),
-            "k": blk["k"][:, : max(end, 1)].clone(),
-            "v": blk["v"][:, : max(end, 1)].clone(),
+            "k": _to_cpu(blk["k"][:, : max(end, 1)]),
+            "v": _to_cpu(blk["v"][:, : max(end, 1)]),
         })
     cross = []
     for blk in pipeline.crossattn_cache:
         rec = {}
         for key, val in blk.items():
-            rec[key] = val.clone() if hasattr(val, "clone") else val
+            rec[key] = _to_cpu(val) if hasattr(val, "detach") else val
         cross.append(rec)
     return {"kv": kv, "cross": cross}
 
@@ -2147,11 +2160,14 @@ def _rf_block(pipeline) -> int:
 
 
 def _rf_replay_clean(pipeline, output, n_latents, conditional_dict, device):
-    """Reset KV and replay clean latents 0:n_latents (prefix warmup / recache)."""
+    """Reset KV in place and replay clean latents 0:n_latents.
+
+    Do not re-allocate. `_initialize_kv_cache` while the old list is still
+    referenced is a second full RF cache (16546053 rf_bpseudo OOM).
+    """
     import torch
 
-    pipeline._initialize_kv_cache(1, output.dtype, device)
-    pipeline._initialize_crossattn_cache(1, output.dtype, device)
+    _reset_caches(pipeline, 1, output.dtype, device)
     kv = _rf_kv(pipeline)
     block = _rf_block(pipeline)
     ts0 = torch.ones([1, block], device=device, dtype=torch.int64) * 0
@@ -2180,7 +2196,7 @@ def _snap_kv(kv):
     for item in kv:
         if isinstance(item, dict):
             out.append({
-                k: (v.clone() if hasattr(v, "clone") else v)
+                k: (_to_cpu(v) if hasattr(v, "detach") else v)
                 for k, v in item.items()
             })
         else:
@@ -2835,7 +2851,9 @@ def generate_rolling_v2v(
                     saved = output[:, last0:committed].clone()
                     maes = []
                     for ck in range(2):
-                        tmp = output.clone()
+                        output[:, last0:committed] = saved
+                        if _torch.cuda.is_available():
+                            _torch.cuda.empty_cache()
                         bnoise = _torch.randn(
                             [1, last3, LATENT_C, LATENT_H, LATENT_W],
                             device=device, dtype=output.dtype,
@@ -2844,12 +2862,12 @@ def generate_rolling_v2v(
                             ),
                         )
                         _rf_roll_span(
-                            pipeline, tmp, last0, last3, bnoise,
+                            pipeline, output, last0, last3, bnoise,
                             conditional_dict, device,
                             int(seed) + 333 * ck + int(frozen),
                         )
                         mae = float(
-                            (tmp[:, last0:committed].float() - saved.float())
+                            (output[:, last0:committed].float() - saved.float())
                             .abs().mean().item()
                         )
                         maes.append(mae)

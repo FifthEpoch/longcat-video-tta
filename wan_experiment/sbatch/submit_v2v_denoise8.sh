@@ -6,14 +6,15 @@
 #   WAVE=lastmix bash wan_experiment/sbatch/submit_v2v_denoise8.sh
 #   WAVE=bpseudo bash wan_experiment/sbatch/submit_v2v_denoise8.sh
 #   WAVE=restep  bash wan_experiment/sbatch/submit_v2v_denoise8.sh
+#   WAVE=crash   bash wan_experiment/sbatch/submit_v2v_denoise8.sh
 #   WAVE=all     bash wan_experiment/sbatch/submit_v2v_denoise8.sh
 #
 # lastmix  — last DMD step 0.5-mix with step-3 if appear-punch / always
 # bpseudo  — hide last committed block; extra seed writes the next if it wins
 # restep   — redo last 2 of 4 DMD steps if appear-punch / always
 #
-# lastmix is NO (2026-08-29). Paste WAVE=bpseudo and WAVE=restep.
-# Do not relaunch RF intra. Do not scancel 16545806.
+# lastmix / sf_bpseudo / rf_restep are NO. WAVE=crash = SF restep + RF bpseudo.
+# Do not relaunch RF intra.
 # Thresholds pre-registered. Do not retune 1.5×. VIDEO_WORKERS=1.
 
 set -euo pipefail
@@ -77,6 +78,10 @@ elif [[ "${WAVE}" == "restep" ]]; then
     submit_method sf_restep_always 4 "${ALWAYS_WALL}"
     submit_method rf_restep 4 "${SEARCH_WALL}"
     submit_method rf_restep_always 4 "${ALWAYS_WALL}"
+elif [[ "${WAVE}" == "crash" ]]; then
+    submit_method sf_restep 4 "${SEARCH_WALL}"
+    submit_method sf_restep_always 4 "${ALWAYS_WALL}"
+    submit_method rf_bpseudo 4 "${SEARCH_WALL}"
 elif [[ "${WAVE}" == "all" ]]; then
     submit_method sf_lastmix 4 "${SEARCH_WALL}"
     submit_method sf_lastmix_always 4 "${ALWAYS_WALL}"
@@ -90,7 +95,7 @@ elif [[ "${WAVE}" == "all" ]]; then
     submit_method rf_restep 4 "${SEARCH_WALL}"
     submit_method rf_restep_always 4 "${ALWAYS_WALL}"
 else
-    echo "ERROR: WAVE=${WAVE} (use lastmix|bpseudo|restep|all)" >&2
+    echo "ERROR: WAVE=${WAVE} (use lastmix|bpseudo|restep|crash|all)" >&2
     exit 1
 fi
 

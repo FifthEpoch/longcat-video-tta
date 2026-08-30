@@ -4139,6 +4139,24 @@ Need Dyn% on the 128 and .err tails on the crashes.
 
 ---
 
+## 2026-08-30 — 128 Dyn%; OOM is 3× GPU KV
+**Tags:** wan, v2v, harvest, methodology
+**Owner:** agent
+**Refs:** user paste 14:15,
+`paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`,
+`paper_tables/2026-08-30_wan_v2v_oom_cpu_snap.md`
+
+Caption-128 official Dyn%: SF **32.8% (42/128)**, rolling
+**28.9% (37/128)**. Median 0 hid both. Rolling +33% tail is not
+an official motion win. N=32 had the same sign (21.9 vs 18.8).
+Crashes 045/048/053/059 are still H200 OOM: one-live-snap left
+pre+live+post GPU copies; RF bpseudo re-inited KV. CPU-offload
++ in-place reset implemented. Smoke only — scored in-chunk
+siblings already fail the letter. WAVE=cite still the paper-size
+job.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

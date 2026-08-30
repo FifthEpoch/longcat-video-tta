@@ -5,19 +5,20 @@
 **256 mp4.** First 32 hardlinked from caption-32. Prompts `metadata_csv`.
 **Cite this 128-row Self Forcing**, not the N=32 subject 0.700.
 
-## Official full-clip (medians)
+## Official full-clip
 
-| Method | tail | subject | IQ | Aes | Dyn med | flicker |
+| Method | tail | subject | IQ | Aes | Dyn% | flicker |
 |---|---:|---:|---:|---:|---:|---:|
-| Self Forcing | 0.0119 | 0.666 | **72.07** | 0.499 | 0 | 0.988 |
-| Rolling Forcing | **0.0158** (**+33%**) | **0.685** | 71.52 | 0.529 | 0 | 0.983 |
+| Self Forcing | 0.0119 | 0.666 | **72.07** | 0.499 | **32.8% (42/128)** | 0.988 |
+| Rolling Forcing | **0.0158** (**+33%**) | **0.685** | 71.52 | 0.529 | 28.9% (37/128) | 0.983 |
 
-Analyzer **PROMOTE** rolling vs this 128 SF: tail up, subject up,
-IQ −0.55 (inside the 1.0 band). Flicker −0.005. Host, not ours.
+Dyn = `population.dynamic_degree` mean (official). Median is 0
+on both — do not cite the median. Analyzer **PROMOTE** was tail
++ subject + IQ band. Official Dyn% **loses** (37 vs 42). Same
+sign as N=32 (18.8% vs 21.9%). Host, not ours.
 
-N=32 SF subject 0.700 does **not** copy to N=128 (0.666). Do not
-mix those tables. Dyn official is **percent of clips**, not this
-median 0 — backfill Dyn% before the paper host row.
+N=32 SF subject 0.700 / Dyn 21.9% does **not** copy to N=128
+(0.666 / 32.8%). Do not mix those tables.
 
 ## Not launched
 

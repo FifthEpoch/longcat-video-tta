@@ -23,8 +23,9 @@ Every SF intra / SF restep / RF bpseudo job **crashed**.
 Punch-or-rewrite inside the 4-step DMD is an identity tax, not
 a motion method. Do not scale any of these. Do not loosen 1.5×.
 
-## Next
+## OOM tails (2026-08-30 14:15)
 
-Need `.err` tails on 16546045 (SF intra), 16546059 (SF restep),
-16546053 (RF bpseudo) before another fix. Paper method stays
-Pseudo-future Search. Caption-128 hosts are scored separately.
+All four crashes are H200 allocator OOM (140 GB card, <2 GB free).
+Not a Python TypeError. One-live-snap still held three GPU KV
+copies. CPU-offload fix: `2026-08-30_wan_v2v_oom_cpu_snap.md`.
+Smoke only. Paper method stays Pseudo-future Search.

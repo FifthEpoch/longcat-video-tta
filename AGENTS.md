@@ -254,11 +254,14 @@ Per-method `merged_summary.json` lives at:
   Paper name: **Pseudo-future Search** (code `sf_pseudo`).
   In-chunk: scored arms **NO** (lastmix / sf_bpseudo / rf_restep
   identity). SF intra + SF restep + RF bpseudo still **FAILED**.
-  Caption-128 hosts **DONE**: SF 0.666 / 72.07; rolling +33%
-  tail / 0.685 / 71.52. Cite 128 SF. WAVE=cite (Pseudo+Always)
-  not launched. Tables:
+  Caption-128 hosts **DONE**: SF 0.666 / 72.07 / **Dyn 32.8%
+  (42/128)**; rolling +33% tail / 0.685 / 71.52 / Dyn **28.9%**.
+  Cite 128 SF. Rolling official Dyn% loses. WAVE=cite not launched.
+  In-chunk OOM = 3× GPU KV; CPU-snap ready, smoke not launched.
+  Tables:
   `paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md`,
-  `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`.
+  `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`,
+  `paper_tables/2026-08-30_wan_v2v_oom_cpu_snap.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
