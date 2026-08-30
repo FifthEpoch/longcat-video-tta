@@ -7,6 +7,15 @@ name was still `sf_nudge`. Fixed. Resubmit Self Forcing only.
 **Rolling 8-video:** already wrote 8 videos (one still finishing).
 Do not remake Rolling.
 
+## Self Forcing resubmit 17:05 (kind fix `deee3ad`)
+
+2-video: **16620355–362**, scorer **16620363**.  
+8-video: **16620364–371**, scorer **16620372**.
+
+Cancel this resubmit only:
+`scancel 16620355 16620356 16620357 16620358 16620359 16620360 16620361 16620362 16620363`
+`scancel 16620364 16620365 16620366 16620367 16620368 16620369 16620370 16620371 16620372`
+
 ---
 
 # Keep-picture jobs submitted 2026-08-30 14:56

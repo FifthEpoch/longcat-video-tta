@@ -4223,6 +4223,16 @@ cite.
 
 ---
 
+## 2026-08-30 — SF keep resubmitted 16620355–372
+**Tags:** wan, v2v
+**Owner:** agent
+**Refs:** user paste 17:05
+
+WAVE=sf after `deee3ad`. Smoke 355–363, N=8 364–372. Do not
+scancel RF keep or cite 748–750.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
