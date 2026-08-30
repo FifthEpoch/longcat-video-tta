@@ -4,6 +4,7 @@
 #   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 #   SMOKE=1 bash wan_experiment/sbatch/submit_v2v_keep8.sh
 #   bash wan_experiment/sbatch/submit_v2v_keep8.sh
+#   WAVE=sf bash wan_experiment/sbatch/submit_v2v_keep8.sh   # SF only (RF already OK)
 #
 # Gate is latent travel (first vs last latent of the block) at 0.8×.
 # Never fire on sharpness / color. Do not retune.
@@ -56,20 +57,29 @@ submit_method() {
     METHODS_RUN+=("${method}")
 }
 
-submit_method sf_nudge 4 "${SEARCH_WALL}"
-submit_method sf_nudge_always 4 "${ALWAYS_WALL}"
-submit_method sf_nextseed 4 "${SEARCH_WALL}"
-submit_method sf_nextseed_always 4 "${ALWAYS_WALL}"
-submit_method sf_wiggle 4 "${SEARCH_WALL}"
-submit_method sf_wiggle_always 4 "${ALWAYS_WALL}"
-submit_method sf_latmot 4 "${SEARCH_WALL}"
-submit_method sf_latmot_always 4 "${ALWAYS_WALL}"
-submit_method rf_nudge 4 "${SEARCH_WALL}"
-submit_method rf_nudge_always 4 "${ALWAYS_WALL}"
-submit_method rf_wiggle 4 "${SEARCH_WALL}"
-submit_method rf_wiggle_always 4 "${ALWAYS_WALL}"
-submit_method rf_latmot 4 "${SEARCH_WALL}"
-submit_method rf_latmot_always 4 "${ALWAYS_WALL}"
+WAVE="${WAVE:-all}"
+if [[ "${WAVE}" == "sf" || "${WAVE}" == "all" ]]; then
+    submit_method sf_nudge 4 "${SEARCH_WALL}"
+    submit_method sf_nudge_always 4 "${ALWAYS_WALL}"
+    submit_method sf_nextseed 4 "${SEARCH_WALL}"
+    submit_method sf_nextseed_always 4 "${ALWAYS_WALL}"
+    submit_method sf_wiggle 4 "${SEARCH_WALL}"
+    submit_method sf_wiggle_always 4 "${ALWAYS_WALL}"
+    submit_method sf_latmot 4 "${SEARCH_WALL}"
+    submit_method sf_latmot_always 4 "${ALWAYS_WALL}"
+fi
+if [[ "${WAVE}" == "rf" || "${WAVE}" == "all" ]]; then
+    submit_method rf_nudge 4 "${SEARCH_WALL}"
+    submit_method rf_nudge_always 4 "${ALWAYS_WALL}"
+    submit_method rf_wiggle 4 "${SEARCH_WALL}"
+    submit_method rf_wiggle_always 4 "${ALWAYS_WALL}"
+    submit_method rf_latmot 4 "${SEARCH_WALL}"
+    submit_method rf_latmot_always 4 "${ALWAYS_WALL}"
+fi
+if [[ "${#JOBS[@]}" -eq 0 ]]; then
+    echo "ERROR: WAVE=${WAVE} (use all|sf|rf)" >&2
+    exit 1
+fi
 
 ROOT="${PROJECT_ROOT}/wan_experiment/results/${SERIES}"
 VIDEO_DIRS=""

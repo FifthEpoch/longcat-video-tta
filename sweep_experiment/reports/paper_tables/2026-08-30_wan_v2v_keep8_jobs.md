@@ -1,5 +1,16 @@
 # Keep-picture jobs submitted 2026-08-30 14:56
 
+**2-video check:** Self Forcing **FAIL** (0 videos, ~2 min, exit 2:0).
+Rolling **PASS** (2 videos). The code looked for `nudge` but the
+name was still `sf_nudge`. Fixed. Resubmit Self Forcing only.
+
+**Rolling 8-video:** already wrote 8 videos (one still finishing).
+Do not remake Rolling.
+
+---
+
+# Keep-picture jobs submitted 2026-08-30 14:56
+
 Pull `69eb346..384e72a`. Do not scancel. Do not cancel
 **16615741–750** (crash reruns + 128 search).
 

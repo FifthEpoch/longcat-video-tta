@@ -1636,7 +1636,8 @@ def _fill_sf_keep_chunk(
         raise RuntimeError(f"keep chunk {chunk_latents} % {block}")
     n_blocks = chunk_latents // block
     always = method.endswith("_always")
-    kind = method.replace("_always", "")
+    base = method[:-7] if always else method
+    kind = base.split("_", 1)[-1]
     apply_shift(pipeline, default_shift)
     apply_guidance(pipeline, default_cfg)
     _reset_caches(pipeline, 1, output.dtype, device)

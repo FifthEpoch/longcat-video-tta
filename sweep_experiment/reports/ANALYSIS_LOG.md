@@ -4210,6 +4210,19 @@ reruns 741–747.
 
 ---
 
+## 2026-08-30 — keep SF failed on kind name; RF passed
+**Tags:** wan, v2v
+**Owner:** agent
+**Refs:** user paste 17:03
+
+`kind = method.replace("_always","")` left `sf_nudge`. Every SF
+keep arm raised unknown method after model load. RF path does not
+use that fill — 2/2 and 8/8 videos. rf_bpseudo rerun 16615746
+COMPLETED. Resubmit WAVE=sf only. Do not remake RF. Do not scancel
+cite.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
