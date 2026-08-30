@@ -4173,6 +4173,18 @@ stay closed.
 
 ---
 
+## 2026-08-30 — cite-128 + crash N=8 submitted
+**Tags:** wan, v2v
+**Owner:** agent
+**Refs:** user paste 14:31,
+`paper_tables/2026-08-30_wan_v2v_cite128_jobs.md`
+
+Jobs 16615741–750. Intra 741/742, restep 744/745, rf_bpseudo 746,
+Pseudo 748, Always 749. First 32 seeded. Do not scancel. Do not
+remake hosts.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

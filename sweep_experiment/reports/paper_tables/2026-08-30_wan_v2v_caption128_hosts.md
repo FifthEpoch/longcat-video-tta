@@ -20,7 +20,7 @@ sign as N=32 (18.8% vs 21.9%). Host, not ours.
 N=32 SF subject 0.700 / Dyn 21.9% does **not** copy to N=128
 (0.666 / 32.8%). Do not mix those tables.
 
-## Not launched
+## Cite wave (launched 14:31)
 
-`WAVE=cite`: `sf_pseudo` + `sf_always_search` on the same 128
-(reuse first 32). That is the paper-size Pseudo table.
+Pseudo **16615748**, Always-search **16615749**, VBench **16615750**.
+First 32 of each copied from caption-32. Do not remake hosts.
