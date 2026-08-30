@@ -1,6 +1,6 @@
 # Keep the picture — mid-chunk N=8 (2026-08-30)
 
-**Status:** SUBMIT-READY. Caption 8 videos. Same-wave always-on twins.
+**Status:** IN FLIGHT. Smoke **16616159–173**. N=8 **16616174–188**.
 Gate = **latent travel** (how much the last latent of a block differs
 from the first). Fire if travel < 0.8× the previous block. Never use
 sharpness or color. Do not retune. k=4.

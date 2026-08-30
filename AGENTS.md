@@ -321,11 +321,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-30 14:31):
-  intra **16615741/742** VBench 743; restep **744/745** rf_bpseudo
-  **746** VBench 747; cite-128 Pseudo **748** Always **749**
-  VBench **750**. Keep-8 paste ready (`submit_v2v_keep8.sh`).
-  Do not remake 128 hosts. Do not scancel 741–750. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-30 14:56):
+  crash-rerun **16615741–747**; cite-128 **748–750**;
+  keep-8 smoke **16616159–173**; keep-8 N=8 **174–188**.
+  Do not remake 128 hosts. Do not scancel these. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

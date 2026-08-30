@@ -4199,6 +4199,17 @@ for mix/residual/latmot. Do not scancel cite 748–750.
 
 ---
 
+## 2026-08-30 — keep-8 jobs 16616159–188
+**Tags:** wan, v2v
+**Owner:** agent
+**Refs:** user paste 14:56,
+`paper_tables/2026-08-30_wan_v2v_keep8_jobs.md`
+
+Smoke 159–173, N=8 174–188. Do not scancel cite 748–750 or crash
+reruns 741–747.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
