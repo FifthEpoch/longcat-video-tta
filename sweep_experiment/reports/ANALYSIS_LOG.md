@@ -4157,6 +4157,22 @@ job.
 
 ---
 
+## 2026-08-30 — launch crashed N=8 + cite 128; intra next is “don’t replace”
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 14:27,
+`paper_tables/2026-08-30_wan_v2v_intrablock_next.md`
+
+User asked to rerun the crashed 8-video methods, launch the 128
+Pseudo + Always jobs, and invent better mid-chunk interventions.
+Hosts stay on disk. Lesson from scored NOs: 50/50 mix, full-block
+redraw, and last-2-of-4 redo all replace the picture on a 4-step
+model. Next ideas: 10% nudge, motion-only trigger, steer the next
+block only, residual graft. Do not launch those tonight. CFG/shift
+stay closed.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

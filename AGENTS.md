@@ -256,8 +256,10 @@ Per-method `merged_summary.json` lives at:
   identity). SF intra + SF restep + RF bpseudo still **FAILED**.
   Caption-128 hosts **DONE**: SF 0.666 / 72.07 / **Dyn 32.8%
   (42/128)**; rolling +33% tail / 0.685 / 71.52 / Dyn **28.9%**.
-  Cite 128 SF. Rolling official Dyn% loses. WAVE=cite not launched.
-  In-chunk OOM = 3× GPU KV; CPU-snap ready, smoke not launched.
+  Cite 128 SF. Rolling official Dyn% loses. WAVE=cite + crashed
+  N=8 (CPU-snap) launching. Mid-chunk next ideas (nudge / motion
+  gate / next-block / residual) are a note, not a submit:
+  `paper_tables/2026-08-30_wan_v2v_intrablock_next.md`.
   Tables:
   `paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md`,
   `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`,
@@ -320,7 +322,8 @@ Per-method `merged_summary.json` lives at:
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-08-30 14:08): none.
-  WAVE=cite (Pseudo+Always N=128) not launched. **No I2V. No TTC.**
+  WAVE=cite (Pseudo+Always N=128) + crashed N=8 (CPU-snap)
+  **PASTE 2026-08-30**. Do not regenerate 128 hosts. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
