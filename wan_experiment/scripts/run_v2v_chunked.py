@@ -65,6 +65,21 @@ Methods:
   rf_bpseudo     — hold out last 3 of the span; keep alt seed if MAE wins
   rf_restep      — if span appear-punches, reroll last 3 latents
   rf_restep_always — always reroll last 3 of each span
+  sf_nudge       — last step 90% finished + 10% previous step if block
+                   latent-travel drops vs previous block (0.8×)
+  sf_nudge_always — always 10% last-step mix
+  sf_nextseed    — do not rewrite this block; next block uses seed 1 if
+                   this block's latent-travel dropped
+  sf_nextseed_always — block 0 seed 0; later blocks seed 1
+  sf_wiggle      — keep default block; add 0.2 × (best-travel − default);
+                   lock first latent to default (subject seam)
+  sf_wiggle_always — always residual graft + seam lock
+  sf_latmot      — k=4; pick max |last−first| latent; lock first latent
+                   to cand0 so who entered the block does not change
+  sf_latmot_always — same pick every block
+  rf_nudge / rf_nudge_always — 90% last-3 + 10% previous-3 (latmot gate)
+  rf_wiggle / rf_wiggle_always — residual on last-3 + seam lock
+  rf_latmot / rf_latmot_always — pick max last-3 travel + seam lock
   ada_fixed      — AdaSteer: δ on time_embedding, fit once on prefix, hold
   ada_stream     — AdaSteer: refit each chunk, blend toward prefix δ0
   ada_resid      — AdaSteer: δ on mid-late residual blocks, fit once
@@ -175,6 +190,10 @@ METHODS = (
     "sf_restep", "sf_restep_always",
     "rf_lastmix", "rf_lastmix_always", "rf_bpseudo",
     "rf_restep", "rf_restep_always",
+    "sf_nudge", "sf_nudge_always", "sf_nextseed", "sf_nextseed_always",
+    "sf_wiggle", "sf_wiggle_always", "sf_latmot", "sf_latmot_always",
+    "rf_nudge", "rf_nudge_always", "rf_wiggle", "rf_wiggle_always",
+    "rf_latmot", "rf_latmot_always",
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
     "ada_fixed", "ada_stream", "ada_resid",
@@ -210,16 +229,26 @@ INTRA_MOTION_FRAC = 0.8
 INTRA_SHARP_MULT = 1.5
 INTRA_COLOR_MULT = 1.5
 INTRA_SAT_MULT = 1.5
+KEEP_NUDGE_W = 0.1
+KEEP_WIGGLE_A = 0.2
 RF_CONTROLLER_METHODS = frozenset({
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "rf_always_search", "rf_intra", "rf_intra_always",
     "rf_lastmix", "rf_lastmix_always", "rf_bpseudo",
     "rf_restep", "rf_restep_always",
+    "rf_nudge", "rf_nudge_always", "rf_wiggle", "rf_wiggle_always",
+    "rf_latmot", "rf_latmot_always",
 })
 SF_DENOISE_METHODS = frozenset({
     "sf_lastmix", "sf_lastmix_always",
     "sf_bpseudo", "sf_bpseudo_always",
     "sf_restep", "sf_restep_always",
+})
+SF_KEEP_METHODS = frozenset({
+    "sf_nudge", "sf_nudge_always",
+    "sf_nextseed", "sf_nextseed_always",
+    "sf_wiggle", "sf_wiggle_always",
+    "sf_latmot", "sf_latmot_always",
 })
 ROLLING_HOST_METHODS = frozenset({"rf_chunk", "rf_recache"}) | RF_CONTROLLER_METHODS
 ROLLING_SAMPLER_METHODS = frozenset({"sf_roll", "rf_recache"}) | RF_CONTROLLER_METHODS
@@ -939,6 +968,54 @@ def _intra_flags(sig: dict, ref: dict, prev_mot) -> dict:
     }
 
 
+def _latent_travel(latents) -> float:
+    """Mean |last latent − first latent| of a [1,T,C,H,W] block."""
+    import torch
+
+    if latents is None or int(latents.shape[1]) < 2:
+        return float("nan")
+    return float(
+        (latents[:, -1].float() - latents[:, 0].float()).abs().mean().item()
+    )
+
+
+def _keep_motion_sick(cur, prev) -> bool:
+    return bool(
+        prev is not None and prev == prev and prev > 0
+        and cur is not None and cur == cur
+        and cur < INTRA_MOTION_FRAC * prev
+    )
+
+
+def _prev_block_travel(output, start: int, block: int):
+    if start >= block:
+        return _latent_travel(output[:, start - block:start])
+    if start >= 2:
+        return _latent_travel(output[:, :start])
+    return None
+
+
+def _write_sf_block(
+    pipeline, output, start, block, conditional_dict, seed, cand, ci, bi, device,
+):
+    import torch
+
+    rng = _chunk_rng(device, seed, cand, ci * 100 + bi)
+    noise = torch.randn(
+        [1, block, LATENT_C, LATENT_H, LATENT_W],
+        device=device, dtype=torch.bfloat16, generator=rng,
+    )
+    _denoise_chunk(pipeline, noise, start, conditional_dict, output, rng)
+
+
+def _recache_to(pipeline, output, end, conditional_dict, prefix_latents):
+    _reset_caches(pipeline, 1, output.dtype, output.device)
+    if end > 0:
+        _replay_history(
+            pipeline, output, end, conditional_dict, "full", prefix_latents,
+        )
+
+
 def _block_signals(pipeline, output, start: int, n_lat: int) -> dict:
     end = start + n_lat
     pix = _decode_pixels(pipeline, output[:, :end])
@@ -1223,6 +1300,9 @@ def _denoise_one_block_guided(
     seed: int,
     ci: int,
     bi: int,
+    mix_w: float = 0.5,
+    gate_mode: str = "appear",
+    prev_latmot=None,
 ):
     """One 3-latent block with optional last-step mix and last-2-step restart."""
     import torch
@@ -1254,7 +1334,11 @@ def _denoise_one_block_guided(
         if index == n_step - 1:
             punch = False
             flags = {}
-            if appear_ref is not None and (lastmix != "off" or restep != "off"):
+            cur_travel = _latent_travel(denoised_pred)
+            log["latmot"] = _json_float(cur_travel)
+            if gate_mode == "latmot" and (lastmix != "off" or restep != "off"):
+                punch = _keep_motion_sick(cur_travel, prev_latmot)
+            elif appear_ref is not None and (lastmix != "off" or restep != "off"):
                 flags = _appear_flags_from_latents(
                     pipeline, denoised_pred, appear_ref,
                 )
@@ -1266,8 +1350,10 @@ def _denoise_one_block_guided(
             } if flags else {}
             do_mix = lastmix == "always" or (lastmix == "gate" and punch)
             if do_mix and prev_pred is not None:
-                denoised_pred = 0.5 * denoised_pred + 0.5 * prev_pred
+                w = float(mix_w)
+                denoised_pred = (1.0 - w) * denoised_pred + w * prev_pred
                 log["mix"] = True
+                log["mix_w"] = w
             do_restep = restep == "always" or (restep == "gate" and punch)
             if do_restep and mid_pred is not None and int(search_k) > 1:
                 best = {
@@ -1523,6 +1609,177 @@ def _fill_sf_denoise_chunk(
     }
 
 
+def _fill_sf_keep_chunk(
+    pipeline,
+    output,
+    committed: int,
+    chunk_latents: int,
+    conditional_dict,
+    seed: int,
+    ci: int,
+    device,
+    search_k: int,
+    default_shift: float,
+    default_cfg: float,
+    prefix_latents: int,
+    prefix_pixels: np.ndarray,
+    prefix_motion,
+    method: str,
+    prev_chunk_mot,
+    ref,
+):
+    """Picture-preserving intra-block hooks. Motion gate is latent travel."""
+    import torch
+
+    block = int(pipeline.num_frame_per_block)
+    if chunk_latents % block != 0:
+        raise RuntimeError(f"keep chunk {chunk_latents} % {block}")
+    n_blocks = chunk_latents // block
+    always = method.endswith("_always")
+    kind = method.replace("_always", "")
+    apply_shift(pipeline, default_shift)
+    apply_guidance(pipeline, default_cfg)
+    _reset_caches(pipeline, 1, output.dtype, device)
+    if committed > 0:
+        _replay_history(
+            pipeline, output, committed, conditional_dict,
+            "full", prefix_latents,
+        )
+    if ref is None:
+        ref_win = (
+            prefix_pixels[:REF_WIN]
+            if prefix_pixels.shape[0] >= REF_WIN
+            else prefix_pixels
+        )
+        ref = reference_signals(ref_win)
+    block_logs = []
+    searched = False
+    next_cand = 0
+    k = max(1, int(search_k))
+    for bi in range(n_blocks):
+        start = committed + bi * block
+        prev_t = _prev_block_travel(output, start, block)
+        blog = {"block": bi, "kind": kind, "always": always}
+        if kind == "nudge":
+            rng = _chunk_rng(device, seed, 0, ci * 100 + bi)
+            noise = torch.randn(
+                [1, block, LATENT_C, LATENT_H, LATENT_W],
+                device=device, dtype=torch.bfloat16, generator=rng,
+            )
+            guided = _denoise_one_block_guided(
+                pipeline, noise, start, conditional_dict, output, rng,
+                device, "always" if always else "gate", "off", None,
+                k, seed, ci, bi,
+                mix_w=KEEP_NUDGE_W, gate_mode="latmot", prev_latmot=prev_t,
+            )
+            blog.update(guided)
+            searched = searched or bool(guided.get("mix"))
+        elif kind == "nextseed":
+            if always:
+                cand = 0 if bi == 0 else 1
+            else:
+                cand = int(next_cand)
+            _write_sf_block(
+                pipeline, output, start, block, conditional_dict,
+                seed, cand, ci, bi, device,
+            )
+            travel = _latent_travel(output[:, start:start + block])
+            sick = _keep_motion_sick(travel, prev_t)
+            next_cand = 1 if (always or sick) else 0
+            blog.update({
+                "cand": cand, "latmot": _json_float(travel),
+                "sick": bool(sick), "next_cand": int(next_cand),
+            })
+            searched = searched or cand != 0
+        elif kind in ("wiggle", "latmot"):
+            snap = _snapshot_kv(pipeline)
+            _write_sf_block(
+                pipeline, output, start, block, conditional_dict,
+                seed, 0, ci, bi, device,
+            )
+            z0 = output[:, start:start + block].detach().clone()
+            t0 = _latent_travel(z0)
+            sick = _keep_motion_sick(t0, prev_t)
+            do = bool(always or sick)
+            best_z = z0
+            best_t = t0
+            best_c = 0
+            rows = [{"cand": 0, "latmot": _json_float(t0)}]
+            if do and k > 1:
+                searched = True
+                for cand in range(1, k):
+                    _restore_kv(pipeline, snap)
+                    output[:, start:start + block] = z0
+                    _write_sf_block(
+                        pipeline, output, start, block, conditional_dict,
+                        seed, cand, ci, bi, device,
+                    )
+                    zc = output[:, start:start + block].detach().clone()
+                    tc = _latent_travel(zc)
+                    rows.append({"cand": cand, "latmot": _json_float(tc)})
+                    if tc == tc and (best_t != best_t or tc > best_t):
+                        best_z, best_t, best_c = zc, tc, cand
+                if kind == "wiggle":
+                    out = z0 + float(KEEP_WIGGLE_A) * (best_z - z0)
+                else:
+                    out = best_z
+                out = out.clone()
+                out[:, 0] = z0[:, 0]
+                output[:, start:start + block] = out
+                _recache_to(
+                    pipeline, output, start + block,
+                    conditional_dict, prefix_latents,
+                )
+            blog.update({
+                "sick": bool(sick), "do": bool(do),
+                "latmot0": _json_float(t0),
+                "pick": int(best_c),
+                "latmot_pick": _json_float(best_t),
+                "rows": rows, "seam": True,
+            })
+            del snap
+        else:
+            raise RuntimeError(f"unknown keep method {method}")
+        travel = _latent_travel(output[:, start:start + block])
+        blog["latmot_out"] = _json_float(travel)
+        block_logs.append(blog)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print(
+            f"    keep {method} c{ci}b{bi} {blog}",
+            flush=True,
+        )
+    end = committed + chunk_latents
+    pixels = _decode_pixels(pipeline, output[:, :end])
+    chunk_mot = _chunk_pixel_motion(pixels, committed, chunk_latents)
+    log = {
+        "chunk": ci,
+        "chosen_cand": 0,
+        "search_k": k,
+        "method": method,
+        "searched": bool(searched),
+        "gate_reason": "keep_latmot",
+        "prefix_motion": _json_float(prefix_motion),
+        "chunk_motion": _json_float(chunk_mot),
+        "keep_blocks": block_logs,
+        "candidates": [],
+        "chosen_score": None,
+        "hinge_score": None,
+        "appear_score": None,
+        "motion_score": None,
+        "score": None,
+        "breakdown": {},
+        "free": {},
+    }
+    return {
+        "pixels": pixels,
+        "ref": ref,
+        "chunk_motion": chunk_mot,
+        "log": log,
+        "searched": searched,
+    }
+
+
 def generate_chunked_v2v(
     pipeline,
     video_path: Path,
@@ -1611,6 +1868,28 @@ def generate_chunked_v2v(
                 incoming_motion = incoming_signals.get("temporal_motion")
                 if incoming_prev is not None:
                     incoming_delta = incoming_drift - incoming_prev
+
+        if method in SF_KEEP_METHODS:
+            keep = _fill_sf_keep_chunk(
+                pipeline, output, committed, chunk_latents,
+                conditional_dict, seed, ci, device, search_k,
+                default_shift, default_cfg, prefix_latents,
+                prefix_only, prefix_motion, method, prev_chunk_mot, ref,
+            )
+            committed += chunk_latents
+            committed_pixels = keep["pixels"]
+            ref = keep["ref"]
+            if keep["chunk_motion"] is not None:
+                prev_chunk_mot = keep["chunk_motion"]
+            keep["log"]["incoming_motion"] = _json_float(incoming_motion)
+            keep["log"]["incoming_drift"] = _json_float(incoming_drift)
+            chunk_logs.append(keep["log"])
+            print(
+                f"  chunk {ci}: keep {method} searched={keep['searched']} "
+                f"mot={keep['chunk_motion']}",
+                flush=True,
+            )
+            continue
 
         if method in SF_DENOISE_METHODS:
             den = _fill_sf_denoise_chunk(
@@ -2782,6 +3061,9 @@ def generate_rolling_v2v(
                 method_name in (
                     "rf_lastmix", "rf_lastmix_always",
                     "rf_restep", "rf_restep_always", "rf_bpseudo",
+                    "rf_nudge", "rf_nudge_always",
+                    "rf_wiggle", "rf_wiggle_always",
+                    "rf_latmot", "rf_latmot_always",
                 )
                 and last0 >= prefix_latents
                 and last3 > 0
@@ -2808,6 +3090,81 @@ def generate_rolling_v2v(
                             pipeline, output, committed, conditional_dict, device,
                         )
                         dlog["mix"] = True
+                if method_name in (
+                    "rf_nudge", "rf_nudge_always",
+                    "rf_wiggle", "rf_wiggle_always",
+                    "rf_latmot", "rf_latmot_always",
+                ):
+                    prev0 = last0 - last3
+                    t_last = _latent_travel(output[:, last0:committed])
+                    t_prev = (
+                        _latent_travel(output[:, prev0:last0])
+                        if prev0 >= 0 else None
+                    )
+                    sick = _keep_motion_sick(t_last, t_prev)
+                    always_k = method_name.endswith("_always")
+                    do_k = bool(always_k or sick)
+                    dlog["latmot"] = _json_float(t_last)
+                    dlog["latmot_prev"] = _json_float(t_prev)
+                    dlog["sick"] = bool(sick)
+                    dlog["do"] = bool(do_k)
+                    if method_name in ("rf_nudge", "rf_nudge_always"):
+                        if do_k and prev0 >= 0:
+                            w = float(KEEP_NUDGE_W)
+                            output[:, last0:committed] = (
+                                (1.0 - w) * output[:, last0:committed]
+                                + w * output[:, prev0:last0]
+                            )
+                            kv = _rf_replay_clean(
+                                pipeline, output, committed,
+                                conditional_dict, device,
+                            )
+                            dlog["nudge"] = True
+                    if method_name in (
+                        "rf_wiggle", "rf_wiggle_always",
+                        "rf_latmot", "rf_latmot_always",
+                    ) and do_k:
+                        import torch as _torch
+                        saved = output[:, last0:committed].clone()
+                        best = saved
+                        best_t = t_last
+                        best_c = 0
+                        n_try = 4 if method_name.startswith("rf_latmot") else 2
+                        for ck in range(1, n_try):
+                            output[:, last0:committed] = saved
+                            if _torch.cuda.is_available():
+                                _torch.cuda.empty_cache()
+                            tail0 = last0 - prefix_latents
+                            tail1 = committed - prefix_latents
+                            bnoise = _torch.randn(
+                                saved.shape, device=device, dtype=output.dtype,
+                                generator=_torch.Generator(device=device).manual_seed(
+                                    int(seed) + 94000 + int(frozen) + 17 * ck
+                                ),
+                            )
+                            kv = _rf_roll_span(
+                                pipeline, output, last0, last3, bnoise,
+                                conditional_dict, device,
+                                int(seed) + 94000 + int(frozen) + 17 * ck,
+                            )
+                            tc = _latent_travel(output[:, last0:committed])
+                            if tc == tc and (best_t != best_t or tc > best_t):
+                                best = output[:, last0:committed].clone()
+                                best_t = tc
+                                best_c = ck
+                        if method_name.startswith("rf_wiggle"):
+                            out = saved + float(KEEP_WIGGLE_A) * (best - saved)
+                        else:
+                            out = best
+                        out[:, 0] = saved[:, 0]
+                        output[:, last0:committed] = out
+                        kv = _rf_replay_clean(
+                            pipeline, output, committed,
+                            conditional_dict, device,
+                        )
+                        dlog["pick"] = int(best_c)
+                        dlog["latmot_pick"] = _json_float(best_t)
+                        dlog["seam"] = True
                 if method_name in ("rf_restep", "rf_restep_always"):
                     do_redo = method_name == "rf_restep_always" or punch
                     if do_redo:

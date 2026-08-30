@@ -88,6 +88,10 @@ def main() -> int:
             "sf_restep", "sf_restep_always",
             "rf_lastmix", "rf_lastmix_always", "rf_bpseudo",
             "rf_restep", "rf_restep_always",
+            "sf_nudge", "sf_nudge_always", "sf_nextseed", "sf_nextseed_always",
+            "sf_wiggle", "sf_wiggle_always", "sf_latmot", "sf_latmot_always",
+            "rf_nudge", "rf_nudge_always", "rf_wiggle", "rf_wiggle_always",
+            "rf_latmot", "rf_latmot_always",
             "appear_bon",
         ):
             if name in seen:

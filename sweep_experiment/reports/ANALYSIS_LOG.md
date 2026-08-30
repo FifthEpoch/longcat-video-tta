@@ -4185,6 +4185,20 @@ remake hosts.
 
 ---
 
+## 2026-08-30 — keep-picture mid-chunk family
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 14:49,
+`paper_tables/2026-08-30_wan_v2v_keep8_spec.md`
+
+User asked to run nudge / next-block / wiggle plus a first-vs-last
+latent motion pick with a subject-consistency lock. Gate is latent
+travel 0.8×, never sharpness. Subject lock = copy cand0’s first
+latent onto the motion winner. 14 N=8 jobs + always-on twins + RF
+for mix/residual/latmot. Do not scancel cite 748–750.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent

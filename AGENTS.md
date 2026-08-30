@@ -259,7 +259,7 @@ Per-method `merged_summary.json` lives at:
   Cite 128 SF. Rolling official Dyn% loses. WAVE=cite + crashed
   N=8 (CPU-snap) launching. Mid-chunk next ideas (nudge / motion
   gate / next-block / residual) are a note, not a submit:
-  `paper_tables/2026-08-30_wan_v2v_intrablock_next.md`.
+  `paper_tables/2026-08-30_wan_v2v_keep8_spec.md`.
   Tables:
   `paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md`,
   `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`,
@@ -324,7 +324,8 @@ Per-method `merged_summary.json` lives at:
 - **In-flight cluster jobs** (as of 2026-08-30 14:31):
   intra **16615741/742** VBench 743; restep **744/745** rf_bpseudo
   **746** VBench 747; cite-128 Pseudo **748** Always **749**
-  VBench **750**. Do not remake 128 hosts. **No I2V. No TTC.**
+  VBench **750**. Keep-8 paste ready (`submit_v2v_keep8.sh`).
+  Do not remake 128 hosts. Do not scancel 741–750. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
