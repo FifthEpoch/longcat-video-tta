@@ -9,7 +9,7 @@ update the Status / Findings columns when re-merged. NEVER delete rows
 even if results are superseded — mark them `superseded` and keep them
 for audit trail.
 
-**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-08-23.
+**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-08-30.
 
 ---
 
@@ -106,13 +106,13 @@ Timing: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan
 | `v2v_panda_sf_always_32v` | `sf_always_search` k=4. Same pick as pseudo, no prefix gate. **N=32**. | **IN FLIGHT 2026-08-24.** **16288113** R 2h40, mp4=26/32. | Splits gate vs pick. k=4. [`k`](paper_tables/2026-08-24_wan_v2v_always_search_k.md). |
 | `v2v_panda_rf_always_32v` | `rf_always_search` k=4 on RF rolling. Same pick as rf_sick/rf_pseudo, no gate. **N=32**. | **GENERATE DONE 2026-08-24.** **16288114** COMPLETED 0:0 53m, mp4=32/32. VBench **16288115** waits on 113. | Host twin. Cite vs `rolling_notta`. Do not call until VBench + SF twin. Stem prompts. |
 | `v2v_panda_caption_32v` | Caption replay WAVE=1: notta, rolling, SF/RF family, both always-search. **N=32**. | **DONE 2026-08-25.** 16358585 COMPLETED 0:0. rf_sink 0.709/70.15/0/0.980. Official complete. | [`complete`](paper_tables/2026-08-25_wan_v2v_caption_official_complete.md). Method note: [`pseudo-future`](paper_tables/2026-08-25_pseudo_future_search.md). |
-| `v2v_panda_caption_intra_8v` | Intra-chunk motion+appear: `sf_intra`, `sf_intra_always`, `rf_intra`, `rf_intra_always`. Caption **N=8**. | **SF OOM-FIX IN FLIGHT 2026-08-29.** Smoke **16546045/046**; N=8 **048/049**; VBench 047/050. RF still NO. | [`oom fix`](paper_tables/2026-08-29_sf_intra_oom_fix.md). |
-| `v2v_panda_caption_denoise_8v` | Last-step mix, block pseudo-future, remaining-step restart. Caption **N=8**. | **LASTMIX NO.** bpseudo **16546051–058** + restep **059–068** IN FLIGHT (smoke+N=8). | lastmix harvest: [`2026-08-29_wan_v2v_lastmix8_harvest.md`](paper_tables/2026-08-29_wan_v2v_lastmix8_harvest.md). |
+| `v2v_panda_caption_intra_8v` | Intra-chunk motion+appear: `sf_intra`, `sf_intra_always`, `rf_intra`, `rf_intra_always`. Caption **N=8**. | **SF OOM-FIX FAILED 2026-08-29.** 045–050 **2:0**, 0 mp4. RF still NO. | Still no SF intra video. [`in-chunk`](paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md). |
+| `v2v_panda_caption_denoise_8v` | Last-step mix, block pseudo-future, remaining-step restart. Caption **N=8**. | **ALL SCORED NO 2026-08-30.** lastmix / sf_bpseudo / rf_restep identity collapse. SF restep + RF bpseudo **FAILED 2:0**. | [`in-chunk`](paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md). |
 | `v2v_panda_caption_prefix_32v` | Caption Prefix-match: `seed_bon`, `live_bon`, `appear_bon`. **N=32**. | **DONE 2026-08-25.** 480/481 0:0. seed 0.746/70.54 tail −18%. live 0.723/71.43 +2%. appear 0.723/71.23 −4%. | **NO** as motion. Identity damper. |
 | `v2v_panda_caption_cross_32v` | Caption crossed host: `sf_roll` / `rf_chunk`. **N=32**. | **DONE 2026-08-25.** 612–614 0:0. | **NO.** sf_roll Dyn 1 / subj 0.659 / IQ 70.04. rf_chunk Dyn 1 / IQ 66.84 / flick 0.975. |
 | `v2v_panda_caption_closed_32v` | WAVE=2: seed/quiet/live/appear + host-split. **N=32**. | **DO NOT SUBMIT.** Prefix + cross cover the slide. Quiet/recache stay closed. | `sf_roll` is a sampler swap. |
 | `v2v_panda_caption_8v` | WAVE=3: remaining N=8 discovery. | **READY after WAVE=1.** | No shift_search / knob_probe. |
-| `v2v_panda_caption_128v` | Paper-size caption V2V. **WAVE=hosts** = notta + rolling. **WAVE=cite** = Pseudo + Always. **N=128**. | **GENERATE DONE.** 256 mp4. VBench resubmit **16545806**. | Do not regenerate. [`hold vs 128`](paper_tables/2026-08-28_hold_vs_n128.md). |
+| `v2v_panda_caption_128v` | Paper-size caption V2V hosts. **N=128**. | **DONE 2026-08-29.** 256 mp4. VBench **16545806** 0:0. SF 0.666 / 72.07 / tail 0.0119. Rolling 0.685 / 71.52 / **+33%**. | Cite 128 SF, not N=32 0.700. WAVE=cite not launched. [`hosts`](paper_tables/2026-08-30_wan_v2v_caption128_hosts.md). |
 | `v2v_panda_adasteer_8v` | AdaSteer on SF V2V: `ada_fixed`, `ada_stream`, `ada_resid`. Captions. **N=8**. | **DONE 2026-08-25.** 033–035 COMPLETED 0:0 18–21m 8/8. VBench **16326036** 20m. `|δ|`≈0.84. | **NO.** IQ 42.7 / 51.5 / 17.8. Stream tail +11% fails letter. Do not scale. [`always+ada`](paper_tables/2026-08-25_wan_v2v_caption_always_adasteer.md). |
 | `v2v_panda_rolling_leftovers_8v` | rolling_rho_lo/hi, rolling_adapt, rolling_look. N=8. | **DONE 2026-08-22.** 129–132 9–11m, VBench 133 27m. 8/8 + VBench. | ρ knob **lives** but IQ fails vs host (hi −3.8). look HOLD N=8 only. Verdict: [`2026-08-22_wan_v2v_leftovers8_verdict.md`](paper_tables/2026-08-22_wan_v2v_leftovers8_verdict.md). |
 | `v2v_panda_host_split_32v` | H1 `sf_roll`/`rf_chunk` + H4 `sf_recache`/`rf_recache`. **N=32**. H2/H3 offline. | **H1+H4 DONE 2026-08-23.** 197/199/200 + rf_chunk **16228103** 32/32 + VBench **16228104**. | Crosses twitch (tail 0.028 / Dyn 1). Do not scale. Read: [`2026-08-23_wan_v2v_host_split32_h1_read.md`](paper_tables/2026-08-23_wan_v2v_host_split32_h1_read.md). |

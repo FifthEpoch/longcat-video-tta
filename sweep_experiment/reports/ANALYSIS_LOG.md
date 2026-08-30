@@ -4121,6 +4121,24 @@ not actually fixed).
 
 ---
 
+## 2026-08-30 — in-chunk NO/DEAD; caption-128 hosts landed
+**Tags:** wan, v2v, harvest, paper-narrative
+**Owner:** agent
+**Refs:** user paste 14:08,
+`paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md`,
+`paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`
+
+Scored in-chunk: lastmix / sf_bpseudo / rf_restep all identity
+collapse (subject 0.63–0.65, IQ 66–70). Gated ≡ always. Crashes:
+SF intra still 0 mp4 after OOM fix; SF restep 0 mp4; RF bpseudo
+0 mp4. Do not scale. Do not retune 1.5×. Caption-128 SF is the
+new host cite (subject 0.666 / IQ 72.07 / tail 0.0119) — N=32
+subject 0.700 does not copy. Rolling +33% tail, subject 0.685,
+IQ 71.52. Next paper-size job is WAVE=cite Pseudo+Always.
+Need Dyn% on the 128 and .err tails on the crashes.
+
+---
+
 ## 2026-08-25 — Intra-chunk motion+appear probe spec
 **Tags:** methodology, wan, v2v, intra-chunk
 **Owner:** agent
