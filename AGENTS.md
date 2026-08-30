@@ -323,9 +323,9 @@ Per-method `merged_summary.json` lives at:
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-08-30 14:56):
   crash-rerun **16615741–747**; cite-128 **748–750**;
-  keep-8 RF generate **DONE**. SF kind-fix smoke **16620355–363**,
-  N=8 **364–372**. rf_bpseudo **16615746 COMPLETED**. Do not remake
-  RF or 128 hosts. **No I2V. No TTC.**
+  keep-8 RF generate **DONE**. SF 2-video **PASS**. N=8 **364–371**
+  running. Cite **748/749** R. Do not remake RF or 128 hosts.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

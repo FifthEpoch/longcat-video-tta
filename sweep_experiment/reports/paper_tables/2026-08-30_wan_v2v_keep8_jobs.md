@@ -10,7 +10,8 @@ Do not remake Rolling.
 ## Self Forcing resubmit 17:05 (kind fix `deee3ad`)
 
 2-video: **16620355–362**, scorer **16620363**.  
-8-video: **16620364–371**, scorer **16620372**.
+**PASS 17:27:** six COMPLETED with 2 videos. `360` / `362` still writing (1 video each).  
+8-video: **16620364–371**, scorer **16620372**. Leave running.
 
 Cancel this resubmit only:
 `scancel 16620355 16620356 16620357 16620358 16620359 16620360 16620361 16620362 16620363`
