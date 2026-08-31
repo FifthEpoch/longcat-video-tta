@@ -4347,3 +4347,15 @@ prefix-match. FVD unpaired vs pool is the valid extra metric
 after a duration audit. Official headline stays VBench + Dyn%.
 
 ---
+
+## 2026-08-31 — first Pseudo fire/duration audit was a bad read
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 13:25 paste
+
+`pseudo_fire` is on `chunks[0]`, not the json root. Top-level
+`.get("pseudo_fire")` → 0/128 skips, which contradicts tail and
+Dyn%. Pool `*.mp4` glob was empty (videos not at dir root). Do
+not cite either number. Re-read chunks + sidecar video_path.
+
+---
