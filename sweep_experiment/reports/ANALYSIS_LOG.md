@@ -4373,3 +4373,14 @@ short-clip proof. Need format duration before PSNR. Always
 official still 16674378.
 
 ---
+
+## 2026-08-31 — source duration still unread (n_dur=0)
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 13:44
+
+ffprobe format=duration returned 0 usable values. Sidecars have
+video_path. Do not treat this as “clips are short.” Diagnose
+path exists / ffprobe / N/A before PSNR.
+
+---
