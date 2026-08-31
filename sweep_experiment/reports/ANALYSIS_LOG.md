@@ -4406,3 +4406,17 @@ from a module that has ffmpeg.
 n_err=128. Do not cite clip length. Print the first exception.
 
 ---
+
+## 2026-08-31 — panda_0000 is 299 s; PSNR maybe valid
+**Tags:** harvest, methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 13:50,
+`paper_tables/2026-08-31_wan_pseudo_next.md`
+
+self_forcing imageio: duration 298.93 s, fps 29.97, 832×480.
+cv2: 8959 frames. Source path exists (70 MB). “Short Panda”
+assumption is wrong for this clip. 128-wide duration next.
+Paired metrics must resample source to 16 fps after the
+33-frame prefix. No score job tonight.
+
+---

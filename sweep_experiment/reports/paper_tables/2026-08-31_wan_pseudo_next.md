@@ -57,15 +57,16 @@ opening (`1+4×8 = 33` prefix frames).
 
 | Metric | Valid here? | Why |
 |---|---|---|
-| PSNR / SSIM / LPIPS vs the **true 30 s future** | Only if that Panda clip still has ~480 frames after the opening | Panda-70M clips are usually a few seconds. Most 128 will have **no GT tail**. |
+| PSNR / SSIM / LPIPS vs the **true 30 s future** | **Maybe.** `panda_0000` is **299 s / 8959 frames** | Need the other 127. Gen is **16 fps**; source is **29.97**. Align on time, not raw frame index. |
 | PSNR vs the **opening** | No | That is Prefix-match. It rewards freeze. We already know it kills Dyn%. |
 | FVD / FID vs the Panda **pool** (unpaired) | Yes, as a distributional check | Existing `sweep_experiment/scripts/eval_fvd.py`. N=128 is below their 256 default; use `--force`. Not a paired “this clip matches its own future.” |
 
-Do not put PSNR in the headline table unless a duration audit
-shows a real leftover window, and then score **only that
-overlap** (probably a few seconds, not 30 s). LongCat already
-taught us PSNR and VBench can disagree. Official claim stays
-full-clip VBench + Dyn%.
+`panda_0000` already has a real leftover window. If the rest of
+the 128 look like that, paired PSNR/SSIM/LPIPS/FVD are a
+**login/CPU (or L40S) job**, not a new generate: resample each
+source from after the 33-frame opening to +30 s at 16 fps, score
+against the generated tail. Official claim stays full-clip
+VBench + Dyn%. LongCat already taught us PSNR and VBench can
+disagree.
 
-First CPU check: how long are the 128 source mp4s, and how
-often did Pseudo fire? Both are on disk. No new generate.
+Do not score until the 128-wide duration list is in.

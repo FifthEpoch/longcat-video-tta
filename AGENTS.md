@@ -259,8 +259,9 @@ Per-method `merged_summary.json` lives at:
   Cite 128: Pseudo tail **0.0157 ≈ RF 0.0158**; official
   **Dyn 47.7% (61/128)** / 0.660 / 72.38. Gate **90 fire /
   38 skip**. SF 32.8% (42/128). RF 28.9% (37/128). Always
-  VBench **16674378**. Duration / PSNR still unknown
-  (`nb_frames` empty).
+  VBench **16674378**. `panda_0000` source is **299 s /
+  8959 frames** — PSNR possible if the other 127 match.
+  Login had no ffprobe; use self_forcing imageio.
   Mid-chunk rewrite **CLOSED** (keep / intra / denoise all miss
   subject 0.68). Tables:
   `paper_tables/2026-08-31_wan_v2v_cite128_dyn_percent.md`,
