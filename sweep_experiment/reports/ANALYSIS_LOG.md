@@ -4315,3 +4315,18 @@ Analyzer PROMOTE is vs SF only. Success bar vs RF is not met on
 subject or cost.
 
 ---
+
+## 2026-08-31 — Pseudo 128 Dyn% 47.7% (61/128)
+**Tags:** harvest, wan, v2v, paper-narrative
+**Owner:** agent
+**Refs:** user 13:16 joined.json means,
+`paper_tables/2026-08-31_wan_v2v_cite128_dyn_percent.md`
+
+Official percent-dynamic on caption 128: SF 42/128 (32.8%),
+RF 37/128 (28.9%), Pseudo **61/128 (47.7%)**. Median 0 on all
+three. vs SF: tail +32%, Dyn% +15 pp, subject holds, IQ +0.30.
+vs RF: tail tie, Dyn% +19 pp, IQ +0.85, subject −0.025, cost
+still ~5 min vs 45 s. Always join still missing. Cite Dyn as
+percent of clips. N=32 sign held (40.6% vs 21.9%).
+
+---
