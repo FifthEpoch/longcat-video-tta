@@ -327,11 +327,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-31 01:19):
-  Always-search 128 **16615749** R 8h50; VBench **750** PD.
-  Pseudo **748** and 8-video crash/keep waves left the queue —
-  sacct before harvest. Do not scancel 749/750. Do not remake
-  hosts. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-08-31 07:14):
+  Cite-128 generate **DONE** (748/749 128 mp4). VBench **750**
+  CANCELLED 2h — resubmit skip-existing. Keep 8/8 all arms; SF
+  VBench 372 DONE; RF VBench 188 FAILED — resubmit RF only.
+  Intra 741–743 DONE. Restep 5/8 do not remake. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
