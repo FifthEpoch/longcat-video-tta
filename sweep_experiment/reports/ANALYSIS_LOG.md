@@ -4384,3 +4384,16 @@ video_path. Do not treat this as “clips are short.” Diagnose
 path exists / ffprobe / N/A before PSNR.
 
 ---
+
+## 2026-08-31 — ffprobe missing on login; source path is real
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 13:46
+
+`video_path` =
+`/scratch/wc3013/longcat-video-tta/datasets/panda_1000_480p/videos/panda_0000.mp4`
+exists. `ffprobe` not on PATH. Prior n_dur=0 / 0/0 globs are
+that, not clip length. Next: imageio count or format duration
+from a module that has ffmpeg.
+
+---
