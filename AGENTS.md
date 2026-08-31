@@ -335,9 +335,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-31 16:20):
+- **In-flight cluster jobs** (as of 2026-08-31 16:24):
   Cite-128 Always VBench **16674378**. Pixel 128 **16678705**.
-  Pseudo-next N=8 **not submitted until cluster pull**.
+  Pseudo-next smoke **16679371–375**. N=8 **16679376–380**.
   Keep/intra/denoise **NO**. Do not remake 128 videos.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,

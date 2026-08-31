@@ -4448,3 +4448,16 @@ submit caption N=8. γ=0 k=4. Same-wave always-on is
 Do not scancel 16674378 / 16678705. No RF twins. No mid-chunk.
 
 ---
+
+## 2026-08-31 — Pseudo-next smoke + N=8 jobs in
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 16:24 paste
+
+Pull `4293d83..e69de51`. Smoke `sf_pseudo_cached` **16679371**,
+`sf_always_cached` **16679372**, `sf_repseudo` **16679373**,
+`sf_repseudo_cached` **16679374**, VBench **16679375**. N=8
+**16679376–379**, VBench **16679380**. Do not scancel 16674378 /
+16678705. Do not harvest until sacct + mp4.
+
+---
