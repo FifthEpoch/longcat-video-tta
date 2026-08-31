@@ -1,6 +1,8 @@
 # Caption 128 paired pixel metrics (2026-08-31)
 
-**Status:** duration audit **DONE**. Scorer ready. Not yet submitted.
+**Status:** duration audit **DONE**. Job **16678705** submitted
+16:12. Do not scancel. Do not remake videos. Do not scancel
+**16674378**.
 
 Source lengths (imageio, self_forcing env): **n=128 / 0 err**,
 min **54.8 s**, median **314 s**, max **1824 s**. `ge_32s=128/128`.
