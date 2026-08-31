@@ -16,6 +16,10 @@ or Rolling Forcing on 128.
 | **16615749** | Always-on search (first 32 copied) | 128 |
 | 16615750 | Quality scores after 748–749 | — |
 
+**01:19 31 Aug squeue:** **749** R 8h50 on gh111. **750** still
+PD Dependency. **741–748** gone — do not assume COMPLETED until
+`sacct`. Do not scancel 749/750.
+
 Cancel one wave only:
 `scancel 16615741 16615742 16615743` (8-video resample)
 `scancel 16615744 16615745 16615746 16615747` (8-video redo/rewrite)
