@@ -4330,3 +4330,20 @@ still ~5 min vs 45 s. Always join still missing. Cite Dyn as
 percent of clips. N=32 sign held (40.6% vs 21.9%).
 
 ---
+
+## 2026-08-31 — next on Pseudo is cheapen or re-gate
+**Tags:** paper-narrative, methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 13:22,
+`paper_tables/2026-08-31_wan_pseudo_next.md`
+
+User: 47.7% Dyn is huge; optimize Pseudo further; also PSNR /
+SSIM / FVD / LPIPS vs hosts. Next after Always 128: if Always ≈
+Pseudo, cheapen fired path (CachedSearch); if Always higher,
+streaming re-gate on committed last 0.7 s. Do not retune γ/k on
+cite 128. Do not reopen mid-chunk. Paired PSNR/SSIM/LPIPS need
+GT 30 s tails Panda likely does not have; PSNR vs opening is
+prefix-match. FVD unpaired vs pool is the valid extra metric
+after a duration audit. Official headline stays VBench + Dyn%.
+
+---

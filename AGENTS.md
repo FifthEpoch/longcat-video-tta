@@ -271,6 +271,9 @@ Per-method `merged_summary.json` lives at:
   Beat-RF path (2026-08-30): not seed search. Intervene at
   window-exit (context noise / next-block noise / softer sink).
   `paper_tables/2026-08-30_wan_rf_intervene.md`.
+  Next on Pseudo (2026-08-31): wait Always 128; then cheapen or
+  re-gate. No paired PSNR until duration audit.
+  `paper_tables/2026-08-31_wan_pseudo_next.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
