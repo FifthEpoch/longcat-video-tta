@@ -4397,3 +4397,12 @@ that, not clip length. Next: imageio count or format duration
 from a module that has ffmpeg.
 
 ---
+
+## 2026-08-31 — imageio duration also failed 128/128
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 13:48
+
+n_err=128. Do not cite clip length. Print the first exception.
+
+---
