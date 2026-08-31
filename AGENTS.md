@@ -256,14 +256,14 @@ Per-method `merged_summary.json` lives at:
   identity). SF intra + SF restep + RF bpseudo still **FAILED**.
   Caption-128 hosts **DONE**: SF 0.666 / 72.07 / **Dyn 32.8%
   (42/128)**; rolling +33% tail / 0.685 / 71.52 / Dyn **28.9%**.
-  Cite 128 SF. Rolling official Dyn% loses. WAVE=cite + crashed
-  N=8 (CPU-snap) launching. Mid-chunk next ideas (nudge / motion
-  gate / next-block / residual) are a note, not a submit:
-  `paper_tables/2026-08-30_wan_v2v_keep8_spec.md`.
-  Tables:
-  `paper_tables/2026-08-30_wan_v2v_inchunk_harvest.md`,
-  `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`,
-  `paper_tables/2026-08-30_wan_v2v_oom_cpu_snap.md`.
+  Cite 128 SF. Rolling official Dyn% loses. Cite-128 tails:
+  Pseudo **0.0157 ≈ RF 0.0158**; Always 0.0168. Pseudo official
+  0.660 / 72.38; Always VBench **16674378**; Dyn% pending.
+  Mid-chunk rewrite **CLOSED** (keep / intra / denoise all miss
+  subject 0.68). Tables:
+  `paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`,
+  `paper_tables/2026-08-31_wan_v2v_cite128_partial.md`,
+  `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
   Success bar + neighbors (2026-08-30): RF quality, cost <<
   always-search; mid-chunk rewrite closed.
