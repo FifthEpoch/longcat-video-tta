@@ -4298,3 +4298,20 @@ online next-block noise if the just-locked block died; soften
 native sink after that. Not a submit tonight.
 
 ---
+
+## 2026-08-31 — keep-picture NO; Pseudo 128 tail ≈ RF
+**Tags:** harvest, wan, v2v, paper-narrative
+**Owner:** agent
+**Refs:** user 13:13 analyze,
+`paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`,
+`paper_tables/2026-08-31_wan_v2v_cite128_partial.md`
+
+Keep / intra / denoise all fail subject 0.68 (and RF keep IQ
+66–67). Mid-chunk rewrite closed. Intra gated ≡ always. Cite-128
+tails: Pseudo 0.0157 vs RF 0.0158 vs Always 0.0168 vs SF 0.0119.
+Pseudo official subject 0.660 (misses RF 0.685 by 0.025), IQ
+72.38. Always official still 16674378. Dyn% not in the paste.
+Analyzer PROMOTE is vs SF only. Success bar vs RF is not met on
+subject or cost.
+
+---
