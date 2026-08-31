@@ -4420,3 +4420,17 @@ Paired metrics must resample source to 16 fps after the
 33-frame prefix. No score job tonight.
 
 ---
+
+## 2026-08-31 — 128/128 sources long enough; pixel scorer ready
+**Tags:** methodology, wan, v2v, metrics
+**Owner:** agent
+**Refs:** user 16:05,
+`paper_tables/2026-08-31_wan_v2v_pixel_metrics_spec.md`
+
+Duration: min 54.8 s, med 314 s, max 1824 s, ge_32s 128/128,
+ge_120s 113/128. Paired 30 s pixels are valid. Protocol: skip
+33 source frames, resample leftover to 16 fps, score gen tail
+only. Submit `submit_v2v_pixel128.sh` (L40S). FVD later on
+aligned tails, not full mp4s. Do not scancel 16674378.
+
+---
