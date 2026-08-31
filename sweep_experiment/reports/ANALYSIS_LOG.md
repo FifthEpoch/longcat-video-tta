@@ -4434,3 +4434,17 @@ only. Submit `submit_v2v_pixel128.sh` (L40S). FVD later on
 aligned tails, not full mp4s. Do not scancel 16674378.
 
 ---
+
+## 2026-08-31 — implement both Pseudo upgrades; fire N=8 first
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 16:17,
+`paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md`
+
+User: do not wait for Always-128 official. Implement cheapen
+(CachedSearch on the fired path) **and** per-chunk re-gate, then
+submit caption N=8. γ=0 k=4. Same-wave always-on is
+`sf_always_cached`. Do not remake `sf_pseudo` / `sf_always_search`.
+Do not scancel 16674378 / 16678705. No RF twins. No mid-chunk.
+
+---

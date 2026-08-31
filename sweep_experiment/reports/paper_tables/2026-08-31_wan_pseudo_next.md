@@ -25,7 +25,13 @@ subject, much more expensive.
 
 ## What to try next (builds on this gate, not a new rewrite)
 
-Wait for Always 128 official first. Then one of:
+**Superseded for launch (2026-08-31 16:17):** implement **both**
+and fire caption N=8 first. Do not wait for Always official.
+Spec: [`2026-08-31_wan_v2v_pseudo_next8_spec.md`](2026-08-31_wan_v2v_pseudo_next8_spec.md).
+Always 128 official still decides how much of the *cite-128*
+Dyn% is the gate vs the pick — that does not block this N=8.
+
+Wait (old plan) for Always 128 official first. Then one of:
 
 1. **If Always Dyn% ≈ Pseudo (~48%).** The gate is almost free
    on quality. Next paper move is **cheapen the fired path**

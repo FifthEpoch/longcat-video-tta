@@ -47,6 +47,10 @@ Methods:
   sf_sick_search — SF chunked; k=4 only after a sick freeze; max-motion + trust
   sf_pseudo      — SF chunked; hold out last 3 prefix latents; search if extra seed wins B
   sf_always_search — SF chunked; always k=4; same motion+trust pick as sf_pseudo (no gate)
+  sf_pseudo_cached — sf_pseudo gate; CachedSearch KV when it fires
+  sf_always_cached — always k=4 CachedSearch (cheap always-on twin)
+  sf_repseudo    — re-hold-out last 3 committed latents before each chunk
+  sf_repseudo_cached — re-gate + CachedSearch when it fires
   rf_always_search — RF rolling; always k=4; same motion+trust pick as rf_sick/rf_pseudo (no gate)
   sf_sink        — SF chunked + LongLive-style sink_size (not HG-f). Not sf_roll.
   sf_intra       — after each 3-latent block, resample rest if motion OR
@@ -184,6 +188,7 @@ METHODS = (
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
+    "sf_pseudo_cached", "sf_always_cached", "sf_repseudo", "sf_repseudo_cached",
     "rf_always_search", "sf_sink",
     "sf_intra", "sf_intra_always", "rf_intra", "rf_intra_always",
     "sf_lastmix", "sf_lastmix_always", "sf_bpseudo", "sf_bpseudo_always",
@@ -833,7 +838,7 @@ def _build_cand_specs(
                 "sick_search",
             )
         return [{**base, "cand": 0, "noise_id": 0}], False, "sick_skip"
-    if method == "sf_pseudo":
+    if method in ("sf_pseudo", "sf_pseudo_cached", "sf_repseudo", "sf_repseudo_cached"):
         if pseudo_fire:
             return (
                 [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
@@ -841,11 +846,11 @@ def _build_cand_specs(
                 "pseudo_fire",
             )
         return [{**base, "cand": 0, "noise_id": 0}], False, "pseudo_skip"
-    if method == "sf_always_search":
+    if method in ("sf_always_search", "sf_always_cached"):
         return (
             [{**base, "cand": c, "noise_id": c} for c in range(search_k)],
             True,
-            "always_search",
+            "always_search" if method == "sf_always_search" else "always_cached",
         )
     if method in ("backtrack", "good_backtrack"):
         return (
@@ -1845,11 +1850,14 @@ def generate_chunked_v2v(
     last_sick = False
     rewind_logs = []
     prev_chunk_mot = prefix_motion
-    if method in ("pseudo_gate", "pseudo_appear", "sf_pseudo"):
+    if method in (
+        "pseudo_gate", "pseudo_appear", "sf_pseudo",
+        "sf_pseudo_cached", "sf_repseudo", "sf_repseudo_cached",
+    ):
         pseudo_fire, pseudo_rows = _eval_pseudo_future(
             pipeline, output, prefix_latents, conditional_dict,
             seed, device, search_k, default_shift, default_cfg,
-            prefix_only,
+            prefix_only, hist_end=prefix_latents,
         )
 
     for ci in range(n_chunks):
@@ -1936,6 +1944,17 @@ def generate_chunked_v2v(
             )
             continue
 
+        if method in ("sf_repseudo", "sf_repseudo_cached") and ci > 0:
+            pseudo_fire, pseudo_rows = _eval_pseudo_future(
+                pipeline, output, prefix_latents, conditional_dict,
+                seed, device, search_k, default_shift, default_cfg,
+                prefix_only, hist_end=committed,
+            )
+            print(
+                f"  chunk {ci} re-gate fire={pseudo_fire}",
+                flush=True,
+            )
+
         cand_specs, searched, reason = _build_cand_specs(
             method, ci, n_chunks, search_k, search_from_chunk,
             default_shift, default_cfg, incoming_motion, prefix_motion,
@@ -1970,7 +1989,14 @@ def generate_chunked_v2v(
             }
 
         kv_snap = None
-        if method == "cached_bon" and committed > 0:
+        if (
+            method in (
+                "cached_bon", "sf_pseudo_cached", "sf_always_cached",
+                "sf_repseudo_cached",
+            )
+            and committed > 0
+            and searched
+        ):
             _reset_caches(pipeline, 1, output.dtype, device)
             _replay_history(
                 pipeline, output, committed, conditional_dict,
@@ -2046,7 +2072,11 @@ def generate_chunked_v2v(
             else:
                 reason = "noise_skip"
 
-        if method in ("sf_sick_search", "sf_pseudo", "sf_always_search") and len(cands) > 1:
+        if method in (
+            "sf_sick_search", "sf_pseudo", "sf_always_search",
+            "sf_pseudo_cached", "sf_always_cached",
+            "sf_repseudo", "sf_repseudo_cached",
+        ) and len(cands) > 1:
             m0 = _cand_temporal_motion(cands[0])
             feasible = []
             for c in cands:
@@ -2308,7 +2338,7 @@ def generate_chunked_v2v(
             "chosen_motion_score": _json_float(best["motion_score"]),
             "chosen_noise_stats": best.get("noise_stats"),
             "pseudo_fire": bool(pseudo_fire),
-            "pseudo_rows": pseudo_rows if ci == 0 else None,
+            "pseudo_rows": pseudo_rows,
             "last_sick": bool(last_sick),
             "chunk_motion": _json_float(chunk_mot),
             "rewind": (
@@ -2377,26 +2407,41 @@ def _eval_pseudo_future(
     default_shift: float,
     default_cfg: float,
     prefix_pixels: np.ndarray,
+    hist_end: int | None = None,
 ):
-    """Generate held-out last-3 prefix latents from the first 6. Real B is GT."""
+    """Hold out last 3 latents of hist_end. Real B is GT (prefix or committed)."""
     import torch
 
+    end = int(prefix_latents if hist_end is None else hist_end)
     b_lat = PSEUDO_B_LATENTS
-    a_lat = int(prefix_latents) - b_lat
+    a_lat = end - b_lat
     if a_lat < 3 or a_lat % 3 != 0:
         raise RuntimeError(
-            f"pseudo-future needs prefix={prefix_latents} with A multiple of 3"
+            f"pseudo-future needs hist_end={end} with A multiple of 3"
         )
     a_pix = t2v_pixel_frames(a_lat)
-    b_pix = t2v_pixel_frames(prefix_latents)
-    real_b = prefix_pixels[a_pix:b_pix]
+    b_pix = t2v_pixel_frames(end)
+    if end <= int(prefix_latents) and prefix_pixels is not None:
+        real_b = prefix_pixels[a_pix:b_pix]
+    else:
+        hist_pix = _decode_pixels(pipeline, output[:, :end])
+        real_b = hist_pix[a_pix:b_pix]
     saved = output[:, a_lat:a_lat + b_lat].clone()
+    kv_snap = None
+    if a_lat > 0:
+        _reset_caches(pipeline, 1, output.dtype, device)
+        _replay_history(
+            pipeline, output, a_lat, conditional_dict,
+            "full", prefix_latents,
+        )
+        kv_snap = _snapshot_kv(pipeline)
     rows = []
     for c in range(max(1, int(search_k))):
         latents, pixels, _stats = _run_one_chunk(
             pipeline, output, a_lat, b_lat, conditional_dict,
             seed, c, -1, device, default_shift, default_cfg,
             history="full", prefix_latents=prefix_latents,
+            kv_snap=kv_snap,
         )
         gen_b = pixels[a_pix:a_pix + real_b.shape[0]]
         n = min(gen_b.shape[0], real_b.shape[0])
@@ -2404,9 +2449,12 @@ def _eval_pseudo_future(
             float(np.mean(np.abs(gen_b[:n] - real_b[:n])))
             if n >= 1 else float("nan")
         )
-        rows.append({"cand": c, "mae": mae, "n_pix": int(n)})
+        rows.append({
+            "cand": c, "mae": mae, "n_pix": int(n), "hist_end": int(end),
+        })
         print(
-            f"    pseudo B cand{c} mae={mae:.5g} vs real last-3 latents",
+            f"    pseudo B hist_end={end} cand{c} mae={mae:.5g} "
+            f"vs real last-3 latents",
             flush=True,
         )
         output[:, a_lat:a_lat + b_lat] = saved
@@ -2419,8 +2467,9 @@ def _eval_pseudo_future(
         and int(best["cand"]) != 0
     )
     print(
-        f"  pseudo-future notta_mae={notta_mae:.5g} best={best['mae']:.5g} "
-        f"cand={best['cand']} fire={fire} gamma={_PSEUDO_GAMMA}",
+        f"  pseudo-future hist_end={end} notta_mae={notta_mae:.5g} "
+        f"best={best['mae']:.5g} cand={best['cand']} fire={fire} "
+        f"gamma={_PSEUDO_GAMMA}",
         flush=True,
     )
     if torch.cuda.is_available():

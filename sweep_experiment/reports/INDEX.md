@@ -9,7 +9,7 @@ update the Status / Findings columns when re-merged. NEVER delete rows
 even if results are superseded — mark them `superseded` and keep them
 for audit trail.
 
-**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-08-30.
+**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-08-31.
 
 ---
 
@@ -114,6 +114,7 @@ Timing: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan
 | `v2v_panda_caption_8v` | WAVE=3: remaining N=8 discovery. | **READY after WAVE=1.** | No shift_search / knob_probe. |
 | `v2v_panda_caption_128v` | Paper-size caption V2V. Hosts **DONE**. Cite = Pseudo + Always. | Pseudo official **47.7% (61/128)** / 0.660 / 72.38 / tail 0.0157. SF 32.8% (42). RF 28.9% (37). Always VBench **16674378**. | [`dyn%`](paper_tables/2026-08-31_wan_v2v_cite128_dyn_percent.md). Next: [`pseudo-next`](paper_tables/2026-08-31_wan_pseudo_next.md). |
 | `v2v_panda_caption_keep_8v` | Picture-preserving mid-chunk: nudge / next-seed / wiggle / latmot. SF+RF. Caption **N=8**. | **NO. Family closed.** All 14 miss subject 0.68. RF IQ 66–67. | [`closed`](paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md). |
+| `v2v_panda_caption_pseudo_next_8v` | Cheapen + re-gate: `sf_pseudo_cached`, `sf_always_cached`, `sf_repseudo`, `sf_repseudo_cached`. Caption **N=8**. | **SUBMIT-READY.** Do not remake 32/128. | [`spec`](paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md). |
 | `v2v_panda_adasteer_8v` | AdaSteer on SF V2V: `ada_fixed`, `ada_stream`, `ada_resid`. Captions. **N=8**. | **DONE 2026-08-25.** 033–035 COMPLETED 0:0 18–21m 8/8. VBench **16326036** 20m. `|δ|`≈0.84. | **NO.** IQ 42.7 / 51.5 / 17.8. Stream tail +11% fails letter. Do not scale. [`always+ada`](paper_tables/2026-08-25_wan_v2v_caption_always_adasteer.md). |
 | `v2v_panda_rolling_leftovers_8v` | rolling_rho_lo/hi, rolling_adapt, rolling_look. N=8. | **DONE 2026-08-22.** 129–132 9–11m, VBench 133 27m. 8/8 + VBench. | ρ knob **lives** but IQ fails vs host (hi −3.8). look HOLD N=8 only. Verdict: [`2026-08-22_wan_v2v_leftovers8_verdict.md`](paper_tables/2026-08-22_wan_v2v_leftovers8_verdict.md). |
 | `v2v_panda_host_split_32v` | H1 `sf_roll`/`rf_chunk` + H4 `sf_recache`/`rf_recache`. **N=32**. H2/H3 offline. | **H1+H4 DONE 2026-08-23.** 197/199/200 + rf_chunk **16228103** 32/32 + VBench **16228104**. | Crosses twitch (tail 0.028 / Dyn 1). Do not scale. Read: [`2026-08-23_wan_v2v_host_split32_h1_read.md`](paper_tables/2026-08-23_wan_v2v_host_split32_h1_read.md). |

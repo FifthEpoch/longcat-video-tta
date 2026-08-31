@@ -26,6 +26,7 @@ METHODS = (
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
+    "sf_pseudo_cached", "sf_always_cached", "sf_repseudo", "sf_repseudo_cached",
     "rf_always_search", "sf_sink",
     "sf_intra", "sf_intra_always", "rf_intra", "rf_intra_always",
     "sf_lastmix", "sf_lastmix_always", "sf_bpseudo", "sf_bpseudo_always",
