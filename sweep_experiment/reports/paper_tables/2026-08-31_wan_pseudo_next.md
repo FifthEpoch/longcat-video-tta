@@ -13,7 +13,10 @@ the gate vs the pick.
 | Dyn% | 32.8% (42) | 28.9% (37) | **47.7% (61)** |
 | subject | 0.666 | **0.685** | 0.660 |
 | IQ | 72.07 | 71.52 | **72.38** |
-| wall | ~2 min | **45 s** | ~5 min |
+| wall | ~2 min | **45 s** | ~5 min (90/128 fired) |
+
+Gate: **90 fire / 38 skip** (same ~70% as N=32). The 38 skips
+are the mean-cost cut vs Always.
 
 vs Self Forcing: tail +32%, Dyn% +15 points, subject holds, IQ
 up. That is a quality method, not only an efficiency controller.

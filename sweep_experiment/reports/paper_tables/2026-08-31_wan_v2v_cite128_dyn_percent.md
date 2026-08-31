@@ -52,4 +52,21 @@ N=32 Always was 43.8% (14/32) vs Pseudo 40.6% (13/32). If 128
 Always lands near Pseudo, the gate is the cost cut. If it lands
 clearly higher, the gate is skipping live openings.
 
+## Gate rate (chunks[0].pseudo_fire)
+
+**90 fire / 38 skip** (70% / 30%). Caption N=32 was 23 fire / 9
+skip (72% / 28%). The 38 skips are exact Self Forcing — that is
+why Always tail is hotter (0.0168 vs 0.0157).
+
+`gate_reason` on fired clips is `sick_motion`. That is the
+motion+trust **pick** after the hold-out fired. The planner
+label `pseudo_fire` is overwritten. Cite the boolean, not that
+string.
+
+## Source duration
+
+`stream=nb_frames` is empty on all 128 paths. Not a length
+measurement. Still no paired PSNR/SSIM/LPIPS until
+`format=duration` (or fps×seconds) is in.
+
 Do not scancel **16674378**. Mid-chunk rewrite stays closed.

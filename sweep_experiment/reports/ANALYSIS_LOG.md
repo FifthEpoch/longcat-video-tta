@@ -4359,3 +4359,17 @@ Dyn%. Pool `*.mp4` glob was empty (videos not at dir root). Do
 not cite either number. Re-read chunks + sidecar video_path.
 
 ---
+
+## 2026-08-31 — Pseudo 128 gate 90/38; duration still unknown
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 13:27,
+`paper_tables/2026-08-31_wan_v2v_cite128_dyn_percent.md`
+
+chunks[0].pseudo_fire: 90 fire / 38 skip. Matches N=32 ~72/28.
+Fired clips log gate_reason `sick_motion` (pick overwrites
+`pseudo_fire`). Source `nb_frames` empty on all 128 — not a
+short-clip proof. Need format duration before PSNR. Always
+official still 16674378.
+
+---

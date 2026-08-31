@@ -257,8 +257,10 @@ Per-method `merged_summary.json` lives at:
   Caption-128 hosts **DONE**: SF 0.666 / 72.07 / **Dyn 32.8%
   (42/128)**; rolling +33% tail / 0.685 / 71.52 / Dyn **28.9%**.
   Cite 128: Pseudo tail **0.0157 ≈ RF 0.0158**; official
-  **Dyn 47.7% (61/128)** / 0.660 / 72.38. SF 32.8% (42/128).
-  RF 28.9% (37/128). Always VBench **16674378**.
+  **Dyn 47.7% (61/128)** / 0.660 / 72.38. Gate **90 fire /
+  38 skip**. SF 32.8% (42/128). RF 28.9% (37/128). Always
+  VBench **16674378**. Duration / PSNR still unknown
+  (`nb_frames` empty).
   Mid-chunk rewrite **CLOSED** (keep / intra / denoise all miss
   subject 0.68). Tables:
   `paper_tables/2026-08-31_wan_v2v_cite128_dyn_percent.md`,
