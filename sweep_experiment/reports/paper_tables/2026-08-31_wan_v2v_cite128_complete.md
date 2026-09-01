@@ -65,4 +65,6 @@ gap.
 Forcing `pixel_full/summary.json` landed: n=128 PSNR **9.25**
 SSIM **0.279** LPIPS **None** (`lpips` missing in env). Do not
 cite that single row as a method compare. Resubmit skip-existing.
-Headline stays VBench + Dyn%.
+Headline stays VBench + Dyn%. Full VBench++ × pixel × FVD
+grid (with holes):
+[`2026-08-31_wan_v2v_cite128_all_metrics.md`](2026-08-31_wan_v2v_cite128_all_metrics.md).

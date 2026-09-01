@@ -4503,3 +4503,18 @@ on the official 128 table. N=128 job-wall / 96 new clips is
 the same sign (294 vs 354).
 
 ---
+
+## 2026-08-31 — all-metric 128 grid; pixel/FVD not comparable yet
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 21:03,
+`paper_tables/2026-08-31_wan_v2v_cite128_all_metrics.md`
+
+User wants one table: all VBench++ dims + PSNR/SSIM/LPIPS + FVD
+for SF / RF / Pseudo / Always. Official VBench join exists for
+all four; bg + smoothness were never harvested. Pixel only SF
+(PSNR 9.25). LPIPS unset. FVD never run — must be aligned tails,
+not full mp4. Do not invent cells. Login dump fills VBench.
+Resubmit pixel for the other three. Do not cite SF PSNR alone.
+
+---
