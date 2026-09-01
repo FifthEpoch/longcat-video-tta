@@ -4531,3 +4531,17 @@ Aes 0.499 / **0.529** / 0.510 / 0.503. Smooth 0.992 / 0.991 /
 Pseudo Dyn% + IQ; tail tie. Pixel/FVD still incomplete.
 
 ---
+
+## 2026-08-31 — pixels blank by job, not by protocol
+**Tags:** methodology, wan, v2v
+**Owner:** agent
+**Refs:** user 21:10,
+`paper_tables/2026-08-31_wan_pseudo_improvements_tried.md`
+
+PSNR/SSIM missing because 16678705 died after Self Forcing.
+LPIPS missing because `lpips` is not installed. FVD never
+started (aligned tails only). Pseudo upgrade walk: Always
+ablation keep; host-swap / pick / AdaSteer / denoise / intra /
+keep-picture / CachedSearch / re-gate all NO.
+
+---
