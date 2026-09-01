@@ -3,13 +3,15 @@
 **Series:** `v2v_panda_caption_128v`. Prompt = `metadata_csv`.
 n=128. VBench from `joined.json` dump 21:06. Cite **medians**
 except Dynamic Degree = **percent of clips**. PSNR/SSIM =
-paired 30 s tail vs real leftover (median). Headline stays
-VBench + Dyn%.
+paired 30 s tail vs real leftover (median). Mean seconds =
+generate wall / 96 new clips (first 32 hardlinked);
+[`2026-09-01_wan_v2v_cite128_wall.md`](2026-09-01_wan_v2v_cite128_wall.md).
+Headline stays VBench + Dyn%.
 
 | | Self Forcing | Rolling | Pseudo | Always |
 |---|---:|---:|---:|---:|
 | tail motion | 0.0119 | **0.0158** | 0.0157 | 0.0168 |
-| mean s / clip (N=32) | 196 | **45** | 304 | 348 |
+| mean s / clip (N=128) | 108 | **47** | **294** | 354 |
 | subject_consistency | 0.666 | **0.685** | 0.660 | 0.661 |
 | background_consistency | 0.801 | **0.802** | 0.792 | 0.790 |
 | aesthetic_quality | 0.499 | **0.529** | 0.510 | 0.503 |

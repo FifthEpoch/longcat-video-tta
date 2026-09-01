@@ -4694,6 +4694,19 @@ via per-video npz. Do not remake 128 videos.
 
 ---
 
+## 2026-09-01 — cite-128 wall is job/96, not n=32 sidecars
+**Tags:** wan, v2v, cite128, wall
+**Owner:** agent
+**Refs:** user 14:39; `2026-09-01_wan_v2v_cite128_wall.md`
+
+Caption-128 table had mean s from caption-32 sidecars
+(196 / 45 / 304 / 348). First 32 are hardlinks. Cite
+generate wall / 96: SF **108**, Rolling **47**, Pseudo
+**294**, Always **354**. Gate 17% vs Always (was 13%).
+Still ~6.3× Rolling. Do not use job-wall / 128.
+
+---
+
 ## 2026-09-01 — caption leftover ρ / look (pandas)
 **Tags:** wan, v2v, caption, leftover, rolling
 **Owner:** agent
