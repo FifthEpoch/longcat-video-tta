@@ -4724,3 +4724,17 @@ Rolling first 8. WAVE=3 dump stays closed. Harvest vs
 caption Rolling. Stem leftover table stays audit.
 
 ---
+
+## 2026-09-01 — caption leftover ρ submitted
+**Tags:** wan, v2v, caption, leftover
+**Owner:** agent
+**Refs:** user paste 14:46; jobs 16734909–913
+
+Preflight PASS. 1000 captions, 8/8 first-segment, 0 stem.
+0000 truck / 0001 kitchen / 0005 tomatoes. Generate
+16734909–912 (`rho_lo` / `hi` / `adapt` / `look`).
+VBench 16734913 afterok. First sidecar must be
+`metadata_csv`. Cite vs caption-32 Rolling. Do not
+scancel cite-128. Do not harvest stem leftover numbers.
+
+---

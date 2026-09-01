@@ -60,6 +60,12 @@ letter; do not import the stem IQ deltas.
 
 ## Submit
 
+**IN FLIGHT 2026-09-01 14:46.** Generate **16734909–912**
+(`rho_lo` / `rho_hi` / `adapt` / `look`). VBench **16734913**
+afterok. Preflight PASS: 1000 captions, 8/8 first-segment,
+0 stem. Cancel this wave only:
+`scancel 16734909 16734910 16734911 16734912 16734913`.
+
 ```bash
 cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_v2v_caption_leftovers.sh
