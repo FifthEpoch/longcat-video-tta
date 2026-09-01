@@ -4558,3 +4558,13 @@ background and aesthetic (identity) and last-chunk drift
 (handcrafted). Not a quality or cost win vs Always.
 
 ---
+
+## 2026-08-31 — pixel resubmit 16694796 is the only queue job
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 21:49 squeue
+
+L40S `wan_v2v_` R 1h08. Treat as skip-existing pixel after
+16678705. Do not scancel. Harvest when four summaries exist.
+
+---
