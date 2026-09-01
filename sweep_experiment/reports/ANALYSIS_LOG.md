@@ -4725,6 +4725,28 @@ caption Rolling. Stem leftover table stays audit.
 
 ---
 
+## 2026-09-01 — RF descendants are mostly memory, not schedule
+**Tags:** paper-narrative, literature, wan, rolling
+**Owner:** agent
+**Refs:**
+- `paper_tables/2026-09-01_rf_noise_schedule_neighbors.md`
+- Deep Forcing 2512.05081; Relax Forcing 2603.21366;
+  Ms. Forcing 2607.20940; Stream Forcing 2608.10439;
+  Reward Forcing 2512.04678; FIFO-Diffusion 2405.11473;
+  Rolling Diffusion ICML 2024
+
+Rolling Forcing is four levers: staggered diagonal, in-window
+revise, lock-at-exit, frozen sink. Papers that *cite* it
+almost all rewrite KV (Deep Sink, Relax Sink/History/Tail,
+EMA-Sink, Forcing-KV). The only new *schedules* are Stream
+Forcing (curriculum from independent → monotone) and
+Ms. Forcing (same diagonal, coarser tokens + H-DMD). Both
+need a student. TTA-legal cousins: FIFO lookahead, shallower
+diagonal, local next-block bump, context noise. Do not mix
+Relax's MovieGen Dyn 65.7 into cite-128.
+
+---
+
 ## 2026-09-01 — LPIPS pip must not resolve torch
 **Tags:** wan, v2v, pixel, env
 **Owner:** agent

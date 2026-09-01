@@ -17,6 +17,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
 | **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
 | **Gate neighbors + publishability** | `sweep_experiment/reports/paper_tables/2026-09-01_gate_neighbors_publishability.md` | EFD / SDVG / Video-T1 / CachedSearch / LatSearch. 13% vs Always is not a quality paper. |
+| **RF schedule neighbors** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_noise_schedule_neighbors.md` | Deep / Relax / Ms. / Stream / Reward / FIFO. Most RF follow-ons are memory. TTA cousins: lookahead, shallower / local-steep diagonal. |
 | **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails, not the full mp4. |
 | **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
 | **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen + re-gate. Caption N=8. **NO.** Harvest: `2026-08-31_wan_v2v_pseudo_next8_harvest.md`. |
@@ -282,6 +283,12 @@ Per-method `merged_summary.json` lives at:
   Beat-RF path (2026-08-30): not seed search. Intervene at
   window-exit (context noise / next-block noise / softer sink).
   `paper_tables/2026-08-30_wan_rf_intervene.md`.
+  RF descendants (2026-09-01): Deep / Relax / Reward /
+  Forcing-KV rewrite **memory**. Stream Forcing and
+  Ms. Forcing are the schedule papers (need a student).
+  TTA-legal cousins: FIFO lookahead, shallower diagonal,
+  local next-block bump, context noise. Note:
+  `paper_tables/2026-09-01_rf_noise_schedule_neighbors.md`.
   Next on Pseudo (2026-08-31): CachedSearch / re-gate **NO**.
   Gate is almost free; cheapen is still the paper move, but
   **not** this CPU KV snap. Search-early or prune k. Or RF
