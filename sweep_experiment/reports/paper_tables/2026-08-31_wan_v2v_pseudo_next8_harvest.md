@@ -11,9 +11,21 @@ string as the CachedSearch quality call. Tails of
 `sf_pseudo_cached` / `sf_always_cached` **match** caption-32
 `sf_pseudo` / `sf_always_search` first 8 to 6 decimals.
 
+## Average time per clip (caption-32, cite the mean)
+
+| Method | n | mean s / clip | median s |
+|---|---:|---:|---:|
+| Self Forcing | 32 | 196.1 | 113.1 |
+| **Pseudo-future Search** | 32 | **303.6** | 357.0 |
+| **Always-search** | 32 | **348.1** | 348.1 |
+
+Pseudo **304 s** vs Always **348 s** (0.87×). First-8 of this
+wave is a **median** (n=8 is too small to prefer the mean):
+Pseudo 360 s, Always 349 s — both are fired-clip walls.
+
 ## Numbers (cite medians; Dyn% = percent of clips)
 
-| Method | tail | wall s | subject | IQ | Dyn% | open fire |
+| Method | tail | wall s (median) | subject | IQ | Dyn% | open fire |
 |---|---:|---:|---:|---:|---:|---|
 | caption-32 notta first 8 | 0.0129 | 119 | 0.700* | 71.54* | — | — |
 | caption-32 `sf_pseudo` first 8 | 0.0145 | **360** | 0.701* | 71.66* | — | 6/8† |

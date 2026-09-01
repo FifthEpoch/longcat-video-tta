@@ -4489,3 +4489,17 @@ identity with re-gate. Pixel 16678705 preempted after SF only.
 Do not scale. Next cheapen is not this KV snap.
 
 ---
+
+## 2026-08-31 — show mean s/clip for Pseudo vs Always
+**Tags:** paper-narrative, wan, v2v
+**Owner:** agent
+**Refs:** user 20:41,
+`paper_tables/2026-08-31_wan_v2v_cite128_complete.md`
+
+Cite expected cost as **mean** sidecar seconds (N=32): Pseudo
+**303.6 s**, Always **348.1 s**. Median makes Pseudo look
+slower (357 vs 348) because skips sit at ~113 s. Put the mean
+on the official 128 table. N=128 job-wall / 96 new clips is
+the same sign (294 vs 354).
+
+---
