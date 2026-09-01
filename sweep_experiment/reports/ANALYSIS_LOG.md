@@ -4568,3 +4568,13 @@ L40S `wan_v2v_` R 1h08. Treat as skip-existing pixel after
 16678705. Do not scancel. Harvest when four summaries exist.
 
 ---
+
+## 2026-08-31 — pixel 16694796 mid-Pseudo
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 21:53
+
+Rolling `pixel_full/summary.json` exists. Log at Pseudo 054–058,
+n=504 frames. Always not started. Do not cite. Do not scancel.
+
+---

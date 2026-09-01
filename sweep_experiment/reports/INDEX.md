@@ -120,7 +120,7 @@ Timing: [`paper_tables/2026-08-16_wan_i2v_smoke.md`](paper_tables/2026-08-16_wan
 | `v2v_panda_host_split_32v` | H1 `sf_roll`/`rf_chunk` + H4 `sf_recache`/`rf_recache`. **N=32**. H2/H3 offline. | **H1+H4 DONE 2026-08-23.** 197/199/200 + rf_chunk **16228103** 32/32 + VBench **16228104**. | Crosses twitch (tail 0.028 / Dyn 1). Do not scale. Read: [`2026-08-23_wan_v2v_host_split32_h1_read.md`](paper_tables/2026-08-23_wan_v2v_host_split32_h1_read.md). |
 | V2V coverage audit (ran tests) | Sidecar inventory + offline router. | **DONE 2026-08-22 12:25.** Login CPU. | Always-rolling +31% beats still→notta/live→rolling +9%. N=8 search ρ is lucky-8. Trust resim was a key miss. Read: [`2026-08-22_wan_v2v_coverage_audit_read.md`](paper_tables/2026-08-22_wan_v2v_coverage_audit_read.md). |
 | collapse+band picker resim | Offline on seed_bon-8/32 + live_bon-32 cand logs. | **DONE 2026-08-22.** No GPU. | 0002/0003/0027/0028 pass. **0022 fails** (band_appear cand1, same as seed). damp=0. **No generate.** Read: [`2026-08-22_wan_v2v_collapse_band_read.md`](paper_tables/2026-08-22_wan_v2v_collapse_band_read.md). |
-| Wan Panda-prefix pixel audit | Caption-128 sources: min 55 s / med 314 s / max 1824 s. **128/128 ≥ 32 s.** | **16694796** R (skip-existing). **16678705** preempted after SF only. | [`spec`](paper_tables/2026-08-31_wan_v2v_pixel_metrics_spec.md). |
+| Wan Panda-prefix pixel audit | Caption-128 sources: min 55 s / med 314 s / max 1824 s. **128/128 ≥ 32 s.** | **16694796** R. SF+Rolling summaries in; Pseudo ~058/128; Always pending. | [`spec`](paper_tables/2026-08-31_wan_v2v_pixel_metrics_spec.md). |
 
 ---
 

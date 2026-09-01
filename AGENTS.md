@@ -339,7 +339,8 @@ Per-method `merged_summary.json` lives at:
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-08-31 21:49):
   Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
-  Pixel 128 **16694796** R on L40S (skip-existing after 16678705).
+  Pixel 128 **16694796** R: SF+Rolling summaries in; Pseudo
+  ~058/128; Always pending. Do not scancel.
   Keep/intra/denoise **NO**. Do not remake 128 videos.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
