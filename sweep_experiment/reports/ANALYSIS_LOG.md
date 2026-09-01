@@ -4602,3 +4602,13 @@ has 50 jsons, no summary. Resubmit skip-existing. Do not
 remake. Do not cite 50-clip Always PSNR.
 
 ---
+
+## 2026-09-01 — pixel Always remainder 16702323
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 00:07
+
+Pull 30008c4. Job **16702323** submitted. Skip-existing should
+finish Always only. Same 2h20 preemption risk. Do not scancel.
+
+---

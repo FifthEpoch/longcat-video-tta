@@ -3,7 +3,8 @@
 **Status:** duration audit **DONE**. **16678705** and
 **16694796** both CANCELLED by 0 at ~2h20 (L40S preemption).
 SF / Rolling / Pseudo summaries in. Always **50/128** jsons.
-Resubmit skip-existing. Do not remake videos.
+Resubmit **16702323** (skip-existing Always remainder).
+Do not remake videos. Do not scancel 16702323.
 
 Source lengths (imageio, self_forcing env): **n=128 / 0 err**,
 min **54.8 s**, median **314 s**, max **1824 s**. `ge_32s=128/128`.
