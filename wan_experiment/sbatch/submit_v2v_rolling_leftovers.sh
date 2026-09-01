@@ -7,10 +7,19 @@
 # Baseline: lineage rolling_notta (same 8). Not SF notta.
 # Do not scale from this table. No TTC. Do not retune live_min.
 #
-#   cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
-#   bash wan_experiment/sbatch/submit_v2v_rolling_leftovers.sh
+# STEM-PROMPT AUDIT ONLY. Do not use this for new generates.
+# Caption replay:
+#   bash wan_experiment/sbatch/submit_v2v_caption_leftovers.sh
+#
+#   FORCE_STEM=1 bash wan_experiment/sbatch/submit_v2v_rolling_leftovers.sh
 
 set -euo pipefail
+if [[ "${FORCE_STEM:-0}" != "1" ]]; then
+    echo "ERROR: this script writes stem leftover dirs (pandas in the tail)." >&2
+    echo "Use: bash wan_experiment/sbatch/submit_v2v_caption_leftovers.sh" >&2
+    echo "Override only with FORCE_STEM=1 (audit)." >&2
+    exit 2
+fi
 
 SCRATCH_BASE="/scratch/${USER}"
 PROJECT_ROOT="${PROJECT_ROOT:-${SCRATCH_BASE}/longcat-video-tta}"

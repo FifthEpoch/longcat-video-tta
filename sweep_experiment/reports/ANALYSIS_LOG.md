@@ -4693,3 +4693,21 @@ into scratch, do not mutate conda). FVD = I3D on aligned
 via per-video npz. Do not remake 128 videos.
 
 ---
+
+## 2026-09-01 — caption leftover ρ / look (pandas)
+**Tags:** wan, v2v, caption, leftover, rolling
+**Owner:** agent
+**Refs:** user 14:21; `2026-09-01_wan_v2v_caption_leftovers_spec.md`
+
+Leftover Rolling + ρ / look videos are stem-prompt
+(`panda NNNN`). T5 takeover paints pandas. That pack is
+not a scene-continuation look. Caption-32 / caption-128
+Rolling already used metadata.csv — do not remake
+cite-128. Keep / intra / denoise / AdaSteer / Pseudo-next
+already caption; remaking them does not fix pandas.
+New series `v2v_panda_caption_leftovers_8v` remakes only
+rho_lo / rho_hi / adapt / look. Host = existing caption
+Rolling first 8. WAVE=3 dump stays closed. Harvest vs
+caption Rolling. Stem leftover table stays audit.
+
+---

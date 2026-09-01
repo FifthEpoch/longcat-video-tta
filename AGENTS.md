@@ -20,6 +20,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails, not the full mp4. |
 | **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
 | **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen + re-gate. Caption N=8. **NO.** Harvest: `2026-08-31_wan_v2v_pseudo_next8_harvest.md`. |
+| **Caption leftover ρ spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_caption_leftovers_spec.md` | Stem leftovers are panda-infected. Caption N=8 ρ / look only. Do not remake cite-128. |
 | **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-09-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
 | **Canonical results memory (legacy)** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Superseded by INDEX.md + ANALYSIS_LOG.md as of 2026-06-08, but kept for history. |
@@ -342,11 +343,15 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-01 13:50):
+- **In-flight cluster jobs** (as of 2026-09-01 14:25):
   Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
   Pixel PSNR/SSIM **DONE**. LPIPS+FVD submit
   `submit_v2v_lpips_fvd.sh` (aligned tails; fill-lpips).
-  Keep/intra/denoise **NO**. Do not remake 128 videos.
+  Caption leftover ρ **SUBMIT-READY**
+  (`submit_v2v_caption_leftovers.sh`). Stem leftover
+  mp4s are panda-infected — do not watch as scene
+  continuation. Do not remake cite-128. Do not WAVE=3.
+  Keep/intra/denoise **NO**.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic

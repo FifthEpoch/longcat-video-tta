@@ -10,6 +10,9 @@
 #   WAVE=3 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #   WAVE=4 bash wan_experiment/sbatch/submit_v2v_caption_rerun.sh
 #
+# Leftover ρ / look only (do NOT use WAVE=3 for that):
+#   bash wan_experiment/sbatch/submit_v2v_caption_leftovers.sh
+#
 # WAVE=1 is the paper N=32 set (submit this now).
 # Do not scancel stem always-search 16288113–115.
 # No TTC. No I2V. VIDEO_WORKERS=1.
