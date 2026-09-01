@@ -4461,3 +4461,31 @@ Pull `4293d83..e69de51`. Smoke `sf_pseudo_cached` **16679371**,
 16678705. Do not harvest until sacct + mp4.
 
 ---
+
+## 2026-08-31 — Always 128 official 50.8% (65/128)
+**Tags:** finding, paper-narrative, wan, v2v
+**Owner:** agent
+**Refs:** user 20:29,
+`paper_tables/2026-08-31_wan_v2v_cite128_complete.md`
+
+16674378 COMPLETED 1h22. Always Dyn% **50.8% (65/128)** /
+subject 0.661 / IQ 72.19 vs Pseudo 47.7% (61) / 0.660 / 72.38.
+Gate costs 4 dynamic clips. Same N=32 sign (14 vs 13). Cite
+Pseudo vs SF; Always is the ablation that the opening gate is
+almost free. Do not loosen γ.
+
+---
+
+## 2026-08-31 — Pseudo-next N=8 both NO
+**Tags:** negative-result, wan, v2v
+**Owner:** agent
+**Refs:** user 20:29,
+`paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`
+
+Smoke 2/2. N=8 8/8. CachedSearch tails match caption-32 full
+search and walls are **higher** (389 vs 360). Re-gate fire
+6/5/6/7/8/6 (alive) but tail ≈ Pseudo and +53% wall. Stacked
+identity with re-gate. Pixel 16678705 preempted after SF only.
+Do not scale. Next cheapen is not this KV snap.
+
+---

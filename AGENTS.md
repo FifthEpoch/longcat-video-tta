@@ -17,7 +17,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
 | **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
 | **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
-| **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen (`*_cached`) + re-gate (`sf_repseudo*`). Caption N=8. |
+| **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen + re-gate. Caption N=8. **NO.** Harvest: `2026-08-31_wan_v2v_pseudo_next8_harvest.md`. |
 | **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-06-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
 | **Canonical results memory (legacy)** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Superseded by INDEX.md + ANALYSIS_LOG.md as of 2026-06-08, but kept for history. |
@@ -257,17 +257,16 @@ Per-method `merged_summary.json` lives at:
   identity). SF intra + SF restep + RF bpseudo still **FAILED**.
   Caption-128 hosts **DONE**: SF 0.666 / 72.07 / **Dyn 32.8%
   (42/128)**; rolling +33% tail / 0.685 / 71.52 / Dyn **28.9%**.
-  Cite 128: Pseudo tail **0.0157 ≈ RF 0.0158**; official
-  **Dyn 47.7% (61/128)** / 0.660 / 72.38. Gate **90 fire /
-  38 skip**. SF 32.8% (42/128). RF 28.9% (37/128). Always
-  VBench **16674378**. Source duration **128/128 ≥ 55 s**
-  (med 314 s). Paired 30 s PSNR spec ready; submit
-  `submit_v2v_pixel128.sh`. Headline stays VBench + Dyn%.
-  Mid-chunk rewrite **CLOSED** (keep / intra / denoise all miss
-  subject 0.68). Tables:
-  `paper_tables/2026-08-31_wan_v2v_cite128_dyn_percent.md`,
-  `paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`,
-  `paper_tables/2026-08-30_wan_v2v_caption128_hosts.md`.
+  Cite 128 **COMPLETE**: Pseudo tail **0.0157 ≈ RF 0.0158**;
+  official **Dyn 47.7% (61/128)** / 0.660 / 72.38. Always
+  **50.8% (65/128)** / 0.661 / 72.19. Gate **90 fire / 38 skip**
+  costs 4 Dyn clips. SF 32.8% (42). RF 28.9% (37). Pixel
+  **16678705** preempted (SF PSNR only). Headline stays
+  VBench + Dyn%. Mid-chunk rewrite **CLOSED**. Pseudo-next
+  N=8 **NO** (CachedSearch slower; re-gate no lift). Tables:
+  `paper_tables/2026-08-31_wan_v2v_cite128_complete.md`,
+  `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`,
+  `paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
   Success bar + neighbors (2026-08-30): RF quality, cost <<
   always-search; mid-chunk rewrite closed.
@@ -275,10 +274,11 @@ Per-method `merged_summary.json` lives at:
   Beat-RF path (2026-08-30): not seed search. Intervene at
   window-exit (context noise / next-block noise / softer sink).
   `paper_tables/2026-08-30_wan_rf_intervene.md`.
-  Next on Pseudo (2026-08-31): **both** cheapen + re-gate,
-  fire caption N=8 first. Do not wait Always-128 official.
-  Spec: `paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md`.
-  Note: `paper_tables/2026-08-31_wan_pseudo_next.md`.
+  Next on Pseudo (2026-08-31): CachedSearch / re-gate **NO**.
+  Gate is almost free; cheapen is still the paper move, but
+  **not** this CPU KV snap. Search-early or prune k. Or RF
+  window-exit. Resubmit pixel skip-existing.
+  Harvest: `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -335,9 +335,9 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-08-31 16:24):
-  Cite-128 Always VBench **16674378**. Pixel 128 **16678705**.
-  Pseudo-next smoke **16679371–375**. N=8 **16679376–380**.
+- **In-flight cluster jobs** (as of 2026-08-31 20:29):
+  Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
+  Pixel 128 **resubmit** (16678705 preempted; SF only).
   Keep/intra/denoise **NO**. Do not remake 128 videos.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,

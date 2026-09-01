@@ -28,8 +28,12 @@ subject, much more expensive.
 **Superseded for launch (2026-08-31 16:17):** implement **both**
 and fire caption N=8 first. Do not wait for Always official.
 Spec: [`2026-08-31_wan_v2v_pseudo_next8_spec.md`](2026-08-31_wan_v2v_pseudo_next8_spec.md).
-Always 128 official still decides how much of the *cite-128*
-Dyn% is the gate vs the pick — that does not block this N=8.
+Always 128 official is in: **50.8% (65/128)** vs Pseudo
+**47.7% (61/128)**. Gate almost free. Pseudo-next N=8 both
+**NO** — see
+[`2026-08-31_wan_v2v_cite128_complete.md`](2026-08-31_wan_v2v_cite128_complete.md)
+and
+[`2026-08-31_wan_v2v_pseudo_next8_harvest.md`](2026-08-31_wan_v2v_pseudo_next8_harvest.md).
 
 Wait (old plan) for Always 128 official first. Then one of:
 

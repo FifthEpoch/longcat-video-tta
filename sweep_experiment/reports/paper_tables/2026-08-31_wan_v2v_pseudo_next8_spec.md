@@ -1,7 +1,7 @@
-# Pseudo-next N=8 — cheapen + re-gate (IN FLIGHT)
+# Pseudo-next N=8 — cheapen + re-gate (**NO**)
 
-Jobs (2026-08-31 16:24): smoke **16679371–375**; N=8 **16679376–379**
-+ VBench **16679380**. Do not scancel **16674378** or **16678705**.
+Harvest: [`2026-08-31_wan_v2v_pseudo_next8_harvest.md`](2026-08-31_wan_v2v_pseudo_next8_harvest.md).
+Smoke **16679371–375** 2/2. N=8 **16679376–380** 8/8.
 
 User 16:17: implement **both** upgrades from
 [`2026-08-31_wan_pseudo_next.md`](2026-08-31_wan_pseudo_next.md)
