@@ -4725,6 +4725,17 @@ caption Rolling. Stem leftover table stays audit.
 
 ---
 
+## 2026-09-01 — LPIPS+FVD 16737041 submitted
+**Tags:** wan, v2v, pixel, fvd
+**Owner:** agent
+**Refs:** user paste 15:20; job 16737041
+
+Caption-128 fill-lpips + aligned-tail I3D. No remake.
+L40S PD (None). Leftover `look` 16734912 still R.
+Cancel 16737041 only.
+
+---
+
 ## 2026-09-01 — caption leftover ρ submitted
 **Tags:** wan, v2v, caption, leftover
 **Owner:** agent

@@ -344,15 +344,14 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-01 14:46):
+- **In-flight cluster jobs** (as of 2026-09-01 15:20):
   Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
-  Pixel PSNR/SSIM **DONE**. LPIPS+FVD submit
-  `submit_v2v_lpips_fvd.sh` (aligned tails; fill-lpips).
-  Caption leftover ρ **IN FLIGHT** 16734909–912 +
-  VBench **16734913**. Preflight PASS (`metadata_csv`,
-  0 stem). First sidecar must not be stem. Do not remake
-  cite-128. Do not WAVE=3. Keep/intra/denoise **NO**.
-  **No I2V. No TTC.**
+  Pixel PSNR/SSIM **DONE**. LPIPS+FVD **16737041**
+  PD L40S (`v2v_panda_caption_128v`; fill-lpips + aligned
+  FVD). Caption leftover: `look` **16734912** R;
+  VBench **16734913** afterok; ρ 909–911 left the queue.
+  Do not remake cite-128. Do not WAVE=3.
+  Keep/intra/denoise **NO**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
