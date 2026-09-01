@@ -4578,3 +4578,16 @@ Rolling `pixel_full/summary.json` exists. Log at Pseudo 054–058,
 n=504 frames. Always not started. Do not cite. Do not scancel.
 
 ---
+
+## 2026-08-31 — pixel 3/4; Rolling loses PSNR
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 23:12,
+`paper_tables/2026-08-31_wan_v2v_cite128_all_metrics.md`
+
+n=128 medians: SF 9.25 / 0.279, RF **7.98 / 0.250**, Pseudo
+9.22 / 0.268. Always summary missing. RF worse reconstruction
+while better on VBench subject + tail. Pseudo ≈ SF. LPIPS
+None. Do not cite four-way. Headline VBench + Dyn%.
+
+---

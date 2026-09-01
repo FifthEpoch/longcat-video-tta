@@ -17,8 +17,8 @@ VBench + Dyn%.
 | motion_smoothness | **0.992** | 0.991 | 0.991 | 0.990 |
 | dynamic_degree % | 32.8 (42) | 28.9 (37) | 47.7 (61) | **50.8 (65)** |
 | temporal_flickering | **0.987** | 0.983 | 0.984 | 0.982 |
-| PSNR | 9.25 | — | — | — |
-| SSIM | 0.279 | — | — | — |
+| PSNR | **9.25** | 7.98 | 9.22 | — |
+| SSIM | **0.279** | 0.250 | 0.268 | — |
 | LPIPS | — | — | — | — |
 | FVD (aligned tails) | — | — | — | — |
 
@@ -42,11 +42,28 @@ still wins Dyn% and IQ and holds subject; vs Rolling still
 wins Dyn% and IQ, ties the tail, loses subject and aesthetic.
 Always ≈ Pseudo on every imaging dim and +4 Dyn clips.
 
+## Pixels (partial, 23:12)
+
+**16694796** wrote Rolling and Pseudo. Always `summary.json`
+still **MISSING**. Do not cite a four-way.
+
+Medians n=128, paired 30 s tail vs real leftover:
+
+| | PSNR | SSIM |
+|---|---:|---:|
+| Self Forcing | **9.25** | **0.279** |
+| Rolling | 7.98 | 0.250 |
+| Pseudo | 9.22 | 0.268 |
+| Always | — | — |
+
+Pseudo ≈ Self Forcing on reconstruction. Rolling is **worse**
+(−1.3 dB / −0.03 SSIM) while winning subject and the tail on
+VBench. That is the LongCat lesson: more invented motion leaves
+the literal leftover. Headline stays VBench + Dyn%.
+
 ## Still missing
 
-- **PSNR/SSIM** Rolling / Pseudo / Always: resubmit
-  `submit_v2v_pixel128.sh` (skip-existing). SF 9.25 / 0.279 is
-  **not** a bake-off.
+- **Always PSNR/SSIM:** check whether 16694796 is still R. If
+  COMPLETED/FAILED, resubmit skip-existing (only Always left).
 - **LPIPS:** `lpips` missing in env.
-- **FVD:** not run. I3D on aligned tails only, `--force`.
-  Do not score the full mp4.
+- **FVD:** not run. Aligned tails only, `--force`.
