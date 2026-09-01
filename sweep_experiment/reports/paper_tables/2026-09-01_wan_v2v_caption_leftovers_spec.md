@@ -60,11 +60,11 @@ letter; do not import the stem IQ deltas.
 
 ## Submit
 
-**IN FLIGHT 2026-09-01 14:46.** Generate **16734909–912**
-(`rho_lo` / `rho_hi` / `adapt` / `look`). VBench **16734913**
-afterok. Preflight PASS: 1000 captions, 8/8 first-segment,
-0 stem. Cancel this wave only:
-`scancel 16734909 16734910 16734911 16734912 16734913`.
+**DONE 2026-09-01. All four NO.** Generate **16734909–912**
+COMPLETED 0:0. Visual Benchmark (VBench) **16734913**
+COMPLETED 0:0. Protocol PASS (`metadata_csv`, truck). Harvest:
+`2026-09-01_wan_v2v_caption_leftovers_harvest.md`. Do not scale.
+Do not remake cite-128.
 
 ```bash
 cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
@@ -77,7 +77,7 @@ Look at **caption** Rolling now (no GPU): first 8 of
 
 ## Harvest
 
-8/8 mp4 + sidecar `prompt_source=metadata_csv` + VBench full
-clip. Pair tails vs caption Rolling. Watch `rho_hi` next to
-Rolling on the same ID. Do not mix numbers into
-`2026-08-22_wan_v2v_leftovers8_verdict.md`.
+**DONE.** 8/8 + `metadata_csv` + Visual Benchmark (VBench) full
+clip. Pair vs caption Rolling first-8. All four **NO**. Table:
+`2026-09-01_wan_v2v_caption_leftovers_harvest.md`. Do not mix
+numbers into `2026-08-22_wan_v2v_leftovers8_verdict.md`.

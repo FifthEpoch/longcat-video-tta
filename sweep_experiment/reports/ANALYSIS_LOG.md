@@ -4725,6 +4725,23 @@ caption Rolling. Stem leftover table stays audit.
 
 ---
 
+## 2026-09-01 — caption leftover ρ / look all NO
+**Tags:** wan, v2v, caption, leftover, negative-result
+**Owner:** agent
+**Refs:** jobs 16734909–913 COMPLETED 0:0;
+`paper_tables/2026-09-01_wan_v2v_caption_leftovers_harvest.md`
+
+Protocol PASS (`metadata_csv`, truck). Cite vs caption Rolling
+Forcing first-8, not analyzer-vs-Self-Forcing. ρ still moves
+tails (hi / adapt +97% vs host, 8/8 and 6/0/2). Imaging
+Quality 68.09 / 64.44 / 67.47 vs Rolling N=32 70.22. Real
+captions did not save quality. `look` tail −7% (2/6) and
+Subject Consistency 0.666. Stem HOLD on `look` does not
+survive captions. Do not scale. Do not remake cite-128.
+LPIPS resubmit is **16738784** (16737041 CANCELLED).
+
+---
+
 ## 2026-09-01 — RF descendants are mostly memory, not schedule
 **Tags:** paper-narrative, literature, wan, rolling
 **Owner:** agent

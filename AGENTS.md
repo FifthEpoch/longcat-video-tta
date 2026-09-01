@@ -22,6 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
 | **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen + re-gate. Caption N=8. **NO.** Harvest: `2026-08-31_wan_v2v_pseudo_next8_harvest.md`. |
 | **Caption leftover ρ spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_caption_leftovers_spec.md` | Stem leftovers are panda-infected. Caption N=8 ρ / look only. Do not remake cite-128. |
+| **Caption leftover harvest** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_caption_leftovers_harvest.md` | 16734909–913 COMPLETED. All four **NO**. Real captions did not save Imaging Quality. |
 | **Cite-128 wall (job/96)** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_cite128_wall.md` | 108 / 47 / 294 / 354. Not n=32 sidecar 196 / 45 / 304 / 348. |
 | **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-09-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
@@ -360,15 +361,15 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-01 15:20):
-  Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
-  Pixel PSNR/SSIM **DONE**. LPIPS+FVD **16737041** R
-  pulled a second torch — **scancel 16737041 only**,
-  resubmit after `--no-deps` pull. Caption leftover:
-  `look` **16734912** R;
-  VBench **16734913** afterok; ρ 909–911 left the queue.
-  Do not remake cite-128. Do not WAVE=3.
-  Keep/intra/denoise **NO**. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-09-01 16:46):
+  Caption leftover **DONE / NO** (16734909–913 COMPLETED 0:0,
+  `metadata_csv`). Harvest:
+  `paper_tables/2026-09-01_wan_v2v_caption_leftovers_harvest.md`.
+  Pixel PSNR/SSIM **DONE**. LPIPS+FVD **16737041 CANCELLED**;
+  resubmit **16738784** R. Harvest path is
+  `*_h30s_shard0/pixel_full/summary.json` (not
+  `{method}/summary.json`). Do not remake cite-128. Do not
+  WAVE=3. Keep/intra/denoise **NO**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.
