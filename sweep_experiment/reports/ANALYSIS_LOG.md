@@ -4591,3 +4591,14 @@ while better on VBench subject + tail. Pseudo ≈ SF. LPIPS
 None. Do not cite four-way. Headline VBench + Dyn%.
 
 ---
+
+## 2026-09-01 — pixel preempted again; Always 50/128
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 00:04
+
+16694796 CANCELLED by 0 at 2h19, same as 16678705. Always
+has 50 jsons, no summary. Resubmit skip-existing. Do not
+remake. Do not cite 50-clip Always PSNR.
+
+---

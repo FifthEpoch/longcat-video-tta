@@ -63,7 +63,8 @@ the literal leftover. Headline stays VBench + Dyn%.
 
 ## Still missing
 
-- **Always PSNR/SSIM:** check whether 16694796 is still R. If
-  COMPLETED/FAILED, resubmit skip-existing (only Always left).
+- **Always PSNR/SSIM:** **16694796** CANCELLED by 0 at 2h20
+  (same slot as 705). 50 per-video jsons on disk. Resubmit
+  `submit_v2v_pixel128.sh` — skip-existing finishes Always only.
 - **LPIPS:** `lpips` missing in env.
 - **FVD:** not run. Aligned tails only, `--force`.

@@ -1,10 +1,9 @@
 # Caption 128 paired pixel metrics (2026-08-31)
 
-**Status:** duration audit **DONE**. Job **16678705** CANCELLED
-by 0 at 2h20 (preemption). Only Self Forcing summary landed
-(PSNR 9.25 / SSIM 0.279 / LPIPS None). Resubmit **16694796**
-R on L40S (skip-existing). Do not remake videos. Do not
-scancel 16694796.
+**Status:** duration audit **DONE**. **16678705** and
+**16694796** both CANCELLED by 0 at ~2h20 (L40S preemption).
+SF / Rolling / Pseudo summaries in. Always **50/128** jsons.
+Resubmit skip-existing. Do not remake videos.
 
 Source lengths (imageio, self_forcing env): **n=128 / 0 err**,
 min **54.8 s**, median **314 s**, max **1824 s**. `ge_32s=128/128`.
