@@ -68,6 +68,15 @@ When the user pastes terminal/cluster output:
 If the date file doesn't exist yet, create it with the standard header
 template in §4.
 
+### 2b-quater. Jobs that left `squeue` (ADDED 2026-09-01)
+
+`squeue` only shows what is still queued or running. A finished
+job vanishes. If a known JobID is missing from the next
+`squeue` paste, **immediately** `sacct -j <ID>` and harvest
+disk. Do not wait for the user to notice. Caption leftover
+16734909–911 left the queue at 15:20 and were not harvested
+until the user called it out.
+
 ### 2b-ter. Same-wave ablations (ADDED 2026-08-24)
 
 When submitting a **gated** method, the same paste must also
