@@ -4725,6 +4725,25 @@ caption Rolling. Stem leftover table stays audit.
 
 ---
 
+## 2026-09-01 — student cost vs non-linear timestep list
+**Tags:** methodology, wan, rolling, paper-narrative
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-01_rf_nonlinear_schedule.md`;
+Liu et al. 2509.25161 §impl + limitations
+
+We parked “needs a student” because the paper is test-time
+adaptation, not because 3,000 DMD steps are Wan-from-scratch.
+Official Rolling Forcing: 3k steps, batch 8, 8 GPUs, reuse
+ODE init. Their limitation: window + DMD is memory-heavy.
+Public recipe also pulls Wan 14B as teacher. Leftover generate
+N=8 is 9–11 min on one H200. A new list on the *existing*
+student is the cheap smoke (linger-high / dump-early). That
+is not leftover ρ (ρ scaled injected Gaussian; the list is
+`c_noise`). If the smoke dies on Imaging Quality, a short
+DMD is Stream Forcing’s class — go/no-go after N=8, not first.
+
+---
+
 ## 2026-09-01 — caption leftover ρ / look all NO
 **Tags:** wan, v2v, caption, leftover, negative-result
 **Owner:** agent

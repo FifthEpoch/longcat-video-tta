@@ -112,13 +112,21 @@ student is citing their method.
 
 | Idea | Why not |
 |---|---|
-| Stream Forcing curriculum / H-DMD / MSP / Re-DMD | New student |
+| Stream Forcing curriculum / H-DMD / MSP / Re-DMD | New student. Cheap vs Wan pretrain; **~1 day on 8 GPUs**, memory-heavy DMD. See `2026-09-01_rf_nonlinear_schedule.md`. |
 | `sf_roll` / `rf_chunk` | Twitch. Student and sampler are a pair |
-| One ρ for the whole video | IQ −1.4 to −3.8. Caption leftover is the last look |
+| One ρ for the whole video | Caption leftover **NO**. Imaging Quality 64–68. Not a timestep list. |
 | Extra frozen sink / VAE recache / mid-chunk rewrite | Identity tax. Closed |
 
+### Non-linear *timestep list* (not ρ)
+
+Official Rolling Forcing list is **linear in t**. Linger-high
+and dump-early on the **existing** student are the cheap
+smoke. Spec (no submit):
+`2026-09-01_rf_nonlinear_schedule.md`.
+
 If the goal is **another noise schedule like Rolling**, the
-only TTA-legal cousins are FIFO lookahead and a shallower
-or locally steeper diagonal at window-exit. Everything else
-that “builds on Rolling Forcing” is a KV rewrite. That can
-still be the Dyn fix. It is not a schedule paper.
+test-time cousins are FIFO lookahead, a shallower diagonal,
+or a non-linear list on the current checkpoint. A new
+student is the Stream Forcing class — do that only if the
+smoke dies on Imaging Quality and we decide to leave
+test-time adaptation.
