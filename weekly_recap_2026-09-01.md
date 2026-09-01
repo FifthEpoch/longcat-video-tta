@@ -54,19 +54,20 @@ Tables: `2026-08-25_wan_v2v_caption_official_complete.md`,
   ~30 s. Tail = median, over 128 clips, of mean |pixel change|
   between consecutive invented frames (range ~0–1). Higher = the
   continuation moves more (or morphs). Self Forcing 0.0119 is the
-  quiet/freeze tail; Rolling and Pseudo are ~+33%. Dyn% is the
-  official “is this clip alive?” count. They can disagree.
+  quiet/freeze tail; Rolling and Pseudo are ~+33%. Dynamic Degree
+  is VBench’s RAFT “is this clip alive?” count (we cite percent of
+  clips, not the median of 0/1). They can disagree.
 
   |                      | Self Forcing | Rolling    | Pseudo     | Always         |
   | -------------------- | ------------ | ---------- | ---------- | -------------- |
   | tail motion (invented 30 s) | 0.0119 | **0.0158** | 0.0157     | 0.0168         |
-  | subject              | 0.666        | **0.685**  | 0.660      | 0.661          |
-  | background           | 0.801        | **0.802**  | 0.792      | 0.790          |
-  | aesthetic            | 0.499        | **0.529**  | 0.510      | 0.503          |
-  | IQ                   | 72.07        | 71.52      | **72.38**  | 72.19          |
-  | smoothness           | **0.992**    | 0.991      | 0.991      | 0.990          |
-  | Dyn%                 | 32.8% (42)   | 28.9% (37) | 47.7% (61) | **50.8% (65)** |
-  | flicker              | **0.987**    | 0.983      | 0.984      | 0.982          |
+  | Subject Consistency  | 0.666        | **0.685**  | 0.660      | 0.661          |
+  | Background Consistency | 0.801      | **0.802**  | 0.792      | 0.790          |
+  | Aesthetic Quality    | 0.499        | **0.529**  | 0.510      | 0.503          |
+  | Imaging Quality      | 72.07        | 71.52      | **72.38**  | 72.19          |
+  | Motion Smoothness    | **0.992**    | 0.991      | 0.991      | 0.990          |
+  | Dynamic Degree       | 32.8% (42)   | 28.9% (37) | 47.7% (61) | **50.8% (65)** |
+  | Temporal Flickering  | **0.987**    | 0.983      | 0.984      | 0.982          |
   | mean s / clip (n=128) | 108         | **47**     | **294**    | 354            |
   | PSNR                 | **9.25**     | 7.98       | 9.22       | 9.21           |
   | SSIM                 | **0.279**    | 0.250      | 0.268      | 0.266          |
