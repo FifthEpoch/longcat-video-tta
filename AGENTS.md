@@ -346,9 +346,10 @@ Per-method `merged_summary.json` lives at:
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-09-01 15:20):
   Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
-  Pixel PSNR/SSIM **DONE**. LPIPS+FVD **16737041**
-  PD L40S (`v2v_panda_caption_128v`; fill-lpips + aligned
-  FVD). Caption leftover: `look` **16734912** R;
+  Pixel PSNR/SSIM **DONE**. LPIPS+FVD **16737041** R
+  pulled a second torch — **scancel 16737041 only**,
+  resubmit after `--no-deps` pull. Caption leftover:
+  `look` **16734912** R;
   VBench **16734913** afterok; ρ 909–911 left the queue.
   Do not remake cite-128. Do not WAVE=3.
   Keep/intra/denoise **NO**. **No I2V. No TTC.**

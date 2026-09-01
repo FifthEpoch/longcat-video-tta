@@ -4725,6 +4725,17 @@ caption Rolling. Stem leftover table stays audit.
 
 ---
 
+## 2026-09-01 — LPIPS pip must not resolve torch
+**Tags:** wan, v2v, pixel, env
+**Owner:** agent
+**Refs:** user paste 15:23; job 16737041
+
+`--target` install of `lpips` pulled torch + NVIDIA wheels.
+PYTHONPATH would shadow conda. Switch to `--no-deps` and
+`pip-extras/lpips-nodeps`. Scancel 16737041 only.
+
+---
+
 ## 2026-09-01 — LPIPS+FVD 16737041 submitted
 **Tags:** wan, v2v, pixel, fvd
 **Owner:** agent

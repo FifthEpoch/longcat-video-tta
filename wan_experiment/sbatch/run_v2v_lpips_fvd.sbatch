@@ -23,7 +23,8 @@ PROJECT_ROOT="${PROJECT_ROOT:-${SCRATCH_BASE}/longcat-video-tta}"
 CONDA_ENV="${CONDA_ENV:-${SCRATCH_BASE}/conda-envs/self_forcing}"
 SERIES_DIR="${SERIES_DIR:-${PROJECT_ROOT}/wan_experiment/results/v2v_panda_caption_128v}"
 METHODS="${METHODS:-notta rolling_notta sf_pseudo sf_always_search}"
-LPIPS_TARGET="${LPIPS_TARGET:-${SCRATCH_BASE}/pip-extras/lpips}"
+# Isolated extras. Do NOT pip-resolve torch (16737041 pulled CUDA wheels).
+LPIPS_TARGET="${LPIPS_TARGET:-${SCRATCH_BASE}/pip-extras/lpips-nodeps}"
 
 cd "${PROJECT_ROOT}"
 mkdir -p wan_experiment/slurm_log "${LPIPS_TARGET}"
@@ -40,11 +41,12 @@ export TMPDIR="${SCRATCH_BASE}/tmp"
 mkdir -p "$HF_HOME" "$TORCH_HOME" "$TMPDIR"
 
 PYTHON="${CONDA_ENV}/bin/python"
-echo "install lpips + huggingface_hub → ${LPIPS_TARGET}"
-"${PYTHON}" -m pip install --no-cache-dir --target "${LPIPS_TARGET}" lpips huggingface_hub
-export PYTHONPATH="${LPIPS_TARGET}"
+echo "install lpips --no-deps → ${LPIPS_TARGET} (conda keeps torch)"
+"${PYTHON}" -m pip install --no-cache-dir --no-deps --target "${LPIPS_TARGET}" \
+    lpips huggingface_hub
+export PYTHONPATH="${LPIPS_TARGET}${PYTHONPATH:+:$PYTHONPATH}"
 
-"${PYTHON}" -c "import lpips, torch; print('lpips ok', torch.cuda.is_available())"
+"${PYTHON}" -c "import lpips, torch; print('lpips ok', torch.__file__, 'cuda', torch.cuda.is_available())"
 
 echo "===== fill LPIPS (keep PSNR/SSIM) ====="
 "${PYTHON}" -u wan_experiment/scripts/score_v2v_pixel_metrics.py \

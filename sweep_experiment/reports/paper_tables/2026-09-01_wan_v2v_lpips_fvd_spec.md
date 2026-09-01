@@ -33,9 +33,11 @@ cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
 bash wan_experiment/sbatch/submit_v2v_lpips_fvd.sh
 ```
 
-L40S. Installs `lpips` into `/scratch/$USER/pip-extras/lpips`
-(does not mutate the conda env). Skip-existing LPIPS and FVD
-features. Cancel that job only.
+L40S. Installs `lpips` **`--no-deps`** into
+`/scratch/$USER/pip-extras/lpips-nodeps` (conda keeps torch).
+16737041 resolved a second CUDA torch into `pip-extras/lpips` —
+scancel that job only and resubmit. Skip-existing LPIPS and FVD
+features.
 
 ## Harvest
 
