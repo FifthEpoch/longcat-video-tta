@@ -44,6 +44,35 @@ Re-gate per-chunk fire: **6 / 5 / 6 / 7 / 8 / 6**. Alive
 Job wall: cached 45m / always-cached 57m / re-gate 76m /
 stacked 80m.
 
+## Re-gate vs Always on the same 8
+
+Fair pair: `sf_repseudo` vs `sf_always_cached` (official n=8
+VBench + tails). Caption-32 `sf_always_search` first-8 tail
+**matches** `sf_always_cached` (0.0149). Do not mix n=32 Always
+subject 0.687 into this table.
+
+| | Always (`sf_always_cached`) | Re-gate (`sf_repseudo`) | Winner |
+|---|---:|---:|---|
+| tail | **0.0149** | 0.0145 | Always |
+| Dyn% | **62.5% (5/8)** | 50% (4/8) | Always |
+| subject | 0.640 | 0.640 | tie |
+| IQ | **69.83** | 69.77 | Always (noise) |
+| background | 0.821 | **0.834** | Re-gate |
+| aesthetic | 0.517 | **0.526** | Re-gate |
+| smoothness | 0.991 | 0.992 | tie |
+| flicker | 0.985 | 0.986 | tie |
+| wall s (median) | **393** (full Always 349) | 552 | Always |
+| last-chunk drift ↓ | 281 | **71** | Re-gate (handcrafted) |
+
+Re-gate does **not** beat Always on the metrics we use to
+promote (tail, Dyn%, cost). The bg / Aes bumps are the usual
+identity tax: it skipped some later chunks (fire 6/5/6/7/8/6),
+so it is a **more expensive, slightly more conservative**
+Always. Last-chunk drift 71 vs 281 is the same handcrafted
+score that has lied before — official Dyn% goes the other way.
+
+n=8 is noisy. Direction is enough to not scale.
+
 ## Calls
 
 | Arm | Call | Why |

@@ -4545,3 +4545,16 @@ ablation keep; host-swap / pick / AdaSteer / denoise / intra /
 keep-picture / CachedSearch / re-gate all NO.
 
 ---
+
+## 2026-08-31 — re-gate does not beat Always
+**Tags:** finding, wan, v2v
+**Owner:** agent
+**Refs:** user 21:14,
+`paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`
+
+Same 8: Always tail 0.0149 / Dyn 5/8 / 393 s vs re-gate
+0.0145 / 4/8 / 552 s. Subject tie 0.640. Re-gate only “wins”
+background and aesthetic (identity) and last-chunk drift
+(handcrafted). Not a quality or cost win vs Always.
+
+---
