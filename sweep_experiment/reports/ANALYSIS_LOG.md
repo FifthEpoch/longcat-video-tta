@@ -4665,3 +4665,19 @@ row, gate almost free, pixels four-way, mid-chunk / cheapen
 closed. No new numbers.
 
 ---
+
+## 2026-09-01 — gate neighbors and publishability
+**Tags:** paper, related-work, wan, v2v
+**Owner:** agent
+**Refs:** user 13:43; `2026-09-01_gate_neighbors_publishability.md`
+
+Closest gates: Early Failure Detection (mid-denoise VLM),
+SDVG (accept/reject 1.3B draft vs 14B), Video-T1 prune,
+CachedSearch, LatSearch, DSA, TANGO, TBS. Nobody uses
+prefix-B MAE to gate unseen-tail search. The *class* is
+occupied. Cite-128 Pseudo (13% vs Always, −4 Dyn clips)
+is not a quality paper vs Always. Headline has to be
+search-lifts-Dyn% plus a real cheapen, or a skip-set
+quality win. Do not claim “we introduce gating.”
+
+---
