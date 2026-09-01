@@ -4654,3 +4654,14 @@ Local dest `~/Desktop/caption128_compare`. Copy only; do
 not remake or delete the 128 series.
 
 ---
+
+## 2026-09-01 — week recap talk
+**Tags:** recap, wan, v2v, cite128
+**Owner:** agent
+**Refs:** `weekly_recap_2026-09-01.md`
+
+Canvas talk covering 2026-08-25 → 2026-09-01: Pseudo cite
+row, gate almost free, pixels four-way, mid-chunk / cheapen
+closed. No new numbers.
+
+---

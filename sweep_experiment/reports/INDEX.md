@@ -9,7 +9,8 @@ update the Status / Findings columns when re-merged. NEVER delete rows
 even if results are superseded — mark them `superseded` and keep them
 for audit trail.
 
-**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-08-31.
+**Owners:** Wenchen (PI) and any active agent. Last updated: 2026-09-01.
+Week talk: [`weekly_recap_2026-09-01.md`](../../weekly_recap_2026-09-01.md).
 
 ---
 

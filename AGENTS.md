@@ -18,7 +18,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
 | **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
 | **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen + re-gate. Caption N=8. **NO.** Harvest: `2026-08-31_wan_v2v_pseudo_next8_harvest.md`. |
-| **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-06-01.md` |
+| **Weekly recap (current week)** | `weekly_recap_YYYY-MM-DD.md` | One per Monday meeting. Latest: `weekly_recap_2026-09-01.md` |
 | **Daily experimental-output log** | `sweep_experiment/reports/experiment_outputs/YYYY-MM-DD.md` | Append every pasted output (raw + interpretation) |
 | **Canonical results memory (legacy)** | `sweep_experiment/reports/experiment_metrics_log.md` | Long-form running log. Superseded by INDEX.md + ANALYSIS_LOG.md as of 2026-06-08, but kept for history. |
 | **Paper draft** | `sweep_experiment/reports/paper_draft.md` | LaTeX-aligned narrative + result placeholders. Often dehydrated locally. |
