@@ -50,10 +50,16 @@ Tables: `2026-08-25_wan_v2v_caption_official_complete.md`,
 ## 2. Caption 128 (paper-size row)
 
 - VBench 7/7. Do not remake videos.
+- **Tail motion** is not VBench. After the real ~2 s prefix we invent
+  ~30 s. Tail = median, over 128 clips, of mean |pixel change|
+  between consecutive invented frames (range ~0–1). Higher = the
+  continuation moves more (or morphs). Self Forcing 0.0119 is the
+  quiet/freeze tail; Rolling and Pseudo are ~+33%. Dyn% is the
+  official “is this clip alive?” count. They can disagree.
 
   |                      | Self Forcing | Rolling    | Pseudo     | Always         |
   | -------------------- | ------------ | ---------- | ---------- | -------------- |
-  | tail                 | 0.0119       | **0.0158** | 0.0157     | 0.0168         |
+  | tail motion (invented 30 s) | 0.0119 | **0.0158** | 0.0157     | 0.0168         |
   | subject              | 0.666        | **0.685**  | 0.660      | 0.661          |
   | background           | 0.801        | **0.802**  | 0.792      | 0.790          |
   | aesthetic            | 0.499        | **0.529**  | 0.510      | 0.503          |
