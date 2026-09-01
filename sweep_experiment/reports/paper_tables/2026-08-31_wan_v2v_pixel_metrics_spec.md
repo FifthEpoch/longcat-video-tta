@@ -1,9 +1,7 @@
 # Caption 128 paired pixel metrics (2026-08-31)
 
-**Status:** PSNR/SSIM **DONE** 2026-09-01. Always remainder
-**16702323** COMPLETED 0:0 1h14. Four `summary.json` n=128.
-Harvest: `2026-09-01_wan_v2v_cite128_pixel.md`.
-Do not remake videos. LPIPS env-gap. FVD not launched.
+**Status:** PSNR/SSIM **DONE** 2026-09-01. LPIPS/FVD submit:
+`2026-09-01_wan_v2v_lpips_fvd_spec.md`. Do not remake videos.
 
 Source lengths (imageio, self_forcing env): **n=128 / 0 err**,
 min **54.8 s**, median **314 s**, max **1824 s**. `ge_32s=128/128`.

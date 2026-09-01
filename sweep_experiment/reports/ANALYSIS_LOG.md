@@ -4681,3 +4681,15 @@ search-lifts-Dyn% plus a real cheapen, or a skip-set
 quality win. Do not claim “we introduce gating.”
 
 ---
+
+## 2026-09-01 — LPIPS + aligned FVD submit
+**Tags:** wan, v2v, pixel, fvd
+**Owner:** agent
+**Refs:** `2026-09-01_wan_v2v_lpips_fvd_spec.md`
+
+Fill-only LPIPS on existing pixel jsons (install `lpips`
+into scratch, do not mutate conda). FVD = I3D on aligned
+30 s tails, 16-frame windows, not the full mp4. Resume
+via per-video npz. Do not remake 128 videos.
+
+---

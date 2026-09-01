@@ -97,12 +97,27 @@ def _psnr_ssim(gen: np.ndarray, gt: np.ndarray) -> tuple[float, float]:
     return float(np.mean(ps)), float(np.mean(ss))
 
 
-def _lpips_mean(gen: np.ndarray, gt: np.ndarray, device: str, step: int) -> float | None:
+def _has_lpips(row: dict) -> bool:
+    v = row.get("lpips")
+    return v is not None and v == v
+
+
+def _require_lpips() -> None:
     try:
-        import lpips
-        import torch
-    except ImportError:
-        return None
+        import lpips  # noqa: F401
+        import torch  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit(
+            "lpips is not importable in this env. The sbatch installs it "
+            "into /scratch/$USER/pip-extras/lpips and sets PYTHONPATH. "
+            f"Original error: {exc}"
+        ) from exc
+
+
+def _lpips_mean(gen: np.ndarray, gt: np.ndarray, device: str, step: int) -> float:
+    import lpips
+    import torch
+
     n = min(gen.shape[0], gt.shape[0])
     idxs = list(range(0, n, max(1, int(step))))
     if idxs[-1] != n - 1:
@@ -114,7 +129,9 @@ def _lpips_mean(gen: np.ndarray, gt: np.ndarray, device: str, step: int) -> floa
             a = torch.from_numpy(gen[i]).permute(2, 0, 1).float().div(127.5).sub(1)
             b = torch.from_numpy(gt[i]).permute(2, 0, 1).float().div(127.5).sub(1)
             vals.append(float(loss(a[None].to(device), b[None].to(device)).item()))
-    return float(np.mean(vals)) if vals else None
+    if not vals:
+        raise RuntimeError("LPIPS produced no frames")
+    return float(np.mean(vals))
 
 
 def _median(xs: list[float]) -> float | None:
@@ -122,7 +139,15 @@ def _median(xs: list[float]) -> float | None:
     return float(statistics.median(xs)) if xs else None
 
 
-def score_method(series: Path, method: str, device: str, lpips_step: int, force: bool) -> dict:
+def score_method(
+    series: Path,
+    method: str,
+    device: str,
+    lpips_step: int,
+    force: bool,
+    fill_lpips: bool,
+    require_lpips: bool,
+) -> dict:
     method_dir = series / f"{method}_h30s_shard0"
     out_dir = method_dir / "pixel_full"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -133,9 +158,12 @@ def score_method(series: Path, method: str, device: str, lpips_step: int, force:
             continue
         key = rec.get("file_name") or rec.get("stem") or js.stem
         dest = out_dir / f"{js.stem}.json"
+        existing = None
         if dest.is_file() and not force:
-            rows.append(json.loads(dest.read_text()))
-            continue
+            existing = json.loads(dest.read_text())
+            if not fill_lpips or _has_lpips(existing):
+                rows.append(existing)
+                continue
         mp4 = Path(rec["mp4"]) if rec.get("mp4") else method_dir / f"{js.stem}.mp4"
         src = Path(rec["video_path"])
         prefix_pix = int(rec.get("prefix_pix") or SKIP_SRC)
@@ -148,22 +176,34 @@ def score_method(series: Path, method: str, device: str, lpips_step: int, force:
         gt = _resize(gt, (tail.shape[1], tail.shape[2]))
         n = min(tail.shape[0], gt.shape[0])
         tail, gt = tail[:n], gt[:n]
-        psnr, ssim = _psnr_ssim(tail, gt)
-        lp = _lpips_mean(tail, gt, device, lpips_step)
-        row = {
-            "file_name": key,
-            "stem": rec.get("stem") or js.stem,
-            "n_frames": int(n),
-            "tail_s": tail_s,
-            "psnr": psnr,
-            "ssim": ssim,
-            "lpips": lp,
-        }
+        if existing is not None and fill_lpips:
+            row = dict(existing)
+            row["lpips"] = _lpips_mean(tail, gt, device, lpips_step)
+        else:
+            psnr, ssim = _psnr_ssim(tail, gt)
+            lp = None
+            if require_lpips or fill_lpips:
+                lp = _lpips_mean(tail, gt, device, lpips_step)
+            else:
+                try:
+                    lp = _lpips_mean(tail, gt, device, lpips_step)
+                except ImportError:
+                    lp = None
+            row = {
+                "file_name": key,
+                "stem": rec.get("stem") or js.stem,
+                "n_frames": int(n),
+                "tail_s": tail_s,
+                "psnr": psnr,
+                "ssim": ssim,
+                "lpips": lp,
+            }
         dest.write_text(json.dumps(row, indent=2))
         rows.append(row)
         print(
-            f"  {method} {mp4.name} n={n} psnr={psnr:.3f} ssim={ssim:.4f} "
-            f"lpips={lp if lp is not None else 'na'}",
+            f"  {method} {mp4.name} n={n} psnr={row.get('psnr'):.3f} "
+            f"ssim={row.get('ssim'):.4f} "
+            f"lpips={row['lpips'] if row.get('lpips') is not None else 'na'}",
             flush=True,
         )
     summary = {
@@ -191,16 +231,31 @@ def main() -> int:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--lpips-step", type=int, default=8)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument(
+        "--fill-lpips", action="store_true",
+        help="Keep existing PSNR/SSIM jsons; write LPIPS only where missing.",
+    )
+    ap.add_argument(
+        "--require-lpips", action="store_true",
+        help="Fail if lpips cannot be imported.",
+    )
     args = ap.parse_args()
     series = args.series_dir
     if not series.is_absolute():
         series = Path.cwd() / series
-    print(f"pixel metrics series={series} methods={args.methods}", flush=True)
+    if args.fill_lpips or args.require_lpips:
+        _require_lpips()
+    print(
+        f"pixel metrics series={series} methods={args.methods} "
+        f"fill_lpips={args.fill_lpips}",
+        flush=True,
+    )
     summaries = []
     for m in args.methods:
         print(f"===== {m} =====", flush=True)
         summaries.append(score_method(
             series, m, args.device, args.lpips_step, args.force,
+            args.fill_lpips, args.require_lpips,
         ))
     print("\n# Caption 128 paired 30 s pixels (medians)")
     print("| Method | n | PSNR ↑ | SSIM ↑ | LPIPS ↓ |")
