@@ -202,7 +202,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-08-31.
+**Date:** Updated 2026-09-01.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -260,13 +260,15 @@ Per-method `merged_summary.json` lives at:
   Cite 128 **COMPLETE**: Pseudo tail **0.0157 ≈ RF 0.0158**;
   official **Dyn 47.7% (61/128)** / 0.660 / 72.38. Always
   **50.8% (65/128)** / 0.661 / 72.19. Gate **90 fire / 38 skip**
-  costs 4 Dyn clips. SF 32.8% (42). RF 28.9% (37). Pixel
-  **16678705** preempted (SF PSNR only). Headline stays
+  costs 4 Dyn clips. SF 32.8% (42). RF 28.9% (37).   Pixel PSNR/SSIM **DONE** (**16702323**): SF **9.25** /
+  RF 7.98 / Pseudo **9.22** / Always **9.21**. Search ≈ SF
+  on reconstruction; Rolling −1.28 dB. Headline stays
   VBench + Dyn%. Mid-chunk rewrite **CLOSED**. Pseudo-next
   N=8 **NO** (CachedSearch slower; re-gate no lift). Tables:
   `paper_tables/2026-08-31_wan_v2v_cite128_complete.md`,
   `paper_tables/2026-08-31_wan_v2v_cite128_all_metrics.md`
-  (VBench 7/7; pixel/FVD still open),
+  (VBench 7/7; PSNR/SSIM in; LPIPS/FVD open),
+  `paper_tables/2026-09-01_wan_v2v_cite128_pixel.md`,
   `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`,
   `paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.
@@ -279,8 +281,9 @@ Per-method `merged_summary.json` lives at:
   Next on Pseudo (2026-08-31): CachedSearch / re-gate **NO**.
   Gate is almost free; cheapen is still the paper move, but
   **not** this CPU KV snap. Search-early or prune k. Or RF
-  window-exit. Resubmit pixel skip-existing.
-  Harvest: `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`.
+  window-exit. Pixel skip-existing **landed**. FVD still
+  open (aligned tails only). Harvest:
+  `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -337,11 +340,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-01 00:07):
+- **In-flight cluster jobs** (as of 2026-09-01 13:11):
   Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
-  Pixel Always remainder **16702323** COMPLETED 1h14. Harvest
-  dump said MISSING — likely wrong cwd. Re-read absolute paths.
-  Do not remake videos.
+  Pixel four-way **DONE** (**16702323** Always 9.21 / 0.266).
+  Queue empty. LPIPS env-gap. FVD not launched.
   Keep/intra/denoise **NO**. Do not remake 128 videos.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,

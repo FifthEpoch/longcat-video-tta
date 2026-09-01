@@ -4623,3 +4623,20 @@ SF/RF/Pseudo summaries were already on disk. Re-read with
 absolute paths before any resubmit.
 
 ---
+
+## 2026-09-01 — caption-128 pixel four-way
+**Tags:** harvest, wan, v2v, pixel, cite128
+**Owner:** agent
+**Refs:** user 13:11; `2026-09-01_wan_v2v_cite128_pixel.md`
+
+Absolute-path harvest after **16702323**. Four
+`pixel_full/summary.json` n=128. Always 9.212 / 0.266
+(written 01:20). Pseudo 9.225 / 0.268. SF 9.254 / 0.279.
+RF 7.976 / 0.250. Search ≈ do-nothing on reconstruction;
+Rolling pays −1.28 dB while winning VBench subject. Gate
+is a pixel tie. Headline stays VBench + Dyn%. LPIPS None
+(env). FVD not launched. Do not remake 128 videos. Table
+is a harvest dump of `summary.json` medians, not
+`build_paper_tables.py`.
+
+---

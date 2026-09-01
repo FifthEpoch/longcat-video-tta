@@ -66,5 +66,7 @@ Forcing `pixel_full/summary.json` landed: n=128 PSNR **9.25**
 SSIM **0.279** LPIPS **None** (`lpips` missing in env). Do not
 cite that single row as a method compare. Resubmit skip-existing.
 Headline stays VBench + Dyn%. Full VBench++ × pixel × FVD
-grid (with holes):
+grid:
 [`2026-08-31_wan_v2v_cite128_all_metrics.md`](2026-08-31_wan_v2v_cite128_all_metrics.md).
+Four-way PSNR/SSIM landed 2026-09-01:
+[`2026-09-01_wan_v2v_cite128_pixel.md`](2026-09-01_wan_v2v_cite128_pixel.md).

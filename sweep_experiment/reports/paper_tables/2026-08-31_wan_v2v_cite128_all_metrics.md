@@ -17,8 +17,8 @@ VBench + Dyn%.
 | motion_smoothness | **0.992** | 0.991 | 0.991 | 0.990 |
 | dynamic_degree % | 32.8 (42) | 28.9 (37) | 47.7 (61) | **50.8 (65)** |
 | temporal_flickering | **0.987** | 0.983 | 0.984 | 0.982 |
-| PSNR | **9.25** | 7.98 | 9.22 | — |
-| SSIM | **0.279** | 0.250 | 0.268 | — |
+| PSNR | **9.25** | 7.98 | 9.22 | 9.21 |
+| SSIM | **0.279** | 0.250 | 0.268 | 0.266 |
 | LPIPS | — | — | — | — |
 | FVD (aligned tails) | — | — | — | — |
 
@@ -42,10 +42,11 @@ still wins Dyn% and IQ and holds subject; vs Rolling still
 wins Dyn% and IQ, ties the tail, loses subject and aesthetic.
 Always ≈ Pseudo on every imaging dim and +4 Dyn clips.
 
-## Pixels (partial, 23:12)
+## Pixels (DONE 2026-09-01)
 
-**16694796** wrote Rolling and Pseudo. Always `summary.json`
-still **MISSING**. Do not cite a four-way.
+**16702323** COMPLETED 0:0 1h14. Always `summary.json` at
+01:20. Four-way n=128. Harvest:
+[`2026-09-01_wan_v2v_cite128_pixel.md`](2026-09-01_wan_v2v_cite128_pixel.md).
 
 Medians n=128, paired 30 s tail vs real leftover:
 
@@ -54,17 +55,14 @@ Medians n=128, paired 30 s tail vs real leftover:
 | Self Forcing | **9.25** | **0.279** |
 | Rolling | 7.98 | 0.250 |
 | Pseudo | 9.22 | 0.268 |
-| Always | — | — |
+| Always | 9.21 | 0.266 |
 
-Pseudo ≈ Self Forcing on reconstruction. Rolling is **worse**
-(−1.3 dB / −0.03 SSIM) while winning subject and the tail on
-VBench. That is the LongCat lesson: more invented motion leaves
-the literal leftover. Headline stays VBench + Dyn%.
+Pseudo ≈ Always ≈ Self Forcing on reconstruction. Rolling is
+**worse** (−1.28 dB / −0.029 SSIM) while winning subject and
+the tail on VBench. Search does not pay a pixel tax for the
+Dyn% lift. Headline stays VBench + Dyn%.
 
 ## Still missing
 
-- **Always PSNR/SSIM:** **16694796** CANCELLED by 0 at 2h20
-  (same slot as 705). 50 per-video jsons on disk. Resubmit
-  `submit_v2v_pixel128.sh` — skip-existing finishes Always only.
 - **LPIPS:** `lpips` missing in env.
 - **FVD:** not run. Aligned tails only, `--force`.
