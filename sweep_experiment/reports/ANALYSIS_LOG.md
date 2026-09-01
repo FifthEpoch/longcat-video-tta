@@ -4612,3 +4612,14 @@ Pull 30008c4. Job **16702323** submitted. Skip-existing should
 finish Always only. Same 2h20 preemption risk. Do not scancel.
 
 ---
+
+## 2026-09-01 — 16702323 done; dump MISSING is likely cwd
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 12:55
+
+COMPLETED 0:0 1h14. Relative-path python printed four MISSING.
+SF/RF/Pseudo summaries were already on disk. Re-read with
+absolute paths before any resubmit.
+
+---

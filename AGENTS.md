@@ -339,9 +339,9 @@ Per-method `merged_summary.json` lives at:
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-09-01 00:07):
   Always 128 VBench **DONE**. Pseudo-next **DONE / NO**.
-  Pixel Always remainder **16702323**. SF 9.25 / RF 7.98 /
-  Pseudo 9.22. Always 50/128 already on disk. Do not scancel
-  16702323. Do not remake videos.
+  Pixel Always remainder **16702323** COMPLETED 1h14. Harvest
+  dump said MISSING — likely wrong cwd. Re-read absolute paths.
+  Do not remake videos.
   Keep/intra/denoise **NO**. Do not remake 128 videos.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
