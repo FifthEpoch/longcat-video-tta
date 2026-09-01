@@ -265,6 +265,8 @@ Per-method `merged_summary.json` lives at:
   VBench + Dyn%. Mid-chunk rewrite **CLOSED**. Pseudo-next
   N=8 **NO** (CachedSearch slower; re-gate no lift). Tables:
   `paper_tables/2026-08-31_wan_v2v_cite128_complete.md`,
+  `paper_tables/2026-08-31_wan_v2v_cite128_all_metrics.md`
+  (VBench 7/7; pixel/FVD still open),
   `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`,
   `paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`.
   GPU: `paper_tables/2026-08-23_wan_gpu_batch_policy.md`.

@@ -4518,3 +4518,16 @@ not full mp4. Do not invent cells. Login dump fills VBench.
 Resubmit pixel for the other three. Do not cite SF PSNR alone.
 
 ---
+
+## 2026-08-31 — caption-128 VBench 7/7 for all four
+**Tags:** harvest, wan, v2v
+**Owner:** agent
+**Refs:** user 21:06,
+`paper_tables/2026-08-31_wan_v2v_cite128_all_metrics.md`
+
+joined.json dump. Background 0.801 / 0.802 / 0.792 / 0.790.
+Aes 0.499 / **0.529** / 0.510 / 0.503. Smooth 0.992 / 0.991 /
+0.991 / 0.990. Cite row unchanged: Rolling subject + Aes;
+Pseudo Dyn% + IQ; tail tie. Pixel/FVD still incomplete.
+
+---
