@@ -4640,3 +4640,17 @@ is a harvest dump of `summary.json` medians, not
 `build_paper_tables.py`.
 
 ---
+
+## 2026-09-01 — caption-128 matched example pack
+**Tags:** wan, v2v, figures
+**Owner:** agent
+**Refs:** user 13:25
+
+Staged 10 evenly spaced IDs (0000 0014 0028 0042 0056 0070
+0084 0098 0112 0126) × Self Forcing / Rolling / Pseudo /
+Always-search. 40/40 OK, 777 MB at
+`wan_experiment/results/v2v_panda_caption_128v_examples`.
+Local dest `~/Desktop/caption128_compare`. Copy only; do
+not remake or delete the 128 series.
+
+---
