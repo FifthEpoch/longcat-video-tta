@@ -1,79 +1,62 @@
-# Non-linear Rolling Forcing timestep list + student cost (2026-09-01)
+# Non-linear Rolling Forcing timestep list — SUBMIT-READY (2026-09-03)
 
-Not a submit. After leftover ρ **NO** and the schedule-neighbors
-note. Official Rolling Forcing (Liu et al., ICLR 2026) trains
-**T=5** on `[1000, 800, 600, 400, 200]` — **linear in t**.
-We run the checkpoint’s `denoising_step_list` (4-step family
-on our host). Print that list from one sidecar before any
-new arm.
+Inference smoke on the **existing** Rolling Forcing student.
+Not leftover ρ. ρ scaled injected Gaussian. This list is
+`c_noise` / adaLN. Same T as the live `denoising_step_list`.
 
-Leftover ρ is **not** this experiment. ρ scaled *how much*
-Gaussian was injected on later blocks. The timestep list
-tells the DiT *which noise level it is at* (adaLN /
-`c_noise`). Same window, different knob. ρ already killed
-Imaging Quality under captions.
+## Do we need Distribution Matching Distillation (DMD)?
 
-## Two lists to smoke (inference, existing student)
+**Probably yes for it to work.** Distilled few-step models
+are tied to the noise levels they saw. `sf_roll` twitched.
+Caption leftover ρ killed Imaging Quality without changing
+the list. Stream Forcing trains a path *to* the inference
+schedule.
 
-Keep T equal to the live list. Do not add steps (that
-widens the window and is a different student). Host =
-caption Rolling Forcing first 8. Cite vs that host.
+**We still smoke without DMD first.** That is the only way
+to know. If linger-high / dump-early hold Imaging Quality
+and Subject Consistency versus caption Rolling Forcing
+first-8, we got a cheap test-time move. If Imaging Quality
+dies (likely), that *is* the evidence that a short
+Distribution Matching Distillation (DMD) is required — then
+a go/no-go on 8-GPU training, not the first GPU.
 
-If live list is the official five-step
-`[1000, 800, 600, 400, 200]`:
+Do not start a student tonight.
 
-| Arm | List | Shape |
+## Arms
+
+Host = existing `v2v_panda_caption_32v/rolling_notta` first 8.
+Do **not** remake native Rolling Forcing or cite-128.
+
+| Method | List if native is `[1000,800,600,400,200]` | Shape |
 |---|---|---|
-| native | 1000, 800, 600, 400, 200 | linear (already on disk) |
-| linger-high | 1000, 920, 800, 520, 200 | stay noisy, dump at the end |
-| dump-early | 1000, 520, 360, 260, 200 | jump down, linger near-clean |
+| `rolling_linger` | 1000, 920, 800, 520, 200 | stay noisy, dump at the end |
+| `rolling_dump` | 1000, 520, 360, 260, 200 | jump down, linger near-clean |
 
-If live list is four-step Self Forcing-style
-`[1000, 750, 500, 250]`:
+If native is four-step `[1000,750,500,250]`: linger
+`1000,875,650,250`; dump `1000,500,350,250`. Other T: keep
+endpoints, warp interior (`u^2` / `u^0.5`). Slurm log must
+print `rf_step_list native=... used=...`.
 
-| Arm | List | Shape |
-|---|---|---|
-| native | 1000, 750, 500, 250 | linear |
-| linger-high | 1000, 875, 650, 250 | stay noisy, dump at the end |
-| dump-early | 1000, 500, 350, 250 | jump down, linger near-clean |
+N=8, `metadata_csv`, k=1. Cite versus caption Rolling Forcing
+first-8 (not analyzer-versus-Self-Forcing). Bars: tail versus
+host; Imaging Quality not worse by ≥1.0; Subject Consistency
+not worse by ≥0.02.
 
-N=8, `metadata_csv`, k=1, no WAVE=3. Same bars as leftover:
-tail vs host; Imaging Quality not worse by ≥1.0; Subject
-Consistency not worse by ≥0.02. Expect the leftover letter
-(pixels move, Imaging Quality dies) until proven otherwise.
-`sf_roll` already showed student and sampler are a pair.
+## Submit
 
-Do **not** launch until the user says GO. Do not remake
-cite-128.
+```bash
+cd /scratch/wc3013/longcat-video-tta && git pull --ff-only origin main
+bash wan_experiment/sbatch/submit_v2v_caption_schedule8.sh
+```
 
-## Why we parked “needs a student”
+Cancel this wave only (print the JobIDs from submit):
+`scancel <linger> <dump> <vbench>`.
+Do not scancel leftover 16734909–913 (already DONE).
+Do not scancel Learned Perceptual Image Patch Similarity
+(LPIPS) **16738784** unless that job already finished.
 
-Not because 3,000 Distribution Matching Distillation (DMD)
-steps are “training Wan from scratch.” Official Rolling
-Forcing: **3,000 steps, batch 8, 27 latent frames, one
-machine with 8 GPUs**, after a reused causal Ordinary
-Differential Equation (ODE) init (`ode_init.pt`). No video
-dataset. Their own limitation: the window plus DMD is
-**memory-heavy**; backpropagating every window Out-Of-Memory
-(OOM)s even on 80 GB. Public train recipe also downloads
-Wan **14B** as the teacher score.
+## Harvest
 
-Relative costs:
-
-| Job | Order of magnitude |
-|---|---|
-| Leftover generate N=8, one H200 | **9–11 minutes** |
-| Official Rolling Forcing student | **~1 day on 8 GPUs** (their number: 3k steps) |
-| Wan 1.3B pretrain | weeks / many nodes |
-
-So: cheap versus pretrain. **Not** cheap versus a test-time
-arm. We also do not have that 8-GPU DMD stack wired on this
-account, and a new student with a new list is the Stream
-Forcing / Ms. Forcing paper class — not test-time adaptation
-on Self Forcing.
-
-If linger-high / dump-early **fail** the N=8 Imaging Quality
-bar (likely), the literature answer is a short DMD on that
-list. That is a **go/no-go** after the smoke, not the first
-GPU. Paper lock stays: no Test-Time Training (TTC), no
-Image-to-Video (I2V) scale-up, no remake of cite-128.
+8/8 + `metadata_csv` + first sidecar `denoising_step_kind`
+`linger` / `dump` + Visual Benchmark (VBench) full clip.
+Pair tails versus caption Rolling Forcing first-8.

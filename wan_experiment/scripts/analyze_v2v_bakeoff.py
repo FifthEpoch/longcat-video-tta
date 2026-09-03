@@ -23,6 +23,7 @@ METHODS = (
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
+    "rolling_linger", "rolling_dump",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",

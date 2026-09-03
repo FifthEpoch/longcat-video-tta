@@ -4725,6 +4725,22 @@ caption Rolling. Stem leftover table stays audit.
 
 ---
 
+## 2026-09-03 — smoke the list without DMD; train only if IQ dies
+**Tags:** methodology, wan, rolling, decision
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-01_rf_nonlinear_schedule.md`;
+`submit_v2v_caption_schedule8.sh`
+
+A different timestep list is probably out-of-distribution for
+the distilled student (`sf_roll`, leftover ρ). Stream Forcing
+trains to the schedule. We still run linger-high / dump-early
+**inference-only** N=8 first. That is the measurement. If
+Imaging Quality holds versus caption Rolling first-8, no
+student. If it dies, that is the DMD go/no-go. Do not start
+8-GPU Distribution Matching Distillation tonight.
+
+---
+
 ## 2026-09-01 — student cost vs non-linear timestep list
 **Tags:** methodology, wan, rolling, paper-narrative
 **Owner:** agent

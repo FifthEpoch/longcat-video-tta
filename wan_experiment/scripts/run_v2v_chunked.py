@@ -31,6 +31,8 @@ Methods:
   rolling_adapt  — RF host, ρ from prefix_motion (still=2, mid=1, hot=0.5)
   rolling_look   — RF host, k=4 lookahead on new-noise windows; seam pick
                    with trust reject (motion < 0.8× cand0 stays cand0)
+  rolling_linger — RF host, k=1, linger-high timestep list (same T)
+  rolling_dump   — RF host, k=1, dump-early timestep list (same T)
   sf_roll        — SF weights + RF rolling window sampler (H1 cross)
   rf_chunk       — RF weights + SF chunked sampler (H1 cross)
   sf_recache     — SF chunked; VAE re-encode last 9 latents each chunk (H4)
@@ -185,6 +187,7 @@ METHODS = (
     "longlive_notta", "longlive_sink", "longlive_live_bon",
     "longlive_prefix_sink", "rolling_notta",
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
+    "rolling_linger", "rolling_dump",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
@@ -218,6 +221,7 @@ ROLL_STILL_MIN = 0.012
 ROLL_HOT_MIN = 0.03
 ROLL_TRUST_FRAC = 0.8
 ROLL_LOOK_EVERY_BLOCKS = 7
+_RF_STEP_INFO: dict = {}
 PSEUDO_B_LATENTS = 3
 PSEUDO_GAMMA = 0.0
 _PSEUDO_GAMMA = PSEUDO_GAMMA
@@ -266,6 +270,69 @@ def _v2v_host_name(method: str) -> str:
     if method.startswith("rolling") or method in ROLLING_HOST_METHODS:
         return "rolling"
     return "sf"
+
+
+def _as_step_floats(raw) -> list[float]:
+    if hasattr(raw, "detach"):
+        return [float(x) for x in raw.detach().cpu().flatten().tolist()]
+    return [float(x) for x in list(raw)]
+
+
+def _nonlinear_rf_steps(native: list[float], kind: str) -> list[float]:
+    """Same T as the student. Keep endpoints. Warp only the interior."""
+    n = len(native)
+    if n < 3:
+        raise RuntimeError(f"need T>=3 for a non-linear list, got {native}")
+    t0, t1 = float(native[0]), float(native[-1])
+    if n == 5 and abs(t0 - 1000) < 1 and abs(t1 - 200) < 1:
+        if kind == "linger":
+            return [1000.0, 920.0, 800.0, 520.0, 200.0]
+        return [1000.0, 520.0, 360.0, 260.0, 200.0]
+    if n == 4 and abs(t0 - 1000) < 1 and abs(t1 - 250) < 1:
+        if kind == "linger":
+            return [1000.0, 875.0, 650.0, 250.0]
+        return [1000.0, 500.0, 350.0, 250.0]
+    out = []
+    expo = 2.0 if kind == "linger" else 0.5
+    for i in range(n):
+        u = i / (n - 1)
+        out.append(t0 + (t1 - t0) * (u ** expo))
+    out[0], out[-1] = t0, t1
+    return out
+
+
+def apply_rf_denoise_schedule(pipeline, method: str) -> dict:
+    """Override pipeline.denoising_step_list. Never change T."""
+    import torch
+
+    native = _as_step_floats(pipeline.denoising_step_list)
+    kind = None
+    if method == "rolling_linger":
+        kind = "linger"
+    elif method == "rolling_dump":
+        kind = "dump"
+    used = list(native) if kind is None else _nonlinear_rf_steps(native, kind)
+    if len(used) != len(native):
+        raise RuntimeError(
+            f"refusing to change T: native={native} used={used}"
+        )
+    raw = pipeline.denoising_step_list
+    if hasattr(raw, "to"):
+        pipeline.denoising_step_list = torch.tensor(
+            used, device=raw.device, dtype=raw.dtype,
+        )
+    else:
+        pipeline.denoising_step_list = used
+    info = {
+        "native": native,
+        "used": used,
+        "kind": kind or "native",
+    }
+    print(
+        f"rf_step_list native={native} used={used} kind={info['kind']}",
+        flush=True,
+    )
+    return info
 
 
 def _uses_rolling_sampler(method: str) -> bool:
@@ -3722,6 +3789,8 @@ def main() -> int:
             apply_sink_size(
                 pipeline, int(args.sink_size), int(args.local_attn_size),
             )
+        global _RF_STEP_INFO
+        _RF_STEP_INFO = apply_rf_denoise_schedule(pipeline, method)
     else:
         pipeline = load_pipeline(
             host_root, Path(args.wan_dir), Path(args.sf_ckpt),
@@ -3864,6 +3933,9 @@ def main() -> int:
                         "last_chunk_motion_score": last.get("chosen_motion_score"),
                         "tail_motion": _json_float(tail_motion),
                         "ref_signals": _json_signals(ref),
+                        "denoising_step_list": _RF_STEP_INFO.get("used"),
+                        "denoising_step_native": _RF_STEP_INFO.get("native"),
+                        "denoising_step_kind": _RF_STEP_INFO.get("kind"),
                         "chunks": chunk_logs,
                     })
                     print(
@@ -3920,6 +3992,9 @@ def main() -> int:
         "sampling_hooks": hooks,
         "shift_live": bool(shift_live) if method == "knob_probe" else None,
         "cfg_live": bool(cfg_live) if method == "knob_probe" else None,
+        "denoising_step_list": _RF_STEP_INFO.get("used"),
+        "denoising_step_native": _RF_STEP_INFO.get("native"),
+        "denoising_step_kind": _RF_STEP_INFO.get("kind"),
         "rows": rows,
     }
     sum_name = f"summary.w{worker_id}.json" if worker_id is not None else "summary.json"
