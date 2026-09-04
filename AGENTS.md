@@ -20,7 +20,8 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **RF schedule neighbors** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_noise_schedule_neighbors.md` | Deep / Relax / Ms. / Stream / Reward / FIFO. Most RF follow-ons are memory. TTA cousins: lookahead, shallower / local-steep diagonal. |
 | **RF non-linear timestep list** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_nonlinear_schedule.md` | **DONE / NO.** Linger / dump Imaging Quality died. Harvest: `2026-09-04_wan_v2v_caption_schedule8_harvest.md`. Do not start 8-GPU DMD. |
 | **Schedule8 harvest** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md` | 16855778–780 COMPLETED. Native floor 556. Linger −10% IQ 66.34. Dump +39% IQ 68.14. Both **NO**. |
-| **SF / RF shared experiment machine** | `sweep_experiment/reports/paper_tables/2026-09-04_sf_rf_common_impl.md` | Both papers: unroll inference + holistic DMD. Next TTA: mixed lock, context noise, FIFO lookahead, teacher-score reject. |
+| **SF / RF shared experiment machine** | `sweep_experiment/reports/paper_tables/2026-09-04_sf_rf_common_impl.md` | Both papers: unroll inference + holistic DMD. Mix + context noise are diagnostic, not the paper idea. |
+| **Mix + context-noise spec** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_mixctx_spec.md` | Caption N=8. `rf_mix` / `sf_mix` + always + `*_ctx`. Do not remake cite-128. |
 | **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails. **DONE 16738784.** Harvest: `2026-09-04_wan_v2v_cite128_lpips_fvd.md`. |
 | **Cite-128 LPIPS/FVD** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_lpips_fvd.md` | SF 0.745 / 410. Pseudo 0.753 / **405**. Always 0.751 / 425. RF 0.762 / 436; last16 RF **1108**. |
 | **Cite-128 full grid (2026-09-04)** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_all_metrics.md` | VBench + pixels + LPIPS + FVD. Supersedes open cells in the 2026-08-31 grid. |
@@ -312,7 +313,9 @@ Per-method `merged_summary.json` lives at:
   **DONE 16738784**: SF 0.745 / 410; Pseudo 0.753 / **405**;
   Always 0.751 / 425; RF 0.762 / 436 (last16 **1108**).
   Caption leftover **NO**. Schedule8 linger/dump **NO**
-  (native list floor 556). Do not start 8-GPU DMD. Harvest:
+  (native list floor 556). Mix+ctx **SUBMIT-READY**
+  (`2026-09-04_wan_v2v_caption_mixctx_spec.md`). Do not start
+  8-GPU DMD. Harvest:
   `paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
@@ -370,14 +373,11 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-04 00:54):
-  **None.** Caption leftover **DONE / NO** (16734909–913).
-  LPIPS+FVD **16738784 COMPLETED** (16737041 CANCELLED).
-  Schedule8 **DONE / NO** (16855778 linger, 16855779 dump,
-  16855780 VBench). Harvest path is
-  `*_h30s_shard0/pixel_full/{summary,fvd}.json`. Do not remake
-  cite-128. Do not WAVE=3. Do not start 8-GPU DMD. Keep/intra/
-  denoise **NO**. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-09-04 02:25):
+  Mix+ctx **SUBMIT-READY** (`submit_v2v_caption_mixctx.sh`).
+  Caption leftover **DONE / NO**. LPIPS+FVD **16738784 DONE**.
+  Schedule8 **DONE / NO**. Do not remake cite-128. Do not WAVE=3.
+  Do not start 8-GPU DMD. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

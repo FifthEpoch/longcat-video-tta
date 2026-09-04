@@ -4852,6 +4852,20 @@ Dyn%. Pixel suite complete. Do not remake cite-128.
 
 ---
 
+## 2026-09-04 — mix lock + context noise SUBMIT-READY
+**Tags:** wan, v2v, caption, rolling, diagnostic
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-04_wan_v2v_caption_mixctx_spec.md`;
+`wan_experiment/sbatch/submit_v2v_caption_mixctx.sh`
+
+User asked to run mixed inference (1) and context noise (2)
+anyway. Not the paper idea: (1) is Liu Appendix E; (2) is a
+KV-write t=50, not leftover ρ. Same-wave twins: `rf_mix_always`
+/ `sf_mix_always` / both hosts. Caption N=8, k=1, `metadata_csv`.
+Cite vs matching caption-32 host. Do not remake cite-128.
+
+---
+
 ## 2026-09-04 — Self Forcing / Rolling Forcing shared experiment machine
 **Tags:** paper-narrative, literature, wan, self-forcing, rolling
 **Owner:** agent

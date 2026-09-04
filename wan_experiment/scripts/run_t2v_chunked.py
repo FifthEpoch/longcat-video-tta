@@ -103,7 +103,9 @@ def _cache_clean_latents_t2v(pipeline, latents, conditional_dict) -> None:
     device = latents.device
     t = 0
     while t < n_lat:
-        ts = torch.ones([bsz, block], device=device, dtype=torch.int64) * 0
+        ts = torch.ones([bsz, block], device=device, dtype=torch.int64) * float(
+            getattr(getattr(pipeline, "args", None), "context_noise", 0) or 0
+        )
         pipeline.generator(
             noisy_image_or_video=latents[:, t:t + block],
             conditional_dict=conditional_dict,
@@ -131,7 +133,9 @@ def _cache_clean_latents_slices(pipeline, latents, conditional_dict, ranges) -> 
             )
         t = start
         while t < end:
-            ts = torch.ones([bsz, block], device=device, dtype=torch.int64) * 0
+            ts = torch.ones([bsz, block], device=device, dtype=torch.int64) * float(
+                getattr(getattr(pipeline, "args", None), "context_noise", 0) or 0
+            )
             pipeline.generator(
                 noisy_image_or_video=latents[:, t:t + block],
                 conditional_dict=conditional_dict,

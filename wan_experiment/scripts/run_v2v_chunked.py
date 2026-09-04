@@ -33,6 +33,13 @@ Methods:
                    with trust reject (motion < 0.8× cand0 stays cand0)
   rolling_linger — RF host, k=1, linger-high timestep list (same T)
   rolling_dump   — RF host, k=1, dump-early timestep list (same T)
+  rf_mix         — RF host; after a sick lock, next 21 latents use the
+                   chunked sampler on the same weights; then rolling again
+  rf_mix_always  — same, but every span after the first is chunked
+  sf_mix         — SF host; after a sick chunk, next chunk uses rolling
+  sf_mix_always  — same, but every chunk after the first rolls
+  rolling_ctx    — RF host, k=1, context_noise=50 on KV write (incl. prefix)
+  sf_ctx         — SF host, k=1, context_noise=50 on KV write (incl. prefix)
   sf_roll        — SF weights + RF rolling window sampler (H1 cross)
   rf_chunk       — RF weights + SF chunked sampler (H1 cross)
   sf_recache     — SF chunked; VAE re-encode last 9 latents each chunk (H4)
@@ -188,6 +195,8 @@ METHODS = (
     "longlive_prefix_sink", "rolling_notta",
     "rolling_rho_lo", "rolling_rho_hi", "rolling_adapt", "rolling_look",
     "rolling_linger", "rolling_dump",
+    "rf_mix", "rf_mix_always", "sf_mix", "sf_mix_always",
+    "rolling_ctx", "sf_ctx",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
@@ -240,6 +249,10 @@ INTRA_COLOR_MULT = 1.5
 INTRA_SAT_MULT = 1.5
 KEEP_NUDGE_W = 0.1
 KEEP_WIGGLE_A = 0.2
+RF_MIX_METHODS = frozenset({"rf_mix", "rf_mix_always"})
+SF_MIX_METHODS = frozenset({"sf_mix", "sf_mix_always"})
+CTX_METHODS = frozenset({"rolling_ctx", "sf_ctx"})
+CTX_NOISE = 50.0
 RF_CONTROLLER_METHODS = frozenset({
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "rf_always_search", "rf_intra", "rf_intra_always",
@@ -247,7 +260,7 @@ RF_CONTROLLER_METHODS = frozenset({
     "rf_restep", "rf_restep_always",
     "rf_nudge", "rf_nudge_always", "rf_wiggle", "rf_wiggle_always",
     "rf_latmot", "rf_latmot_always",
-})
+}) | RF_MIX_METHODS
 SF_DENOISE_METHODS = frozenset({
     "sf_lastmix", "sf_lastmix_always",
     "sf_bpseudo", "sf_bpseudo_always",
@@ -261,6 +274,22 @@ SF_KEEP_METHODS = frozenset({
 })
 ROLLING_HOST_METHODS = frozenset({"rf_chunk", "rf_recache"}) | RF_CONTROLLER_METHODS
 ROLLING_SAMPLER_METHODS = frozenset({"sf_roll", "rf_recache"}) | RF_CONTROLLER_METHODS
+
+
+def _ctx_noise_t(pipeline) -> float:
+    return float(getattr(getattr(pipeline, "args", None), "context_noise", 0) or 0)
+
+
+def _set_ctx_noise(pipeline, value: float) -> float:
+    v = float(value)
+    args = getattr(pipeline, "args", None)
+    if args is None:
+        from types import SimpleNamespace
+        pipeline.args = SimpleNamespace(context_noise=v)
+    else:
+        args.context_noise = v
+    print(f"context_noise={v}", flush=True)
+    return v
 
 
 def _v2v_host_name(method: str) -> str:
@@ -760,11 +789,13 @@ def _build_cand_specs(
     if method in (
         "notta", "longlive_notta", "longlive_prefix_sink",
         "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
+        "sf_mix", "sf_mix_always", "sf_ctx",
     ) or ci < search_from_chunk:
         reason = (
             "notta" if method in (
                 "notta", "longlive_notta", "longlive_prefix_sink",
                 "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
+                "sf_mix", "sf_mix_always", "sf_ctx",
             ) and ci >= search_from_chunk
             else "forced_prefix"
         )
@@ -1853,6 +1884,86 @@ def _fill_sf_keep_chunk(
     }
 
 
+def _fill_sf_mix_chunk(
+    pipeline,
+    output,
+    committed: int,
+    chunk_latents: int,
+    conditional_dict,
+    seed: int,
+    ci: int,
+    device,
+    prefix_latents: int,
+    prefix_pixels: np.ndarray,
+    prefix_motion,
+    method: str,
+    last_sick: bool,
+    prev_chunk_mot,
+    ref,
+):
+    """One SF chunk, or a Rolling span on the same weights after a sick lock."""
+    import torch
+
+    rolled = bool(
+        ci > 0 and (method == "sf_mix_always" or last_sick)
+    )
+    _reset_caches(pipeline, 1, output.dtype, device)
+    if committed > 0:
+        _replay_history(
+            pipeline, output, committed, conditional_dict, "full", prefix_latents,
+        )
+    rng = _chunk_rng(device, seed, 0, ci)
+    noise = torch.randn(
+        [1, chunk_latents, LATENT_C, LATENT_H, LATENT_W],
+        device=device, dtype=torch.bfloat16, generator=rng,
+    )
+    if rolled:
+        _rf_roll_span(
+            pipeline, output, committed, chunk_latents, noise,
+            conditional_dict, device, int(seed) + 17000 + ci,
+        )
+    else:
+        _denoise_chunk(
+            pipeline, noise, committed, conditional_dict, output, rng,
+        )
+    pixels = _decode_pixels(pipeline, output[:, : committed + chunk_latents])
+    if ref is None and prefix_pixels is not None and prefix_pixels.shape[0] >= 2:
+        ref_win = (
+            prefix_pixels[:REF_WIN]
+            if prefix_pixels.shape[0] >= REF_WIN
+            else prefix_pixels
+        )
+        ref = reference_signals(ref_win)
+    chunk_mot = _chunk_pixel_motion(pixels, committed, chunk_latents)
+    ref_m = prev_chunk_mot if prev_chunk_mot is not None else prefix_motion
+    sick = bool(
+        chunk_mot is not None and chunk_mot == chunk_mot
+        and ref_m is not None and ref_m == ref_m
+        and ref_m > 0
+        and chunk_mot < RF_SICK_DROP * ref_m
+    )
+    return {
+        "pixels": pixels,
+        "ref": ref,
+        "chunk_motion": chunk_mot,
+        "last_sick": sick,
+        "rolled": rolled,
+        "searched": False,
+        "log": {
+            "chunk": ci,
+            "chosen_cand": 0,
+            "search_k": 1,
+            "method": method,
+            "searched": False,
+            "rolled": rolled,
+            "gate_reason": "mix_roll" if rolled else "mix_chunk",
+            "chosen_motion_score": _json_float(chunk_mot),
+            "chosen_score": None,
+            "last_sick": sick,
+        },
+    }
+
+
 def generate_chunked_v2v(
     pipeline,
     video_path: Path,
@@ -1944,6 +2055,29 @@ def generate_chunked_v2v(
                 incoming_motion = incoming_signals.get("temporal_motion")
                 if incoming_prev is not None:
                     incoming_delta = incoming_drift - incoming_prev
+
+        if method in SF_MIX_METHODS:
+            mix = _fill_sf_mix_chunk(
+                pipeline, output, committed, chunk_latents,
+                conditional_dict, seed, ci, device,
+                prefix_latents, prefix_only, prefix_motion, method,
+                last_sick, prev_chunk_mot, ref,
+            )
+            committed += chunk_latents
+            committed_pixels = mix["pixels"]
+            ref = mix["ref"]
+            last_sick = bool(mix["last_sick"])
+            if mix["chunk_motion"] is not None:
+                prev_chunk_mot = mix["chunk_motion"]
+            mix["log"]["incoming_motion"] = _json_float(incoming_motion)
+            mix["log"]["incoming_drift"] = _json_float(incoming_drift)
+            chunk_logs.append(mix["log"])
+            print(
+                f"  chunk {ci}: mix {method} rolled={mix['rolled']} "
+                f"mot={mix['chunk_motion']} sick={last_sick}",
+                flush=True,
+            )
+            continue
 
         if method in SF_KEEP_METHODS:
             keep = _fill_sf_keep_chunk(
@@ -2566,7 +2700,9 @@ def _rf_replay_clean(pipeline, output, n_latents, conditional_dict, device):
     _reset_caches(pipeline, 1, output.dtype, device)
     kv = _rf_kv(pipeline)
     block = _rf_block(pipeline)
-    ts0 = torch.ones([1, block], device=device, dtype=torch.int64) * 0
+    ts0 = torch.ones([1, block], device=device, dtype=torch.int64) * _ctx_noise_t(
+        pipeline
+    )
     t = 0
     while t < n_latents:
         kwargs = dict(
@@ -2782,6 +2918,112 @@ def _rf_roll_span(
     return _rf_replay_clean(pipeline, output, start + n_lat, conditional_dict, device)
 
 
+def _generate_rf_mix(
+    pipeline,
+    video_path: Path,
+    prompt: str,
+    prefix_latents: int,
+    n_gen: int,
+    seed: int,
+    device,
+    method_name: str,
+):
+    """Rolling default. After a sick 21-latent lock, next span is chunked."""
+    import torch
+
+    prefix = encode_prefix_video(pipeline, Path(video_path), prefix_latents, device)
+    conditional_dict = pipeline.text_encoder(text_prompts=[prompt])
+    block = _rf_block(pipeline)
+    span = int(RECACHE_EVERY_LATENTS)
+    if prefix_latents % block != 0 or n_gen % span != 0:
+        raise RuntimeError(
+            f"rf_mix needs prefix={prefix_latents} % {block}==0 and "
+            f"n_gen={n_gen} % {span}==0"
+        )
+    total = prefix_latents + n_gen
+    output = torch.zeros(
+        [1, total, LATENT_C, LATENT_H, LATENT_W],
+        device=device, dtype=torch.bfloat16,
+    )
+    output[:, :prefix_latents] = prefix[:, :prefix_latents]
+    rng = torch.Generator(device=device)
+    rng.manual_seed(int(seed))
+    noise = torch.randn(
+        [1, n_gen, LATENT_C, LATENT_H, LATENT_W],
+        device=device, dtype=torch.bfloat16, generator=rng,
+    )
+    _rf_replay_clean(pipeline, output, prefix_latents, conditional_dict, device)
+    prefix_pix_early = _decode_pixels(pipeline, output[:, :prefix_latents])
+    prefix_motion = (
+        float(np.mean(np.abs(prefix_pix_early[1:] - prefix_pix_early[:-1])))
+        if prefix_pix_early.shape[0] >= 2 else None
+    )
+    last_sick = False
+    last_chunk_motion = prefix_motion
+    mix_logs = []
+    n_span = n_gen // span
+    for si in range(n_span):
+        start = prefix_latents + si * span
+        tail0 = si * span
+        use_chunk = bool(
+            si > 0 and (method_name == "rf_mix_always" or last_sick)
+        )
+        span_noise = noise[:, tail0:tail0 + span]
+        if use_chunk:
+            crng = torch.Generator(device=device)
+            crng.manual_seed(int(seed) + 19000 + si)
+            _denoise_chunk(
+                pipeline, span_noise, start, conditional_dict, output, crng,
+            )
+            _rf_replay_clean(
+                pipeline, output, start + span, conditional_dict, device,
+            )
+        else:
+            _rf_roll_span(
+                pipeline, output, start, span, span_noise,
+                conditional_dict, device, int(seed) + si,
+            )
+        mot = _span_pixel_motion(pipeline, output, start, span)
+        ref_m = last_chunk_motion if last_chunk_motion is not None else prefix_motion
+        last_sick = bool(
+            mot == mot and ref_m is not None and ref_m == ref_m
+            and ref_m > 0 and mot < RF_SICK_DROP * ref_m
+        )
+        last_chunk_motion = mot
+        mix_logs.append({
+            "span": si,
+            "start": int(start),
+            "chunked": use_chunk,
+            "motion": _json_float(mot),
+            "sick": last_sick,
+        })
+        print(
+            f"  rf_mix span {si}/{n_span - 1} chunked={use_chunk} "
+            f"mot={mot:.5g} sick={last_sick}",
+            flush=True,
+        )
+
+    pixels = _decode_pixels(pipeline, output)
+    prefix_pix_n = t2v_pixel_frames(prefix_latents)
+    n_div = sum(1 for p in mix_logs if p.get("chunked"))
+    chunk_logs = [{
+        "chunk": 0,
+        "chosen_cand": n_div,
+        "search_k": 1,
+        "method": method_name,
+        "searched": False,
+        "gate_reason": f"rf_mix n_chunked={n_div}",
+        "prefix_motion": _json_float(prefix_motion),
+        "mix_logs": mix_logs,
+        "last_chunk_motion": _json_float(last_chunk_motion),
+        "chosen_score": None,
+        "chosen_motion_score": _json_float(last_chunk_motion),
+    }]
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return pixels, tuple(output.shape), None, chunk_logs, prefix_pix_n
+
+
 def generate_rolling_v2v(
     pipeline,
     video_path: Path,
@@ -2802,6 +3044,12 @@ def generate_rolling_v2v(
     roll only the tail with a start offset.
     """
     import torch
+
+    if method_name in RF_MIX_METHODS:
+        return _generate_rf_mix(
+            pipeline, video_path, prompt, prefix_latents, n_gen, seed, device,
+            method_name,
+        )
 
     prefix = encode_prefix_video(pipeline, Path(video_path), prefix_latents, device)
     conditional_dict = pipeline.text_encoder(text_prompts=[prompt])
@@ -3812,6 +4060,8 @@ def main() -> int:
     hooks = inspect_sampling_hooks(pipeline)
     apply_shift(pipeline, args.default_shift)
     apply_guidance(pipeline, args.default_cfg)
+    if method in CTX_METHODS:
+        _set_ctx_noise(pipeline, CTX_NOISE)
     print(f"pipeline loaded in {time.time() - t_load:.1f}s")
     _cuda_mem("after_pipeline_load")
     if worker_id is not None:
@@ -3936,6 +4186,7 @@ def main() -> int:
                         "denoising_step_list": _RF_STEP_INFO.get("used"),
                         "denoising_step_native": _RF_STEP_INFO.get("native"),
                         "denoising_step_kind": _RF_STEP_INFO.get("kind"),
+                        "context_noise": _ctx_noise_t(pipeline),
                         "chunks": chunk_logs,
                     })
                     print(
