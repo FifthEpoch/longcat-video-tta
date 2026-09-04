@@ -283,9 +283,9 @@ Per-method `merged_summary.json` lives at:
   **43.8%** (14/32). `rf_sink` 0.709 / 70.15 / 15.6% / 0.980.
   Prefix-match NO. AdaSteer N=8 **NO**. Table:
   `paper_tables/2026-08-25_wan_v2v_caption_dyn_percent.md`.
-  Method note (name + related work + intra-chunk hole):
+  Method note (historical name only):
   `paper_tables/2026-08-25_pseudo_future_search.md`.
-  Paper name: **Pseudo-future Search** (code `sf_pseudo`).
+  Code `sf_pseudo` stays as a cite-128 ablation. **Not the title.**
   In-chunk: scored arms **NO** (lastmix / sf_bpseudo / rf_restep
   identity). SF intra + SF restep + RF bpseudo still **FAILED**.
   Caption-128 hosts **DONE**: SF 0.666 / 72.07 / **Dyn 32.8%
