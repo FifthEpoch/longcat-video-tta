@@ -4852,6 +4852,27 @@ Dyn%. Pixel suite complete. Do not remake cite-128.
 
 ---
 
+## 2026-09-04 — Self Forcing / Rolling Forcing shared experiment machine
+**Tags:** paper-narrative, literature, wan, self-forcing, rolling
+**Owner:** agent
+**Refs:** Huang et al. 2506.08009; Liu et al. 2509.25161;
+`paper_tables/2026-09-04_sf_rf_common_impl.md`
+
+Both papers’ experiments are the same post-training machine:
+Wan 1.3B → causal ODE 16k → unroll inference with KV cache on
+self-generated history → holistic DMD on the finished clip →
+gradient truncation. Rolling Algorithm 1 is Self Forcing
+Algorithm 1 plus a wider lock, a sink, and a 50% Self Forcing
+regularizer (mixed-slot fake videos look like bad camera).
+“Forcing” is train = infer + score the whole video, not the
+stagger. That is why crossed hosts / leftover ρ / linger-dump
+failed and Pseudo-future Search lived. Next TTA on this
+machine: mixed inference at a clean lock (RF Appendix E),
+context noise on the KV write (incl. real V2V prefix), FIFO
+lookahead, teacher-score reject. Do not start 8-GPU DMD.
+
+---
+
 ## 2026-09-04 — schedule8 linger / dump both NO
 **Tags:** wan, v2v, caption, rolling, schedule, negative-result
 **Owner:** agent
