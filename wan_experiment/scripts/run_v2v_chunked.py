@@ -40,6 +40,13 @@ Methods:
   sf_mix_always  — same, but every chunk after the first rolls
   rolling_ctx    — RF host, k=1, context_noise=50 on KV write (incl. prefix)
   sf_ctx         — SF host, k=1, context_noise=50 on KV write (incl. prefix)
+  rolling_fifo   — RF host; extra forward on the noisier half of a full
+                   window, then the emit pass (FIFO lookahead)
+  rolling_fifo_sick — same extra pass only after a sick lock
+  rf_tscore      — RF host; 1.3B freeze-score on a locked 21-span; redraw
+                   if the score is 1.2× worse than the previous span
+  rf_tscore_always — always draw a second span seed; keep the better score
+  sf_tscore / sf_tscore_always — same lock-score on the Self Forcing host
   sf_roll        — SF weights + RF rolling window sampler (H1 cross)
   rf_chunk       — RF weights + SF chunked sampler (H1 cross)
   sf_recache     — SF chunked; VAE re-encode last 9 latents each chunk (H4)
@@ -197,6 +204,8 @@ METHODS = (
     "rolling_linger", "rolling_dump",
     "rf_mix", "rf_mix_always", "sf_mix", "sf_mix_always",
     "rolling_ctx", "sf_ctx",
+    "rolling_fifo", "rolling_fifo_sick",
+    "rf_tscore", "rf_tscore_always", "sf_tscore", "sf_tscore_always",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",
@@ -253,6 +262,10 @@ RF_MIX_METHODS = frozenset({"rf_mix", "rf_mix_always"})
 SF_MIX_METHODS = frozenset({"sf_mix", "sf_mix_always"})
 CTX_METHODS = frozenset({"rolling_ctx", "sf_ctx"})
 CTX_NOISE = 50.0
+RF_TSCORE_METHODS = frozenset({"rf_tscore", "rf_tscore_always"})
+SF_TSCORE_METHODS = frozenset({"sf_tscore", "sf_tscore_always"})
+FIFO_METHODS = frozenset({"rolling_fifo", "rolling_fifo_sick"})
+TSCORE_WORSE = 1.2
 RF_CONTROLLER_METHODS = frozenset({
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "rf_always_search", "rf_intra", "rf_intra_always",
@@ -260,7 +273,7 @@ RF_CONTROLLER_METHODS = frozenset({
     "rf_restep", "rf_restep_always",
     "rf_nudge", "rf_nudge_always", "rf_wiggle", "rf_wiggle_always",
     "rf_latmot", "rf_latmot_always",
-}) | RF_MIX_METHODS
+}) | RF_MIX_METHODS | RF_TSCORE_METHODS
 SF_DENOISE_METHODS = frozenset({
     "sf_lastmix", "sf_lastmix_always",
     "sf_bpseudo", "sf_bpseudo_always",
@@ -790,12 +803,14 @@ def _build_cand_specs(
         "notta", "longlive_notta", "longlive_prefix_sink",
         "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
         "sf_mix", "sf_mix_always", "sf_ctx",
+        "sf_tscore", "sf_tscore_always",
     ) or ci < search_from_chunk:
         reason = (
             "notta" if method in (
                 "notta", "longlive_notta", "longlive_prefix_sink",
                 "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
                 "sf_mix", "sf_mix_always", "sf_ctx",
+                "sf_tscore", "sf_tscore_always",
             ) and ci >= search_from_chunk
             else "forced_prefix"
         )
@@ -2027,6 +2042,7 @@ def generate_chunked_v2v(
     pseudo_rows = None
     last_sick = False
     rewind_logs = []
+    prev_lock_score = float("nan")
     prev_chunk_mot = prefix_motion
     if method in (
         "pseudo_gate", "pseudo_appear", "sf_pseudo",
@@ -2406,6 +2422,68 @@ def generate_chunked_v2v(
             and prev_chunk_mot > 0
             and chunk_mot < RF_SICK_DROP * prev_chunk_mot
         )
+        if method in SF_TSCORE_METHODS:
+            chunk_start = committed - chunk_latents
+            sc0 = _span_lock_score(
+                pipeline, output, chunk_start, chunk_latents,
+                conditional_dict, device,
+            )
+            first = not (prev_lock_score == prev_lock_score)
+            reject = bool(
+                method == "sf_tscore_always"
+                or (
+                    (not first)
+                    and sc0 == sc0
+                    and sc0 > TSCORE_WORSE * prev_lock_score
+                )
+            )
+            tlog = {
+                "chunk": ci,
+                "score0": _json_float(sc0),
+                "reject": reject,
+                "method": method,
+            }
+            if reject:
+                saved_lat = output[:, chunk_start:committed].clone()
+                committed = chunk_start
+                latents, pixels, _ns = _run_one_chunk(
+                    pipeline, output, committed, chunk_latents,
+                    conditional_dict, seed, 1, ci, device,
+                    default_shift, default_cfg,
+                    history="full", prefix_latents=prefix_latents,
+                )
+                output[:, committed:committed + chunk_latents] = latents
+                committed += chunk_latents
+                sc1 = _span_lock_score(
+                    pipeline, output, chunk_start, chunk_latents,
+                    conditional_dict, device,
+                )
+                accepted = sc1 == sc1 and (sc0 != sc0 or sc1 <= sc0)
+                tlog["score1"] = _json_float(sc1)
+                tlog["accepted"] = bool(accepted)
+                if accepted:
+                    committed_pixels = pixels
+                    chunk_mot = _chunk_pixel_motion(
+                        pixels, chunk_start, chunk_latents,
+                    )
+                    sc0 = sc1
+                    reason = "sf_tscore_accept"
+                else:
+                    output[:, chunk_start:committed] = saved_lat
+                    reason = "sf_tscore_reject"
+            if sc0 == sc0:
+                prev_lock_score = sc0
+            _reset_caches(pipeline, 1, output.dtype, device)
+            if committed > 0:
+                _replay_history(
+                    pipeline, output, committed, conditional_dict,
+                    "full", prefix_latents,
+                )
+            rewind_logs.append(tlog)
+            print(
+                f"    {method} chunk={ci} score={sc0:.5g} reject={reject}",
+                flush=True,
+            )
         if chunk_mot is not None:
             prev_chunk_mot = chunk_mot
         backtracked = False
@@ -2792,6 +2870,103 @@ def _latent_motion_seam(pred, prev_latent):
     return motion, seam
 
 
+def _mid_step_t(pipeline) -> float:
+    raw = pipeline.denoising_step_list
+    steps = _as_step_floats(raw)
+    if not steps:
+        return 500.0
+    return float(steps[len(steps) // 2])
+
+
+def _apply_fifo_lookahead(
+    pipeline,
+    noisy_input,
+    current_timestep,
+    conditional_dict,
+    kv,
+    cur0: int,
+    rng,
+    block: int,
+    n_step: int,
+):
+    """Draft the full window; put the noisier half back at the same t.
+
+    Window layout: first block is almost clean (about to lock), last is
+    almost noise. FIFO lookahead updates that noisier half once before
+    the emit forward sees it.
+    """
+    import torch
+
+    n_frames = int(noisy_input.shape[1])
+    if n_frames != n_step * block or n_step < 2:
+        return noisy_input, False
+    _, draft = pipeline.generator(
+        noisy_image_or_video=noisy_input,
+        conditional_dict=conditional_dict,
+        timestep=current_timestep,
+        kv_cache=kv,
+        crossattn_cache=pipeline.crossattn_cache,
+        current_start=cur0 * pipeline.frame_seq_length,
+    )
+    half = max(1, n_step // 2)
+    refined = noisy_input.clone()
+    for bi in range(half, n_step):
+        sl = slice(bi * block, (bi + 1) * block)
+        t = current_timestep[:, sl].mean()
+        extra = torch.randn(
+            draft[:, sl].flatten(0, 1).shape,
+            device=draft.device, dtype=draft.dtype, generator=rng,
+        )
+        refined[:, sl] = pipeline.scheduler.add_noise(
+            draft[:, sl].flatten(0, 1),
+            extra,
+            t.to(draft.device) * torch.ones(
+                [draft.shape[0] * block], device=draft.device, dtype=torch.long,
+            ),
+        ).unflatten(0, draft[:, sl].shape[:2])
+    return refined, True
+
+
+def _span_lock_score(
+    pipeline, output, start: int, n: int, conditional_dict, device,
+) -> float:
+    """One-step reconstruction error of a locked span. Lower is better.
+
+    This is the 1.3B student as a freeze-score (DMD s_fake role), not
+    Wan-14B real-score. Replay history up to `start`, then score.
+    """
+    import torch
+
+    if n < 1:
+        return float("nan")
+    _rf_replay_clean(pipeline, output, start, conditional_dict, device)
+    t = _mid_step_t(pipeline)
+    clean = output[:, start:start + n]
+    rng = torch.Generator(device=device)
+    rng.manual_seed(7 + int(start) * 13)
+    extra = torch.randn(
+        clean.flatten(0, 1).shape,
+        device=device, dtype=clean.dtype, generator=rng,
+    )
+    noisy = pipeline.scheduler.add_noise(
+        clean.flatten(0, 1),
+        extra,
+        t * torch.ones([clean.shape[0] * n], device=device, dtype=torch.long),
+    ).unflatten(0, clean.shape[:2])
+    timestep = torch.ones(
+        [clean.shape[0], n], device=device, dtype=torch.float32,
+    ) * t
+    _, pred = pipeline.generator(
+        noisy_image_or_video=noisy,
+        conditional_dict=conditional_dict,
+        timestep=timestep,
+        kv_cache=_rf_kv(pipeline),
+        crossattn_cache=pipeline.crossattn_cache,
+        current_start=start * pipeline.frame_seq_length,
+    )
+    return float((pred.float() - clean.float()).abs().mean().item())
+
+
 def _span_pixel_motion(pipeline, output, start: int, n: int) -> float:
     if n < 2:
         return float("nan")
@@ -3089,6 +3264,8 @@ def generate_rolling_v2v(
     look_picks = []
     rewind_logs = []
     denoise_logs = []
+    fifo_n = 0
+    prev_lock_score = float("nan")
     last_sick = False
     last_chunk_motion = None
     pseudo_fire = False
@@ -3187,6 +3364,20 @@ def generate_rolling_v2v(
                 ], dim=1)
             else:
                 noisy_input = noisy_cache[:, cur0:cur1]
+            do_fifo = (
+                n_frames == n_step * block
+                and (
+                    method_name == "rolling_fifo"
+                    or (method_name == "rolling_fifo_sick" and last_sick)
+                )
+            )
+            if do_fifo:
+                noisy_input, fifo_hit = _apply_fifo_lookahead(
+                    pipeline, noisy_input, current_timestep,
+                    conditional_dict, kv, cur0, rng, block, n_step,
+                )
+                if fifo_hit:
+                    fifo_n += 1
             _, denoised_pred = pipeline.generator(
                 noisy_image_or_video=noisy_input,
                 conditional_dict=conditional_dict,
@@ -3344,6 +3535,24 @@ def generate_rolling_v2v(
                 "window": window_index,
                 "frozen_tail": frozen,
             })
+        if method_name == "rolling_fifo_sick" and crossed:
+            chunk0 = committed - RECACHE_EVERY_LATENTS
+            mot = _span_pixel_motion(
+                pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+            )
+            if frozen >= 2 * RECACHE_EVERY_LATENTS:
+                ref_m = _span_pixel_motion(
+                    pipeline, output,
+                    committed - 2 * RECACHE_EVERY_LATENTS,
+                    RECACHE_EVERY_LATENTS,
+                )
+            else:
+                ref_m = prefix_motion_early
+            last_chunk_motion = mot
+            last_sick = bool(
+                mot == mot and ref_m is not None and ref_m == ref_m
+                and ref_m > 0 and mot < RF_SICK_DROP * ref_m
+            )
         if method_name in RF_CONTROLLER_METHODS and crossed:
             chunk0 = committed - RECACHE_EVERY_LATENTS
             mot = _span_pixel_motion(
@@ -3362,6 +3571,65 @@ def generate_rolling_v2v(
                 mot == mot and ref_m is not None and ref_m == ref_m
                 and ref_m > 0 and mot < RF_SICK_DROP * ref_m
             )
+            if method_name in RF_TSCORE_METHODS:
+                sc0 = _span_lock_score(
+                    pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+                    conditional_dict, device,
+                )
+                first = not (prev_lock_score == prev_lock_score)
+                reject = bool(
+                    method_name == "rf_tscore_always"
+                    or (
+                        (not first)
+                        and sc0 == sc0
+                        and sc0 > TSCORE_WORSE * prev_lock_score
+                    )
+                )
+                tlog = {
+                    "frozen": int(frozen),
+                    "score0": _json_float(sc0),
+                    "reject": reject,
+                    "method": method_name,
+                }
+                if reject:
+                    import torch as _torch
+                    saved = output[:, chunk0:committed].clone()
+                    tail0 = chunk0 - prefix_latents
+                    tail1 = committed - prefix_latents
+                    saved_noise = noise[:, tail0:tail1].clone()
+                    rng.manual_seed(int(seed) + 91000 + int(frozen))
+                    noise[:, tail0:tail1] = _torch.randn(
+                        saved_noise.shape, device=device, dtype=noise.dtype,
+                        generator=rng,
+                    )
+                    _rf_roll_span(
+                        pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+                        noise[:, tail0:tail1], conditional_dict, device,
+                        int(seed) + 91000 + int(frozen),
+                    )
+                    sc1 = _span_lock_score(
+                        pipeline, output, chunk0, RECACHE_EVERY_LATENTS,
+                        conditional_dict, device,
+                    )
+                    accepted = sc1 == sc1 and (sc0 != sc0 or sc1 <= sc0)
+                    tlog["score1"] = _json_float(sc1)
+                    tlog["accepted"] = bool(accepted)
+                    if accepted:
+                        sc0 = sc1
+                    else:
+                        output[:, chunk0:committed] = saved
+                        noise[:, tail0:tail1] = saved_noise
+                if sc0 == sc0:
+                    prev_lock_score = sc0
+                kv = _rf_replay_clean(
+                    pipeline, output, committed, conditional_dict, device,
+                )
+                rewind_logs.append(tlog)
+                print(
+                    f"    {method_name} frozen={frozen} score={sc0:.5g} "
+                    f"reject={reject} {tlog}",
+                    flush=True,
+                )
             intra_flags = None
             if method_name in ("rf_intra", "rf_intra_always"):
                 intra_flags = _span_intra_flags(
@@ -3665,6 +3933,7 @@ def generate_rolling_v2v(
         "recache_logs": recache_logs,
         "rewind_logs": rewind_logs,
         "denoise_logs": denoise_logs,
+        "fifo_n": int(fifo_n),
         "last_chunk_motion": _json_float(last_chunk_motion),
         "pseudo_fire": bool(pseudo_fire),
         "pseudo_rows": pseudo_rows,

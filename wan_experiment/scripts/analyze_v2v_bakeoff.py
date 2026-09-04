@@ -26,6 +26,8 @@ METHODS = (
     "rolling_linger", "rolling_dump",
     "rf_mix", "rf_mix_always", "sf_mix", "sf_mix_always",
     "rolling_ctx", "sf_ctx",
+    "rolling_fifo", "rolling_fifo_sick",
+    "rf_tscore", "rf_tscore_always", "sf_tscore", "sf_tscore_always",
     "sf_roll", "rf_chunk", "sf_recache", "rf_recache",
     "rf_rewind", "rf_sick_search", "rf_pseudo", "rf_sink",
     "sf_rewind", "sf_sick_search", "sf_pseudo", "sf_always_search",

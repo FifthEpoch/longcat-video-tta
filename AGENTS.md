@@ -22,6 +22,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Schedule8 harvest** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md` | 16855778–780 COMPLETED. Native floor 556. Linger −10% IQ 66.34. Dump +39% IQ 68.14. Both **NO**. |
 | **SF / RF shared experiment machine** | `sweep_experiment/reports/paper_tables/2026-09-04_sf_rf_common_impl.md` | Both papers: unroll inference + holistic DMD. Mix + context noise are diagnostic, not the paper idea. |
 | **Mix + context-noise spec** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_mixctx_spec.md` | Caption N=8. `rf_mix` / `sf_mix` + always + `*_ctx`. Do not remake cite-128. |
+| **FIFO + lock-score spec** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_spec.md` | Caption N=8. `rolling_fifo` + `rf_tscore` / `sf_tscore`. 1.3B freeze-score, not Wan-14B. |
 | **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails. **DONE 16738784.** Harvest: `2026-09-04_wan_v2v_cite128_lpips_fvd.md`. |
 | **Cite-128 LPIPS/FVD** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_lpips_fvd.md` | SF 0.745 / 410. Pseudo 0.753 / **405**. Always 0.751 / 425. RF 0.762 / 436; last16 RF **1108**. |
 | **Cite-128 full grid (2026-09-04)** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_all_metrics.md` | VBench + pixels + LPIPS + FVD. Supersedes open cells in the 2026-08-31 grid. |
@@ -375,6 +376,8 @@ Per-method `merged_summary.json` lives at:
   incoming-context gate.
 - **In-flight cluster jobs** (as of 2026-09-04 02:25):
   Mix+ctx **SUBMIT-READY** (`submit_v2v_caption_mixctx.sh`).
+  FIFO+lock-score **SUBMIT-READY**
+  (`submit_v2v_caption_fifo_tscore.sh`).
   Caption leftover **DONE / NO**. LPIPS+FVD **16738784 DONE**.
   Schedule8 **DONE / NO**. Do not remake cite-128. Do not WAVE=3.
   Do not start 8-GPU DMD. **No I2V. No TTC.**

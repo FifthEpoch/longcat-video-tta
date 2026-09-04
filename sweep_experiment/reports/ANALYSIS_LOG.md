@@ -4852,6 +4852,20 @@ Dyn%. Pixel suite complete. Do not remake cite-128.
 
 ---
 
+## 2026-09-04 — FIFO lookahead + lock-score SUBMIT-READY
+**Tags:** wan, v2v, caption, rolling, diagnostic
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_spec.md`
+
+FIFO: extra forward on the noisier half of a full Rolling
+window before emit (Kim et al.). Same student, ~2× Rolling.
+Lock-score: cannot host Wan-14B next to 39 GB KV. 1.3B student
+freeze-score on the locked 21-span; redraw if 1.2× worse than
+the previous span (always-on draws a second seed). Caption N=8.
+Cite vs matching host. Not the paper title.
+
+---
+
 ## 2026-09-04 — mix lock + context noise SUBMIT-READY
 **Tags:** wan, v2v, caption, rolling, diagnostic
 **Owner:** agent
