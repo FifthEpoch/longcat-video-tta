@@ -24,6 +24,8 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **SF / RF KV + compute audit** | `sweep_experiment/reports/paper_tables/2026-09-04_sf_rf_kv_opt_audit.md` | Quality KV / sink / RoPE / window already on. Do not retune `enlarge_kv` / `local_attn` / extra sink on cite hosts. |
 | **Mix + context-noise spec** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_mixctx_spec.md` | Caption N=8. `rf_mix` / `sf_mix` + always + `*_ctx`. Do not remake cite-128. |
 | **FIFO + lock-score spec** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_spec.md` | Caption N=8. `rolling_fifo` + `rf_tscore` / `sf_tscore`. 1.3B freeze-score, not Wan-14B. |
+| **Mix+ctx harvest** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_mixctx_harvest.md` | 16931124–130 COMPLETED. All six **NO**. |
+| **FIFO+tscore harvest** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_harvest.md` | 16931441–447 COMPLETED. All six **NO**. Gated tscore = host identity. |
 | **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails. **DONE 16738784.** Harvest: `2026-09-04_wan_v2v_cite128_lpips_fvd.md`. |
 | **Cite-128 LPIPS/FVD** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_lpips_fvd.md` | SF 0.745 / 410. Pseudo 0.753 / **405**. Always 0.751 / 425. RF 0.762 / 436; last16 RF **1108**. |
 | **Cite-128 full grid (2026-09-04)** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_all_metrics.md` | VBench + pixels + LPIPS + FVD. Supersedes open cells in the 2026-08-31 grid. |
@@ -315,10 +317,11 @@ Per-method `merged_summary.json` lives at:
   **DONE 16738784**: SF 0.745 / 410; Pseudo 0.753 / **405**;
   Always 0.751 / 425; RF 0.762 / 436 (last16 **1108**).
   Caption leftover **NO**. Schedule8 linger/dump **NO**
-  (native list floor 556). Mix+ctx **IN-FLIGHT 16931124–130**.
-  FIFO+tscore **IN-FLIGHT 16931441–447**. Do not start
-  8-GPU DMD. Harvest:
-  `paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md`.
+  (native list floor 556). Mix+ctx **NO** (always-on RF mix
+  twitches). FIFO +21% IQ **NO**. Gated lock-score = host
+  identity. Do not start 8-GPU DMD. Harvests:
+  `paper_tables/2026-09-04_wan_v2v_caption_mixctx_harvest.md`,
+  `paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_harvest.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -375,13 +378,10 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-04 02:43):
-  Mix+ctx **16931124–130** (`rf_mix`/`rf_mix_always` R on
-  gh108/gh109; rest PD QOS; VBench 16931130). FIFO+lock-score
-  **16931441–447** PD Priority behind mix (VBench 16931447).
-  FIFO preflight `metadata_csv` 8/8 `bad=0`. Do not `scancel`.
-  If a JobID leaves `squeue`, `sacct` and harvest. Caption leftover
-  **DONE / NO**. LPIPS+FVD **16738784 DONE**. Schedule8 **DONE / NO**.
+- **In-flight cluster jobs** (as of 2026-09-04 13:11):
+  Mix+ctx **16931124–130 DONE / NO**. FIFO+tscore
+  **16931441–447 DONE / NO**. Caption leftover **DONE / NO**.
+  LPIPS+FVD **16738784 DONE**. Schedule8 **DONE / NO**.
   Do not remake cite-128. Do not WAVE=3. Do not start 8-GPU DMD.
   **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,

@@ -4835,6 +4835,26 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-04 — mixctx + fifo/tscore both NO
+**Tags:** wan, v2v, caption, negative-result
+**Owner:** agent
+**Refs:** jobs 16931124–130 / 16931441–447 COMPLETED 0:0;
+`paper_tables/2026-09-04_wan_v2v_caption_mixctx_harvest.md`;
+`paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_harvest.md`
+
+Protocol PASS (`metadata_csv`, truck, 8/8). Cite vs matching
+first-8 host (Rolling tail 0.0134, Self Forcing 0.0129), not
+analyzer-vs-notta. Quality vs caption-32 N=32 (0.694/70.22 and
+0.700/71.54). Mix moves tail and kills IQ/subject. Always-on
+Rolling mix is twitch (Dyn 8/8, flicker 0.978). `context_noise=50`
+paints; sf_ctx 0004 tail 0.190. FIFO +21% still IQ 68.23. Gated
+1.3B lock-score is identity (never redrew). Always-on second
+seed does not win quality. All 12 arms **NO**. Not the paper
+title. Do not scale. Do not start 8-GPU DMD. Do not remake
+cite-128.
+
+---
+
 ## 2026-09-04 — cite-128 LPIPS + aligned-tail FVD DONE
 **Tags:** wan, v2v, caption, pixel, fvd
 **Owner:** agent
