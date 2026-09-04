@@ -375,13 +375,15 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-04 02:25):
-  Mix+ctx **SUBMIT-READY** (`submit_v2v_caption_mixctx.sh`).
-  FIFO+lock-score **SUBMIT-READY**
-  (`submit_v2v_caption_fifo_tscore.sh`).
-  Caption leftover **DONE / NO**. LPIPS+FVD **16738784 DONE**.
-  Schedule8 **DONE / NO**. Do not remake cite-128. Do not WAVE=3.
-  Do not start 8-GPU DMD. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-09-04 02:43):
+  Mix+ctx **16931124–130** (`rf_mix`/`rf_mix_always` R on
+  gh108/gh109; rest PD QOS; VBench 16931130). FIFO+lock-score
+  **16931441–447** PD Priority behind mix (VBench 16931447).
+  FIFO preflight `metadata_csv` 8/8 `bad=0`. Do not `scancel`.
+  If a JobID leaves `squeue`, `sacct` and harvest. Caption leftover
+  **DONE / NO**. LPIPS+FVD **16738784 DONE**. Schedule8 **DONE / NO**.
+  Do not remake cite-128. Do not WAVE=3. Do not start 8-GPU DMD.
+  **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

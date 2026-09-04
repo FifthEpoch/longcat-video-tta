@@ -4852,6 +4852,19 @@ Dyn%. Pixel suite complete. Do not remake cite-128.
 
 ---
 
+## 2026-09-04 — mixctx + fifo/tscore IN-FLIGHT
+**Tags:** wan, v2v, caption, in-flight
+**Owner:** agent
+**Refs:** user paste 02:43; jobs 16931124–130 / 16931441–447
+
+FIFO/tscore submitted after `d215201` pull. Preflight
+`metadata_csv` 8/8 `bad=0` (truck, not stem). Mix+ctx already
+Running on gh108/gh109 (two-GPU QOS). FIFO queued Priority.
+Do not scancel. Cite vs matching host. Harvest when a JobID
+leaves `squeue`.
+
+---
+
 ## 2026-09-04 — SF / RF KV + compute audit
 **Tags:** wan, kv, rolling, self-forcing, host
 **Owner:** agent
