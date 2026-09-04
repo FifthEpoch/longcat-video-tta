@@ -4835,6 +4835,25 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-04 — method hypotheses motivated from the appendix
+**Tags:** paper-narrative, decision
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-04_method_hypotheses_motivation.md`
+
+User: failed runs are appendix insights; now motivate the
+real-method search. Four hypotheses, each chained to a
+seen fact: (1) distill on real 2 s leftovers — official
+unrolls never saw that opening; dirty cache painted;
+(2) distill with official Dynamic Degree + Imaging Quality
+— training’s teacher-critic is not our table; cheap
+proxies lied; (3) recaption the lock — T5 hijack + stale
+sentence; we edited the cache instead; (4) tiny official
+selector — Always-search is safe; our judges were not.
+1+2 can be one student paper. 3 and 4 stay frozen. No GPU
+until the user picks.
+
+---
+
 ## 2026-09-04 — failure modes written in plain language
 **Tags:** paper-narrative, documentation
 **Owner:** agent
