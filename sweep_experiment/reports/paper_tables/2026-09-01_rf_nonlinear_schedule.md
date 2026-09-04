@@ -1,4 +1,11 @@
-# Non-linear Rolling Forcing timestep list — SUBMIT-READY (2026-09-03)
+# Non-linear Rolling Forcing timestep list — DONE / NO (2026-09-04)
+
+Harvest:
+[`2026-09-04_wan_v2v_caption_schedule8_harvest.md`](2026-09-04_wan_v2v_caption_schedule8_harvest.md).
+Both arms **NO**. Native list floor 556, not paper 200.
+Do not start 8-GPU Distribution Matching Distillation (DMD).
+
+# Spec (frozen 2026-09-03)
 
 Inference smoke on the **existing** Rolling Forcing student.
 Not leftover ρ. ρ scaled injected Gaussian. This list is

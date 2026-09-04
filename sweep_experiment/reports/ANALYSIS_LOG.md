@@ -4834,3 +4834,40 @@ VBench 16734913 afterok. First sidecar must be
 scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
+
+## 2026-09-04 — cite-128 LPIPS + aligned-tail FVD DONE
+**Tags:** wan, v2v, caption, pixel, fvd
+**Owner:** agent
+**Refs:** job 16738784 COMPLETED 0:0 1h20; 16737041 CANCELLED;
+`paper_tables/2026-09-04_wan_v2v_cite128_lpips_fvd.md`
+
+n=128. Path `*_h30s_shard0/pixel_full/{summary,fvd}.json`.
+LPIPS: SF **0.745** / RF 0.762 / Pseudo 0.753 / Always 0.751.
+FVD (30 s tails): SF 410 / RF 436 / Pseudo **405** / Always 425.
+last16 FVD: RF **1108** (SF 1397). Search ≈ Self Forcing on
+reconstruction. Pseudo slightly wins full-tail FVD. Rolling
+loses PSNR/SSIM/LPIPS/FVD and wins last-16 FVD only. Do not
+promote last-16 over the 30 s tail. Headline stays VBench +
+Dyn%. Pixel suite complete. Do not remake cite-128.
+
+---
+
+## 2026-09-04 — schedule8 linger / dump both NO
+**Tags:** wan, v2v, caption, rolling, schedule, negative-result
+**Owner:** agent
+**Refs:** jobs 16855778–780 COMPLETED 0:0;
+`paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md`
+
+Protocol PASS (`metadata_csv`, truck). Native list is T=5
+`[1000, 952.4, 882.4, 769.2, 555.6]` — not paper
+`[1000,800,600,400,200]`. Warp fallback used. Cite vs caption
+Rolling first-8 (host median **0.0134** from this pair table;
+leftover harvest wrote 0.0128 — do not edit that file). Linger
+tail 0.0121 (−10%, 3/5), IQ 66.34. Dump 0.0187 (+39%, 7/1),
+IQ 68.14, Dyn 4/8. Aesthetic up, IQ down. Both **NO**.
+Inference-only non-linear list failed Imaging Quality. That
+is the evidence a new list needs a student. Do not start
+8-GPU DMD. Paper lock stays test-time. FIFO lookahead /
+context noise / next-block bump still open.
+
+---

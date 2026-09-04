@@ -1,4 +1,10 @@
-# Caption leftover ρ / look — SUBMIT-READY (2026-09-01)
+# Caption leftover ρ / look — DONE / NO (2026-09-01)
+
+Harvest:
+[`2026-09-01_wan_v2v_caption_leftovers_harvest.md`](2026-09-01_wan_v2v_caption_leftovers_harvest.md).
+All four **NO**. Do not remake cite-128.
+
+# Spec (frozen 2026-09-01)
 
 The Aug-22 leftover pack (`v2v_panda_rolling_leftovers_8v` +
 lineage `rolling_notta`) used filename stems (`panda 0013`). T5

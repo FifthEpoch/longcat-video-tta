@@ -18,8 +18,11 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
 | **Gate neighbors + publishability** | `sweep_experiment/reports/paper_tables/2026-09-01_gate_neighbors_publishability.md` | EFD / SDVG / Video-T1 / CachedSearch / LatSearch. 13% vs Always is not a quality paper. |
 | **RF schedule neighbors** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_noise_schedule_neighbors.md` | Deep / Relax / Ms. / Stream / Reward / FIFO. Most RF follow-ons are memory. TTA cousins: lookahead, shallower / local-steep diagonal. |
-| **RF non-linear timestep list** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_nonlinear_schedule.md` | SUBMIT-READY. Linger / dump on existing student. DMD only if Imaging Quality dies. Do not remake cite-128. |
-| **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails, not the full mp4. |
+| **RF non-linear timestep list** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_nonlinear_schedule.md` | **DONE / NO.** Linger / dump Imaging Quality died. Harvest: `2026-09-04_wan_v2v_caption_schedule8_harvest.md`. Do not start 8-GPU DMD. |
+| **Schedule8 harvest** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md` | 16855778–780 COMPLETED. Native floor 556. Linger −10% IQ 66.34. Dump +39% IQ 68.14. Both **NO**. |
+| **LPIPS + aligned FVD spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_lpips_fvd_spec.md` | Fill existing pixel jsons. I3D on 30 s tails. **DONE 16738784.** Harvest: `2026-09-04_wan_v2v_cite128_lpips_fvd.md`. |
+| **Cite-128 LPIPS/FVD** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_lpips_fvd.md` | SF 0.745 / 410. Pseudo 0.753 / **405**. Always 0.751 / 425. RF 0.762 / 436; last16 RF **1108**. |
+| **Cite-128 full grid (2026-09-04)** | `sweep_experiment/reports/paper_tables/2026-09-04_wan_v2v_cite128_all_metrics.md` | VBench + pixels + LPIPS + FVD. Supersedes open cells in the 2026-08-31 grid. |
 | **Denoise-hooks spec** | `sweep_experiment/reports/paper_tables/2026-08-28_wan_v2v_denoise_hooks_spec.md` | lastmix / bpseudo / restep. Caption N=8. `WAVE=lastmix` first. |
 | **Pseudo-next N=8 spec** | `sweep_experiment/reports/paper_tables/2026-08-31_wan_v2v_pseudo_next8_spec.md` | Cheapen + re-gate. Caption N=8. **NO.** Harvest: `2026-08-31_wan_v2v_pseudo_next8_harvest.md`. |
 | **Caption leftover ρ spec** | `sweep_experiment/reports/paper_tables/2026-09-01_wan_v2v_caption_leftovers_spec.md` | Stem leftovers are panda-infected. Caption N=8 ρ / look only. Do not remake cite-128. |
@@ -218,7 +221,7 @@ Per-method `merged_summary.json` lives at:
 
 ## 3. Active project state (snapshot — keep current)
 
-**Date:** Updated 2026-09-01.
+**Date:** Updated 2026-09-04.
 
 - **Paper target:** CVPR 2027.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
@@ -282,8 +285,9 @@ Per-method `merged_summary.json` lives at:
   VBench + Dyn%. Mid-chunk rewrite **CLOSED**. Pseudo-next
   N=8 **NO** (CachedSearch slower; re-gate no lift). Tables:
   `paper_tables/2026-08-31_wan_v2v_cite128_complete.md`,
-  `paper_tables/2026-08-31_wan_v2v_cite128_all_metrics.md`
-  (VBench 7/7; PSNR/SSIM in; LPIPS/FVD open),
+  `paper_tables/2026-09-04_wan_v2v_cite128_all_metrics.md`
+  (VBench 7/7; pixel suite **DONE**),
+  `paper_tables/2026-09-04_wan_v2v_cite128_lpips_fvd.md`,
   `paper_tables/2026-09-01_wan_v2v_cite128_pixel.md`,
   `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`,
   `paper_tables/2026-08-31_wan_v2v_keep_intra_closed.md`.
@@ -303,9 +307,12 @@ Per-method `merged_summary.json` lives at:
   Next on Pseudo (2026-08-31): CachedSearch / re-gate **NO**.
   Gate is almost free; cheapen is still the paper move, but
   **not** this CPU KV snap. Search-early or prune k. Or RF
-  window-exit.   Pixel skip-existing **landed**. LPIPS/FVD
-  submit: `2026-09-01_wan_v2v_lpips_fvd_spec.md`. Harvest:
-  `paper_tables/2026-08-31_wan_v2v_pseudo_next8_harvest.md`.
+  window-exit. Pixel skip-existing **landed**. LPIPS/FVD
+  **DONE 16738784**: SF 0.745 / 410; Pseudo 0.753 / **405**;
+  Always 0.751 / 425; RF 0.762 / 436 (last16 **1108**).
+  Caption leftover **NO**. Schedule8 linger/dump **NO**
+  (native list floor 556). Do not start 8-GPU DMD. Harvest:
+  `paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.
@@ -362,15 +369,14 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-01 16:46):
-  Caption leftover **DONE / NO** (16734909–913 COMPLETED 0:0,
-  `metadata_csv`). Harvest:
-  `paper_tables/2026-09-01_wan_v2v_caption_leftovers_harvest.md`.
-  Pixel PSNR/SSIM **DONE**. LPIPS+FVD **16737041 CANCELLED**;
-  resubmit **16738784** R. Harvest path is
-  `*_h30s_shard0/pixel_full/summary.json` (not
-  `{method}/summary.json`). Do not remake cite-128. Do not
-  WAVE=3. Keep/intra/denoise **NO**. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-09-04 00:54):
+  **None.** Caption leftover **DONE / NO** (16734909–913).
+  LPIPS+FVD **16738784 COMPLETED** (16737041 CANCELLED).
+  Schedule8 **DONE / NO** (16855778 linger, 16855779 dump,
+  16855780 VBench). Harvest path is
+  `*_h30s_shard0/pixel_full/{summary,fvd}.json`. Do not remake
+  cite-128. Do not WAVE=3. Do not start 8-GPU DMD. Keep/intra/
+  denoise **NO**. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

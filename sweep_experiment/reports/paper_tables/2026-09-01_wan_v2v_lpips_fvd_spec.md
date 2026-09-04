@@ -1,9 +1,9 @@
 # Caption 128 LPIPS + aligned-tail FVD (2026-09-01)
 
-**Status:** **IN FLIGHT 16737041** (L40S `l40s_mren`, PD at
-submit). PSNR/SSIM already **DONE**. Do not remake videos. Do
-not recompute PSNR. `scancel 16737041` only — leftover
-16734912–913 stay up.
+**Status:** **DONE 16738784** COMPLETED 0:0 1h20 (L40S).
+16737041 CANCELLED. Harvest:
+[`2026-09-04_wan_v2v_cite128_lpips_fvd.md`](2026-09-04_wan_v2v_cite128_lpips_fvd.md).
+PSNR/SSIM already **DONE**. Do not remake videos.
 
 LPIPS was `None` because `import lpips` failed in `self_forcing`.
 FVD was never launched. This job fills both on the existing 128
