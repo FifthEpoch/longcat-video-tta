@@ -15,7 +15,8 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Master experiment index** | `sweep_experiment/reports/INDEX.md` | **Single source of truth** for what experiments exist + cluster paths. Read this first when picking up work. |
 | **Analysis log (decisions/findings)** | `sweep_experiment/reports/ANALYSIS_LOG.md` | Append-only log of paper-relevant findings and decisions. NEVER edit past entries. |
 | **Paper-ready tables** | `sweep_experiment/reports/paper_tables/YYYY-MM-DD_<name>.md` | One Markdown file per table set, dated. Reproducible via `scripts/build_paper_tables.py`. |
-| **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | Name, gate, caption N=32 numbers, related work, intra-chunk hole. Code stays `sf_pseudo`. |
+| **Pseudo-future Search note** | `sweep_experiment/reports/paper_tables/2026-08-25_pseudo_future_search.md` | **DROPPED as paper title 2026-09-04.** Code `sf_pseudo` stays for the cite-128 ablation. |
+| **Drop Pseudo + next territories** | `sweep_experiment/reports/paper_tables/2026-09-04_drop_pseudo_next_territories.md` | Outcome atlas. Territories A (new student) / B (analysis) / C (new control). No GPU until the user picks. |
 | **Gate neighbors + publishability** | `sweep_experiment/reports/paper_tables/2026-09-01_gate_neighbors_publishability.md` | EFD / SDVG / Video-T1 / CachedSearch / LatSearch. 13% vs Always is not a quality paper. |
 | **RF schedule neighbors** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_noise_schedule_neighbors.md` | Deep / Relax / Ms. / Stream / Reward / FIFO. Most RF follow-ons are memory. TTA cousins: lookahead, shallower / local-steep diagonal. |
 | **RF non-linear timestep list** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_nonlinear_schedule.md` | **DONE / NO.** Linger / dump Imaging Quality died. Harvest: `2026-09-04_wan_v2v_caption_schedule8_harvest.md`. Do not start 8-GPU DMD. |
@@ -230,6 +231,11 @@ Per-method `merged_summary.json` lives at:
 **Date:** Updated 2026-09-04.
 
 - **Paper target:** CVPR 2027.
+- **Paper method (2026-09-04):** Pseudo-future Search is **dropped**
+  as the title. A 13% gate on Always-search is not a CVPR idea.
+  Next fork: territories A (new student) / B (analysis paper) /
+  C (new frozen-weight control). No GPU until the user picks.
+  `paper_tables/2026-09-04_drop_pseudo_next_territories.md`.
 - **Method stack (current):** Wan2.1-T2V-1.3B + Self-Forcing causal DMD.
   I2V-32 30 s is a **discovery / stress** run, not the field
   long-horizon table. **Do not scale I2V-32 or I2V-200.** **Do not
@@ -269,7 +275,9 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next experiment (2026-08-25):** Caption official
+- **Current next (2026-09-04):** User picks A / B / C. Do not
+  cheapen Pseudo. Do not scale mix / FIFO / tscore / ρ / list.
+  Caption official (historical):
   N=32 **DONE**. Cite Dyn as **percent of clips** (VBench official),
   not median. SF 21.9% (7/32), Pseudo **40.6%** (13/32), Always
   **43.8%** (14/32). `rf_sink` 0.709 / 70.15 / 15.6% / 0.980.
@@ -316,12 +324,14 @@ Per-method `merged_summary.json` lives at:
   window-exit. Pixel skip-existing **landed**. LPIPS/FVD
   **DONE 16738784**: SF 0.745 / 410; Pseudo 0.753 / **405**;
   Always 0.751 / 425; RF 0.762 / 436 (last16 **1108**).
-  Caption leftover **NO**. Schedule8 linger/dump **NO**
-  (native list floor 556). Mix+ctx **NO** (always-on RF mix
-  twitches). FIFO +21% IQ **NO**. Gated lock-score = host
-  identity. Do not start 8-GPU DMD. Harvests:
+  Caption leftover **NO**. Schedule8 linger/dump **NO**.
+  Mix+ctx **NO**. FIFO **NO**. Gated lock-score = host identity.
+  Pseudo-future Search **dropped as title**. Distill is
+  territory A if the user picks it — do not start 8-GPU DMD
+  tonight. Harvests:
   `paper_tables/2026-09-04_wan_v2v_caption_mixctx_harvest.md`,
-  `paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_harvest.md`.
+  `paper_tables/2026-09-04_wan_v2v_caption_fifo_tscore_harvest.md`,
+  `paper_tables/2026-09-04_drop_pseudo_next_territories.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
   on locked tail+quality bars (Dyn 0). Host, not our controller.
   Verdict: `paper_tables/2026-08-22_wan_v2v_forward32_verdict.md`.

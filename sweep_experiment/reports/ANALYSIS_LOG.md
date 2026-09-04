@@ -4835,6 +4835,27 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-04 — drop Pseudo-future Search; fork A/B/C
+**Tags:** paper-narrative, decision
+**Owner:** agent + user
+**Refs:** `paper_tables/2026-09-04_drop_pseudo_next_territories.md`;
+`paper_tables/2026-09-01_gate_neighbors_publishability.md`;
+cite-128 `2026-09-04_wan_v2v_cite128_all_metrics.md`
+
+User: Pseudo alone is not a top-conference idea. Lock: do not
+write it as the title; do not cheapen it as the next submit.
+Law from the atlas: selection among futures the student already
+emits is safe (and occupied); editing list / KV write / window /
+host is unsafe (mix, FIFO, ρ, linger/dump, ctx, cross, mid-chunk,
+AdaSteer all NO). Territories: A reopen distill with *our* idea
+(V2V prefix in the unroll, or a Dyn%+IQ video objective) — not
+a rerun of Stream/H-DMD; B analysis paper using the closed-door
+atlas; C frozen-weight control that is not seed-search (recaption
+or a tiny official-metric verifier; easy to scoop). No GPU until
+the user picks. Do not remake cite-128.
+
+---
+
 ## 2026-09-04 — mixctx + fifo/tscore both NO
 **Tags:** wan, v2v, caption, negative-result
 **Owner:** agent
