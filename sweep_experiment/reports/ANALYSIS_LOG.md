@@ -4852,6 +4852,24 @@ Dyn%. Pixel suite complete. Do not remake cite-128.
 
 ---
 
+## 2026-09-04 — SF / RF KV + compute audit
+**Tags:** wan, kv, rolling, self-forcing, host
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-04_sf_rf_kv_opt_audit.md`;
+official `causal_model.py` / `rolling_forcing_inference.py`
+
+Quality mechanisms (clean KV write, last-21 attention, RF first-block
+sink + Dynamic RoPE, rolling diagonal, context_noise=0) live in the
+official kernels we already call. Our V2V loops match, with a prefix
+offset on Rolling. `enlarge_kv_cache` to ~137 frames is memory so
+30 s Self Forcing (`local_attn_size=-1`) cannot overflow a 21-frame
+buffer; attention still windows to 21. `apply_sink_size` is a no-op
+on official RF. Compile/flash were disabled for OOM; official RF also
+ships without flex compile. Do not retune cite hosts. Do not start
+8-GPU DMD. Training-only (truncation, 50% mix) stays out of inference.
+
+---
+
 ## 2026-09-04 — FIFO lookahead + lock-score SUBMIT-READY
 **Tags:** wan, v2v, caption, rolling, diagnostic
 **Owner:** agent
