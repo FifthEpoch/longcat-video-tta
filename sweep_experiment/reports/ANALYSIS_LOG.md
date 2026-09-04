@@ -4835,6 +4835,24 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-04 — hypothesis 1 compresses to T2V→V2V train/test match
+**Tags:** paper-narrative, decision
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-04_method_hypotheses_motivation.md`
+
+User: distill-on-real-openings is just changing T2V to
+V2V in the student. Yes. Live SF/RF are T2V DMD
+(prompts only); our test already injects a real 2 s
+prefix into that T2V student. CausVid claimed zero-shot
+I2V/V2V on the same 1.3B. The leftover-in-the-unroll
+move is only matching the opening of train to the
+opening of test. It is not a new path class. A V2V
+student might also win identity and lose Dyn% (Rolling
+sink signature). Keep H1 as a protocol ablation, not
+a title, unless the spec names a different label.
+
+---
+
 ## 2026-09-04 — method hypotheses motivated from the appendix
 **Tags:** paper-narrative, decision
 **Owner:** agent

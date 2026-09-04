@@ -70,6 +70,20 @@ still freezes at 30 s the way Self Forcing does, or that
 paints the way leftover ρ did. Then the seam was not the
 bottleneck.
 
+**Compression (2026-09-04, user).** This is not a new
+sampler. It is “start the existing DMD unroll from a real
+leftover.” That *is* train-on-the-test-task: the live
+students are T2V-distilled and already run as zero-shot
+V2V at test (CausVid already advertised that). The
+non-tautological remainder is only the *opening* of the
+unroll — a moving 2 s leftover, not a still, not
+supervised video prediction. Even that may win the
+wrong number: a V2V student can hold the prefix
+(subject / PSNR) and damp official Dynamic Degree the
+way Rolling’s sink already does. Hypothesis 1 is a
+protocol ablation, not a title, unless a spec names a
+label other than “V2V student beats T2V student.”
+
 ---
 
 ## Hypothesis 2 — Distill with the judge we actually use
