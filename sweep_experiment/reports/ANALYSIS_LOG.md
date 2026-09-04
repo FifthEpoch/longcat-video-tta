@@ -4835,6 +4835,21 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-04 — failure modes written in plain language
+**Tags:** paper-narrative, documentation
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-04_failure_modes_plain.md`
+
+User could not read the shorthand (IQ 18–51, anti-aligned,
+never redraws). New note defines the scores as things you
+would see, then walks each failed family: AdaSteer collapse,
+prefix-match stills, freeze-score identical pixels, mid-chunk
+identity slip, crossed-host jitter, noise-list paint, extra
+sink no-op, CachedSearch slower, homemade sick score vs
+official VBench. No new jobs. Do not treat this as a reopen.
+
+---
+
 ## 2026-09-04 — drop Pseudo-future Search; fork A/B/C
 **Tags:** paper-narrative, decision
 **Owner:** agent + user
