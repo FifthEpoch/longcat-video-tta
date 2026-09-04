@@ -315,8 +315,8 @@ Per-method `merged_summary.json` lives at:
   **DONE 16738784**: SF 0.745 / 410; Pseudo 0.753 / **405**;
   Always 0.751 / 425; RF 0.762 / 436 (last16 **1108**).
   Caption leftover **NO**. Schedule8 linger/dump **NO**
-  (native list floor 556). Mix+ctx **SUBMIT-READY**
-  (`2026-09-04_wan_v2v_caption_mixctx_spec.md`). Do not start
+  (native list floor 556). Mix+ctx **IN-FLIGHT 16931124–130**.
+  FIFO+tscore **IN-FLIGHT 16931441–447**. Do not start
   8-GPU DMD. Harvest:
   `paper_tables/2026-09-04_wan_v2v_caption_schedule8_harvest.md`.
 - **N=32 leftover (closed):** `appear_bon` NO. `rolling_notta` YES
