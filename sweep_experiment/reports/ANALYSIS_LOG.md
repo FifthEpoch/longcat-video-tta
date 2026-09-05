@@ -4835,6 +4835,27 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-05 — Go-with-the-Flow: image warp is FT-free, video warp is a new prior
+**Tags:** related-work, methodology
+**Owner:** agent
+**Refs:** Burgert et al. CVPR 2025 [2501.08331];
+`paper_tables/2026-09-05_go_with_the_flow.md`
+
+User: the circular mid-step shift is the same family as
+GwF; why did they fine-tune? They already had
+training-free warp on *image* models (HIWYN / IF /
+DifFRelight) because per-frame input stays spatial
+Gaussian. CogVideoX was trained on spacetime i.i.d.
+noise; reading a warp as a motion command is a new
+pair. They never print frozen-video + warped x_T.
+Frozen CogVideoX in Table 2 is ordinary noise (mIoU
+0.52) vs FT 0.74. Naive interp warp breaks Gaussianity.
+A `torch.roll` wrap is not their algorithm. Occupied as
+a video FT paper unless V2V leftover + official Dyn is
+the new part.
+
+---
+
 ## 2026-09-05 — train/eval on the same metric family is accepted only as pattern A
 **Tags:** paper-narrative, methodology, related-work
 **Owner:** agent
