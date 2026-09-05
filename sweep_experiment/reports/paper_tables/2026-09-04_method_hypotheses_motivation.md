@@ -140,6 +140,10 @@ the cheap Pareto we just appendix’d. A milder remainder
 is “train signal ≠ eval signal” as motivation, or VBench
 as a **slow filter on a held-out pool**, not a gradient.
 Hypothesis 2 as written is not a title.
+Literature that *does* train a quality signal and
+report the same family: `2026-09-05_train_eval_same_metric.md`.
+The accepted papers are pattern A (VideoAlign / HPS /
+OmniScore → official VBench), not the RAFT bit in the loss.
 
 ---
 

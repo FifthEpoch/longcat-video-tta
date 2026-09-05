@@ -4835,6 +4835,25 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-05 — train/eval on the same metric family is accepted only as pattern A
+**Tags:** paper-narrative, methodology, related-work
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-05_train_eval_same_metric.md`
+
+User asked for published cases that improve a method from
+a metric and then evaluate on that metric, to test whether
+H2 is just hacking. Yes the SOTA gap (low Dyn as freeze)
+is real on their table and ours. Pattern A (train
+VideoAlign / HPS / OmniScore, report official VBench)
+is Reward Forcing (CVPR 2026 Highlight), T2V-Turbo
+(NeurIPS 2024), VideoDPO (CVPR 2025). Pattern B (train
+the official RAFT bit, report the bit) is DOLLAR: Dyn
+0.97, noise flow, IQ dies. H2-as-written is B. The
+convincing analog is A, and A is occupied as a T2V
+student paper unless the label or V2V protocol differs.
+
+---
+
 ## 2026-09-05 — hypothesis 2 is teaching to the VBench bit
 **Tags:** paper-narrative, methodology, vbench
 **Owner:** agent
