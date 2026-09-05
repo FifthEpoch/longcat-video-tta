@@ -4835,6 +4835,26 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-05 — hypothesis 2 is teaching to the VBench bit
+**Tags:** paper-narrative, methodology, vbench
+**Owner:** agent
+**Refs:** VBench `vbench/dynamic_degree.py`; `paper_tables/2026-09-04_method_hypotheses_motivation.md`
+
+User: training the student on the success metrics is
+biased. Yes. Official Dynamic Degree is a per-clip 0/1:
+RAFT, mean of top-5% flow magnitude, threshold
+`6.0 * min(H,W)/256` (11.25 px on 832×480), need
+`round(4 * n_sampled / 16)` pairs after ~8 fps
+subsample; model score = percent of clips. Imaging
+Quality is MUSIQ mean over frames. Putting those in
+DMD is (a) test leakage if cite-128 is scored, (b)
+reward-hackable even on a disjoint pool — twitch
+already flips the bit. Do not defend H2 as a title.
+Keep the train/eval mismatch as appendix motivation.
+VBench as a held-out filter is the only milder remnant.
+
+---
+
 ## 2026-09-04 — hypothesis 1 compresses to T2V→V2V train/test match
 **Tags:** paper-narrative, decision
 **Owner:** agent

@@ -126,6 +126,21 @@ dynamic clips and drops Imaging Quality below the host by
 a point or more — the leftover-ρ signature — or that
 matches Reward Forcing’s table without a new label.
 
+**Compression (2026-09-05, user).** Putting official
+Dynamic Degree and Imaging Quality in the distillation
+loss is teaching to the test. Dynamic Degree is a RAFT
+**bit**, not a motion quality score: top-5% flow
+\> \(6\cdot\min(H,W)/256\) (= 11.25 px on 480p) on
+enough ~8 fps pairs. Twitch flips it (mixctx Dyn 8/8,
+flicker 0.978). MUSIQ Imaging Quality rewards sharpness,
+which is the freeze-and-sharpen drift we already have.
+Two failure modes: (1) scoring cite-128 in the loss is
+test leakage; (2) even on a disjoint pool, the bit is
+the cheap Pareto we just appendix’d. A milder remainder
+is “train signal ≠ eval signal” as motivation, or VBench
+as a **slow filter on a held-out pool**, not a gradient.
+Hypothesis 2 as written is not a title.
+
 ---
 
 ## Hypothesis 3 — Refresh the text, not the pixels
