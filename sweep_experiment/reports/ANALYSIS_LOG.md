@@ -4835,6 +4835,22 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-05 — mid-warp remaining holes get idea fixes
+**Tags:** methodology, paper-narrative
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-05_midstep_warp_fixes.md`
+
+User: list remaining holes and modify the idea.
+Closed: HIWYN on extra, after pass 1, no pred slide,
+no wrap, SF only. Open → fix: (1) HIWYN every later
+extra; (2) carry particle field across strips; (3–4)
+frozen leftover mean flow, not +x or pred-RAFT;
+(5) γ ≈ 0.5 mix, does not delete the frozen-prior
+hole; (6) mixctx hold letters; (7) SF only. Revised
+recipe is a kill test. No GPU until the user says go.
+
+---
+
 ## 2026-09-05 — Gaussianity is not the mid-warp hole
 **Tags:** methodology
 **Owner:** agent
