@@ -65,20 +65,26 @@ motion-carrying. That is hole 1.
 
 ### H1 — The Gaussianity / effect paradox
 
+**Correction (user, 2026-09-05).** “Keep Gaussianity”
+is **not** a hole if we do what GwF / HIWYN do:
+transport `extra` along time, keep each frame
+spatially i.i.d. \(\mathcal{N}(0,1)\), resample holes.
+That algorithm already exists. The hole was only the
+**spatial wrap of white `extra`** (a no-op) or a wrap
+of `pred` (not noise). Do not call Gaussianity the
+blocker.
+
 A spatial wrap of i.i.d. `extra` is still i.i.d.
 `extra`. Distribution unchanged, model sees a
 different seed, **no pan**.
 
 A spatial wrap of `pred` or of `noisy` moves the
-picture. Those tensors are **not** Gaussian. Keeping
-“Gaussianity of the noise” does not protect them.
-GwF’s trick was: **spatial** i.i.d., **temporal**
-correlation. That is the only way both sentences can
-be true.
+picture. Those tensors are **not** Gaussian. HIWYN
+does not apply to them.
 
-**Address:** Do not roll `pred`. If anything, GwF-transport
-`extra` along time (frame 0 → 1 → 2 of the block)
-and leave each frame spatially white.
+**Address:** GwF-transport `extra` along time
+(frame 0 → 1 → 2 of the block). Leave each frame
+spatially white. After step 1 is fine; t=250 is not.
 
 ### H2 — “Closer to clean” is when noise has no energy
 

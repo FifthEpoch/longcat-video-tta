@@ -4835,6 +4835,22 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-05 — Gaussianity is not the mid-warp hole
+**Tags:** methodology
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-05_midstep_warp_holes.md`
+
+User: keep-Gaussianity is mitigable with GwF / HIWYN;
+warp after the first step, not at 250. Yes. H1 was
+overstated. HIWYN on `extra` keeps spatial
+\(\mathcal{N}(0,1)\). The remaining holes are: do not
+run HIWYN on `pred`/`noisy` (not Gaussian); persist
+the recipe on later `extra`; leftover velocity; KV if
+`pred` moves; frozen video prior. After step 1
+(`add_noise` toward 750) still has energy.
+
+---
+
 ## 2026-09-05 — mid-step warp: Gaussianity and late timing are the holes
 **Tags:** methodology, paper-narrative
 **Owner:** agent
