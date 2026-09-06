@@ -100,6 +100,7 @@ def main() -> int:
             "rf_nudge", "rf_nudge_always", "rf_wiggle", "rf_wiggle_always",
             "rf_latmot", "rf_latmot_always",
             "appear_bon",
+            "sf_nwarp", "sf_nwarp_live",
         ):
             if name in seen:
                 continue

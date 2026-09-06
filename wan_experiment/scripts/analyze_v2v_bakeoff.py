@@ -45,6 +45,7 @@ METHODS = (
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
     "ada_fixed", "ada_stream", "ada_resid",
+    "sf_nwarp", "sf_nwarp_live",
 )
 VBENCH_DIMS = (
     "subject_consistency",

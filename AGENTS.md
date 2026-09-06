@@ -23,6 +23,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Go-with-the-Flow read** | `sweep_experiment/reports/paper_tables/2026-09-05_go_with_the_flow.md` | Image warped-noise is FT-free. Video needs paired FT. A mid-step circular roll is not their method. |
 | **Mid-step warp holes** | `sweep_experiment/reports/paper_tables/2026-09-05_midstep_warp_holes.md` | Gaussian wrap is a no-op. Late extra has no energy. Do not roll pred against the KV. |
 | **Mid-step warp fixes** | `sweep_experiment/reports/paper_tables/2026-09-05_midstep_warp_fixes.md` | Persist HIWYN on every extra; carry field across strips; leftover mean flow; γ ≈ 0.5. No GPU. |
+| **Caption nwarp N=8 spec** | `sweep_experiment/reports/paper_tables/2026-09-06_wan_v2v_caption_nwarp_spec.md` | Extra-only HIWYN extras. `sf_nwarp` + `sf_nwarp_live`. SUBMIT-READY. Do not remake cite-128. |
 | **Gate neighbors + publishability** | `sweep_experiment/reports/paper_tables/2026-09-01_gate_neighbors_publishability.md` | EFD / SDVG / Video-T1 / CachedSearch / LatSearch. 13% vs Always is not a quality paper. |
 | **RF schedule neighbors** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_noise_schedule_neighbors.md` | Deep / Relax / Ms. / Stream / Reward / FIFO. Most RF follow-ons are memory. TTA cousins: lookahead, shallower / local-steep diagonal. |
 | **RF non-linear timestep list** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_nonlinear_schedule.md` | **DONE / NO.** Linger / dump Imaging Quality died. Harvest: `2026-09-04_wan_v2v_caption_schedule8_harvest.md`. Do not start 8-GPU DMD. |
@@ -281,7 +282,11 @@ Per-method `merged_summary.json` lives at:
   caption tables.
   Outcomes: `paper_tables/2026-08-24_wan_v2v_caption_wave1_outcomes.md`.
   Spec: `paper_tables/2026-08-24_wan_v2v_caption_rerun_spec.md`.
-- **Current next (2026-09-04):** User picks A / B / C. Do not
+- **Current next (2026-09-06):** Caption nwarp N=8 is
+  SUBMIT-READY (`sf_nwarp` / `sf_nwarp_live`). Extra-only
+  HIWYN on leftover mean flow. Paste
+  `submit_v2v_caption_nwarp.sh`. Still no 8-GPU DMD.
+  User picks A / B / C for the title. Do not
   cheapen Pseudo. Do not scale mix / FIFO / tscore / ρ / list.
   Caption official (historical):
   N=32 **DONE**. Cite Dyn as **percent of clips** (VBench official),

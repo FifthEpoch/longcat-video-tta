@@ -4835,6 +4835,20 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — extra-only nwarp wired for caption N=8
+**Tags:** experiment, spec
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-06_wan_v2v_caption_nwarp_spec.md`
+
+User: implement the extra-only idea with hole fixes and
+run. Wired `sf_nwarp` / `sf_nwarp_live` on Self Forcing:
+pass 1 ordinary; later extras HIWYN along frozen leftover
+Farneback mean flow; no wrap; γ=0.5; field carries across
+strips. Not the user’s move-`pred` hypothesis. Paste-ready
+submit. No cluster SSH. Do not remake cite-128.
+
+---
+
 ## 2026-09-06 — leftover-once is not sliding-block flow; user wants to move pred
 **Tags:** methodology
 **Owner:** agent

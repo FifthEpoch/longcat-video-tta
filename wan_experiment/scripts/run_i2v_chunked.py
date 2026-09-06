@@ -204,6 +204,7 @@ def _cache_clean_latents(pipeline, latents, conditional_dict) -> None:
 def _denoise_chunk(
     pipeline, noise, start_frame, conditional_dict, output, rng,
     stats_out=None,
+    extra_fn=None,
 ) -> None:
     """Official Step 3 loop for one chunk. Writes output[:, start:start+n].
 
@@ -251,10 +252,14 @@ def _denoise_chunk(
                 })
             if index < len(pipeline.denoising_step_list) - 1:
                 next_timestep = pipeline.denoising_step_list[index + 1]
-                extra = torch.randn(
-                    denoised_pred.flatten(0, 1).shape,
-                    device=device, dtype=denoised_pred.dtype, generator=rng,
-                )
+                if extra_fn is not None:
+                    extra = extra_fn(denoised_pred, rng, index)
+                    extra = extra.flatten(0, 1)
+                else:
+                    extra = torch.randn(
+                        denoised_pred.flatten(0, 1).shape,
+                        device=device, dtype=denoised_pred.dtype, generator=rng,
+                    )
                 noisy_input = pipeline.scheduler.add_noise(
                     denoised_pred.flatten(0, 1),
                     extra,

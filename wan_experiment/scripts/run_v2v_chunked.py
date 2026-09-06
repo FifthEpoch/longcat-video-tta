@@ -103,6 +103,8 @@ Methods:
   ada_fixed      — AdaSteer: δ on time_embedding, fit once on prefix, hold
   ada_stream     — AdaSteer: refit each chunk, blend toward prefix δ0
   ada_resid      — AdaSteer: δ on mid-late residual blocks, fit once
+  sf_nwarp       — SF; after pass 1, HIWYN extras along leftover mean flow
+  sf_nwarp_live  — same extras only if prefix_motion >= 0.012
 
 No TTC. Do not scale I2V-32. Do not put these on the RF rolling sampler.
 
@@ -135,6 +137,12 @@ if str(_REPO) not in sys.path:
 from scripts.caption_utils import (  # noqa: E402
     canonical_video_id,
     load_resolved_captions_csv,
+)
+from wan_nwarp import (  # noqa: E402
+    DEFAULT_GAMMA as NWARP_DEFAULT_GAMMA,
+    NWarpState,
+    leftover_mean_flow_px,
+    leftover_vel_latent,
 )
 from wan_adasteer import (  # noqa: E402
     ADASTEER_METHODS,
@@ -223,6 +231,7 @@ METHODS = (
     "appear_bon", "live_appear", "pseudo_gate", "pseudo_appear",
     "noise_probe", "noise_bon",
     "ada_fixed", "ada_stream", "ada_resid",
+    "sf_nwarp", "sf_nwarp_live",
 )
 TAIL_HISTORY_LATENTS = 3
 SINK_WINDOW_LATENTS = 21
@@ -279,6 +288,8 @@ SF_DENOISE_METHODS = frozenset({
     "sf_bpseudo", "sf_bpseudo_always",
     "sf_restep", "sf_restep_always",
 })
+SF_NWARP_METHODS = frozenset({"sf_nwarp", "sf_nwarp_live"})
+_NWARP_GAMMA = NWARP_DEFAULT_GAMMA
 SF_KEEP_METHODS = frozenset({
     "sf_nudge", "sf_nudge_always",
     "sf_nextseed", "sf_nextseed_always",
@@ -804,6 +815,7 @@ def _build_cand_specs(
         "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
         "sf_mix", "sf_mix_always", "sf_ctx",
         "sf_tscore", "sf_tscore_always",
+        "sf_nwarp", "sf_nwarp_live",
     ) or ci < search_from_chunk:
         reason = (
             "notta" if method in (
@@ -811,6 +823,7 @@ def _build_cand_specs(
                 "rf_chunk", "sf_recache", "sf_sink", "sf_rewind",
                 "sf_mix", "sf_mix_always", "sf_ctx",
                 "sf_tscore", "sf_tscore_always",
+                "sf_nwarp", "sf_nwarp_live",
             ) and ci >= search_from_chunk
             else "forced_prefix"
         )
@@ -1006,6 +1019,7 @@ def _run_one_chunk(
     history: str = "full",
     prefix_latents: int = PREFIX_LATENTS_DEFAULT,
     kv_snap=None,
+    extra_fn=None,
 ):
     import torch
 
@@ -1029,6 +1043,7 @@ def _run_one_chunk(
     _denoise_chunk(
         pipeline, noise, committed, conditional_dict, output, rng,
         stats_out=stats_out,
+        extra_fn=extra_fn,
     )
     end = committed + chunk_latents
     pixels = _decode_pixels(pipeline, output[:, :end])
@@ -2037,6 +2052,38 @@ def generate_chunked_v2v(
         if prefix_only.shape[0] >= 2 else None
     )
     print(f"  prefix_motion={prefix_motion}", flush=True)
+    nwarp_state = None
+    extra_fn = None
+    if method in SF_NWARP_METHODS:
+        vy_px, vx_px, flow_log = leftover_mean_flow_px(prefix_only)
+        vy_lat, vx_lat = leftover_vel_latent(vy_px, vx_px)
+        live = (
+            prefix_motion is not None and prefix_motion == prefix_motion
+            and prefix_motion >= _LIVE_SEARCH_MIN
+        )
+        enabled = True if method == "sf_nwarp" else bool(live)
+        nwarp_state = NWarpState(
+            vy_lat, vx_lat,
+            gamma=float(_NWARP_GAMMA),
+            enabled=enabled,
+            flow_log={
+                **flow_log,
+                "vy_px": vy_px,
+                "vx_px": vx_px,
+                "vy_lat": vy_lat,
+                "vx_lat": vx_lat,
+                "live": bool(live),
+                "enabled": bool(enabled),
+            },
+        )
+        extra_fn = nwarp_state.extra_fn if enabled else None
+        print(
+            f"  nwarp enabled={enabled} live={live} "
+            f"vy_px={vy_px:.4g} vx_px={vx_px:.4g} "
+            f"vy_lat={vy_lat:.4g} vx_lat={vx_lat:.4g} "
+            f"gamma={_NWARP_GAMMA} backend={flow_log.get('backend')}",
+            flush=True,
+        )
     good_committed = prefix_latents
     pseudo_fire = False
     pseudo_rows = None
@@ -2232,6 +2279,7 @@ def generate_chunked_v2v(
                 spec["shift"], spec["cfg"],
                 history=hist, prefix_latents=prefix_latents,
                 kv_snap=kv_snap,
+                extra_fn=extra_fn,
             )
             if built_ref is None:
                 prefix_win = pixels[: min(prefix_pix_n, pixels.shape[0])]
@@ -2626,6 +2674,13 @@ def generate_chunked_v2v(
                 else None
             ),
             "recache": recache_info,
+            "nwarp": (
+                {
+                    k: _json_float(v) if isinstance(v, float) else v
+                    for k, v in (nwarp_state.last_log or nwarp_state.flow_log).items()
+                }
+                if nwarp_state is not None else None
+            ),
             "chosen_minus_cand0": _json_float(best["score"] - cand0_score),
             "chosen_breakdown": _json_signals(best["breakdown"]),
             "candidates": [
@@ -4169,6 +4224,7 @@ def main() -> int:
     ap.add_argument("--default-shift", type=float, default=DEFAULT_SHIFT)
     ap.add_argument("--default-cfg", type=float, default=DEFAULT_CFG)
     ap.add_argument("--live-min", type=float, default=LIVE_SEARCH_MIN)
+    ap.add_argument("--nwarp-gamma", type=float, default=NWARP_DEFAULT_GAMMA)
     ap.add_argument("--pseudo-gamma", type=float, default=PSEUDO_GAMMA)
     ap.add_argument("--noise-tau", type=float, default=NOISE_TAU)
     ap.add_argument("--ada-steps", type=int, default=DEFAULT_STEPS)
@@ -4202,9 +4258,10 @@ def main() -> int:
     n_chunks = n_gen // args.chunk_latents
     n_pix = t2v_pixel_frames(args.prefix_latents + n_gen)
     method = "seed_bon" if args.method == "always_bon" else args.method
-    global _LIVE_SEARCH_MIN, _PSEUDO_GAMMA, _NOISE_TAU
+    global _LIVE_SEARCH_MIN, _PSEUDO_GAMMA, _NOISE_TAU, _NWARP_GAMMA
     global _ADA_STEPS, _ADA_LR, _ADA_BLEND, _ADA_REFIT_STEPS
     _LIVE_SEARCH_MIN = float(args.live_min)
+    _NWARP_GAMMA = float(args.nwarp_gamma)
     _PSEUDO_GAMMA = float(args.pseudo_gamma)
     _NOISE_TAU = float(args.noise_tau)
     _ADA_STEPS = int(args.ada_steps)
@@ -4456,6 +4513,10 @@ def main() -> int:
                         "denoising_step_native": _RF_STEP_INFO.get("native"),
                         "denoising_step_kind": _RF_STEP_INFO.get("kind"),
                         "context_noise": _ctx_noise_t(pipeline),
+                        "nwarp": (
+                            chunk_logs[0].get("nwarp")
+                            if chunk_logs else None
+                        ),
                         "chunks": chunk_logs,
                     })
                     print(
