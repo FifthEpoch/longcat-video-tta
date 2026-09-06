@@ -4835,6 +4835,24 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-05 — mid-step warp: Gaussianity and late timing are the holes
+**Tags:** methodology, paper-narrative
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-05_midstep_warp_holes.md`
+
+User: denoise as usual, warp remaining noise closer to
+clean, keep Gaussianity. Walked the SF 4-step loop
+(pred → fresh extra → add_noise). Only extra is
+Gaussian; a spatial wrap of it is a no-op. Late extra
+has no energy (GwF warps x_T). extra is redrawn every
+step. Rolling pred fights the unshifted KV. Torus is
+the naive-warp failure. Repaired kill test: GwF-style
+temporal transport of extra from step 0, leftover
+velocity, hole-fill, SF only, mixctx letters. Not a
+title. No GPU.
+
+---
+
 ## 2026-09-05 — Go-with-the-Flow: image warp is FT-free, video warp is a new prior
 **Tags:** related-work, methodology
 **Owner:** agent
