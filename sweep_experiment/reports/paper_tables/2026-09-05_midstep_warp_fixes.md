@@ -47,9 +47,46 @@ An arbitrary “always shift right” can fight the
 leftover. Prefix flow goes stale, but it is the
 only real motion we have at t = 0.
 
-**Modification:** Measure mean leftover flow
-**once** (direction + speed). Freeze it for the
-whole 30 s. No mid-pass RAFT. No invented +x.
+**Modification (original):** Measure mean leftover
+flow **once** (direction + speed). Freeze it for
+the whole 30 s. No mid-pass RAFT. No invented +x.
+
+**Clarification (user, 2026-09-06).** “Once and
+freeze” meant the **real 2 s leftover**, one mean
+vector, reused on every strip until the clip ends.
+It did **not** mean “each new ~0.75 s strip reads
+optical flow from the strip we just locked.”
+
+That sliding-block recipe is a different idea
+(3b). It tracks what the model actually just did,
+so it does not go stale. The kill: if the last
+strip **froze**, measured flow ≈ 0, the next strip
+is told “do not move,” and freeze reinforces
+freeze. That fights the user’s hypothesis
+(manually force motion because untreated frames
+freeze). 3b only works with a **floor**: if last
+strip flow is below a live bar, use the leftover
+vector instead of zero.
+
+---
+
+## Intuition check (user, 2026-09-06)
+
+User: after pass 1, **manually move what was
+predicted** (`pred`) so the remaining passes
+cannot stay a still. That is **not** the same
+intuition as “only drift `extra`.” Drifting snow
+leaves the guessed picture in place. Moving `pred`
+slides the guessed picture, then the later passes
+have to finish a shifted scene.
+
+Those are two methods. The user’s hypothesis is
+the second. The leftover-once / HIWYN-on-`extra`
+recipe was the first. If we take the user’s
+intuition, hole 4 (do not move `pred`) is
+**reopened on purpose**, and we need a fill for
+the edge that slides into view plus a rule so a
+frozen last strip cannot vote for zero flow.
 
 ### 4. Two motions at once
 

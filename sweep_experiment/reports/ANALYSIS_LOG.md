@@ -4835,6 +4835,24 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — leftover-once is not sliding-block flow; user wants to move pred
+**Tags:** methodology
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-05_midstep_warp_fixes.md`
+
+User: does “measure flow once” mean each 0.75 s
+strip reads the previous strip? No. It meant the
+real 2 s leftover, one vector, frozen. Sliding
+previous-block flow is 3b; freeze→zero→more freeze
+unless there is a leftover floor. User’s real
+intuition is move `pred` after pass 1 (force the
+guessed picture to change), not only drift `extra`.
+Those are different methods. Extra-only was my
+steer. If we follow them, “do not move pred” is
+withdrawn and the KV/edge-fill holes come back.
+
+---
+
 ## 2026-09-05 — mid-warp remaining holes get idea fixes
 **Tags:** methodology, paper-narrative
 **Owner:** agent
