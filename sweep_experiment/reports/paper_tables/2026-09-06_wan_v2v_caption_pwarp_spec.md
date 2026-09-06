@@ -1,6 +1,6 @@
 # Caption N=8 slide the guessed picture — spec (2026-09-06)
 
-**Status:** SUBMIT-READY. Pred-only (not extras). Self Forcing
+**Status:** QUEUED 2026-09-06. Pred-only (not extras). Self Forcing
 host. Same-wave twins: always-on + leftover-live gate.
 Prompts = `metadata.csv`. Do not remake cite-128.
 **No TTC. No I2V. No 8-GPU DMD.**

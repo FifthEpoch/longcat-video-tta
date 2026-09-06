@@ -4835,6 +4835,19 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — pwarp smoke + N=8 queued
+**Tags:** cluster, in-flight
+**Owner:** agent
+**Refs:** `experiment_outputs/2026-09-06.md`
+
+Preflight PASS (`metadata_csv`, 0 stem). Smoke
+17058386 / 889 + VBench 17058390. N=8 17058391 / 892
++ VBench 17058393. Slide-`pred` kill test. Do not
+harvest until an ID leaves squeue. If missing, sacct
+immediately.
+
+---
+
 ## 2026-09-06 — why nwarp IQ died; pred-slide wired
 **Tags:** method, analysis, spec
 **Owner:** agent
