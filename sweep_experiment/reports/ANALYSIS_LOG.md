@@ -4835,6 +4835,18 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — nwarp smoke + N=8 queued (Priority)
+**Tags:** cluster, in-flight
+**Owner:** agent
+**Refs:** `experiment_outputs/2026-09-06.md`
+
+squeue: 17028867/870/874/875 PD Priority (H200 generate);
+17028871/876 PD Dependency (L40S VBench). Smoke + full
+caption nwarp. Nothing running. Do not harvest. If an
+ID leaves squeue, sacct immediately.
+
+---
+
 ## 2026-09-06 — extra-only nwarp wired for caption N=8
 **Tags:** experiment, spec
 **Owner:** agent
