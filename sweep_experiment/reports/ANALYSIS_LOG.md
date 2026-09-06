@@ -4835,6 +4835,25 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — extra-only nwarp DONE / NO (IQ 49 / 54)
+**Tags:** results, method, closed
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-06_wan_v2v_caption_nwarp_harvest.md`
+
+Caption N=8 leftover-flow HIWYN extras. Protocol PASS
+(`metadata_csv`, nwarp wired, live gate 3/8). Always-on
+tail +22% (6/2/0) and Imaging Quality **49.18**, subject
+0.594, aesthetic 0.399, Dyn **0/8**. Live tail +12%
+(3/0/5 identity skips) and IQ **54.42**, subject 0.628,
+Dyn 2/8. Analyzer FAIL quality collapse. Truck-hood
+leftover flow was 0.008 px; integer shift on 0000 was
+zero; carried field + γ mix still changed extras. This
+is the frozen-student version of the Go-with-the-Flow
+video lesson. Closed. Do not retune γ. Do not scale.
+Do not move `pred` unless the user asks.
+
+---
+
 ## 2026-09-06 — nwarp all six COMPLETED 0:0; harvest pending
 **Tags:** cluster, results
 **Owner:** agent

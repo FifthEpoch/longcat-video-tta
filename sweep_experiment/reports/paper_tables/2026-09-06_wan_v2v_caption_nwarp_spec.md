@@ -1,8 +1,8 @@
 # Caption N=8 leftover-flow HIWYN extras — spec (2026-09-06)
 
-**Status:** SUBMIT-READY. Extra-only (not `pred`). Self Forcing
-host. Same-wave twins: always-on + leftover-live gate.
-Prompts = `metadata.csv`. Do not remake cite-128.
+**Status:** **DONE / NO 2026-09-06.** Extra-only (not `pred`).
+Harvest: `2026-09-06_wan_v2v_caption_nwarp_harvest.md`.
+IQ 49 / 54. Do not scale. Do not remake cite-128.
 **No TTC. No I2V. No 8-GPU DMD.**
 
 ```bash
