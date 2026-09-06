@@ -26,6 +26,7 @@ substantive task. Update it whenever a new persistent artifact is created.
 | **Caption nwarp N=8 spec** | `sweep_experiment/reports/paper_tables/2026-09-06_wan_v2v_caption_nwarp_spec.md` | Extra-only HIWYN extras. `sf_nwarp` + `sf_nwarp_live`. **DONE / NO.** Do not remake cite-128. |
 | **Caption nwarp harvest** | `sweep_experiment/reports/paper_tables/2026-09-06_wan_v2v_caption_nwarp_harvest.md` | 17028867–876 COMPLETED. Always IQ 49.18 Dyn 0/8. Live IQ 54.42 Dyn 2/8. Both **NO**. |
 | **Why nwarp IQ died** | `sweep_experiment/reports/paper_tables/2026-09-06_nwarp_vs_gwf_why_iq_died.md` | Extra-only locked a noise stencil. Not GwF. dy=0 still IQ 45. |
+| **GwF / SAVi run?** | `sweep_experiment/reports/paper_tables/2026-09-06_gwf_savi_should_we_run.md` | Retrain GwF **no**. SAVi = DNO increment; leak-easy writeup. No GPU. |
 | **Caption pwarp N=8 spec** | `sweep_experiment/reports/paper_tables/2026-09-06_wan_v2v_caption_pwarp_spec.md` | Slide `pred` after pass 1. `sf_pwarp` + `sf_pwarp_live`. Queued 17058386–393. |
 | **Gate neighbors + publishability** | `sweep_experiment/reports/paper_tables/2026-09-01_gate_neighbors_publishability.md` | EFD / SDVG / Video-T1 / CachedSearch / LatSearch. 13% vs Always is not a quality paper. |
 | **RF schedule neighbors** | `sweep_experiment/reports/paper_tables/2026-09-01_rf_noise_schedule_neighbors.md` | Deep / Relax / Ms. / Stream / Reward / FIFO. Most RF follow-ons are memory. TTA cousins: lookahead, shallower / local-steep diagonal. |

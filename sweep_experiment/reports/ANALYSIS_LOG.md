@@ -4835,6 +4835,22 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — do not retrain GwF; SAVi-DNO holes are ordinary
+**Tags:** literature, method
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-06_gwf_savi_should_we_run.md`
+
+User asked if we should run Go-with-the-Flow and why
+SAVi-DNO has no major venue. Retrain GwF is occupied
+(40 GPU-days). Released-weight inference is optional
+appendix only. SAVi is DNO + carry-ε on clip prediction;
+Eq/Algo time indices make a future-leak easy (we did
+that once). Unpublished since Nov 2025 is a reject
+cycle — same group has CVPR 2025/2026. Not fraud. Do
+not cite LongCat SAVi numbers. No 8-GPU DMD.
+
+---
+
 ## 2026-09-06 — pwarp smoke + N=8 queued
 **Tags:** cluster, in-flight
 **Owner:** agent
