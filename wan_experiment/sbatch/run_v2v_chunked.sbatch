@@ -48,6 +48,7 @@ NUM_SHARDS="${NUM_SHARDS:-1}"
 VIDEO_DIR="${VIDEO_DIR:-${PROJECT_ROOT}/datasets/panda_1000_480p}"
 LIVE_MIN="${LIVE_MIN:-0.012}"
 NWARP_GAMMA="${NWARP_GAMMA:-0.5}"
+PWARP_STEP="${PWARP_STEP:-1}"
 PSEUDO_GAMMA="${PSEUDO_GAMMA:-0.0}"
 NOISE_TAU="${NOISE_TAU:-0.04}"
 ADA_STEPS="${ADA_STEPS:-10}"
@@ -126,6 +127,7 @@ cd "${PROJECT_ROOT}"
     --backtrack-motion-frac "${BACKTRACK_MOTION_FRAC}" \
     --live-min "${LIVE_MIN}" \
     --nwarp-gamma "${NWARP_GAMMA}" \
+    --pwarp-step "${PWARP_STEP}" \
     --pseudo-gamma "${PSEUDO_GAMMA}" \
     --noise-tau "${NOISE_TAU}" \
     --ada-steps "${ADA_STEPS}" \

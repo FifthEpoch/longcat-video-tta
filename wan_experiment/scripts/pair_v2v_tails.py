@@ -101,6 +101,7 @@ def main() -> int:
             "rf_latmot", "rf_latmot_always",
             "appear_bon",
             "sf_nwarp", "sf_nwarp_live",
+            "sf_pwarp", "sf_pwarp_live",
         ):
             if name in seen:
                 continue

@@ -4835,6 +4835,23 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — why nwarp IQ died; pred-slide wired
+**Tags:** method, analysis, spec
+**Owner:** agent
+**Refs:** `paper_tables/2026-09-06_nwarp_vs_gwf_why_iq_died.md`,
+`paper_tables/2026-09-06_wan_v2v_caption_pwarp_spec.md`
+
+Extra-only was not Go-with-the-Flow. Truck leftover
+never integer-shifted (`dy=0`); the 30 s carried field
++ γ mix locked a noise stencil on a frozen student.
+That is their video-prior hole. User's idea is
+different: slide `pred` after pass 1, ordinary extras,
+1-cell floor (leftover speed is a no-op). Wired
+`sf_pwarp` / `sf_pwarp_live`. Do not combine with
+nwarp. Do not start 8-GPU DMD.
+
+---
+
 ## 2026-09-06 — extra-only nwarp DONE / NO (IQ 49 / 54)
 **Tags:** results, method, closed
 **Owner:** agent

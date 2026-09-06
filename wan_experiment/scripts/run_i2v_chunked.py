@@ -205,6 +205,7 @@ def _denoise_chunk(
     pipeline, noise, start_frame, conditional_dict, output, rng,
     stats_out=None,
     extra_fn=None,
+    pred_fn=None,
 ) -> None:
     """Official Step 3 loop for one chunk. Writes output[:, start:start+n].
 
@@ -250,6 +251,8 @@ def _denoise_chunk(
                         else current_timestep
                     ),
                 })
+            if pred_fn is not None and index == 0:
+                denoised_pred = pred_fn(denoised_pred, rng, index)
             if index < len(pipeline.denoising_step_list) - 1:
                 next_timestep = pipeline.denoising_step_list[index + 1]
                 if extra_fn is not None:
