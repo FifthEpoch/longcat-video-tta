@@ -399,12 +399,12 @@ Per-method `merged_summary.json` lives at:
   native AR long-horizon drifts; AdaSteer delta + routing closed;
   BoN k=4 N=8 passed credibility gate as always-on search, not a hard
   incoming-context gate.
-- **In-flight cluster jobs** (as of 2026-09-06 01:30):
-  Caption nwarp **PD**: gen **17028867, 17028870, 17028874,
-  17028875** (H200 Priority); VBench **17028871, 17028876**
-  (L40S Dependency). Mix+ctx / FIFO+tscore / leftover /
-  LPIPS+FVD / schedule8 **DONE / NO**. Do not remake
-  cite-128. Do not start 8-GPU DMD. **No I2V. No TTC.**
+- **In-flight cluster jobs** (as of 2026-09-06 13:10):
+  Caption nwarp **COMPLETED 0:0** 17028867/870/871 (smoke)
+  + 17028874/875/876 (N=8). Harvest pending. Mix+ctx /
+  FIFO+tscore / leftover / LPIPS+FVD / schedule8
+  **DONE / NO**. Do not remake cite-128. Do not start
+  8-GPU DMD. **No I2V. No TTC.**
 - **VBench 5 s windows (DONE 16009916):** hybrid 32. Aes 0.651→0.538,
   IQ 72.9→68.1 (do-nothing). Search does not reverse it. Dynamic
   median 0 every window. Full clip stays official.

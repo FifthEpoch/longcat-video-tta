@@ -4835,6 +4835,17 @@ scancel cite-128. Do not harvest stem leftover numbers.
 
 ---
 
+## 2026-09-06 — nwarp all six COMPLETED 0:0; harvest pending
+**Tags:** cluster, results
+**Owner:** agent
+**Refs:** `experiment_outputs/2026-09-06.md`
+
+sacct: 17028867/870/871 smoke 6–7 min + 6.5 min VBench;
+17028874/875/876 N=8 17–23 min + 19 min VBench. All
+exit 0. Disk harvest needs a cluster paste (no SSH).
+
+---
+
 ## 2026-09-06 — nwarp smoke + N=8 queued (Priority)
 **Tags:** cluster, in-flight
 **Owner:** agent
